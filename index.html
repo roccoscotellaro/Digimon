@@ -121,6 +121,30 @@
   .divider{height:1px;background:var(--line);margin:16px 0;}
   ::-webkit-scrollbar{width:6px;}
   ::-webkit-scrollbar-thumb{background:var(--cyan-dim);}
+
+  .portrait{width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--cyan-dim);background:#05070a;flex-shrink:0;}
+  .portrait-sm{width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid var(--cyan-dim);background:#05070a;flex-shrink:0;}
+  .sheet-head{display:flex;gap:12px;align-items:center;margin-bottom:14px;}
+  .sheet-head .info{flex:1;}
+  .sheet-head .nm{font-family:'Share Tech Mono',monospace;color:var(--cyan);font-size:15px;}
+  .sheet-head .tg{font-size:11px;color:var(--text-mute);}
+
+  .bar-row{margin-bottom:10px;}
+  .bar-label{display:flex;justify-content:space-between;font-size:10px;text-transform:uppercase;color:var(--text-mute);margin-bottom:3px;letter-spacing:0.05em;}
+  .bar-label .val{font-family:'Share Tech Mono',monospace;color:var(--text);}
+  .bar-track{height:10px;background:var(--panel-2);border:1px solid var(--line);border-radius:20px;overflow:hidden;}
+  .bar-fill{height:100%;border-radius:20px;transition:width .3s;}
+  .bar-fill.hp{background:linear-gradient(90deg, var(--cyan-dim), var(--cyan));}
+  .bar-fill.mp{background:linear-gradient(90deg, #6b3fa0, #c896ff);}
+  .bar-fill.low{background:linear-gradient(90deg, #8a2f2f, var(--danger));}
+  .bar-controls{display:flex;gap:6px;align-items:center;margin-top:4px;}
+  .bar-controls button{width:22px;height:22px;line-height:1;border:1px solid var(--line);background:var(--panel-2);color:var(--cyan);cursor:pointer;border-radius:3px;font-size:14px;}
+  .bar-controls button:hover{border-color:var(--cyan-dim);}
+
+  .view-mode .field-static{margin-bottom:10px;}
+  .field-static label{margin-bottom:2px;}
+  .field-static .v{font-size:13px;color:var(--text);}
+  .toggle-edit-btn{width:100%;margin-top:4px;}
 </style>
 </head>
 <body>
@@ -129,10 +153,23 @@
 <script>
 (function(){
   const root = document.getElementById('root-app');
-  let session = null; // {code, username, role}
+  let session = null;
   let pollTimer = null;
   let lastApiError = null;
   const ONLINE_WINDOW_MS = 9000;
+  const SESSION_KEY = 'digivice_session_v1';
+
+  let editingTamer = false;
+  let editingDigimon = false;
+  let editingScene = false;
+  let cachedRoster = [];
+  let cachedScene = { title:'', background:'', music:'' };
+  let cachedLog = [];
+
+  // ---------- session persistence ----------
+  function saveSession(s){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }catch(e){} }
+  function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
+  function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
 
   // ---------- API helpers ----------
   async function apiGet(path){
@@ -146,11 +183,7 @@
   }
   async function apiPost(path, body){
     try{
-      const r = await fetch(path, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify(body)
-      });
+      const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
       const data = await r.json();
       if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
       lastApiError = null;
@@ -158,51 +191,25 @@
     }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
   }
 
-  async function getRoster(code){
-    const d = await apiGet('/api/roster?code=' + encodeURIComponent(code));
-    return d ? (d.members || []) : [];
-  }
-  async function saveMember(code, member){
-    const d = await apiPost('/api/roster', { code, member });
-    return !!(d && d.ok);
-  }
-  async function getScene(code){
-    const d = await apiGet('/api/scene?code=' + encodeURIComponent(code));
-    return d ? d.scene : { title:'', background:'', music:'' };
-  }
-  async function saveScene(code, scene){
-    const d = await apiPost('/api/scene', { code, ...scene });
-    return !!(d && d.ok);
-  }
-  async function getLog(code){
-    const d = await apiGet('/api/log?code=' + encodeURIComponent(code));
-    return d ? (d.log || []) : [];
-  }
-  async function pushLog(code, entry){
-    return apiPost('/api/log', { code, ...entry });
-  }
-  async function heartbeat(code, username){
-    return apiPost('/api/heartbeat', { code, username });
-  }
-  async function correggiItaliano(testo){
-    const d = await apiPost('/api/ai-correct', { text: testo });
-    return d && d.corrected ? d.corrected : testo;
-  }
-  async function suggerisciBattute(digimonName, personality, contesto){
-    const d = await apiPost('/api/ai-suggest', { digimonName, personality, context: contesto });
-    return d && d.lines ? d.lines : ['(errore nel generare suggerimenti, riprova)'];
-  }
+  async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]) : []; }
+  async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
+  async function getScene(code){ const d = await apiGet('/api/scene?code=' + encodeURIComponent(code)); return d ? d.scene : { title:'', background:'', music:'' }; }
+  async function saveScene(code, scene){ const d = await apiPost('/api/scene', { code, ...scene }); return !!(d && d.ok); }
+  async function getLog(code){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code)); return d ? (d.log||[]) : []; }
+  async function pushLog(code, entry){ return apiPost('/api/log', { code, ...entry }); }
+  async function heartbeat(code, username){ return apiPost('/api/heartbeat', { code, username }); }
+  async function correggiItaliano(testo){ const d = await apiPost('/api/ai-correct', { text: testo }); return d && d.corrected ? d.corrected : testo; }
+  async function suggerisciBattute(digimonName, personality, contesto){ const d = await apiPost('/api/ai-suggest', { digimonName, personality, context: contesto }); return d && d.lines ? d.lines : ['(errore nel generare suggerimenti, riprova)']; }
 
-  function sanitizeKeyPart(s){
-    return String(s||'').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 48);
-  }
+  function sanitizeKeyPart(s){ return String(s||'').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 48); }
 
   function defaultTamer(){
-    return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, endurance:1 };
+    return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, endurance:1, imageUrl:'', currentWounds:null };
   }
   function defaultDigimon(){
     return {
-      name:'', stage:'Rookie', personality:'', woundBoxes:5, mp:3,
+      name:'', stage:'Rookie', personality:'', imageUrl:'',
+      maxWounds:5, currentWounds:5, maxMp:3, currentMp:3,
       moves:[
         {name:'Attacco Base', desc:'Colpo fisico standard.'},
         {name:'Mossa Speciale', desc:'Consuma MP, usa Intelligenza.'},
@@ -211,8 +218,14 @@
       ]
     };
   }
+  function normalizeMember(m){
+    m.tamer = Object.assign(defaultTamer(), m.tamer||{});
+    if(m.tamer.currentWounds===null || m.tamer.currentWounds===undefined) m.tamer.currentWounds = 3+Number(m.tamer.endurance||0);
+    m.digimon = Object.assign(defaultDigimon(), m.digimon||{});
+    if(!m.digimon.moves || !m.digimon.moves.length) m.digimon.moves = defaultDigimon().moves;
+    return m;
+  }
 
-  // ---------- render root ----------
   function render(){
     if(!session){ renderLogin(); }
     else if(session.role==='master'){ renderMaster(); }
@@ -243,14 +256,8 @@
       <div class="login-wrap hud-frame" style="padding:32px;">
         <h1 class="mono">DIGIVICE // ACCESSO</h1>
         <div class="sub">Tavolo testuale multi-utente — inserisci un codice campagna condiviso</div>
-        <div class="field">
-          <label>Codice Campagna</label>
-          <input type="text" id="in-code" placeholder="es. FRONTIER01" />
-        </div>
-        <div class="field">
-          <label>Nome Utente</label>
-          <input type="text" id="in-user" placeholder="il tuo nome al tavolo" />
-        </div>
+        <div class="field"><label>Codice Campagna</label><input type="text" id="in-code" placeholder="es. FRONTIER01" /></div>
+        <div class="field"><label>Nome Utente</label><input type="text" id="in-user" placeholder="il tuo nome al tavolo" /></div>
         <div class="field">
           <label>Ruolo</label>
           <div class="role-pick">
@@ -274,15 +281,14 @@
 
       const roster = await getRoster(code);
       const existing = roster.find(m=>m.username===username);
-      const member = existing || { username, role, tamer: defaultTamer(), digimon: defaultDigimon() };
+      const member = normalizeMember(existing || { username, role });
       member.role = role;
 
       const ok = await saveMember(code, member);
-      if(!ok){
-        errEl.textContent = 'Impossibile collegarsi al server: ' + (lastApiError || 'errore sconosciuto');
-        return;
-      }
+      if(!ok){ errEl.textContent = 'Impossibile collegarsi al server: ' + (lastApiError || 'errore sconosciuto'); return; }
       session = { code, username, role };
+      saveSession(session);
+      editingTamer = false; editingDigimon = false; editingScene = false;
       startPolling();
       render();
     };
@@ -291,17 +297,17 @@
   function logout(){
     if(pollTimer) clearInterval(pollTimer);
     session = null;
+    clearSession();
     render();
   }
 
   function startPolling(){
     if(pollTimer) clearInterval(pollTimer);
     heartbeat(session.code, session.username);
+    refreshLiveParts();
     pollTimer = setInterval(async ()=>{
       if(session) await heartbeat(session.code, session.username);
-      const active = document.activeElement;
-      const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT');
-      if(!isTyping) render();
+      refreshLiveParts();
     }, 4000);
   }
 
@@ -311,29 +317,106 @@
     return online.map(m=>`${m.username}${m.role==='master'?' (Master)':''}`).join(', ') + ' online';
   }
 
-  // ---------- PLAYER VIEW ----------
+  // ---------- LIVE PARTS (updated by polling, never touch forms) ----------
+  async function refreshLiveParts(){
+    if(!session) return;
+    cachedRoster = (await getRoster(session.code)).map(normalizeMember);
+    cachedScene = await getScene(session.code);
+    cachedLog = await getLog(session.code);
+
+    const sceneLive = document.getElementById('scene-live');
+    if(sceneLive){
+      sceneLive.innerHTML = `<div class="muted mono" style="margin-bottom:8px;">${onlineSummary(cachedRoster)}</div>` + sceneHTML(cachedScene);
+    }
+    const logLive = document.getElementById('log-live');
+    if(logLive){
+      const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
+      logLive.innerHTML = logHTML(cachedLog);
+      if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
+    }
+    const rosterLive = document.getElementById('roster-live');
+    if(rosterLive && session.role==='master'){
+      const players = cachedRoster.filter(m=>m.role==='player');
+      rosterLive.innerHTML = players.length===0
+        ? '<div class="muted">Nessun giocatore ha ancora effettuato l\'accesso a questa campagna.</div>'
+        : players.map((p,i)=>rosterItemHTML(p,i)).join('');
+      bindRosterSuggestButtons(players);
+    }
+    const errBanner = document.getElementById('api-err-banner');
+    if(errBanner) errBanner.outerHTML = lastApiError ? `<div id="api-err-banner" class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(lastApiError)}</div>` : '<div id="api-err-banner"></div>';
+  }
+
+  function bindRosterSuggestButtons(players){
+    players.forEach((p,i)=>{
+      const btn = document.getElementById('btn-suggest-'+i);
+      if(btn && !btn.dataset.bound){
+        btn.dataset.bound = '1';
+        btn.onclick = async ()=>{
+          btn.disabled = true; btn.textContent = 'Generando...';
+          const contesto = cachedLog.slice(-6).map(l=>`${l.who}: ${l.text}`).join('\n');
+          const lines = await suggerisciBattute(p.digimon.name || 'Digimon', p.digimon.personality, contesto);
+          const box = document.getElementById('suggest-box-'+i);
+          if(box){
+            box.innerHTML = lines.map(l=>`<div class="suggest-line" data-line="${escapeAttr(l)}">${escapeHTML(l)}</div>`).join('');
+            box.style.display = 'block';
+            box.querySelectorAll('.suggest-line').forEach(el=>{
+              el.onclick = async ()=>{
+                await pushLog(session.code, { who: p.digimon.name || 'Digimon', role:'digimon', text: el.getAttribute('data-line') });
+                refreshLiveParts();
+              };
+            });
+          }
+          btn.disabled = false; btn.textContent = 'Suggerisci Battuta';
+        };
+      }
+    });
+  }
+
+  // ---------- bars ----------
+  function barHTML(label, current, max, kind, onMinusId, onPlusId){
+    const pct = max>0 ? Math.max(0, Math.min(100, (current/max)*100)) : 0;
+    const low = pct <= 25;
+    return `
+      <div class="bar-row">
+        <div class="bar-label"><span>${label}</span><span class="val">${current} / ${max}</span></div>
+        <div class="bar-track"><div class="bar-fill ${low?'low':kind}" style="width:${pct}%;"></div></div>
+        <div class="bar-controls">
+          <button id="${onMinusId}">−</button>
+          <button id="${onPlusId}">+</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function portraitHTML(imageUrl, name, size){
+    const cls = size==='sm' ? 'portrait-sm' : 'portrait';
+    if(imageUrl){
+      return `<img class="${cls}" src="${escapeAttr(imageUrl)}" onerror="this.style.visibility='hidden'" />`;
+    }
+    const initial = (name||'?').trim().charAt(0).toUpperCase() || '?';
+    return `<div class="${cls}" style="display:flex;align-items:center;justify-content:center;color:var(--cyan);font-family:'Share Tech Mono',monospace;font-size:${size==='sm'?'14px':'20px'};">${initial}</div>`;
+  }
+
+  // ---------- PLAYER VIEW (shell built once, live parts patched by poll) ----------
   async function renderPlayer(){
     const code = session.code;
-    const roster = await getRoster(code);
-    const me = roster.find(m=>m.username===session.username) || { tamer: defaultTamer(), digimon: defaultDigimon() };
-    const scene = await getScene(code);
-    const log = await getLog(code);
+    cachedRoster = (await getRoster(code)).map(normalizeMember);
+    const me = normalizeMember(cachedRoster.find(m=>m.username===session.username) || { username: session.username, role:'player' });
+    cachedScene = await getScene(code);
+    cachedLog = await getLog(code);
 
     root.innerHTML = `
       ${topbar('Vista Giocatore')}
       <div class="grid2">
         <div>
           <div class="hud-frame card">
-            <div class="flex-between" style="margin-bottom:10px;">
-              <div class="section-title" style="margin:0;border:none;padding:0;">Scena Attuale</div>
-              <div class="muted mono">${onlineSummary(roster)}</div>
-            </div>
-            ${sceneHTML(scene)}
+            <div class="section-title">Scena Attuale</div>
+            <div id="scene-live">${sceneHTML(cachedScene)}</div>
           </div>
 
           <div class="hud-frame card">
             <div class="section-title">Registro Narrativo</div>
-            <div class="log" id="log-box">${logHTML(log)}</div>
+            <div class="log" id="log-live">${logHTML(cachedLog)}</div>
           </div>
 
           <div class="hud-frame card">
@@ -349,7 +432,7 @@
           <div class="hud-frame card">
             <div class="section-title">Mosse di ${escapeHTML(me.digimon.name || 'Digimon')}</div>
             <div class="moves-grid">
-              ${(me.digimon.moves||[]).map((m,i)=>`
+              ${me.digimon.moves.map((m,i)=>`
                 <button class="move-btn" data-move-idx="${i}">
                   <div class="name mono">${escapeHTML(m.name)}</div>
                   <div class="desc">${escapeHTML(m.desc)}</div>
@@ -360,54 +443,14 @@
         </div>
 
         <div>
-          <div class="hud-frame card">
-            <div class="section-title">Scheda Tamer — ${escapeHTML(session.username)}</div>
-            <div class="grid-stats">
-              ${statBox('AGI','agility',me.tamer.agility)}
-              ${statBox('BODY','body',me.tamer.body)}
-              ${statBox('CAR','charisma',me.tamer.charisma)}
-              ${statBox('INT','intelligence',me.tamer.intelligence)}
-              ${statBox('WILL','willpower',me.tamer.willpower)}
-            </div>
-            <div class="field" style="margin-top:12px;">
-              <label>Endurance (Skill) — Caselle Ferita = 3 + Endurance</label>
-              <input type="number" id="stat-endurance" min="0" max="7" value="${me.tamer.endurance}" />
-            </div>
-            <div class="muted">Caselle Ferita Tamer: <b class="mono" style="color:var(--cyan)">${3+Number(me.tamer.endurance||0)}</b></div>
-          </div>
-
-          <div class="hud-frame card">
-            <div class="section-title">Scheda Digimon</div>
-            <div class="field">
-              <label>Nome</label>
-              <input type="text" id="dig-name" value="${escapeAttr(me.digimon.name)}" />
-            </div>
-            <div class="row">
-              <div class="field">
-                <label>Stage</label>
-                <select id="dig-stage">
-                  ${['Baby','Rookie','Champion','Ultimate','Mega'].map(s=>`<option ${me.digimon.stage===s?'selected':''}>${s}</option>`).join('')}
-                </select>
-              </div>
-              <div class="field">
-                <label>Caselle Ferita</label>
-                <input type="number" id="dig-wounds" value="${me.digimon.woundBoxes}" />
-              </div>
-              <div class="field">
-                <label>MP</label>
-                <input type="number" id="dig-mp" value="${me.digimon.mp}" />
-              </div>
-            </div>
-            <div class="field">
-              <label>Personalità (usata dal Master per generare le battute)</label>
-              <textarea id="dig-personality" rows="3" placeholder="es. Leale ma testardo, parla poco e agisce d'istinto, protettivo verso i più deboli...">${escapeHTML(me.digimon.personality)}</textarea>
-            </div>
-            <button class="btn solid" id="btn-save-sheet" style="width:100%;">Salva Scheda</button>
-            <div class="muted" id="save-status" style="margin-top:6px;"></div>
-          </div>
+          <div class="hud-frame card" id="tamer-card"></div>
+          <div class="hud-frame card" id="digimon-card"></div>
         </div>
       </div>
     `;
+
+    renderTamerCard(me);
+    renderDigimonCard(me);
 
     document.getElementById('btn-logout').onclick = logout;
     document.getElementById('btn-correct').onclick = async ()=>{
@@ -423,52 +466,147 @@
       if(!ta.value.trim()) return;
       await pushLog(code, { who: session.username, role:'player', text: ta.value.trim() });
       ta.value='';
-      renderPlayer();
+      refreshLiveParts();
     };
     document.querySelectorAll('[data-move-idx]').forEach(btn=>{
       btn.onclick = async ()=>{
         const idx = Number(btn.getAttribute('data-move-idx'));
         const move = me.digimon.moves[idx];
         await pushLog(code, { who: session.username, role:'player', text: `${me.digimon.name || 'Il Digimon'} usa ${move.name}!` });
-        renderPlayer();
+        refreshLiveParts();
       };
     });
-    document.getElementById('btn-save-sheet').onclick = async ()=>{
-      me.tamer.endurance = Number(document.getElementById('stat-endurance').value)||0;
-      me.digimon.name = document.getElementById('dig-name').value;
-      me.digimon.stage = document.getElementById('dig-stage').value;
-      me.digimon.woundBoxes = Number(document.getElementById('dig-wounds').value)||0;
-      me.digimon.mp = Number(document.getElementById('dig-mp').value)||0;
-      me.digimon.personality = document.getElementById('dig-personality').value;
-      ['agility','body','charisma','intelligence','willpower'].forEach(k=>{
-        const el = document.getElementById('stat-'+k);
-        if(el) me.tamer[k] = Number(el.value)||0;
-      });
-      me.username = session.username;
-      me.role = session.role;
-      const ok = await saveMember(code, me);
-      const statusEl = document.getElementById('save-status');
-      statusEl.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
-      statusEl.textContent = ok ? 'Scheda salvata.' : ('Salvataggio fallito: ' + (lastApiError || 'errore sconosciuto'));
-    };
-    const logBox = document.getElementById('log-box');
-    if(logBox) logBox.scrollTop = logBox.scrollHeight;
+
+    startPolling();
   }
 
-  function statBox(label, key, val){
-    return `<div class="stat-box">
-      <div class="l">${label}</div>
-      <input type="number" min="0" max="5" id="stat-${key}" value="${val}" />
-    </div>`;
+  function renderTamerCard(me){
+    const cardEl = document.getElementById('tamer-card');
+    if(!cardEl) return;
+    const t = me.tamer;
+    const maxW = 3 + Number(t.endurance||0);
+    if(!editingTamer){
+      cardEl.innerHTML = `
+        <div class="flex-between"><div class="section-title" style="margin:0;border:none;padding:0;">Scheda Tamer</div>
+        <button class="btn small" id="btn-edit-tamer">Modifica</button></div>
+        <div class="sheet-head" style="margin-top:12px;">
+          ${portraitHTML(t.imageUrl, session.username)}
+          <div class="info"><div class="nm">${escapeHTML(session.username)}</div><div class="tg">AGI ${t.agility} · BODY ${t.body} · CAR ${t.charisma} · INT ${t.intelligence} · WILL ${t.willpower}</div></div>
+        </div>
+        ${barHTML('Caselle Ferita', t.currentWounds, maxW, 'hp', 'tamer-w-minus', 'tamer-w-plus')}
+      `;
+      document.getElementById('btn-edit-tamer').onclick = ()=>{ editingTamer = true; renderTamerCard(me); };
+      document.getElementById('tamer-w-minus').onclick = async ()=>{ me.tamer.currentWounds = Math.max(0, me.tamer.currentWounds-1); await saveMember(session.code, me); renderTamerCard(me); };
+      document.getElementById('tamer-w-plus').onclick = async ()=>{ me.tamer.currentWounds = Math.min(maxW, me.tamer.currentWounds+1); await saveMember(session.code, me); renderTamerCard(me); };
+    } else {
+      cardEl.innerHTML = `
+        <div class="section-title">Scheda Tamer — Modifica</div>
+        <div class="field"><label>URL Immagine (opzionale)</label><input type="text" id="e-t-img" value="${escapeAttr(t.imageUrl)}" placeholder="https://..." /></div>
+        <div class="grid-stats">
+          ${statBox('AGI','e-t-agility',t.agility)}
+          ${statBox('BODY','e-t-body',t.body)}
+          ${statBox('CAR','e-t-charisma',t.charisma)}
+          ${statBox('INT','e-t-intelligence',t.intelligence)}
+          ${statBox('WILL','e-t-willpower',t.willpower)}
+        </div>
+        <div class="field" style="margin-top:12px;"><label>Endurance (Skill) — Caselle Ferita = 3 + Endurance</label><input type="number" id="e-t-endurance" min="0" max="10" value="${t.endurance}" /></div>
+        <div class="row" style="margin-top:10px;">
+          <button class="btn ghost" id="btn-cancel-tamer">Annulla</button>
+          <button class="btn solid" id="btn-save-tamer">Salva</button>
+        </div>
+        <div class="muted" id="save-status-tamer" style="margin-top:6px;"></div>
+      `;
+      document.getElementById('btn-cancel-tamer').onclick = ()=>{ editingTamer = false; renderTamerCard(me); };
+      document.getElementById('btn-save-tamer').onclick = async ()=>{
+        ['agility','body','charisma','intelligence','willpower'].forEach(k=>{
+          const el = document.getElementById('e-t-'+k);
+          if(el) me.tamer[k] = Number(el.value)||0;
+        });
+        me.tamer.endurance = Number(document.getElementById('e-t-endurance').value)||0;
+        me.tamer.imageUrl = document.getElementById('e-t-img').value.trim();
+        const newMax = 3+Number(me.tamer.endurance||0);
+        if(me.tamer.currentWounds > newMax) me.tamer.currentWounds = newMax;
+        me.username = session.username; me.role = session.role;
+        const ok = await saveMember(session.code, me);
+        const st = document.getElementById('save-status-tamer');
+        st.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
+        st.textContent = ok ? 'Salvato.' : ('Errore: '+(lastApiError||''));
+        if(ok){ editingTamer = false; renderTamerCard(me); }
+      };
+    }
+  }
+
+  function renderDigimonCard(me){
+    const cardEl = document.getElementById('digimon-card');
+    if(!cardEl) return;
+    const d = me.digimon;
+    if(!editingDigimon){
+      cardEl.innerHTML = `
+        <div class="flex-between"><div class="section-title" style="margin:0;border:none;padding:0;">Scheda Digimon</div>
+        <button class="btn small" id="btn-edit-digimon">Modifica</button></div>
+        <div class="sheet-head" style="margin-top:12px;">
+          ${portraitHTML(d.imageUrl, d.name)}
+          <div class="info"><div class="nm">${escapeHTML(d.name||'(senza nome)')}</div><div class="tg">${escapeHTML(d.stage)}</div></div>
+        </div>
+        ${barHTML('Caselle Ferita', d.currentWounds, d.maxWounds, 'hp', 'dig-w-minus', 'dig-w-plus')}
+        ${barHTML('MP', d.currentMp, d.maxMp, 'mp', 'dig-mp-minus', 'dig-mp-plus')}
+        ${d.personality ? `<div class="muted" style="margin-top:8px;"><i>${escapeHTML(d.personality)}</i></div>` : ''}
+      `;
+      document.getElementById('btn-edit-digimon').onclick = ()=>{ editingDigimon = true; renderDigimonCard(me); };
+      document.getElementById('dig-w-minus').onclick = async ()=>{ me.digimon.currentWounds = Math.max(0, me.digimon.currentWounds-1); await saveMember(session.code, me); renderDigimonCard(me); };
+      document.getElementById('dig-w-plus').onclick = async ()=>{ me.digimon.currentWounds = Math.min(me.digimon.maxWounds, me.digimon.currentWounds+1); await saveMember(session.code, me); renderDigimonCard(me); };
+      document.getElementById('dig-mp-minus').onclick = async ()=>{ me.digimon.currentMp = Math.max(0, me.digimon.currentMp-1); await saveMember(session.code, me); renderDigimonCard(me); };
+      document.getElementById('dig-mp-plus').onclick = async ()=>{ me.digimon.currentMp = Math.min(me.digimon.maxMp, me.digimon.currentMp+1); await saveMember(session.code, me); renderDigimonCard(me); };
+    } else {
+      cardEl.innerHTML = `
+        <div class="section-title">Scheda Digimon — Modifica</div>
+        <div class="field"><label>Nome</label><input type="text" id="e-d-name" value="${escapeAttr(d.name)}" /></div>
+        <div class="field"><label>URL Immagine (opzionale)</label><input type="text" id="e-d-img" value="${escapeAttr(d.imageUrl)}" placeholder="https://..." /></div>
+        <div class="field"><label>Stage</label>
+          <select id="e-d-stage">${['Baby','Rookie','Champion','Ultimate','Mega'].map(s=>`<option ${d.stage===s?'selected':''}>${s}</option>`).join('')}</select>
+        </div>
+        <div class="row">
+          <div class="field"><label>Ferite Massime</label><input type="number" id="e-d-maxw" value="${d.maxWounds}" /></div>
+          <div class="field"><label>MP Massimi</label><input type="number" id="e-d-maxmp" value="${d.maxMp}" /></div>
+        </div>
+        <div class="field"><label>Personalità (usata dal Master per le battute)</label><textarea id="e-d-personality" rows="3">${escapeHTML(d.personality)}</textarea></div>
+        <div class="row" style="margin-top:10px;">
+          <button class="btn ghost" id="btn-cancel-digimon">Annulla</button>
+          <button class="btn solid" id="btn-save-digimon">Salva</button>
+        </div>
+        <div class="muted" id="save-status-digimon" style="margin-top:6px;"></div>
+      `;
+      document.getElementById('btn-cancel-digimon').onclick = ()=>{ editingDigimon = false; renderDigimonCard(me); };
+      document.getElementById('btn-save-digimon').onclick = async ()=>{
+        me.digimon.name = document.getElementById('e-d-name').value;
+        me.digimon.imageUrl = document.getElementById('e-d-img').value.trim();
+        me.digimon.stage = document.getElementById('e-d-stage').value;
+        me.digimon.maxWounds = Number(document.getElementById('e-d-maxw').value)||1;
+        me.digimon.maxMp = Number(document.getElementById('e-d-maxmp').value)||0;
+        me.digimon.personality = document.getElementById('e-d-personality').value;
+        if(me.digimon.currentWounds > me.digimon.maxWounds) me.digimon.currentWounds = me.digimon.maxWounds;
+        if(me.digimon.currentMp > me.digimon.maxMp) me.digimon.currentMp = me.digimon.maxMp;
+        me.username = session.username; me.role = session.role;
+        const ok = await saveMember(session.code, me);
+        const st = document.getElementById('save-status-digimon');
+        st.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
+        st.textContent = ok ? 'Salvato.' : ('Errore: '+(lastApiError||''));
+        if(ok){ editingDigimon = false; renderDigimonCard(me); }
+      };
+    }
+  }
+
+  function statBox(label, id, val){
+    return `<div class="stat-box"><div class="l">${label}</div><input type="number" min="0" max="10" id="${id}" value="${val}" /></div>`;
   }
 
   // ---------- MASTER VIEW ----------
   async function renderMaster(){
     const code = session.code;
-    const roster = await getRoster(code);
-    const scene = await getScene(code);
-    const log = await getLog(code);
-    const players = roster.filter(m=>m.role==='player');
+    cachedRoster = (await getRoster(code)).map(normalizeMember);
+    cachedScene = await getScene(code);
+    cachedLog = await getLog(code);
+    const players = cachedRoster.filter(m=>m.role==='player');
 
     root.innerHTML = `
       ${topbar('Vista Master')}
@@ -476,27 +614,18 @@
         <div>
           <div class="hud-frame card">
             <div class="section-title">Composizione Scena</div>
-            ${sceneHTML(scene)}
-            <div class="field" style="margin-top:10px;">
-              <label>Titolo Scena</label>
-              <input type="text" id="scene-title" value="${escapeAttr(scene.title)}" placeholder="es. Foresta di File" />
-            </div>
-            <div class="field">
-              <label>URL Immagine di Sfondo</label>
-              <input type="text" id="scene-bg" value="${escapeAttr(scene.background)}" placeholder="https://..." />
-            </div>
-            <div class="field">
-              <label>URL Musica (mp3 diretto)</label>
-              <input type="text" id="scene-music" value="${escapeAttr(scene.music)}" placeholder="https://.../traccia.mp3" />
-            </div>
+            <div id="scene-live">${sceneHTML(cachedScene)}</div>
+            <div class="field" style="margin-top:10px;"><label>Titolo Scena</label><input type="text" id="scene-title" value="${escapeAttr(cachedScene.title)}" placeholder="es. Foresta di File" /></div>
+            <div class="field"><label>URL Immagine di Sfondo</label><input type="text" id="scene-bg" value="${escapeAttr(cachedScene.background)}" placeholder="https://..." /></div>
+            <div class="field"><label>URL Musica (mp3 diretto)</label><input type="text" id="scene-music" value="${escapeAttr(cachedScene.music)}" placeholder="https://.../traccia.mp3" /></div>
             <button class="btn solid" id="btn-save-scene" style="width:100%;">Aggiorna Scena</button>
             <div class="muted" id="scene-status" style="margin-top:6px;"></div>
-            ${scene.music ? `<audio controls src="${escapeAttr(scene.music)}" style="width:100%;margin-top:10px;"></audio>` : ''}
+            ${cachedScene.music ? `<audio controls src="${escapeAttr(cachedScene.music)}" style="width:100%;margin-top:10px;"></audio>` : ''}
           </div>
 
           <div class="hud-frame card">
             <div class="section-title">Registro Narrativo</div>
-            <div class="log" id="log-box">${logHTML(log)}</div>
+            <div class="log" id="log-live">${logHTML(cachedLog)}</div>
             <textarea id="gm-text" rows="2" placeholder="Narrazione del Master..." style="margin-top:10px;"></textarea>
             <button class="btn amber" id="btn-gm-post" style="width:100%;margin-top:8px;">Pubblica come Master</button>
           </div>
@@ -504,13 +633,14 @@
 
         <div>
           <div class="hud-frame card">
-            <div class="section-title">Roster Campagna (${players.length} giocatori)</div>
-            ${players.length===0 ? '<div class="muted">Nessun giocatore ha ancora effettuato l\'accesso a questa campagna.</div>' : players.map((p,i)=>rosterItemHTML(p,i)).join('')}
+            <div class="section-title">Roster Campagna</div>
+            <div id="roster-live">${players.length===0 ? '<div class="muted">Nessun giocatore ha ancora effettuato l\'accesso a questa campagna.</div>' : players.map((p,i)=>rosterItemHTML(p,i)).join('')}</div>
           </div>
         </div>
       </div>
     `;
 
+    bindRosterSuggestButtons(players);
     document.getElementById('btn-logout').onclick = logout;
     document.getElementById('btn-save-scene').onclick = async ()=>{
       const newScene = {
@@ -522,36 +652,17 @@
       const statusEl = document.getElementById('scene-status');
       statusEl.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
       statusEl.textContent = ok ? 'Scena aggiornata per tutti i giocatori.' : ('Errore: ' + (lastApiError||''));
+      if(ok) refreshLiveParts();
     };
     document.getElementById('btn-gm-post').onclick = async ()=>{
       const ta = document.getElementById('gm-text');
       if(!ta.value.trim()) return;
       await pushLog(code, { who:'Master', role:'gm', text: ta.value.trim() });
       ta.value='';
-      renderMaster();
+      refreshLiveParts();
     };
-    players.forEach((p,i)=>{
-      const btn = document.getElementById('btn-suggest-'+i);
-      if(btn){
-        btn.onclick = async ()=>{
-          btn.disabled = true; btn.textContent = 'Generando...';
-          const contesto = log.slice(-6).map(l=>`${l.who}: ${l.text}`).join('\n');
-          const lines = await suggerisciBattute(p.digimon.name || 'Digimon', p.digimon.personality, contesto);
-          const box = document.getElementById('suggest-box-'+i);
-          box.innerHTML = lines.map(l=>`<div class="suggest-line" data-line="${escapeAttr(l)}">${escapeHTML(l)}</div>`).join('');
-          box.style.display = 'block';
-          box.querySelectorAll('.suggest-line').forEach(el=>{
-            el.onclick = async ()=>{
-              await pushLog(code, { who: p.digimon.name || 'Digimon', role:'digimon', text: el.getAttribute('data-line') });
-              renderMaster();
-            };
-          });
-          btn.disabled = false; btn.textContent = 'Suggerisci Battuta';
-        };
-      }
-    });
-    const logBox = document.getElementById('log-box');
-    if(logBox) logBox.scrollTop = logBox.scrollHeight;
+
+    startPolling();
   }
 
   function rosterItemHTML(p, i){
@@ -559,22 +670,24 @@
     return `
       <div class="roster-item">
         <div class="flex-between">
-          <div>
-            <span class="brand-dot" style="width:7px;height:7px;display:inline-block;margin-right:6px;background:${online?'var(--cyan)':'var(--text-mute)'};box-shadow:${online?'0 0 6px var(--cyan)':'none'};animation:${online?'pulse 2s infinite':'none'};"></span>
-            <span class="name">${escapeHTML(p.username)}</span>
-            <span class="tag" style="margin-left:6px;">${escapeHTML(p.digimon.stage)}</span>
-            <span class="tag" style="margin-left:6px;color:${online?'var(--cyan)':'var(--text-mute)'};border-color:${online?'var(--cyan-dim)':'var(--line)'};">${online?'online':'offline'}</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            ${portraitHTML(p.digimon.imageUrl, p.digimon.name, 'sm')}
+            <div>
+              <span class="brand-dot" style="width:7px;height:7px;display:inline-block;margin-right:4px;background:${online?'var(--cyan)':'var(--text-mute)'};box-shadow:${online?'0 0 6px var(--cyan)':'none'};animation:${online?'pulse 2s infinite':'none'};"></span>
+              <span class="name">${escapeHTML(p.username)}</span>
+              <span class="tag" style="margin-left:6px;">${escapeHTML(p.digimon.stage)}</span>
+              <span class="tag" style="margin-left:6px;color:${online?'var(--cyan)':'var(--text-mute)'};border-color:${online?'var(--cyan-dim)':'var(--line)'};">${online?'online':'offline'}</span>
+            </div>
           </div>
           <button class="btn small" id="btn-suggest-${i}">Suggerisci Battuta</button>
         </div>
-        <div class="sub">Digimon: ${escapeHTML(p.digimon.name || '(senza nome)')} — Ferite: ${p.digimon.woundBoxes} — MP: ${p.digimon.mp}</div>
+        <div class="sub" style="margin-top:6px;">Digimon: ${escapeHTML(p.digimon.name || '(senza nome)')} — Ferite: ${p.digimon.currentWounds}/${p.digimon.maxWounds} — MP: ${p.digimon.currentMp}/${p.digimon.maxMp}</div>
         <div class="sub">AGI ${p.tamer.agility} · BODY ${p.tamer.body} · CAR ${p.tamer.charisma} · INT ${p.tamer.intelligence} · WILL ${p.tamer.willpower}</div>
         <div id="suggest-box-${i}" class="suggest-box" style="display:none;"></div>
       </div>
     `;
   }
 
-  // ---------- shared render helpers ----------
   function sceneHTML(scene){
     if(!scene || (!scene.background && !scene.title)){
       return `<div class="scene-box"><div class="scene-empty">Nessuna scena impostata dal Master</div></div>`;
@@ -601,6 +714,11 @@
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s){ return escapeHTML(s); }
 
+  // ---------- boot ----------
+  const restored = loadSession();
+  if(restored && restored.code && restored.username){
+    session = restored;
+  }
   render();
 })();
 </script>
