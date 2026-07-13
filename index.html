@@ -299,7 +299,9 @@
     heartbeat(session.code, session.username);
     pollTimer = setInterval(async ()=>{
       if(session) await heartbeat(session.code, session.username);
-      render();
+      const active = document.activeElement;
+      const isTyping = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT');
+      if(!isTyping) render();
     }, 4000);
   }
 
