@@ -89,8 +89,28 @@
   .log-entry.player .who{color:var(--cyan);}
   .log-entry.gm .who{color:var(--amber);}
   .log-entry.digimon .who{color:#c896ff;}
+  .log-entry.roll .who{color:#7ee787;}
+  .log-entry.roll{background:rgba(126,231,135,0.05);border-radius:4px;padding:8px;border-bottom:1px solid rgba(126,231,135,0.15);}
+  .log-entry.request .who{color:var(--amber);}
+  .log-entry.request{background:rgba(255,138,61,0.06);border-radius:4px;padding:8px;border-bottom:1px solid rgba(255,138,61,0.2);}
   .log-entry .txt{color:var(--text);margin-top:2px;line-height:1.4;}
   .log-entry .meta{font-size:10px;color:var(--text-mute);margin-left:8px;}
+
+  .dice-perspective{perspective:400px;display:inline-flex;gap:6px;vertical-align:middle;}
+  .die3d{display:inline-block;font-size:26px;line-height:1;color:var(--cyan);animation:diceroll 0.7s cubic-bezier(.3,1.4,.6,1);}
+  @keyframes diceroll{
+    0%{ transform: rotateX(0deg) rotateY(0deg) scale(0.5); opacity:0.2; }
+    55%{ transform: rotateX(340deg) rotateY(160deg) scale(1.2); opacity:1; }
+    100%{ transform: rotateX(720deg) rotateY(360deg) scale(1); }
+  }
+  .roll-btn{background:transparent;border:1px solid var(--cyan-dim);color:var(--cyan);cursor:pointer;font-size:13px;padding:1px 6px;border-radius:3px;line-height:1.4;}
+  .roll-btn:hover{background:rgba(53,232,201,0.1);}
+  .roll-total{font-family:'Share Tech Mono',monospace;font-size:20px;color:var(--cyan);margin-left:8px;}
+  .roll-verdict{font-family:'Share Tech Mono',monospace;font-size:12px;text-transform:uppercase;margin-left:8px;padding:2px 8px;border-radius:12px;}
+  .roll-verdict.crit-success{background:rgba(53,232,201,0.18);color:var(--cyan);}
+  .roll-verdict.success{background:rgba(126,231,135,0.15);color:#7ee787;}
+  .roll-verdict.fail{background:rgba(255,93,93,0.12);color:var(--danger);}
+  .roll-verdict.crit-fail{background:rgba(255,93,93,0.25);color:var(--danger);}
 
   .moves-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;}
   .move-btn{background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:10px;text-align:left;cursor:pointer;border-radius:var(--radius);}
@@ -168,6 +188,8 @@
   let cachedScene = { title:'', background:'', music:'' };
   let cachedLog = [];
   let cachedDex = [];
+  let dexActiveFilters = [];
+  let dexCanEditGlobal = false;
 
   // ---------- session persistence ----------
   function saveSession(s){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }catch(e){} }
@@ -229,6 +251,45 @@
 
   function sanitizeKeyPart(s){ return String(s||'').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 48); }
 
+  const DIE_FACES = ['','⚀','⚁','⚂','⚃','⚄','⚅'];
+
+  function rollD6(){ return 1 + Math.floor(Math.random()*6); }
+
+  function rollSkillCheck(attrVal, skillVal){
+    const dice = [rollD6(), rollD6(), rollD6()];
+    const sum = dice.reduce((a,b)=>a+b,0);
+    const total = sum + Number(attrVal||0) + Number(skillVal||0);
+    return { dice, total };
+  }
+
+  function rollAttributeOnly(attrVal){
+    const dice = [rollD6(), rollD6(), rollD6()];
+    const sum = dice.reduce((a,b)=>a+b,0);
+    const total = sum + Number(attrVal||0) - 1;
+    return { dice, total };
+  }
+
+  function rollPool(n){
+    const count = Math.max(0, Number(n)||0);
+    const dice = [];
+    for(let i=0;i<count;i++) dice.push(rollD6());
+    const successes = dice.filter(d=>d>=5).length;
+    return { dice, successes };
+  }
+
+  function evaluateVsTN(total, tn){
+    if(tn===null || tn===undefined || tn==='') return null;
+    const diff = total - Number(tn);
+    if(diff>=5) return { label:'Successo Critico', cls:'crit-success' };
+    if(diff>=0) return { label:'Successo', cls:'success' };
+    if(diff<=-5) return { label:'Fallimento Critico', cls:'crit-fail' };
+    return { label:'Fallimento', cls:'fail' };
+  }
+
+  function diceRowHTML(dice){
+    return `<span class="dice-perspective">${dice.map((d,i)=>`<span class="die3d" style="animation-delay:${(i*0.08).toFixed(2)}s;">${DIE_FACES[d]||d}</span>`).join('')}</span>`;
+  }
+
   const SKILL_DEFS = [
     { key:'evade', label:'Evade', attrs:['agility','willpower'] },
     { key:'precision', label:'Precision', attrs:['agility','intelligence'] },
@@ -264,7 +325,6 @@
       name:'', stage:'Rookie', personality:'', imageUrl:'',
       maxWounds:5, currentWounds:5, maxMp:3, currentMp:3,
       baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:1,
-      evolutions:[],
       moves:[
         {name:'Attacco Base', desc:'Colpo fisico standard.'},
         {name:'Mossa Speciale', desc:'Consuma MP, usa Intelligenza.'},
@@ -462,9 +522,25 @@
     return `<div class="${cls}" style="display:flex;align-items:center;justify-content:center;color:var(--cyan);font-family:'Share Tech Mono',monospace;font-size:${size==='sm'?'14px':'20px'};">${initial}</div>`;
   }
 
+  function dexFilterBarHTML(entries){
+    const allCats = new Set();
+    (entries||[]).forEach(e=>(e.categories||[]).forEach(c=>allCats.add(c)));
+    if(allCats.size===0) return '';
+    return `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+      ${Array.from(allCats).sort().map(c=>`
+        <span class="tag" data-filter-cat="${escapeAttr(c)}" style="cursor:pointer;${dexActiveFilters.includes(c)?'background:rgba(53,232,201,0.15);border-color:var(--cyan);color:var(--cyan);':''}">${escapeHTML(c)}</span>
+      `).join('')}
+      ${dexActiveFilters.length>0 ? `<span class="tag" data-filter-cat="__clear__" style="cursor:pointer;color:var(--danger);border-color:var(--danger);">× azzera filtri</span>` : ''}
+    </div>`;
+  }
+
   function dexListHTML(entries, canEdit){
+    dexCanEditGlobal = canEdit;
     if(!entries || entries.length===0) return '<div class="muted">Nessun Digimon ancora registrato nel Dex.</div>';
-    return entries.slice().reverse().map(e=>{
+    const filterBar = dexFilterBarHTML(entries);
+    const filtered = dexActiveFilters.length===0 ? entries : entries.filter(e=>(e.categories||[]).some(c=>dexActiveFilters.includes(c)));
+    if(filtered.length===0) return filterBar + '<div class="muted">Nessun Digimon corrisponde ai filtri selezionati.</div>';
+    return filterBar + filtered.slice().reverse().map(e=>{
       const bs = e.base_stats || {};
       const hasStats = bs.baseAccuracy || bs.baseDamage || bs.baseDodge || bs.baseArmor || bs.baseHealth;
       return `
@@ -478,6 +554,7 @@
             </div>
             ${e.description ? `<div class="sub" style="margin-top:3px;">${escapeHTML(e.description)}</div>` : ''}
             ${hasStats ? `<div class="muted" style="margin-top:4px;font-size:10px;">ACC ${bs.baseAccuracy||0} · DMG ${bs.baseDamage||0} · DODGE ${bs.baseDodge||0} · ARM ${bs.baseArmor||0} · HP ${bs.baseHealth||0}</div>` : ''}
+            ${e.categories && e.categories.length ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">${e.categories.map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>` : ''}
             ${e.evolutions && e.evolutions.length ? evolutionsReadonlyHTML(e.evolutions) : ''}
             ${e.added_by ? `<div class="muted" style="margin-top:2px;">aggiunto da ${escapeHTML(e.added_by)}</div>` : ''}
           </div>
@@ -503,6 +580,7 @@
         <div class="field"><label>URL Immagine</label><input type="text" id="dex-e-img-${entry.id}" value="${escapeAttr(entry.image_url)}" /></div>
       </div>
       <div class="field"><label>Descrizione</label><textarea id="dex-e-desc-${entry.id}" rows="2">${escapeHTML(entry.description)}</textarea></div>
+      <div class="field"><label>Categorie (separate da virgola)</label><input type="text" id="dex-e-categories-${entry.id}" value="${escapeAttr((entry.categories||[]).join(', '))}" placeholder="es. Deva, Angelo, Vaccine" /></div>
       <div class="muted" style="margin:8px 0 4px;">Stat Base (Combattimento)</div>
       <div class="row">
         <div class="field"><label>Accuracy</label><input type="number" id="dex-e-acc-${entry.id}" value="${bs.baseAccuracy||0}" min="0" /></div>
@@ -552,6 +630,7 @@
         stage: document.getElementById('dex-e-stage-'+entry.id).value,
         description: document.getElementById('dex-e-desc-'+entry.id).value.trim(),
         imageUrl: document.getElementById('dex-e-img-'+entry.id).value.trim(),
+        categories: document.getElementById('dex-e-categories-'+entry.id).value.split(',').map(s=>s.trim()).filter(Boolean),
         baseStats: {
           baseAccuracy: Number(document.getElementById('dex-e-acc-'+entry.id).value)||0,
           baseDamage: Number(document.getElementById('dex-e-dmg-'+entry.id).value)||0,
@@ -564,7 +643,7 @@
       const ok = await updateDexEntry(code, entry.id, fields);
       const st = document.getElementById('dex-e-status-'+entry.id);
       if(ok){
-        Object.assign(entry, { name:fields.name, stage:fields.stage, description:fields.description, image_url:fields.imageUrl, base_stats:fields.baseStats, evolutions:fields.evolutions });
+        Object.assign(entry, { name:fields.name, stage:fields.stage, description:fields.description, image_url:fields.imageUrl, base_stats:fields.baseStats, evolutions:fields.evolutions, categories:fields.categories });
         el.innerHTML='';
         const dexLive = document.getElementById('dex-live');
         if(dexLive){ dexLive.innerHTML = dexListHTML(cachedDex, true); bindDexEditButtons(code); }
@@ -592,15 +671,18 @@
       const stage = document.getElementById('dex-stage').value;
       const description = document.getElementById('dex-desc').value.trim();
       const imageUrl = document.getElementById('dex-img').value.trim();
+      const catInput = document.getElementById('dex-categories');
+      const categories = catInput ? catInput.value.split(',').map(s=>s.trim()).filter(Boolean) : [];
       const statusEl = document.getElementById('dex-status');
       if(!name){ statusEl.style.color='var(--danger)'; statusEl.textContent = 'Serve almeno un nome.'; return; }
-      const d = await addDexEntry(code, { name, stage, description, imageUrl, addedBy: username });
+      const d = await addDexEntry(code, { name, stage, description, imageUrl, addedBy: username, categories });
       if(d && d.entry){
         statusEl.style.color = 'var(--text-mute)';
         statusEl.textContent = 'Aggiunto al Dex.';
         document.getElementById('dex-name').value='';
         document.getElementById('dex-desc').value='';
         document.getElementById('dex-img').value='';
+        if(catInput) catInput.value='';
         cachedDex.push(d.entry);
         const dexLive = document.getElementById('dex-live');
         if(dexLive){ dexLive.innerHTML = dexListHTML(cachedDex, true); bindDexEditButtons(code); }
@@ -637,6 +719,7 @@
           <div class="hud-frame card">
             <div class="section-title">Dichiara un'Azione</div>
             <textarea id="action-text" rows="3" placeholder="Scrivi cosa fa il tuo Tamer o il tuo Digimon..."></textarea>
+            <div class="muted" style="margin-top:4px;">Scorciatoia: scrivi <code>/tira NomeSkill [TN]</code> (es. <code>/tira awareness 15</code>) per tirare direttamente in chat.</div>
             <div class="row" style="margin-top:8px;">
               <button class="btn" id="btn-correct">Correggi Italiano</button>
               <button class="btn solid" id="btn-send-action">Invia al Registro</button>
@@ -684,8 +767,14 @@
     };
     document.getElementById('btn-send-action').onclick = async ()=>{
       const ta = document.getElementById('action-text');
-      if(!ta.value.trim()) return;
-      await pushLog(code, { who: session.username, role:'player', text: ta.value.trim() });
+      const raw = ta.value.trim();
+      if(!raw) return;
+      const rollResult = tryParseRollShortcut(raw, me);
+      if(rollResult){
+        await pushLog(code, { who: session.username, role:'roll', text: rollResult });
+      } else {
+        await pushLog(code, { who: session.username, role:'player', text: raw });
+      }
       ta.value='';
       refreshLiveParts();
     };
@@ -720,13 +809,20 @@
               <div class="l" style="margin-bottom:2px;">${escapeHTML(def.label)}</div>
               <div style="display:flex;justify-content:space-between;align-items:baseline;">
                 <span class="v" style="font-size:15px;">${Number(t.skills[def.key])||0}</span>
-                <span class="muted" style="font-size:9px;">${def.attrs.map(a=>ATTR_ABBR[a]).join('/')}</span>
+                <span style="display:flex;align-items:center;gap:4px;">
+                  <span class="muted" style="font-size:9px;">${def.attrs.map(a=>ATTR_ABBR[a]).join('/')}</span>
+                  <button class="roll-btn" data-roll-skill="${def.key}" title="Tira ${escapeAttr(def.label)}">🎲</button>
+                </span>
               </div>
             </div>
           `).join('')}
         </div>
+        <div id="skill-roll-panel-${containerId}" style="margin-top:12px;"></div>
       `;
       document.getElementById('btn-edit-skills').onclick = ()=>{ editingSkills = true; renderSkillsCard(me); };
+      cardEl.querySelectorAll('[data-roll-skill]').forEach(btn=>{
+        btn.onclick = ()=>{ openSkillRollPanel(me, btn.getAttribute('data-roll-skill'), containerId); };
+      });
     } else {
       cardEl.innerHTML = `
         <div class="section-title">Skill — Modifica</div>
@@ -912,6 +1008,7 @@
           </div>
           <div class="field"><label>URL Immagine (opz.)</label><input type="text" id="dex-img" placeholder="https://..." /></div>
         </div>
+        <div class="field"><label>Categorie (separate da virgola, es. Deva, Angelo)</label><input type="text" id="dex-categories" placeholder="es. Deva, Angelo, Vaccine" /></div>
         <div class="field"><label>Descrizione</label><textarea id="dex-desc" rows="2" placeholder="Cosa avete scoperto su questo Digimon..."></textarea></div>
         <button class="btn solid" id="btn-dex-add" style="width:100%;">Aggiungi al Dex</button>
         <div class="muted" id="dex-status" style="margin-top:6px;"></div>
@@ -972,14 +1069,15 @@
         ${barHTML('MP', d.currentMp, d.maxMp, 'mp', 'dig-mp-minus-'+containerId, 'dig-mp-plus-'+containerId)}
         ${d.personality ? `<div class="muted" style="margin-top:8px;"><i>${escapeHTML(d.personality)}</i></div>` : ''}
         <div class="divider"></div>
-        <div class="muted" style="margin-bottom:6px;">Stat Base (Combattimento)</div>
+        <div class="muted" style="margin-bottom:6px;">Stat Base (Combattimento) — 🎲 tira Pool Check (Nd6, successi su 5-6)</div>
         <div class="grid-stats" style="grid-template-columns:repeat(5,1fr);">
-          <div class="stat-box"><div class="v">${d.baseAccuracy}</div><div class="l">ACC</div></div>
+          <div class="stat-box"><div class="v">${d.baseAccuracy}</div><div class="l">ACC</div><button class="roll-btn" data-pool="baseAccuracy" style="margin-top:4px;">🎲</button></div>
           <div class="stat-box"><div class="v">${d.baseDamage}</div><div class="l">DMG</div></div>
-          <div class="stat-box"><div class="v">${d.baseDodge}</div><div class="l">DODGE</div></div>
+          <div class="stat-box"><div class="v">${d.baseDodge}</div><div class="l">DODGE</div><button class="roll-btn" data-pool="baseDodge" style="margin-top:4px;">🎲</button></div>
           <div class="stat-box"><div class="v">${d.baseArmor}</div><div class="l">ARM</div></div>
-          <div class="stat-box"><div class="v">${d.baseHealth}</div><div class="l">HP</div></div>
+          <div class="stat-box"><div class="v">${d.baseHealth}</div><div class="l">HP</div><button class="roll-btn" data-pool="baseHealth" style="margin-top:4px;">🎲</button></div>
         </div>
+        <div id="pool-roll-result-${containerId}" style="margin-top:8px;"></div>
         <div class="muted" style="margin:8px 0 6px;">Stat Derivate (calcolate)</div>
         <div class="grid-stats" style="grid-template-columns:repeat(4,1fr);">
           <div class="stat-box"><div class="v">${der.bit}</div><div class="l">BIT</div></div>
@@ -987,13 +1085,24 @@
           <div class="stat-box"><div class="v">${der.ram}</div><div class="l">RAM</div></div>
           <div class="stat-box"><div class="v">${der.cpu}</div><div class="l">CPU</div></div>
         </div>
-        ${evolutionsReadonlyHTML(d.evolutions)}
       `;
       document.getElementById('btn-edit-digimon-'+containerId).onclick = ()=>{ editingDigimon = true; renderDigimonCard(me, containerId); };
       document.getElementById('dig-w-minus-'+containerId).onclick = async ()=>{ me.digimon.currentWounds = Math.max(0, me.digimon.currentWounds-1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
       document.getElementById('dig-w-plus-'+containerId).onclick = async ()=>{ me.digimon.currentWounds = Math.min(me.digimon.maxWounds, me.digimon.currentWounds+1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
       document.getElementById('dig-mp-minus-'+containerId).onclick = async ()=>{ me.digimon.currentMp = Math.max(0, me.digimon.currentMp-1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
       document.getElementById('dig-mp-plus-'+containerId).onclick = async ()=>{ me.digimon.currentMp = Math.min(me.digimon.maxMp, me.digimon.currentMp+1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
+      cardEl.querySelectorAll('[data-pool]').forEach(btn=>{
+        btn.onclick = async ()=>{
+          const statKey = btn.getAttribute('data-pool');
+          const statLabel = statKey==='baseAccuracy' ? 'Accuracy' : (statKey==='baseDodge' ? 'Dodge' : 'Health');
+          const { dice, successes } = rollPool(d[statKey]);
+          const resEl = document.getElementById('pool-roll-result-'+containerId);
+          if(resEl) resEl.innerHTML = `${diceRowHTML(dice)}<span class="roll-total">${successes} successi</span>`;
+          const logText = `Pool Check ${statLabel} (${d[statKey]}d6): [${dice.join(',')}] → ${successes} successi`;
+          await pushLog(session.code, { who: (d.name||session.username), role:'roll', text: logText });
+          refreshLiveParts();
+        };
+      });
     } else {
       cardEl.innerHTML = `
         <div class="section-title">Scheda Digimon — Modifica</div>
@@ -1018,42 +1127,12 @@
           <div class="field"><label>Armor</label><input type="number" id="e-d-arm-${containerId}" value="${d.baseArmor}" min="0" /></div>
         </div>
         <div class="field"><label>Health (base)</label><input type="number" id="e-d-hp-${containerId}" value="${d.baseHealth}" min="0" /></div>
-        <div class="divider"></div>
-        <div class="muted" style="margin-bottom:6px;">Possibili Evoluzioni</div>
-        <div id="evo-list-${containerId}">${evolutionsEditableHTML(d.evolutions)}</div>
-        <div class="row">
-          <input type="text" id="e-d-evo-name-${containerId}" placeholder="Nome evoluzione" style="flex:2;" />
-          <input type="text" id="e-d-evo-img-${containerId}" placeholder="URL immagine (opz.)" style="flex:2;" />
-          <button class="btn small" id="btn-add-evo-${containerId}" style="flex:1;">Aggiungi</button>
-        </div>
         <div class="row" style="margin-top:10px;">
           <button class="btn ghost" id="btn-cancel-digimon-${containerId}">Annulla</button>
           <button class="btn solid" id="btn-save-digimon-${containerId}">Salva</button>
         </div>
         <div class="muted" id="save-status-digimon-${containerId}" style="margin-top:6px;"></div>
       `;
-      const bindEvoRemove = ()=>{
-        document.querySelectorAll(`#evo-list-${containerId} [data-rmevo]`).forEach(btn=>{
-          btn.onclick = ()=>{
-            const idx = Number(btn.getAttribute('data-rmevo'));
-            d.evolutions.splice(idx,1);
-            document.getElementById('evo-list-'+containerId).innerHTML = evolutionsEditableHTML(d.evolutions);
-            bindEvoRemove();
-          };
-        });
-      };
-      bindEvoRemove();
-      document.getElementById('btn-add-evo-'+containerId).onclick = ()=>{
-        const nameEl = document.getElementById('e-d-evo-name-'+containerId);
-        const imgEl = document.getElementById('e-d-evo-img-'+containerId);
-        const name = nameEl.value.trim();
-        if(!name) return;
-        if(!d.evolutions) d.evolutions = [];
-        d.evolutions.push({ name, imageUrl: imgEl.value.trim() });
-        nameEl.value=''; imgEl.value='';
-        document.getElementById('evo-list-'+containerId).innerHTML = evolutionsEditableHTML(d.evolutions);
-        bindEvoRemove();
-      };
       document.getElementById('btn-cancel-digimon-'+containerId).onclick = ()=>{ editingDigimon = false; renderDigimonCard(me, containerId); };
       document.getElementById('btn-save-digimon-'+containerId).onclick = async ()=>{
         me.digimon.name = document.getElementById('e-d-name-'+containerId).value;
@@ -1067,7 +1146,6 @@
         me.digimon.baseDodge = Number(document.getElementById('e-d-dodge-'+containerId).value)||0;
         me.digimon.baseArmor = Number(document.getElementById('e-d-arm-'+containerId).value)||0;
         me.digimon.baseHealth = Number(document.getElementById('e-d-hp-'+containerId).value)||0;
-        me.digimon.evolutions = d.evolutions || [];
         if(me.digimon.currentWounds > me.digimon.maxWounds) me.digimon.currentWounds = me.digimon.maxWounds;
         if(me.digimon.currentMp > me.digimon.maxMp) me.digimon.currentMp = me.digimon.maxMp;
         const ok = await saveMember(session.code, me);
@@ -1077,6 +1155,80 @@
         if(ok){ editingDigimon = false; renderDigimonCard(me, containerId); }
       };
     }
+  }
+
+  function openSkillRollPanel(me, skillKey, containerId){
+    const def = SKILL_DEFS.find(d=>d.key===skillKey);
+    if(!def) return;
+    const panel = document.getElementById('skill-roll-panel-'+containerId);
+    if(!panel) return;
+    let chosenAttr = def.attrs[0];
+    const draw = ()=>{
+      panel.innerHTML = `
+        <div class="hud-frame" style="padding:10px;">
+          <div class="section-title" style="margin:0 0 8px;border:none;padding:0;">Tira ${escapeHTML(def.label)}</div>
+          ${def.attrs.length>1 ? `
+            <div class="row" style="margin-bottom:8px;">
+              ${def.attrs.map(a=>`<button class="btn small ${a===chosenAttr?'active':''}" data-pick-attr="${a}" style="flex:1;${a===chosenAttr?'background:rgba(53,232,201,0.15);border-color:var(--cyan);color:var(--cyan);':''}">${ATTR_ABBR[a]}</button>`).join('')}
+            </div>
+          ` : ''}
+          <div class="field"><label>TN (opzionale, la decide il Master)</label><input type="number" id="roll-tn-${containerId}" placeholder="es. 15" /></div>
+          <button class="btn solid" id="roll-confirm-${containerId}" style="width:100%;">Tira 3d6</button>
+          <div id="roll-result-${containerId}" style="margin-top:10px;"></div>
+        </div>
+      `;
+      if(def.attrs.length>1){
+        panel.querySelectorAll('[data-pick-attr]').forEach(b=>{
+          b.onclick = ()=>{ chosenAttr = b.getAttribute('data-pick-attr'); draw(); };
+        });
+      }
+      document.getElementById('roll-confirm-'+containerId).onclick = async ()=>{
+        const tnVal = document.getElementById('roll-tn-'+containerId).value;
+        const attrVal = me.tamer[chosenAttr];
+        const skillVal = me.tamer.skills[skillKey];
+        const { dice, total } = rollSkillCheck(attrVal, skillVal);
+        const verdict = evaluateVsTN(total, tnVal);
+        const resEl = document.getElementById('roll-result-'+containerId);
+        resEl.innerHTML = `${diceRowHTML(dice)}<span class="roll-total">${total}</span>${verdict?`<span class="roll-verdict ${verdict.cls}">${verdict.label}</span>`:''}`;
+        const logText = `tira ${def.label} (${ATTR_ABBR[chosenAttr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal} = ${total}` + (verdict ? ` vs TN ${tnVal} → ${verdict.label}` : '');
+        await pushLog(session.code, { who: session.username, role:'roll', text: logText });
+        refreshLiveParts();
+      };
+    };
+    draw();
+  }
+
+  function tryParseRollShortcut(raw, me){
+    const m = raw.match(/^\/(tira|r)\s+(.+)$/i);
+    if(!m) return null;
+    let rest = m[2].trim();
+    let tn = null;
+    const parts = rest.split(/\s+/);
+    const lastWord = parts[parts.length-1];
+    if(/^\d+$/.test(lastWord)){
+      tn = Number(lastWord);
+      rest = parts.slice(0,-1).join(' ');
+    }
+    const query = rest.trim().toLowerCase();
+    if(!query) return null;
+
+    const poolMap = { 'accuracy':'baseAccuracy', 'acc':'baseAccuracy', 'dodge':'baseDodge', 'schivata':'baseDodge', 'health':'baseHealth', 'hp':'baseHealth', 'salute':'baseHealth' };
+    if(poolMap[query]){
+      const statKey = poolMap[query];
+      const { dice, successes } = rollPool(me.digimon[statKey]);
+      return `tira Pool Check ${query.toUpperCase()} (${me.digimon[statKey]}d6): [${dice.join(',')}] → ${successes} successi`;
+    }
+
+    const def = SKILL_DEFS.find(d=>d.label.toLowerCase()===query || d.label.toLowerCase().startsWith(query) || query.startsWith(d.label.toLowerCase()));
+    if(def){
+      const attr = def.attrs[0];
+      const attrVal = me.tamer[attr];
+      const skillVal = me.tamer.skills[def.key];
+      const { dice, total } = rollSkillCheck(attrVal, skillVal);
+      const verdict = evaluateVsTN(total, tn);
+      return `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal} = ${total}` + (verdict ? ` vs TN ${tn} → ${verdict.label}` : '');
+    }
+    return `⚠ comando non riconosciuto: "${rest}". Usa /tira <NomeSkill|Accuracy|Dodge|Health> [TN]`;
   }
 
   function statBox(label, id, val){
@@ -1129,6 +1281,22 @@
             <div id="roster-live">${players.length===0 ? '<div class="muted">Nessun giocatore ha ancora effettuato l\'accesso a questa campagna.</div>' : players.map((p,i)=>rosterItemHTML(p,i)).join('')}</div>
           </div>
           <div class="hud-frame card">
+            <div class="section-title">Richiedi un Tiro</div>
+            <div class="field"><label>Giocatore</label>
+              <select id="req-player">${players.map(p=>`<option value="${escapeAttr(p.username)}">${escapeHTML(p.username)}</option>`).join('')}</select>
+            </div>
+            <div class="field"><label>Skill o Stat</label>
+              <select id="req-skill">
+                ${SKILL_DEFS.map(d=>`<option value="${d.key}">${escapeHTML(d.label)}</option>`).join('')}
+                <option value="baseAccuracy">Accuracy (Pool - Digimon)</option>
+                <option value="baseDodge">Dodge (Pool - Digimon)</option>
+                <option value="baseHealth">Health (Pool - Digimon)</option>
+              </select>
+            </div>
+            <div class="field"><label>TN (opzionale, solo per Skill)</label><input type="number" id="req-tn" placeholder="es. 15" /></div>
+            <button class="btn amber" id="btn-request-roll" style="width:100%;">Richiedi Tiro</button>
+          </div>
+          <div class="hud-frame card">
             <div class="section-title">Digidex — Digimon Incontrati</div>
             <div id="dex-live">${dexListHTML(cachedDex, true)}</div>
             <div class="divider"></div>
@@ -1139,7 +1307,8 @@
               </div>
               <div class="field"><label>URL Immagine (opz.)</label><input type="text" id="dex-img" placeholder="https://..." /></div>
             </div>
-            <div class="field"><label>Descrizione</label><textarea id="dex-desc" rows="2" placeholder="Cosa avete scoperto su questo Digimon..."></textarea></div>
+            <div class="field"><label>Categorie (separate da virgola, es. Deva, Angelo)</label><input type="text" id="dex-categories" placeholder="es. Deva, Angelo, Vaccine" /></div>
+        <div class="field"><label>Descrizione</label><textarea id="dex-desc" rows="2" placeholder="Cosa avete scoperto su questo Digimon..."></textarea></div>
             <button class="btn solid" id="btn-dex-add" style="width:100%;">Aggiungi al Dex</button>
             <div class="muted" id="dex-status" style="margin-top:6px;"></div>
           </div>
@@ -1174,6 +1343,19 @@
       ta.value='';
       refreshLiveParts();
     };
+    const reqBtn = document.getElementById('btn-request-roll');
+    if(reqBtn){
+      reqBtn.onclick = async ()=>{
+        const targetPlayer = document.getElementById('req-player').value;
+        const skillKey = document.getElementById('req-skill').value;
+        const tn = document.getElementById('req-tn').value;
+        const poolLabels = { baseAccuracy:'Accuracy (Pool)', baseDodge:'Dodge (Pool)', baseHealth:'Health (Pool)' };
+        const label = poolLabels[skillKey] || (SKILL_DEFS.find(d=>d.key===skillKey)||{}).label || skillKey;
+        const tnPart = (tn && !poolLabels[skillKey]) ? ` (TN ${tn})` : '';
+        await pushLog(code, { who:'Master', role:'request', text: `Richiesta a ${targetPlayer}: tira ${label}${tnPart}` });
+        refreshLiveParts();
+      };
+    }
 
     startPolling();
   }
@@ -1372,6 +1554,24 @@
 
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s){ return escapeHTML(s); }
+
+  // ---------- global dex filter delegation ----------
+  document.addEventListener('click', function(e){
+    const chip = e.target.closest('[data-filter-cat]');
+    if(!chip) return;
+    const cat = chip.getAttribute('data-filter-cat');
+    if(cat === '__clear__'){
+      dexActiveFilters = [];
+    } else {
+      const idx = dexActiveFilters.indexOf(cat);
+      if(idx>=0) dexActiveFilters.splice(idx,1); else dexActiveFilters.push(cat);
+    }
+    const dexLive = document.getElementById('dex-live');
+    if(dexLive){
+      dexLive.innerHTML = dexListHTML(cachedDex, dexCanEditGlobal);
+      if(dexCanEditGlobal && session) bindDexEditButtons(session.code);
+    }
+  });
 
   // ---------- boot ----------
   const restored = loadSession();
