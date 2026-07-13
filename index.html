@@ -223,6 +223,7 @@
   async function heartbeat(code, username){ return apiPost('/api/heartbeat', { code, username }); }
   async function getDex(code){ const d = await apiGet('/api/dex?code=' + encodeURIComponent(code)); return d ? (d.entries||[]) : []; }
   async function addDexEntry(code, entry){ return apiPost('/api/dex', { code, ...entry }); }
+  async function updateDexEntry(code, id, fields){ return apiPut('/api/dex', { code, id, ...fields }); }
   async function correggiItaliano(testo){ const d = await apiPost('/api/ai-correct', { text: testo }); return d && d.corrected ? d.corrected : testo; }
   async function suggerisciBattute(digimonName, personality, contesto){ const d = await apiPost('/api/ai-suggest', { digimonName, personality, context: contesto }); return d && d.lines ? d.lines : ['(errore nel generare suggerimenti, riprova)']; }
 
@@ -262,6 +263,8 @@
     return {
       name:'', stage:'Rookie', personality:'', imageUrl:'',
       maxWounds:5, currentWounds:5, maxMp:3, currentMp:3,
+      baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:1,
+      evolutions:[],
       moves:[
         {name:'Attacco Base', desc:'Colpo fisico standard.'},
         {name:'Mossa Speciale', desc:'Consuma MP, usa Intelligenza.'},
@@ -394,15 +397,16 @@
       if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
     }
     const rosterLive = document.getElementById('roster-live');
-    if(rosterLive && session.role==='master'){
+    if(rosterLive && session.role==='master' && openManageIdx===null){
       const players = cachedRoster.filter(m=>m.role==='player');
       rosterLive.innerHTML = players.length===0
         ? '<div class="muted">Nessun giocatore ha ancora effettuato l\'accesso a questa campagna.</div>'
         : players.map((p,i)=>rosterItemHTML(p,i)).join('');
       bindRosterSuggestButtons(players);
+      bindRosterManageButtons(players);
     }
     const dexLive = document.getElementById('dex-live');
-    if(dexLive) dexLive.innerHTML = dexListHTML(cachedDex);
+    if(dexLive){ dexLive.innerHTML = dexListHTML(cachedDex, session.role==='master'); if(session.role==='master') bindDexEditButtons(session.code); }
     const errBanner = document.getElementById('api-err-banner');
     if(errBanner) errBanner.outerHTML = lastApiError ? `<div id="api-err-banner" class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(lastApiError)}</div>` : '<div id="api-err-banner"></div>';
   }
@@ -458,20 +462,126 @@
     return `<div class="${cls}" style="display:flex;align-items:center;justify-content:center;color:var(--cyan);font-family:'Share Tech Mono',monospace;font-size:${size==='sm'?'14px':'20px'};">${initial}</div>`;
   }
 
-  function dexListHTML(entries){
+  function dexListHTML(entries, canEdit){
     if(!entries || entries.length===0) return '<div class="muted">Nessun Digimon ancora registrato nel Dex.</div>';
-    return entries.slice().reverse().map(e=>`
-      <div class="roster-item">
+    return entries.slice().reverse().map(e=>{
+      const bs = e.base_stats || {};
+      const hasStats = bs.baseAccuracy || bs.baseDamage || bs.baseDodge || bs.baseArmor || bs.baseHealth;
+      return `
+      <div class="roster-item" id="dex-item-${e.id}">
         <div style="display:flex;gap:10px;align-items:flex-start;">
           ${portraitHTML(e.image_url, e.name, 'sm')}
           <div style="flex:1;">
-            <div><span class="name">${escapeHTML(e.name)}</span><span class="tag" style="margin-left:6px;">${escapeHTML(e.stage)}</span></div>
+            <div class="flex-between">
+              <div><span class="name">${escapeHTML(e.name)}</span><span class="tag" style="margin-left:6px;">${escapeHTML(e.stage)}</span></div>
+              ${canEdit ? `<button class="btn ghost small" data-dex-edit="${e.id}">Modifica</button>` : ''}
+            </div>
             ${e.description ? `<div class="sub" style="margin-top:3px;">${escapeHTML(e.description)}</div>` : ''}
+            ${hasStats ? `<div class="muted" style="margin-top:4px;font-size:10px;">ACC ${bs.baseAccuracy||0} · DMG ${bs.baseDamage||0} · DODGE ${bs.baseDodge||0} · ARM ${bs.baseArmor||0} · HP ${bs.baseHealth||0}</div>` : ''}
+            ${e.evolutions && e.evolutions.length ? evolutionsReadonlyHTML(e.evolutions) : ''}
             ${e.added_by ? `<div class="muted" style="margin-top:2px;">aggiunto da ${escapeHTML(e.added_by)}</div>` : ''}
           </div>
         </div>
+        <div id="dex-edit-form-${e.id}"></div>
       </div>
-    `).join('');
+    `;
+    }).join('');
+  }
+
+  function renderDexEditForm(code, entry){
+    const el = document.getElementById('dex-edit-form-'+entry.id);
+    if(!el) return;
+    const bs = entry.base_stats || {};
+    let localEvo = (entry.evolutions || []).slice();
+    el.innerHTML = `
+      <div class="divider"></div>
+      <div class="field"><label>Nome</label><input type="text" id="dex-e-name-${entry.id}" value="${escapeAttr(entry.name)}" /></div>
+      <div class="row">
+        <div class="field"><label>Stage</label>
+          <select id="dex-e-stage-${entry.id}">${['Baby','Rookie','Champion','Ultimate','Mega'].map(s=>`<option ${entry.stage===s?'selected':''}>${s}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>URL Immagine</label><input type="text" id="dex-e-img-${entry.id}" value="${escapeAttr(entry.image_url)}" /></div>
+      </div>
+      <div class="field"><label>Descrizione</label><textarea id="dex-e-desc-${entry.id}" rows="2">${escapeHTML(entry.description)}</textarea></div>
+      <div class="muted" style="margin:8px 0 4px;">Stat Base (Combattimento)</div>
+      <div class="row">
+        <div class="field"><label>Accuracy</label><input type="number" id="dex-e-acc-${entry.id}" value="${bs.baseAccuracy||0}" min="0" /></div>
+        <div class="field"><label>Damage</label><input type="number" id="dex-e-dmg-${entry.id}" value="${bs.baseDamage||0}" min="0" /></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Dodge</label><input type="number" id="dex-e-dodge-${entry.id}" value="${bs.baseDodge||0}" min="0" /></div>
+        <div class="field"><label>Armor</label><input type="number" id="dex-e-arm-${entry.id}" value="${bs.baseArmor||0}" min="0" /></div>
+      </div>
+      <div class="field"><label>Health</label><input type="number" id="dex-e-hp-${entry.id}" value="${bs.baseHealth||0}" min="0" /></div>
+      <div class="muted" style="margin:8px 0 4px;">Possibili Evoluzioni</div>
+      <div id="dex-e-evolist-${entry.id}">${evolutionsEditableHTML(localEvo)}</div>
+      <div class="row">
+        <input type="text" id="dex-e-evoname-${entry.id}" placeholder="Nome evoluzione" style="flex:2;" />
+        <input type="text" id="dex-e-evoimg-${entry.id}" placeholder="URL immagine (opz.)" style="flex:2;" />
+        <button class="btn small" id="dex-e-evoadd-${entry.id}" style="flex:1;">Aggiungi</button>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn ghost" id="dex-e-cancel-${entry.id}">Annulla</button>
+        <button class="btn solid" id="dex-e-save-${entry.id}">Salva</button>
+      </div>
+      <div class="muted" id="dex-e-status-${entry.id}" style="margin-top:6px;"></div>
+    `;
+    const bindEvo = ()=>{
+      document.querySelectorAll(`#dex-e-evolist-${entry.id} [data-rmevo]`).forEach(btn=>{
+        btn.onclick = ()=>{
+          localEvo.splice(Number(btn.getAttribute('data-rmevo')),1);
+          document.getElementById('dex-e-evolist-'+entry.id).innerHTML = evolutionsEditableHTML(localEvo);
+          bindEvo();
+        };
+      });
+    };
+    bindEvo();
+    document.getElementById('dex-e-evoadd-'+entry.id).onclick = ()=>{
+      const n = document.getElementById('dex-e-evoname-'+entry.id).value.trim();
+      if(!n) return;
+      localEvo.push({ name:n, imageUrl: document.getElementById('dex-e-evoimg-'+entry.id).value.trim() });
+      document.getElementById('dex-e-evoname-'+entry.id).value='';
+      document.getElementById('dex-e-evoimg-'+entry.id).value='';
+      document.getElementById('dex-e-evolist-'+entry.id).innerHTML = evolutionsEditableHTML(localEvo);
+      bindEvo();
+    };
+    document.getElementById('dex-e-cancel-'+entry.id).onclick = ()=>{ el.innerHTML=''; };
+    document.getElementById('dex-e-save-'+entry.id).onclick = async ()=>{
+      const fields = {
+        name: document.getElementById('dex-e-name-'+entry.id).value.trim(),
+        stage: document.getElementById('dex-e-stage-'+entry.id).value,
+        description: document.getElementById('dex-e-desc-'+entry.id).value.trim(),
+        imageUrl: document.getElementById('dex-e-img-'+entry.id).value.trim(),
+        baseStats: {
+          baseAccuracy: Number(document.getElementById('dex-e-acc-'+entry.id).value)||0,
+          baseDamage: Number(document.getElementById('dex-e-dmg-'+entry.id).value)||0,
+          baseDodge: Number(document.getElementById('dex-e-dodge-'+entry.id).value)||0,
+          baseArmor: Number(document.getElementById('dex-e-arm-'+entry.id).value)||0,
+          baseHealth: Number(document.getElementById('dex-e-hp-'+entry.id).value)||0
+        },
+        evolutions: localEvo
+      };
+      const ok = await updateDexEntry(code, entry.id, fields);
+      const st = document.getElementById('dex-e-status-'+entry.id);
+      if(ok){
+        Object.assign(entry, { name:fields.name, stage:fields.stage, description:fields.description, image_url:fields.imageUrl, base_stats:fields.baseStats, evolutions:fields.evolutions });
+        el.innerHTML='';
+        const dexLive = document.getElementById('dex-live');
+        if(dexLive){ dexLive.innerHTML = dexListHTML(cachedDex, true); bindDexEditButtons(code); }
+      } else {
+        st.style.color='var(--danger)'; st.textContent = 'Errore: ' + (lastApiError||'');
+      }
+    };
+  }
+
+  function bindDexEditButtons(code){
+    document.querySelectorAll('[data-dex-edit]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const id = btn.getAttribute('data-dex-edit');
+        const entry = cachedDex.find(e=>String(e.id)===String(id));
+        if(entry) renderDexEditForm(code, entry);
+      };
+    });
   }
 
   function bindDexForm(code, username){
@@ -493,7 +603,7 @@
         document.getElementById('dex-img').value='';
         cachedDex.push(d.entry);
         const dexLive = document.getElementById('dex-live');
-        if(dexLive) dexLive.innerHTML = dexListHTML(cachedDex);
+        if(dexLive){ dexLive.innerHTML = dexListHTML(cachedDex, true); bindDexEditButtons(code); }
       } else {
         statusEl.style.color = 'var(--danger)';
         statusEl.textContent = 'Errore: ' + (lastApiError || 'sconosciuto');
@@ -595,8 +705,9 @@
   const ATTR_ABBR = { agility:'AGI', body:'BODY', charisma:'CAR', intelligence:'INT', willpower:'WILL' };
   let editingSkills = false;
 
-  function renderSkillsCard(me){
-    const cardEl = document.getElementById('skills-card');
+  function renderSkillsCard(me, containerId){
+    containerId = containerId || 'skills-card';
+    const cardEl = document.getElementById(containerId);
     if(!cardEl) return;
     const t = me.tamer;
     if(!editingSkills){
@@ -649,7 +760,6 @@
         });
         const newMaxWounds = 3+Number(me.tamer.skills.endurance||0);
         if(me.tamer.currentWounds > newMaxWounds) me.tamer.currentWounds = newMaxWounds;
-        me.username = session.username; me.role = session.role;
         const ok = await saveMember(session.code, me);
         const st = document.getElementById('save-status-skills');
         st.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
@@ -659,8 +769,9 @@
     }
   }
 
-  function renderTamerCard(me){
-    const cardEl = document.getElementById('tamer-card');
+  function renderTamerCard(me, containerId){
+    containerId = containerId || 'tamer-card';
+    const cardEl = document.getElementById(containerId);
     if(!cardEl) return;
     const t = me.tamer;
     const maxW = 3 + Number(t.skills.endurance||0);
@@ -709,7 +820,6 @@
         });
         const newMax = 3+Number(me.tamer.skills.endurance||0);
         if(me.tamer.currentWounds > newMax) me.tamer.currentWounds = newMax;
-        me.username = session.username; me.role = session.role;
         const ok = await saveMember(session.code, me);
         const st = document.getElementById('save-status-tamer');
         st.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
@@ -719,8 +829,9 @@
     }
   }
 
-  function renderInventoryCard(me){
-    const cardEl = document.getElementById('inventory-card');
+  function renderInventoryCard(me, containerId){
+    containerId = containerId || 'inventory-card';
+    const cardEl = document.getElementById(containerId);
     if(!cardEl) return;
     const items = me.tamer.inventory || [];
     cardEl.innerHTML = `
@@ -791,7 +902,7 @@
     if(!cardEl) return;
     cardEl.innerHTML = `
       <div class="section-title">Digidex — Digimon Incontrati</div>
-      <div id="dex-live">${dexListHTML(cachedDex)}</div>
+      <div id="dex-live">${dexListHTML(cachedDex, canEdit)}</div>
       ${canEdit ? `
         <div class="divider"></div>
         <div class="field"><label>Nome</label><input type="text" id="dex-name" placeholder="es. Gabumon" /></div>
@@ -806,65 +917,164 @@
         <div class="muted" id="dex-status" style="margin-top:6px;"></div>
       ` : `<div class="muted" style="margin-top:8px;">Solo il Master può aggiungere nuove voci al Dex.</div>`}
     `;
-    if(canEdit) bindDexForm(session.code, session.username);
+    if(canEdit){ bindDexForm(session.code, session.username); bindDexEditButtons(session.code); }
   }
 
-  function renderDigimonCard(me){
-    const cardEl = document.getElementById('digimon-card');
+  function computeDerivedStats(d){
+    return {
+      bit: Math.max(0, Math.floor(Number(d.baseAccuracy||0)/3)),
+      dos: Math.max(0, Math.floor(Number(d.baseDamage||0)/3)),
+      ram: Math.max(0, Math.floor(Number(d.baseDodge||0)/3)),
+      cpu: Math.max(0, Math.floor(Number(d.baseArmor||0)/3))
+    };
+  }
+
+  function evolutionsReadonlyHTML(evolutions){
+    if(!evolutions || evolutions.length===0) return '';
+    return `
+      <div class="muted" style="margin-top:10px;margin-bottom:4px;">Possibili Evoluzioni</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        ${evolutions.map(ev=>`
+          <div style="display:flex;flex-direction:column;align-items:center;width:56px;">
+            ${portraitHTML(ev.imageUrl, ev.name, 'sm')}
+            <div class="muted" style="font-size:10px;text-align:center;margin-top:2px;">${escapeHTML(ev.name)}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function evolutionsEditableHTML(evolutions){
+    if(!evolutions || evolutions.length===0) return '<div class="muted" style="margin-bottom:8px;">Nessuna evoluzione aggiunta.</div>';
+    return evolutions.map((ev,i)=>`
+      <div class="flex-between" style="margin-bottom:4px;">
+        <span>${escapeHTML(ev.name)}</span>
+        <button class="btn ghost small" data-rmevo="${i}">Rimuovi</button>
+      </div>
+    `).join('');
+  }
+
+  function renderDigimonCard(me, containerId){
+    containerId = containerId || 'digimon-card';
+    const cardEl = document.getElementById(containerId);
     if(!cardEl) return;
     const d = me.digimon;
+    const der = computeDerivedStats(d);
     if(!editingDigimon){
       cardEl.innerHTML = `
         <div class="flex-between"><div class="section-title" style="margin:0;border:none;padding:0;">Scheda Digimon</div>
-        <button class="btn small" id="btn-edit-digimon">Modifica</button></div>
+        <button class="btn small" id="btn-edit-digimon-${containerId}">Modifica</button></div>
         <div class="sheet-head" style="margin-top:12px;">
           ${portraitHTML(d.imageUrl, d.name)}
           <div class="info"><div class="nm">${escapeHTML(d.name||'(senza nome)')}</div><div class="tg">${escapeHTML(d.stage)}</div></div>
         </div>
-        ${barHTML('Caselle Ferita', d.currentWounds, d.maxWounds, 'hp', 'dig-w-minus', 'dig-w-plus')}
-        ${barHTML('MP', d.currentMp, d.maxMp, 'mp', 'dig-mp-minus', 'dig-mp-plus')}
+        ${barHTML('Caselle Ferita', d.currentWounds, d.maxWounds, 'hp', 'dig-w-minus-'+containerId, 'dig-w-plus-'+containerId)}
+        ${barHTML('MP', d.currentMp, d.maxMp, 'mp', 'dig-mp-minus-'+containerId, 'dig-mp-plus-'+containerId)}
         ${d.personality ? `<div class="muted" style="margin-top:8px;"><i>${escapeHTML(d.personality)}</i></div>` : ''}
+        <div class="divider"></div>
+        <div class="muted" style="margin-bottom:6px;">Stat Base (Combattimento)</div>
+        <div class="grid-stats" style="grid-template-columns:repeat(5,1fr);">
+          <div class="stat-box"><div class="v">${d.baseAccuracy}</div><div class="l">ACC</div></div>
+          <div class="stat-box"><div class="v">${d.baseDamage}</div><div class="l">DMG</div></div>
+          <div class="stat-box"><div class="v">${d.baseDodge}</div><div class="l">DODGE</div></div>
+          <div class="stat-box"><div class="v">${d.baseArmor}</div><div class="l">ARM</div></div>
+          <div class="stat-box"><div class="v">${d.baseHealth}</div><div class="l">HP</div></div>
+        </div>
+        <div class="muted" style="margin:8px 0 6px;">Stat Derivate (calcolate)</div>
+        <div class="grid-stats" style="grid-template-columns:repeat(4,1fr);">
+          <div class="stat-box"><div class="v">${der.bit}</div><div class="l">BIT</div></div>
+          <div class="stat-box"><div class="v">${der.dos}</div><div class="l">DOS</div></div>
+          <div class="stat-box"><div class="v">${der.ram}</div><div class="l">RAM</div></div>
+          <div class="stat-box"><div class="v">${der.cpu}</div><div class="l">CPU</div></div>
+        </div>
+        ${evolutionsReadonlyHTML(d.evolutions)}
       `;
-      document.getElementById('btn-edit-digimon').onclick = ()=>{ editingDigimon = true; renderDigimonCard(me); };
-      document.getElementById('dig-w-minus').onclick = async ()=>{ me.digimon.currentWounds = Math.max(0, me.digimon.currentWounds-1); await saveMember(session.code, me); renderDigimonCard(me); };
-      document.getElementById('dig-w-plus').onclick = async ()=>{ me.digimon.currentWounds = Math.min(me.digimon.maxWounds, me.digimon.currentWounds+1); await saveMember(session.code, me); renderDigimonCard(me); };
-      document.getElementById('dig-mp-minus').onclick = async ()=>{ me.digimon.currentMp = Math.max(0, me.digimon.currentMp-1); await saveMember(session.code, me); renderDigimonCard(me); };
-      document.getElementById('dig-mp-plus').onclick = async ()=>{ me.digimon.currentMp = Math.min(me.digimon.maxMp, me.digimon.currentMp+1); await saveMember(session.code, me); renderDigimonCard(me); };
+      document.getElementById('btn-edit-digimon-'+containerId).onclick = ()=>{ editingDigimon = true; renderDigimonCard(me, containerId); };
+      document.getElementById('dig-w-minus-'+containerId).onclick = async ()=>{ me.digimon.currentWounds = Math.max(0, me.digimon.currentWounds-1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
+      document.getElementById('dig-w-plus-'+containerId).onclick = async ()=>{ me.digimon.currentWounds = Math.min(me.digimon.maxWounds, me.digimon.currentWounds+1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
+      document.getElementById('dig-mp-minus-'+containerId).onclick = async ()=>{ me.digimon.currentMp = Math.max(0, me.digimon.currentMp-1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
+      document.getElementById('dig-mp-plus-'+containerId).onclick = async ()=>{ me.digimon.currentMp = Math.min(me.digimon.maxMp, me.digimon.currentMp+1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
     } else {
       cardEl.innerHTML = `
         <div class="section-title">Scheda Digimon — Modifica</div>
-        <div class="field"><label>Nome</label><input type="text" id="e-d-name" value="${escapeAttr(d.name)}" /></div>
-        <div class="field"><label>URL Immagine (opzionale)</label><input type="text" id="e-d-img" value="${escapeAttr(d.imageUrl)}" placeholder="https://..." /></div>
+        <div class="field"><label>Nome</label><input type="text" id="e-d-name-${containerId}" value="${escapeAttr(d.name)}" /></div>
+        <div class="field"><label>URL Immagine (opzionale)</label><input type="text" id="e-d-img-${containerId}" value="${escapeAttr(d.imageUrl)}" placeholder="https://..." /></div>
         <div class="field"><label>Stage</label>
-          <select id="e-d-stage">${['Baby','Rookie','Champion','Ultimate','Mega'].map(s=>`<option ${d.stage===s?'selected':''}>${s}</option>`).join('')}</select>
+          <select id="e-d-stage-${containerId}">${['Baby','Rookie','Champion','Ultimate','Mega'].map(s=>`<option ${d.stage===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
         <div class="row">
-          <div class="field"><label>Ferite Massime</label><input type="number" id="e-d-maxw" value="${d.maxWounds}" /></div>
-          <div class="field"><label>MP Massimi</label><input type="number" id="e-d-maxmp" value="${d.maxMp}" /></div>
+          <div class="field"><label>Ferite Massime</label><input type="number" id="e-d-maxw-${containerId}" value="${d.maxWounds}" /></div>
+          <div class="field"><label>MP Massimi</label><input type="number" id="e-d-maxmp-${containerId}" value="${d.maxMp}" /></div>
         </div>
-        <div class="field"><label>Personalità (usata dal Master per le battute)</label><textarea id="e-d-personality" rows="3">${escapeHTML(d.personality)}</textarea></div>
+        <div class="field"><label>Personalità (usata dal Master per le battute)</label><textarea id="e-d-personality-${containerId}" rows="3">${escapeHTML(d.personality)}</textarea></div>
+        <div class="divider"></div>
+        <div class="muted" style="margin-bottom:6px;">Stat Base (Combattimento) — le Stat Derivate (BIT/DOS/RAM/CPU) si calcolano da sole</div>
+        <div class="row">
+          <div class="field"><label>Accuracy</label><input type="number" id="e-d-acc-${containerId}" value="${d.baseAccuracy}" min="0" /></div>
+          <div class="field"><label>Damage</label><input type="number" id="e-d-dmg-${containerId}" value="${d.baseDamage}" min="0" /></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Dodge</label><input type="number" id="e-d-dodge-${containerId}" value="${d.baseDodge}" min="0" /></div>
+          <div class="field"><label>Armor</label><input type="number" id="e-d-arm-${containerId}" value="${d.baseArmor}" min="0" /></div>
+        </div>
+        <div class="field"><label>Health (base)</label><input type="number" id="e-d-hp-${containerId}" value="${d.baseHealth}" min="0" /></div>
+        <div class="divider"></div>
+        <div class="muted" style="margin-bottom:6px;">Possibili Evoluzioni</div>
+        <div id="evo-list-${containerId}">${evolutionsEditableHTML(d.evolutions)}</div>
+        <div class="row">
+          <input type="text" id="e-d-evo-name-${containerId}" placeholder="Nome evoluzione" style="flex:2;" />
+          <input type="text" id="e-d-evo-img-${containerId}" placeholder="URL immagine (opz.)" style="flex:2;" />
+          <button class="btn small" id="btn-add-evo-${containerId}" style="flex:1;">Aggiungi</button>
+        </div>
         <div class="row" style="margin-top:10px;">
-          <button class="btn ghost" id="btn-cancel-digimon">Annulla</button>
-          <button class="btn solid" id="btn-save-digimon">Salva</button>
+          <button class="btn ghost" id="btn-cancel-digimon-${containerId}">Annulla</button>
+          <button class="btn solid" id="btn-save-digimon-${containerId}">Salva</button>
         </div>
-        <div class="muted" id="save-status-digimon" style="margin-top:6px;"></div>
+        <div class="muted" id="save-status-digimon-${containerId}" style="margin-top:6px;"></div>
       `;
-      document.getElementById('btn-cancel-digimon').onclick = ()=>{ editingDigimon = false; renderDigimonCard(me); };
-      document.getElementById('btn-save-digimon').onclick = async ()=>{
-        me.digimon.name = document.getElementById('e-d-name').value;
-        me.digimon.imageUrl = document.getElementById('e-d-img').value.trim();
-        me.digimon.stage = document.getElementById('e-d-stage').value;
-        me.digimon.maxWounds = Number(document.getElementById('e-d-maxw').value)||1;
-        me.digimon.maxMp = Number(document.getElementById('e-d-maxmp').value)||0;
-        me.digimon.personality = document.getElementById('e-d-personality').value;
+      const bindEvoRemove = ()=>{
+        document.querySelectorAll(`#evo-list-${containerId} [data-rmevo]`).forEach(btn=>{
+          btn.onclick = ()=>{
+            const idx = Number(btn.getAttribute('data-rmevo'));
+            d.evolutions.splice(idx,1);
+            document.getElementById('evo-list-'+containerId).innerHTML = evolutionsEditableHTML(d.evolutions);
+            bindEvoRemove();
+          };
+        });
+      };
+      bindEvoRemove();
+      document.getElementById('btn-add-evo-'+containerId).onclick = ()=>{
+        const nameEl = document.getElementById('e-d-evo-name-'+containerId);
+        const imgEl = document.getElementById('e-d-evo-img-'+containerId);
+        const name = nameEl.value.trim();
+        if(!name) return;
+        if(!d.evolutions) d.evolutions = [];
+        d.evolutions.push({ name, imageUrl: imgEl.value.trim() });
+        nameEl.value=''; imgEl.value='';
+        document.getElementById('evo-list-'+containerId).innerHTML = evolutionsEditableHTML(d.evolutions);
+        bindEvoRemove();
+      };
+      document.getElementById('btn-cancel-digimon-'+containerId).onclick = ()=>{ editingDigimon = false; renderDigimonCard(me, containerId); };
+      document.getElementById('btn-save-digimon-'+containerId).onclick = async ()=>{
+        me.digimon.name = document.getElementById('e-d-name-'+containerId).value;
+        me.digimon.imageUrl = document.getElementById('e-d-img-'+containerId).value.trim();
+        me.digimon.stage = document.getElementById('e-d-stage-'+containerId).value;
+        me.digimon.maxWounds = Number(document.getElementById('e-d-maxw-'+containerId).value)||1;
+        me.digimon.maxMp = Number(document.getElementById('e-d-maxmp-'+containerId).value)||0;
+        me.digimon.personality = document.getElementById('e-d-personality-'+containerId).value;
+        me.digimon.baseAccuracy = Number(document.getElementById('e-d-acc-'+containerId).value)||0;
+        me.digimon.baseDamage = Number(document.getElementById('e-d-dmg-'+containerId).value)||0;
+        me.digimon.baseDodge = Number(document.getElementById('e-d-dodge-'+containerId).value)||0;
+        me.digimon.baseArmor = Number(document.getElementById('e-d-arm-'+containerId).value)||0;
+        me.digimon.baseHealth = Number(document.getElementById('e-d-hp-'+containerId).value)||0;
+        me.digimon.evolutions = d.evolutions || [];
         if(me.digimon.currentWounds > me.digimon.maxWounds) me.digimon.currentWounds = me.digimon.maxWounds;
         if(me.digimon.currentMp > me.digimon.maxMp) me.digimon.currentMp = me.digimon.maxMp;
-        me.username = session.username; me.role = session.role;
         const ok = await saveMember(session.code, me);
-        const st = document.getElementById('save-status-digimon');
+        const st = document.getElementById('save-status-digimon-'+containerId);
         st.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
         st.textContent = ok ? 'Salvato.' : ('Errore: '+(lastApiError||''));
-        if(ok){ editingDigimon = false; renderDigimonCard(me); }
+        if(ok){ editingDigimon = false; renderDigimonCard(me, containerId); }
       };
     }
   }
@@ -920,7 +1130,7 @@
           </div>
           <div class="hud-frame card">
             <div class="section-title">Digidex — Digimon Incontrati</div>
-            <div id="dex-live">${dexListHTML(cachedDex)}</div>
+            <div id="dex-live">${dexListHTML(cachedDex, true)}</div>
             <div class="divider"></div>
             <div class="field"><label>Nome</label><input type="text" id="dex-name" placeholder="es. Gabumon" /></div>
             <div class="row">
@@ -938,7 +1148,9 @@
     `;
 
     bindRosterSuggestButtons(players);
+    bindRosterManageButtons(players);
     bindDexForm(code, session.username);
+    bindDexEditButtons(code);
     bindEncountersPanel(code, session.username);
     attachLogModeration(document.getElementById('log-live'), code);
     document.getElementById('btn-logout').onclick = logout;
@@ -966,6 +1178,46 @@
     startPolling();
   }
 
+  let openManageIdx = null;
+
+  function bindRosterManageButtons(players){
+    players.forEach((p,i)=>{
+      const btn = document.getElementById('btn-manage-'+i);
+      if(!btn) return;
+      btn.onclick = ()=>{
+        const panel = document.getElementById('manage-panel-'+i);
+        if(!panel) return;
+        if(openManageIdx === i){
+          panel.style.display = 'none';
+          panel.innerHTML = '';
+          openManageIdx = null;
+          btn.textContent = 'Gestisci Scheda';
+          return;
+        }
+        if(openManageIdx !== null){
+          const prevPanel = document.getElementById('manage-panel-'+openManageIdx);
+          const prevBtn = document.getElementById('btn-manage-'+openManageIdx);
+          if(prevPanel){ prevPanel.style.display='none'; prevPanel.innerHTML=''; }
+          if(prevBtn) prevBtn.textContent = 'Gestisci Scheda';
+        }
+        editingTamer = false; editingSkills = false; editingDigimon = false;
+        openManageIdx = i;
+        btn.textContent = 'Chiudi Scheda';
+        panel.style.display = 'block';
+        panel.innerHTML = `
+          <div class="hud-frame card" id="m-tamer-${i}"></div>
+          <div class="hud-frame card" id="m-skills-${i}"></div>
+          <div class="hud-frame card" id="m-inventory-${i}"></div>
+          <div class="hud-frame card" id="m-digimon-${i}"></div>
+        `;
+        renderTamerCard(p, 'm-tamer-'+i);
+        renderSkillsCard(p, 'm-skills-'+i);
+        renderInventoryCard(p, 'm-inventory-'+i);
+        renderDigimonCard(p, 'm-digimon-'+i);
+      };
+    });
+  }
+
   function rosterItemHTML(p, i){
     const online = p.last_seen && (Date.now() - new Date(p.last_seen).getTime()) < ONLINE_WINDOW_MS;
     return `
@@ -980,11 +1232,15 @@
               <span class="tag" style="margin-left:6px;color:${online?'var(--cyan)':'var(--text-mute)'};border-color:${online?'var(--cyan-dim)':'var(--line)'};">${online?'online':'offline'}</span>
             </div>
           </div>
-          <button class="btn small" id="btn-suggest-${i}">Suggerisci Battuta</button>
+          <div style="display:flex;gap:6px;">
+            <button class="btn ghost small" id="btn-manage-${i}">Gestisci Scheda</button>
+            <button class="btn small" id="btn-suggest-${i}">Suggerisci Battuta</button>
+          </div>
         </div>
         <div class="sub" style="margin-top:6px;">Digimon: ${escapeHTML(p.digimon.name || '(senza nome)')} — Ferite: ${p.digimon.currentWounds}/${p.digimon.maxWounds} — MP: ${p.digimon.currentMp}/${p.digimon.maxMp}</div>
         <div class="sub">AGI ${p.tamer.agility} · BODY ${p.tamer.body} · CAR ${p.tamer.charisma} · INT ${p.tamer.intelligence} · WILL ${p.tamer.willpower}</div>
         <div id="suggest-box-${i}" class="suggest-box" style="display:none;"></div>
+        <div id="manage-panel-${i}" style="display:none;margin-top:10px;"></div>
       </div>
     `;
   }
@@ -1070,7 +1326,7 @@
           live.innerHTML = encountersEditableHTML(cachedScene.encounters);
           bindEncountersInnerActions(code, username);
           const dexLive = document.getElementById('dex-live');
-          if(dexLive) dexLive.innerHTML = dexListHTML(cachedDex);
+          if(dexLive){ dexLive.innerHTML = dexListHTML(cachedDex, true); bindDexEditButtons(code); }
         }
       };
     });
