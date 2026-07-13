@@ -13,7 +13,7 @@ module.exports = async (req, res) => {
 
     const userText = `Digimon: ${digimonName || 'Digimon'}\nPersonalità: ${personality || 'non specificata, usa un tono neutro da compagno leale'}\nContesto recente:\n${context || '(nessun contesto precedente)'}`;
 
-    const model = 'gemini-2.5-flash';
+    const model = 'gemini-flash-latest';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
     const r = await fetch(url, {

@@ -12,7 +12,7 @@ module.exports = async (req, res) => {
 
     const system = "Correggi solo grammatica, ortografia e punteggiatura italiana del testo che segue, senza cambiare tono, stile o significato. Rispondi SOLO con il testo corretto, nessun commento, nessuna virgoletta.";
 
-    const model = 'gemini-2.5-flash';
+    const model = 'gemini-flash-latest';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
     const r = await fetch(url, {
