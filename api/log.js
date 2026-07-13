@@ -32,7 +32,33 @@ module.exports = async (req, res) => {
       return res.status(200).json({ entry: data });
     }
 
-    res.setHeader('Allow', 'GET, POST');
+    if (req.method === 'PUT') {
+      const { code, id, text } = req.body || {};
+      const campaignCode = cleanCode(code);
+      if (!campaignCode || !id || !text) return res.status(400).json({ error: 'missing code, id or text' });
+      const { error } = await supabase
+        .from('logs')
+        .update({ text: String(text).slice(0, 2000) })
+        .eq('campaign_code', campaignCode)
+        .eq('id', id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true });
+    }
+
+    if (req.method === 'DELETE') {
+      const code = cleanCode(req.query.code);
+      const id = req.query.id;
+      if (!code || !id) return res.status(400).json({ error: 'missing code or id' });
+      const { error } = await supabase
+        .from('logs')
+        .delete()
+        .eq('campaign_code', code)
+        .eq('id', id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true });
+    }
+
+    res.setHeader('Allow', 'GET, POST, PUT, DELETE');
     return res.status(405).json({ error: 'method not allowed' });
   } catch (e) {
     return res.status(500).json({ error: e.message || String(e) });

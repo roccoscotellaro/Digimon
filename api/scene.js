@@ -11,11 +11,11 @@ module.exports = async (req, res) => {
         .eq('campaign_code', code)
         .maybeSingle();
       if (error) return res.status(500).json({ error: error.message });
-      return res.status(200).json({ scene: data || { title: '', background: '', music: '' } });
+      return res.status(200).json({ scene: data || { title: '', background: '', music: '', encounters: [] } });
     }
 
     if (req.method === 'POST') {
-      const { code, title, background, music } = req.body || {};
+      const { code, title, background, music, encounters } = req.body || {};
       const campaignCode = cleanCode(code);
       if (!campaignCode) return res.status(400).json({ error: 'missing code' });
       await supabase.from('campaigns').upsert({ code: campaignCode }, { onConflict: 'code' });
@@ -23,7 +23,8 @@ module.exports = async (req, res) => {
         campaign_code: campaignCode,
         title: title || '',
         background: background || '',
-        music: music || ''
+        music: music || '',
+        encounters: Array.isArray(encounters) ? encounters : []
       }, { onConflict: 'campaign_code' });
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true });

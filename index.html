@@ -104,6 +104,7 @@
   .role-pick{display:flex;gap:10px;margin-bottom:16px;}
   .role-pick .btn{flex:1;}
   .role-pick .btn.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
+  #tab-scheda.active, #tab-inventario.active, #tab-dex.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
 
   .roster-item{padding:10px;border-bottom:1px solid var(--line);font-size:12px;}
   .roster-item:last-child{border-bottom:none;}
@@ -162,6 +163,7 @@
   let editingTamer = false;
   let editingDigimon = false;
   let editingScene = false;
+  let sidebarTab = 'scheda';
   let cachedRoster = [];
   let cachedScene = { title:'', background:'', music:'' };
   let cachedLog = [];
@@ -191,13 +193,33 @@
       return data;
     }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
   }
+  async function apiPut(path, body){
+    try{
+      const r = await fetch(path, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const data = await r.json();
+      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
+      lastApiError = null;
+      return data;
+    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
+  }
+  async function apiDelete(path){
+    try{
+      const r = await fetch(path, { method:'DELETE' });
+      const data = await r.json();
+      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
+      lastApiError = null;
+      return data;
+    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
+  }
 
   async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]) : []; }
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
-  async function getScene(code){ const d = await apiGet('/api/scene?code=' + encodeURIComponent(code)); return d ? d.scene : { title:'', background:'', music:'' }; }
+  async function getScene(code){ const d = await apiGet('/api/scene?code=' + encodeURIComponent(code)); const s = d ? d.scene : { title:'', background:'', music:'', encounters:[] }; if(!Array.isArray(s.encounters)) s.encounters = []; return s; }
   async function saveScene(code, scene){ const d = await apiPost('/api/scene', { code, ...scene }); return !!(d && d.ok); }
   async function getLog(code){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code)); return d ? (d.log||[]) : []; }
   async function pushLog(code, entry){ return apiPost('/api/log', { code, ...entry }); }
+  async function editLogEntry(code, id, text){ return apiPut('/api/log', { code, id, text }); }
+  async function deleteLogEntry(code, id){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
   async function heartbeat(code, username){ return apiPost('/api/heartbeat', { code, username }); }
   async function getDex(code){ const d = await apiGet('/api/dex?code=' + encodeURIComponent(code)); return d ? (d.entries||[]) : []; }
   async function addDexEntry(code, entry){ return apiPost('/api/dex', { code, ...entry }); }
@@ -368,7 +390,7 @@
     const logLive = document.getElementById('log-live');
     if(logLive){
       const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
-      logLive.innerHTML = logHTML(cachedLog);
+      logLive.innerHTML = logHTML(cachedLog, session && session.role==='master');
       if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
     }
     const rosterLive = document.getElementById('roster-live');
@@ -499,7 +521,7 @@
 
           <div class="hud-frame card">
             <div class="section-title">Registro Narrativo</div>
-            <div class="log" id="log-live">${logHTML(cachedLog)}</div>
+            <div class="log" id="log-live">${logHTML(cachedLog, session.role==='master')}</div>
           </div>
 
           <div class="hud-frame card">
@@ -526,33 +548,20 @@
         </div>
 
         <div>
-          <div class="hud-frame card" id="tamer-card"></div>
-          <div class="hud-frame card" id="skills-card"></div>
-          <div class="hud-frame card" id="inventory-card"></div>
-          <div class="hud-frame card" id="digimon-card"></div>
-          <div class="hud-frame card">
-            <div class="section-title">Digidex — Digimon Incontrati</div>
-            <div id="dex-live">${dexListHTML(cachedDex)}</div>
-            <div class="divider"></div>
-            <div class="field"><label>Nome</label><input type="text" id="dex-name" placeholder="es. Gabumon" /></div>
-            <div class="row">
-              <div class="field"><label>Stage</label>
-                <select id="dex-stage">${['Baby','Rookie','Champion','Ultimate','Mega'].map(s=>`<option>${s}</option>`).join('')}</select>
-              </div>
-              <div class="field"><label>URL Immagine (opz.)</label><input type="text" id="dex-img" placeholder="https://..." /></div>
-            </div>
-            <div class="field"><label>Descrizione</label><textarea id="dex-desc" rows="2" placeholder="Cosa avete scoperto su questo Digimon..."></textarea></div>
-            <button class="btn solid" id="btn-dex-add" style="width:100%;">Aggiungi al Dex</button>
-            <div class="muted" id="dex-status" style="margin-top:6px;"></div>
+          <div class="hud-frame" style="padding:6px;margin-bottom:16px;display:flex;gap:6px;">
+            <button class="btn small" id="tab-scheda" style="flex:1;">Scheda</button>
+            <button class="btn small" id="tab-inventario" style="flex:1;">Inventario</button>
+            <button class="btn small" id="tab-dex" style="flex:1;">Dex</button>
           </div>
+          <div id="sidebar-content"></div>
         </div>
       </div>
     `;
 
-    renderTamerCard(me);
-    renderSkillsCard(me);
-    renderInventoryCard(me);
-    renderDigimonCard(me);
+    renderSidebar(me);
+    document.getElementById('tab-scheda').onclick = ()=>{ sidebarTab='scheda'; renderSidebar(me); };
+    document.getElementById('tab-inventario').onclick = ()=>{ sidebarTab='inventario'; renderSidebar(me); };
+    document.getElementById('tab-dex').onclick = ()=>{ sidebarTab='dex'; renderSidebar(me); };
 
     document.getElementById('btn-logout').onclick = logout;
     document.getElementById('btn-correct').onclick = async ()=>{
@@ -578,7 +587,7 @@
         refreshLiveParts();
       };
     });
-    bindDexForm(code, session.username);
+    attachLogModeration(document.getElementById('log-live'), code);
 
     startPolling();
   }
@@ -752,6 +761,54 @@
     };
   }
 
+  function renderSidebar(me){
+    const content = document.getElementById('sidebar-content');
+    if(!content) return;
+    ['scheda','inventario','dex'].forEach(t=>{
+      const btn = document.getElementById('tab-'+t);
+      if(btn) btn.classList.toggle('active', t===sidebarTab);
+    });
+    if(sidebarTab==='scheda'){
+      content.innerHTML = `
+        <div class="hud-frame card" id="tamer-card"></div>
+        <div class="hud-frame card" id="skills-card"></div>
+        <div class="hud-frame card" id="digimon-card"></div>
+      `;
+      renderTamerCard(me);
+      renderSkillsCard(me);
+      renderDigimonCard(me);
+    } else if(sidebarTab==='inventario'){
+      content.innerHTML = `<div class="hud-frame card" id="inventory-card"></div>`;
+      renderInventoryCard(me);
+    } else if(sidebarTab==='dex'){
+      content.innerHTML = `<div class="hud-frame card" id="dex-panel-card"></div>`;
+      renderDexPanel(false);
+    }
+  }
+
+  function renderDexPanel(canEdit){
+    const cardEl = document.getElementById('dex-panel-card');
+    if(!cardEl) return;
+    cardEl.innerHTML = `
+      <div class="section-title">Digidex — Digimon Incontrati</div>
+      <div id="dex-live">${dexListHTML(cachedDex)}</div>
+      ${canEdit ? `
+        <div class="divider"></div>
+        <div class="field"><label>Nome</label><input type="text" id="dex-name" placeholder="es. Gabumon" /></div>
+        <div class="row">
+          <div class="field"><label>Stage</label>
+            <select id="dex-stage">${['Baby','Rookie','Champion','Ultimate','Mega'].map(s=>`<option>${s}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label>URL Immagine (opz.)</label><input type="text" id="dex-img" placeholder="https://..." /></div>
+        </div>
+        <div class="field"><label>Descrizione</label><textarea id="dex-desc" rows="2" placeholder="Cosa avete scoperto su questo Digimon..."></textarea></div>
+        <button class="btn solid" id="btn-dex-add" style="width:100%;">Aggiungi al Dex</button>
+        <div class="muted" id="dex-status" style="margin-top:6px;"></div>
+      ` : `<div class="muted" style="margin-top:8px;">Solo il Master può aggiungere nuove voci al Dex.</div>`}
+    `;
+    if(canEdit) bindDexForm(session.code, session.username);
+  }
+
   function renderDigimonCard(me){
     const cardEl = document.getElementById('digimon-card');
     if(!cardEl) return;
@@ -835,6 +892,14 @@
             <div class="field" style="margin-top:10px;"><label>Titolo Scena</label><input type="text" id="scene-title" value="${escapeAttr(cachedScene.title)}" placeholder="es. Foresta di File" /></div>
             <div class="field"><label>URL Immagine di Sfondo</label><input type="text" id="scene-bg" value="${escapeAttr(cachedScene.background)}" placeholder="https://..." /></div>
             <div class="field"><label>URL Musica (mp3 diretto)</label><input type="text" id="scene-music" value="${escapeAttr(cachedScene.music)}" placeholder="https://.../traccia.mp3" /></div>
+            <div class="divider"></div>
+            <label style="font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;">Digimon in questa Scena</label>
+            <div id="encounters-live" style="margin:8px 0;">${encountersEditableHTML(cachedScene.encounters||[])}</div>
+            <div class="row">
+              <input type="text" id="encounter-name" placeholder="es. Gabumon" style="flex:2;" />
+              <button class="btn small" id="btn-add-encounter" style="flex:1;">Aggiungi</button>
+            </div>
+            <div class="divider"></div>
             <button class="btn solid" id="btn-save-scene" style="width:100%;">Aggiorna Scena</button>
             <div class="muted" id="scene-status" style="margin-top:6px;"></div>
             ${cachedScene.music ? `<audio controls src="${escapeAttr(cachedScene.music)}" style="width:100%;margin-top:10px;"></audio>` : ''}
@@ -842,7 +907,7 @@
 
           <div class="hud-frame card">
             <div class="section-title">Registro Narrativo</div>
-            <div class="log" id="log-live">${logHTML(cachedLog)}</div>
+            <div class="log" id="log-live">${logHTML(cachedLog, session.role==='master')}</div>
             <textarea id="gm-text" rows="2" placeholder="Narrazione del Master..." style="margin-top:10px;"></textarea>
             <button class="btn amber" id="btn-gm-post" style="width:100%;margin-top:8px;">Pubblica come Master</button>
           </div>
@@ -874,12 +939,15 @@
 
     bindRosterSuggestButtons(players);
     bindDexForm(code, session.username);
+    bindEncountersPanel(code, session.username);
+    attachLogModeration(document.getElementById('log-live'), code);
     document.getElementById('btn-logout').onclick = logout;
     document.getElementById('btn-save-scene').onclick = async ()=>{
       const newScene = {
         title: document.getElementById('scene-title').value,
         background: document.getElementById('scene-bg').value,
-        music: document.getElementById('scene-music').value
+        music: document.getElementById('scene-music').value,
+        encounters: cachedScene.encounters || []
       };
       const ok = await saveScene(code, newScene);
       const statusEl = document.getElementById('scene-status');
@@ -923,7 +991,7 @@
 
   function sceneHTML(scene){
     if(!scene || (!scene.background && !scene.title)){
-      return `<div class="scene-box"><div class="scene-empty">Nessuna scena impostata dal Master</div></div>`;
+      return `<div class="scene-box"><div class="scene-empty">Nessuna scena impostata dal Master</div></div>` + encountersReadonlyHTML(scene);
     }
     return `
       <div class="scene-box">
@@ -931,17 +999,119 @@
         <div class="overlay"></div>
         ${scene.title ? `<div class="title">${escapeHTML(scene.title)}</div>` : ''}
       </div>
-    `;
+    ` + encountersReadonlyHTML(scene);
   }
 
-  function logHTML(log){
+  function encountersReadonlyHTML(scene){
+    const enc = (scene && Array.isArray(scene.encounters)) ? scene.encounters : [];
+    if(enc.length===0) return '';
+    return `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">
+      ${enc.map(name=>`<span class="tag">${escapeHTML(name)}</span>`).join('')}
+    </div>`;
+  }
+
+  function isInDex(name){
+    return cachedDex.some(e=>String(e.name).trim().toLowerCase()===String(name).trim().toLowerCase());
+  }
+
+  function encountersEditableHTML(list){
+    if(!list || list.length===0) return '<div class="muted">Nessun Digimon ancora aggiunto a questa scena.</div>';
+    return list.map((name,i)=>{
+      const already = isInDex(name);
+      return `
+        <span class="tag" style="display:inline-flex;align-items:center;gap:6px;margin:2px 4px 2px 0;">
+          ${escapeHTML(name)}
+          ${already ? '' : `<button class="btn small" data-quickdex="${i}" style="padding:1px 6px;">+Dex</button>`}
+          <button class="btn ghost small" data-rmenc="${i}" style="padding:1px 6px;">×</button>
+        </span>
+      `;
+    }).join('');
+  }
+
+  function bindEncountersPanel(code, username){
+    const addBtn = document.getElementById('btn-add-encounter');
+    if(addBtn){
+      addBtn.onclick = async ()=>{
+        const input = document.getElementById('encounter-name');
+        const name = input.value.trim();
+        if(!name) return;
+        cachedScene.encounters = cachedScene.encounters || [];
+        cachedScene.encounters.push(name);
+        await saveScene(code, cachedScene);
+        input.value='';
+        document.getElementById('encounters-live').innerHTML = encountersEditableHTML(cachedScene.encounters);
+        bindEncountersInnerActions(code, username);
+        refreshLiveParts();
+      };
+    }
+    bindEncountersInnerActions(code, username);
+  }
+
+  function bindEncountersInnerActions(code, username){
+    const live = document.getElementById('encounters-live');
+    if(!live) return;
+    live.querySelectorAll('[data-rmenc]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const idx = Number(btn.getAttribute('data-rmenc'));
+        cachedScene.encounters.splice(idx,1);
+        await saveScene(code, cachedScene);
+        live.innerHTML = encountersEditableHTML(cachedScene.encounters);
+        bindEncountersInnerActions(code, username);
+        refreshLiveParts();
+      };
+    });
+    live.querySelectorAll('[data-quickdex]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const idx = Number(btn.getAttribute('data-quickdex'));
+        const name = cachedScene.encounters[idx];
+        const d = await addDexEntry(code, { name, stage:'Rookie', description:'', imageUrl:'', addedBy: username });
+        if(d && d.entry){
+          cachedDex.push(d.entry);
+          live.innerHTML = encountersEditableHTML(cachedScene.encounters);
+          bindEncountersInnerActions(code, username);
+          const dexLive = document.getElementById('dex-live');
+          if(dexLive) dexLive.innerHTML = dexListHTML(cachedDex);
+        }
+      };
+    });
+  }
+
+  function logHTML(log, canModerate){
     if(!log || log.length===0) return '<div class="muted">Il registro è vuoto. Le azioni appariranno qui.</div>';
     return log.map(l=>`
       <div class="log-entry ${l.role}">
-        <span class="who mono">${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span>
+        <div class="flex-between">
+          <div><span class="who mono">${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span></div>
+          ${canModerate ? `<div><button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;">✎</button><button class="btn ghost small" data-log-del="${l.id}" style="padding:2px 6px;">✕</button></div>` : ''}
+        </div>
         <div class="txt">${escapeHTML(l.text)}</div>
       </div>
     `).join('');
+  }
+
+  function attachLogModeration(container, code){
+    if(!container || container.dataset.modBound) return;
+    container.dataset.modBound = '1';
+    container.addEventListener('click', async (e)=>{
+      const editBtn = e.target.closest('[data-log-edit]');
+      const delBtn = e.target.closest('[data-log-del]');
+      if(editBtn){
+        const id = editBtn.getAttribute('data-log-edit');
+        const entry = cachedLog.find(l=>String(l.id)===String(id));
+        const newText = window.prompt('Modifica messaggio:', entry ? entry.text : '');
+        if(newText !== null && newText.trim()){
+          await editLogEntry(code, id, newText.trim());
+          refreshLiveParts();
+        }
+      }
+      if(delBtn){
+        const id = delBtn.getAttribute('data-log-del');
+        if(window.confirm('Eliminare questo messaggio dal registro?')){
+          await deleteLogEntry(code, id);
+          refreshLiveParts();
+        }
+      }
+    });
   }
 
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
