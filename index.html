@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Digivice OS — Digimon: Digital Adventures 2E</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --bg: #080b10;
+    --panel: #0e141b;
+    --panel-2: #121a22;
+    --line: #1c2a30;
+    --cyan: #35e8c9;
+    --cyan-dim: #1f6e63;
+    --amber: #ff8a3d;
+    --text: #dcece8;
+    --text-mute: #6d8385;
+    --danger: #ff5d5d;
+    --radius: 2px;
+    font-family: 'Manrope', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body,#root-app{margin:0;padding:0;background:var(--bg);color:var(--text);}
+  .mono{font-family:'Share Tech Mono', monospace; letter-spacing: 0.04em;}
+  .app{min-height:100vh;background:
+      radial-gradient(circle at 15% 10%, rgba(53,232,201,0.06), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(255,138,61,0.05), transparent 45%),
+      var(--bg);
+      padding:20px; position:relative; overflow-x:hidden;}
+  .scanline{position:fixed;inset:0;pointer-events:none;z-index:50;
+    background:repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+    mix-blend-mode:overlay;}
+  .hud-frame{border:1px solid var(--line); background:var(--panel); border-radius:var(--radius); position:relative;}
+  .hud-frame::before{content:"";position:absolute;top:-1px;left:-1px;width:14px;height:14px;border-top:2px solid var(--cyan);border-left:2px solid var(--cyan);}
+  .hud-frame::after{content:"";position:absolute;bottom:-1px;right:-1px;width:14px;height:14px;border-bottom:2px solid var(--cyan);border-right:2px solid var(--cyan);}
+  .topbar{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;margin-bottom:18px;}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand-dot{width:9px;height:9px;background:var(--cyan);box-shadow:0 0 8px var(--cyan);border-radius:50%;animation:pulse 2s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
+  .brand-title{font-size:13px;text-transform:uppercase;color:var(--cyan);}
+  .brand-sub{font-size:11px;color:var(--text-mute);}
+  .conn-ticker{font-size:11px;color:var(--text-mute);}
+  .conn-ticker b{color:var(--cyan);}
+
+  .btn{font-family:'Share Tech Mono',monospace;background:transparent;border:1px solid var(--cyan-dim);color:var(--cyan);
+    padding:8px 14px;cursor:pointer;text-transform:uppercase;font-size:12px;letter-spacing:0.05em;border-radius:var(--radius);transition:.15s;}
+  .btn:hover{background:rgba(53,232,201,0.1);border-color:var(--cyan);}
+  .btn:disabled{opacity:0.35;cursor:not-allowed;}
+  .btn.solid{background:var(--cyan);color:#04211c;border-color:var(--cyan);font-weight:700;}
+  .btn.solid:hover{background:#4ffbe0;}
+  .btn.amber{border-color:var(--amber);color:var(--amber);}
+  .btn.amber:hover{background:rgba(255,138,61,0.12);}
+  .btn.ghost{border-color:var(--line);color:var(--text-mute);}
+  .btn.small{padding:5px 10px;font-size:10px;}
+
+  input[type=text], input[type=number], textarea, select{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    padding:8px 10px; font-family:'Manrope',sans-serif; font-size:13px; border-radius:var(--radius); width:100%;
+  }
+  input:focus, textarea:focus, select:focus{outline:none;border-color:var(--cyan-dim);}
+  label{font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;display:block;margin-bottom:4px;}
+  .field{margin-bottom:12px;}
+  .row{display:flex;gap:12px;}
+  .row > *{flex:1;}
+  .section-title{font-size:12px;text-transform:uppercase;color:var(--cyan);letter-spacing:0.08em;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);}
+  .card{padding:16px;margin-bottom:16px;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .grid-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;}
+  .stat-box{text-align:center;padding:8px 4px;background:var(--panel-2);border:1px solid var(--line);}
+  .stat-box .v{font-family:'Share Tech Mono',monospace;font-size:20px;color:var(--cyan);}
+  .stat-box .l{font-size:9px;color:var(--text-mute);text-transform:uppercase;margin-top:2px;}
+  .stat-box input{text-align:center;padding:4px;margin-top:4px;}
+
+  .scene-box{position:relative; height:220px; border:1px solid var(--line); overflow:hidden; background:#05070a; margin-bottom:10px;}
+  .scene-box img.bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.55;}
+  .scene-box .overlay{position:absolute;inset:0;background:linear-gradient(180deg, rgba(8,11,16,0) 40%, rgba(8,11,16,0.9) 100%);}
+  .scene-box .title{position:absolute;bottom:10px;left:14px;font-family:'Share Tech Mono',monospace;color:var(--cyan);font-size:16px;text-shadow:0 0 12px rgba(53,232,201,0.6);}
+  .scene-box .portraits{position:absolute;bottom:10px;right:14px;display:flex;gap:6px;}
+  .scene-box .portraits img{width:44px;height:44px;object-fit:cover;border:1px solid var(--cyan-dim);border-radius:50%;background:#000;}
+  .scene-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-mute);font-size:12px;}
+
+  .log{height:280px;overflow-y:auto;padding:10px;background:var(--panel-2);border:1px solid var(--line);font-size:13px;}
+  .log-entry{margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.03);}
+  .log-entry .who{font-family:'Share Tech Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;}
+  .log-entry.player .who{color:var(--cyan);}
+  .log-entry.gm .who{color:var(--amber);}
+  .log-entry.digimon .who{color:#c896ff;}
+  .log-entry .txt{color:var(--text);margin-top:2px;line-height:1.4;}
+  .log-entry .meta{font-size:10px;color:var(--text-mute);margin-left:8px;}
+
+  .moves-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;}
+  .move-btn{background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:10px;text-align:left;cursor:pointer;border-radius:var(--radius);}
+  .move-btn:hover{border-color:var(--cyan-dim);}
+  .move-btn .name{font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--cyan);}
+  .move-btn .desc{font-size:11px;color:var(--text-mute);margin-top:3px;}
+
+  .login-wrap{max-width:420px;margin:60px auto;}
+  .login-wrap h1{font-family:'Share Tech Mono',monospace;color:var(--cyan);font-size:22px;text-align:center;text-shadow:0 0 16px rgba(53,232,201,0.5);margin-bottom:4px;}
+  .login-wrap .sub{text-align:center;color:var(--text-mute);font-size:12px;margin-bottom:28px;}
+  .role-pick{display:flex;gap:10px;margin-bottom:16px;}
+  .role-pick .btn{flex:1;}
+  .role-pick .btn.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
+
+  .roster-item{padding:10px;border-bottom:1px solid var(--line);font-size:12px;}
+  .roster-item:last-child{border-bottom:none;}
+  .roster-item .name{color:var(--cyan);font-family:'Share Tech Mono',monospace;}
+  .roster-item .sub{color:var(--text-mute);}
+
+  .suggest-box{background:var(--panel-2);border:1px solid var(--cyan-dim);padding:10px;margin-top:8px;font-size:12px;}
+  .suggest-line{padding:6px 8px;margin-bottom:4px;background:rgba(53,232,201,0.05);cursor:pointer;border-radius:var(--radius);}
+  .suggest-line:hover{background:rgba(53,232,201,0.12);}
+
+  .tag{font-size:10px;padding:2px 8px;border:1px solid var(--line);color:var(--text-mute);border-radius:20px;text-transform:uppercase;}
+  .flex-between{display:flex;justify-content:space-between;align-items:center;}
+  .muted{color:var(--text-mute);font-size:11px;}
+  .err{color:var(--danger);font-size:11px;margin-top:6px;}
+  .divider{height:1px;background:var(--line);margin:16px 0;}
+  ::-webkit-scrollbar{width:6px;}
+  ::-webkit-scrollbar-thumb{background:var(--cyan-dim);}
+</style>
+</head>
+<body>
+<div class="scanline"></div>
+<div id="root-app" class="app"></div>
+<script>
+(function(){
+  const root = document.getElementById('root-app');
+  let session = null; // {code, username, role}
+  let pollTimer = null;
+  let lastApiError = null;
+  const ONLINE_WINDOW_MS = 9000;
+
+  // ---------- API helpers ----------
+  async function apiGet(path){
+    try{
+      const r = await fetch(path);
+      const data = await r.json();
+      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
+      lastApiError = null;
+      return data;
+    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
+  }
+  async function apiPost(path, body){
+    try{
+      const r = await fetch(path, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      });
+      const data = await r.json();
+      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
+      lastApiError = null;
+      return data;
+    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
+  }
+
+  async function getRoster(code){
+    const d = await apiGet('/api/roster?code=' + encodeURIComponent(code));
+    return d ? (d.members || []) : [];
+  }
+  async function saveMember(code, member){
+    const d = await apiPost('/api/roster', { code, member });
+    return !!(d && d.ok);
+  }
+  async function getScene(code){
+    const d = await apiGet('/api/scene?code=' + encodeURIComponent(code));
+    return d ? d.scene : { title:'', background:'', music:'' };
+  }
+  async function saveScene(code, scene){
+    const d = await apiPost('/api/scene', { code, ...scene });
+    return !!(d && d.ok);
+  }
+  async function getLog(code){
+    const d = await apiGet('/api/log?code=' + encodeURIComponent(code));
+    return d ? (d.log || []) : [];
+  }
+  async function pushLog(code, entry){
+    return apiPost('/api/log', { code, ...entry });
+  }
+  async function heartbeat(code, username){
+    return apiPost('/api/heartbeat', { code, username });
+  }
+  async function correggiItaliano(testo){
+    const d = await apiPost('/api/ai-correct', { text: testo });
+    return d && d.corrected ? d.corrected : testo;
+  }
+  async function suggerisciBattute(digimonName, personality, contesto){
+    const d = await apiPost('/api/ai-suggest', { digimonName, personality, context: contesto });
+    return d && d.lines ? d.lines : ['(errore nel generare suggerimenti, riprova)'];
+  }
+
+  function sanitizeKeyPart(s){
+    return String(s||'').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 48);
+  }
+
+  function defaultTamer(){
+    return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, endurance:1 };
+  }
+  function defaultDigimon(){
+    return {
+      name:'', stage:'Rookie', personality:'', woundBoxes:5, mp:3,
+      moves:[
+        {name:'Attacco Base', desc:'Colpo fisico standard.'},
+        {name:'Mossa Speciale', desc:'Consuma MP, usa Intelligenza.'},
+        {name:'Difenditi', desc:'Postura difensiva, nessun costo.'},
+        {name:'Muoviti', desc:'Riposiziona sul campo.'}
+      ]
+    };
+  }
+
+  // ---------- render root ----------
+  function render(){
+    if(!session){ renderLogin(); }
+    else if(session.role==='master'){ renderMaster(); }
+    else { renderPlayer(); }
+  }
+
+  function topbar(subtitle){
+    return `
+    <div class="hud-frame topbar">
+      <div class="brand">
+        <div class="brand-dot"></div>
+        <div>
+          <div class="brand-title mono">Digivice OS // ${subtitle}</div>
+          <div class="brand-sub">Digimon: Digital Adventures — Tavolo Testuale</div>
+        </div>
+      </div>
+      <div class="conn-ticker mono">
+        CAMPAGNA <b>${session ? session.code : '---'}</b> &nbsp;|&nbsp; UTENTE <b>${session ? session.username : '---'}</b>
+        ${session ? `&nbsp;<button class="btn ghost small" id="btn-logout" style="margin-left:10px;">Esci</button>` : ''}
+      </div>
+    </div>
+    ${lastApiError ? `<div class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(lastApiError)}</div>` : ''}`;
+  }
+
+  // ---------- LOGIN ----------
+  function renderLogin(){
+    root.innerHTML = `
+      <div class="login-wrap hud-frame" style="padding:32px;">
+        <h1 class="mono">DIGIVICE // ACCESSO</h1>
+        <div class="sub">Tavolo testuale multi-utente — inserisci un codice campagna condiviso</div>
+        <div class="field">
+          <label>Codice Campagna</label>
+          <input type="text" id="in-code" placeholder="es. FRONTIER01" />
+        </div>
+        <div class="field">
+          <label>Nome Utente</label>
+          <input type="text" id="in-user" placeholder="il tuo nome al tavolo" />
+        </div>
+        <div class="field">
+          <label>Ruolo</label>
+          <div class="role-pick">
+            <button class="btn active" id="role-player" data-role="player">Giocatore</button>
+            <button class="btn" id="role-master" data-role="master">Master</button>
+          </div>
+        </div>
+        <button class="btn solid" id="btn-enter" style="width:100%;padding:12px;">Entra nel Digital World</button>
+        <div class="err" id="login-err"></div>
+      </div>
+    `;
+    let role = 'player';
+    document.getElementById('role-player').onclick = ()=>{ role='player'; document.getElementById('role-player').classList.add('active'); document.getElementById('role-master').classList.remove('active'); };
+    document.getElementById('role-master').onclick = ()=>{ role='master'; document.getElementById('role-master').classList.add('active'); document.getElementById('role-player').classList.remove('active'); };
+
+    document.getElementById('btn-enter').onclick = async ()=>{
+      const code = sanitizeKeyPart(document.getElementById('in-code').value);
+      const username = document.getElementById('in-user').value.trim();
+      const errEl = document.getElementById('login-err');
+      if(!code || !username){ errEl.textContent = 'Inserisci sia il codice campagna che il nome utente.'; return; }
+
+      const roster = await getRoster(code);
+      const existing = roster.find(m=>m.username===username);
+      const member = existing || { username, role, tamer: defaultTamer(), digimon: defaultDigimon() };
+      member.role = role;
+
+      const ok = await saveMember(code, member);
+      if(!ok){
+        errEl.textContent = 'Impossibile collegarsi al server: ' + (lastApiError || 'errore sconosciuto');
+        return;
+      }
+      session = { code, username, role };
+      startPolling();
+      render();
+    };
+  }
+
+  function logout(){
+    if(pollTimer) clearInterval(pollTimer);
+    session = null;
+    render();
+  }
+
+  function startPolling(){
+    if(pollTimer) clearInterval(pollTimer);
+    heartbeat(session.code, session.username);
+    pollTimer = setInterval(async ()=>{
+      if(session) await heartbeat(session.code, session.username);
+      render();
+    }, 4000);
+  }
+
+  function onlineSummary(members){
+    const online = (members||[]).filter(m=>m.last_seen && (Date.now()-new Date(m.last_seen).getTime())<ONLINE_WINDOW_MS);
+    if(online.length===0) return 'nessun altro online';
+    return online.map(m=>`${m.username}${m.role==='master'?' (Master)':''}`).join(', ') + ' online';
+  }
+
+  // ---------- PLAYER VIEW ----------
+  async function renderPlayer(){
+    const code = session.code;
+    const roster = await getRoster(code);
+    const me = roster.find(m=>m.username===session.username) || { tamer: defaultTamer(), digimon: defaultDigimon() };
+    const scene = await getScene(code);
+    const log = await getLog(code);
+
+    root.innerHTML = `
+      ${topbar('Vista Giocatore')}
+      <div class="grid2">
+        <div>
+          <div class="hud-frame card">
+            <div class="flex-between" style="margin-bottom:10px;">
+              <div class="section-title" style="margin:0;border:none;padding:0;">Scena Attuale</div>
+              <div class="muted mono">${onlineSummary(roster)}</div>
+            </div>
+            ${sceneHTML(scene)}
+          </div>
+
+          <div class="hud-frame card">
+            <div class="section-title">Registro Narrativo</div>
+            <div class="log" id="log-box">${logHTML(log)}</div>
+          </div>
+
+          <div class="hud-frame card">
+            <div class="section-title">Dichiara un'Azione</div>
+            <textarea id="action-text" rows="3" placeholder="Scrivi cosa fa il tuo Tamer o il tuo Digimon..."></textarea>
+            <div class="row" style="margin-top:8px;">
+              <button class="btn" id="btn-correct">Correggi Italiano</button>
+              <button class="btn solid" id="btn-send-action">Invia al Registro</button>
+            </div>
+            <div class="muted" id="correct-status" style="margin-top:6px;"></div>
+          </div>
+
+          <div class="hud-frame card">
+            <div class="section-title">Mosse di ${escapeHTML(me.digimon.name || 'Digimon')}</div>
+            <div class="moves-grid">
+              ${(me.digimon.moves||[]).map((m,i)=>`
+                <button class="move-btn" data-move-idx="${i}">
+                  <div class="name mono">${escapeHTML(m.name)}</div>
+                  <div class="desc">${escapeHTML(m.desc)}</div>
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="hud-frame card">
+            <div class="section-title">Scheda Tamer — ${escapeHTML(session.username)}</div>
+            <div class="grid-stats">
+              ${statBox('AGI','agility',me.tamer.agility)}
+              ${statBox('BODY','body',me.tamer.body)}
+              ${statBox('CAR','charisma',me.tamer.charisma)}
+              ${statBox('INT','intelligence',me.tamer.intelligence)}
+              ${statBox('WILL','willpower',me.tamer.willpower)}
+            </div>
+            <div class="field" style="margin-top:12px;">
+              <label>Endurance (Skill) — Caselle Ferita = 3 + Endurance</label>
+              <input type="number" id="stat-endurance" min="0" max="7" value="${me.tamer.endurance}" />
+            </div>
+            <div class="muted">Caselle Ferita Tamer: <b class="mono" style="color:var(--cyan)">${3+Number(me.tamer.endurance||0)}</b></div>
+          </div>
+
+          <div class="hud-frame card">
+            <div class="section-title">Scheda Digimon</div>
+            <div class="field">
+              <label>Nome</label>
+              <input type="text" id="dig-name" value="${escapeAttr(me.digimon.name)}" />
+            </div>
+            <div class="row">
+              <div class="field">
+                <label>Stage</label>
+                <select id="dig-stage">
+                  ${['Baby','Rookie','Champion','Ultimate','Mega'].map(s=>`<option ${me.digimon.stage===s?'selected':''}>${s}</option>`).join('')}
+                </select>
+              </div>
+              <div class="field">
+                <label>Caselle Ferita</label>
+                <input type="number" id="dig-wounds" value="${me.digimon.woundBoxes}" />
+              </div>
+              <div class="field">
+                <label>MP</label>
+                <input type="number" id="dig-mp" value="${me.digimon.mp}" />
+              </div>
+            </div>
+            <div class="field">
+              <label>Personalità (usata dal Master per generare le battute)</label>
+              <textarea id="dig-personality" rows="3" placeholder="es. Leale ma testardo, parla poco e agisce d'istinto, protettivo verso i più deboli...">${escapeHTML(me.digimon.personality)}</textarea>
+            </div>
+            <button class="btn solid" id="btn-save-sheet" style="width:100%;">Salva Scheda</button>
+            <div class="muted" id="save-status" style="margin-top:6px;"></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('btn-logout').onclick = logout;
+    document.getElementById('btn-correct').onclick = async ()=>{
+      const ta = document.getElementById('action-text');
+      const status = document.getElementById('correct-status');
+      status.textContent = 'Correzione in corso...';
+      const corrected = await correggiItaliano(ta.value);
+      ta.value = corrected;
+      status.textContent = lastApiError ? ('Errore: ' + lastApiError) : 'Testo corretto.';
+    };
+    document.getElementById('btn-send-action').onclick = async ()=>{
+      const ta = document.getElementById('action-text');
+      if(!ta.value.trim()) return;
+      await pushLog(code, { who: session.username, role:'player', text: ta.value.trim() });
+      ta.value='';
+      renderPlayer();
+    };
+    document.querySelectorAll('[data-move-idx]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const idx = Number(btn.getAttribute('data-move-idx'));
+        const move = me.digimon.moves[idx];
+        await pushLog(code, { who: session.username, role:'player', text: `${me.digimon.name || 'Il Digimon'} usa ${move.name}!` });
+        renderPlayer();
+      };
+    });
+    document.getElementById('btn-save-sheet').onclick = async ()=>{
+      me.tamer.endurance = Number(document.getElementById('stat-endurance').value)||0;
+      me.digimon.name = document.getElementById('dig-name').value;
+      me.digimon.stage = document.getElementById('dig-stage').value;
+      me.digimon.woundBoxes = Number(document.getElementById('dig-wounds').value)||0;
+      me.digimon.mp = Number(document.getElementById('dig-mp').value)||0;
+      me.digimon.personality = document.getElementById('dig-personality').value;
+      ['agility','body','charisma','intelligence','willpower'].forEach(k=>{
+        const el = document.getElementById('stat-'+k);
+        if(el) me.tamer[k] = Number(el.value)||0;
+      });
+      me.username = session.username;
+      me.role = session.role;
+      const ok = await saveMember(code, me);
+      const statusEl = document.getElementById('save-status');
+      statusEl.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
+      statusEl.textContent = ok ? 'Scheda salvata.' : ('Salvataggio fallito: ' + (lastApiError || 'errore sconosciuto'));
+    };
+    const logBox = document.getElementById('log-box');
+    if(logBox) logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  function statBox(label, key, val){
+    return `<div class="stat-box">
+      <div class="l">${label}</div>
+      <input type="number" min="0" max="5" id="stat-${key}" value="${val}" />
+    </div>`;
+  }
+
+  // ---------- MASTER VIEW ----------
+  async function renderMaster(){
+    const code = session.code;
+    const roster = await getRoster(code);
+    const scene = await getScene(code);
+    const log = await getLog(code);
+    const players = roster.filter(m=>m.role==='player');
+
+    root.innerHTML = `
+      ${topbar('Vista Master')}
+      <div class="grid2">
+        <div>
+          <div class="hud-frame card">
+            <div class="section-title">Composizione Scena</div>
+            ${sceneHTML(scene)}
+            <div class="field" style="margin-top:10px;">
+              <label>Titolo Scena</label>
+              <input type="text" id="scene-title" value="${escapeAttr(scene.title)}" placeholder="es. Foresta di File" />
+            </div>
+            <div class="field">
+              <label>URL Immagine di Sfondo</label>
+              <input type="text" id="scene-bg" value="${escapeAttr(scene.background)}" placeholder="https://..." />
+            </div>
+            <div class="field">
+              <label>URL Musica (mp3 diretto)</label>
+              <input type="text" id="scene-music" value="${escapeAttr(scene.music)}" placeholder="https://.../traccia.mp3" />
+            </div>
+            <button class="btn solid" id="btn-save-scene" style="width:100%;">Aggiorna Scena</button>
+            <div class="muted" id="scene-status" style="margin-top:6px;"></div>
+            ${scene.music ? `<audio controls src="${escapeAttr(scene.music)}" style="width:100%;margin-top:10px;"></audio>` : ''}
+          </div>
+
+          <div class="hud-frame card">
+            <div class="section-title">Registro Narrativo</div>
+            <div class="log" id="log-box">${logHTML(log)}</div>
+            <textarea id="gm-text" rows="2" placeholder="Narrazione del Master..." style="margin-top:10px;"></textarea>
+            <button class="btn amber" id="btn-gm-post" style="width:100%;margin-top:8px;">Pubblica come Master</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="hud-frame card">
+            <div class="section-title">Roster Campagna (${players.length} giocatori)</div>
+            ${players.length===0 ? '<div class="muted">Nessun giocatore ha ancora effettuato l\'accesso a questa campagna.</div>' : players.map((p,i)=>rosterItemHTML(p,i)).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('btn-logout').onclick = logout;
+    document.getElementById('btn-save-scene').onclick = async ()=>{
+      const newScene = {
+        title: document.getElementById('scene-title').value,
+        background: document.getElementById('scene-bg').value,
+        music: document.getElementById('scene-music').value
+      };
+      const ok = await saveScene(code, newScene);
+      const statusEl = document.getElementById('scene-status');
+      statusEl.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
+      statusEl.textContent = ok ? 'Scena aggiornata per tutti i giocatori.' : ('Errore: ' + (lastApiError||''));
+    };
+    document.getElementById('btn-gm-post').onclick = async ()=>{
+      const ta = document.getElementById('gm-text');
+      if(!ta.value.trim()) return;
+      await pushLog(code, { who:'Master', role:'gm', text: ta.value.trim() });
+      ta.value='';
+      renderMaster();
+    };
+    players.forEach((p,i)=>{
+      const btn = document.getElementById('btn-suggest-'+i);
+      if(btn){
+        btn.onclick = async ()=>{
+          btn.disabled = true; btn.textContent = 'Generando...';
+          const contesto = log.slice(-6).map(l=>`${l.who}: ${l.text}`).join('\n');
+          const lines = await suggerisciBattute(p.digimon.name || 'Digimon', p.digimon.personality, contesto);
+          const box = document.getElementById('suggest-box-'+i);
+          box.innerHTML = lines.map(l=>`<div class="suggest-line" data-line="${escapeAttr(l)}">${escapeHTML(l)}</div>`).join('');
+          box.style.display = 'block';
+          box.querySelectorAll('.suggest-line').forEach(el=>{
+            el.onclick = async ()=>{
+              await pushLog(code, { who: p.digimon.name || 'Digimon', role:'digimon', text: el.getAttribute('data-line') });
+              renderMaster();
+            };
+          });
+          btn.disabled = false; btn.textContent = 'Suggerisci Battuta';
+        };
+      }
+    });
+    const logBox = document.getElementById('log-box');
+    if(logBox) logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  function rosterItemHTML(p, i){
+    const online = p.last_seen && (Date.now() - new Date(p.last_seen).getTime()) < ONLINE_WINDOW_MS;
+    return `
+      <div class="roster-item">
+        <div class="flex-between">
+          <div>
+            <span class="brand-dot" style="width:7px;height:7px;display:inline-block;margin-right:6px;background:${online?'var(--cyan)':'var(--text-mute)'};box-shadow:${online?'0 0 6px var(--cyan)':'none'};animation:${online?'pulse 2s infinite':'none'};"></span>
+            <span class="name">${escapeHTML(p.username)}</span>
+            <span class="tag" style="margin-left:6px;">${escapeHTML(p.digimon.stage)}</span>
+            <span class="tag" style="margin-left:6px;color:${online?'var(--cyan)':'var(--text-mute)'};border-color:${online?'var(--cyan-dim)':'var(--line)'};">${online?'online':'offline'}</span>
+          </div>
+          <button class="btn small" id="btn-suggest-${i}">Suggerisci Battuta</button>
+        </div>
+        <div class="sub">Digimon: ${escapeHTML(p.digimon.name || '(senza nome)')} — Ferite: ${p.digimon.woundBoxes} — MP: ${p.digimon.mp}</div>
+        <div class="sub">AGI ${p.tamer.agility} · BODY ${p.tamer.body} · CAR ${p.tamer.charisma} · INT ${p.tamer.intelligence} · WILL ${p.tamer.willpower}</div>
+        <div id="suggest-box-${i}" class="suggest-box" style="display:none;"></div>
+      </div>
+    `;
+  }
+
+  // ---------- shared render helpers ----------
+  function sceneHTML(scene){
+    if(!scene || (!scene.background && !scene.title)){
+      return `<div class="scene-box"><div class="scene-empty">Nessuna scena impostata dal Master</div></div>`;
+    }
+    return `
+      <div class="scene-box">
+        ${scene.background ? `<img class="bg" src="${escapeAttr(scene.background)}" onerror="this.style.display='none'" />` : ''}
+        <div class="overlay"></div>
+        ${scene.title ? `<div class="title">${escapeHTML(scene.title)}</div>` : ''}
+      </div>
+    `;
+  }
+
+  function logHTML(log){
+    if(!log || log.length===0) return '<div class="muted">Il registro è vuoto. Le azioni appariranno qui.</div>';
+    return log.map(l=>`
+      <div class="log-entry ${l.role}">
+        <span class="who mono">${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span>
+        <div class="txt">${escapeHTML(l.text)}</div>
+      </div>
+    `).join('');
+  }
+
+  function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function escapeAttr(s){ return escapeHTML(s); }
+
+  render();
+})();
+</script>
+</body>
+</html>

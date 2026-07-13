@@ -1,0 +1,9 @@
+{
+  "name": "digimon-tabletop-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Digimon: Digital Adventures 2E — tavolo testuale multi-utente con backend Supabase e assistenza IA via Claude API",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  }
+}
