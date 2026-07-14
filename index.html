@@ -128,6 +128,7 @@
   .role-pick .btn{flex:1;}
   .role-pick .btn.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
   #tab-scheda.active, #tab-inventario.active, #tab-dex.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
+  #chatmode-public.active, #chatmode-private.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
 
   .roster-item{padding:10px;border-bottom:1px solid var(--line);font-size:12px;}
   .roster-item:last-child{border-bottom:none;}
@@ -187,6 +188,7 @@
   let editingDigimon = false;
   let editingScene = false;
   let sidebarTab = 'scheda';
+  let playerChatMode = 'public';
   let cachedRoster = [];
   let cachedScene = { title:'', background:'', music:'' };
   let cachedLog = [];
@@ -510,7 +512,7 @@
       dpTotal:0, qualities:[],
       defaultStage:'Rookie', defaultRange:1, evolutionPoints:0, forcedEvoRoundsLeft:0,
       battery:0, usedSigMoveThisTurn:false,
-      size:'Medium', stance:'Neutral',
+      size:'Medium', stance:'Neutral', chatColor:'#c896ff',
       moves:[
         {name:'Attacco Base', desc:'Colpo fisico standard.'},
         {name:'Mossa Speciale', desc:'Consuma MP, usa Intelligenza.'},
@@ -618,6 +620,26 @@
     }, 4000);
   }
 
+  function updateChatModeButtons(){
+    const pubBtn = document.getElementById('chatmode-public');
+    const privBtn = document.getElementById('chatmode-private');
+    if(pubBtn) pubBtn.classList.toggle('active', playerChatMode==='public');
+    if(privBtn) privBtn.classList.toggle('active', playerChatMode==='private');
+  }
+
+  async function refreshPlayerLogDisplay(code, me){
+    updateChatModeButtons();
+    const logLive = document.getElementById('log-live');
+    if(!logLive) return;
+    if(playerChatMode==='private'){
+      const plog = await getPrivateLog(code, session.username);
+      logLive.innerHTML = logHTML(plog, false);
+    } else {
+      logLive.innerHTML = logHTML(cachedLog, false);
+    }
+    logLive.scrollTop = logLive.scrollHeight;
+  }
+
   function onlineSummary(members){
     const online = (members||[]).filter(m=>m.last_seen && (Date.now()-new Date(m.last_seen).getTime())<ONLINE_WINDOW_MS);
     if(online.length===0) return 'nessun altro online';
@@ -640,9 +662,16 @@
     }
     const logLive = document.getElementById('log-live');
     if(logLive){
-      const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
-      logLive.innerHTML = logHTML(cachedLog, session && session.role==='master');
-      if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
+      if(session.role==='player' && playerChatMode==='private'){
+        const plog = await getPrivateLog(session.code, session.username);
+        const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
+        logLive.innerHTML = logHTML(plog, false);
+        if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
+      } else {
+        const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
+        logLive.innerHTML = logHTML(cachedLog, session && session.role==='master');
+        if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
+      }
     }
     const rosterLive = document.getElementById('roster-live');
     if(rosterLive && session.role==='master' && openManageIdx===null){
@@ -695,7 +724,7 @@
             box.style.display = 'block';
             box.querySelectorAll('.suggest-line').forEach(el=>{
               el.onclick = async ()=>{
-                await pushLog(session.code, { who: p.digimon.name || 'Digimon', role:'digimon', text: el.getAttribute('data-line') });
+                await pushLog(session.code, { who: p.digimon.name || 'Digimon', role:'digimon', text: el.getAttribute('data-line'), meta: p.digimon.chatColor ? { color: p.digimon.chatColor, avatar: p.digimon.imageUrl } : null });
                 refreshLiveParts();
               };
             });
@@ -1017,7 +1046,13 @@
           </div>
 
           <div class="hud-frame card">
-            <div class="section-title">Registro Narrativo</div>
+            <div class="flex-between" style="margin-bottom:8px;">
+              <div class="section-title" style="margin:0;border:none;padding:0;">Registro Narrativo</div>
+              <div style="display:flex;gap:4px;">
+                <button class="btn small" id="chatmode-public">Pubblico</button>
+                <button class="btn small" id="chatmode-private">Privata (Master)</button>
+              </div>
+            </div>
             <div class="log" id="log-live">${logHTML(cachedLog, session.role==='master')}</div>
           </div>
 
@@ -1057,7 +1092,6 @@
             <button class="btn small" id="tab-scheda" style="flex:1;">Scheda</button>
             <button class="btn small" id="tab-inventario" style="flex:1;">Inventario</button>
             <button class="btn small" id="tab-dex" style="flex:1;">Dex</button>
-            <button class="btn small" id="tab-privata" style="flex:1;">Privata</button>
           </div>
           <div id="sidebar-content"></div>
         </div>
@@ -1068,7 +1102,6 @@
     document.getElementById('tab-scheda').onclick = ()=>{ sidebarTab='scheda'; renderSidebar(me); };
     document.getElementById('tab-inventario').onclick = ()=>{ sidebarTab='inventario'; renderSidebar(me); };
     document.getElementById('tab-dex').onclick = ()=>{ sidebarTab='dex'; renderSidebar(me); };
-    document.getElementById('tab-privata').onclick = ()=>{ sidebarTab='privata'; renderSidebar(me); };
 
     document.getElementById('btn-logout').onclick = logout;
     document.getElementById('btn-correct').onclick = async ()=>{
@@ -1083,6 +1116,12 @@
       const ta = document.getElementById('action-text');
       const raw = ta.value.trim();
       if(!raw) return;
+      if(playerChatMode==='private'){
+        await pushPrivateLog(code, session.username, { who: session.username, role:'player', text: raw });
+        ta.value='';
+        await refreshPlayerLogDisplay(code, me);
+        return;
+      }
       const rollResult = tryParseRollShortcut(raw, me);
       const resEl = document.getElementById('action-roll-result');
       if(rollResult){
@@ -1107,6 +1146,9 @@
       };
     });
     attachLogModeration(document.getElementById('log-live'), code, me);
+    updateChatModeButtons();
+    document.getElementById('chatmode-public').onclick = async ()=>{ playerChatMode='public'; await refreshPlayerLogDisplay(code, me); };
+    document.getElementById('chatmode-private').onclick = async ()=>{ playerChatMode='private'; await refreshPlayerLogDisplay(code, me); };
     bindCombatSelfActions(code, session.username);
 
     startPolling();
@@ -1259,6 +1301,201 @@
     return TALENT_DEFS.filter(t => Number(tamer[t.attr]||0) >= t.threshold);
   }
 
+  const STAGE_CREATION = {
+    Baby:     { dp:5,  startStat:1 },
+    Rookie:   { dp:10, startStat:2 },
+    Champion: { dp:20, startStat:3 },
+    Ultimate: { dp:30, startStat:4 },
+    Mega:     { dp:40, startStat:5 }
+  };
+  let creationDraft = null;
+
+  function openCreationWizard(me){
+    if(!window.confirm('La Creazione Guidata azzera Attributi, Skill e Stat Base del Digimon per ricostruirli da zero rispettando i vincoli del manuale. Continuare?')) return;
+    creationDraft = {
+      tamer: { agility:1, body:1, charisma:1, intelligence:1, willpower:1, skills: defaultSkills() },
+      digimon: { stage:'Rookie', size:'Medium', name: me.digimon.name||'', imageUrl: me.digimon.imageUrl||'', personality: me.digimon.personality||'',
+        baseAccuracy: STAGE_CREATION.Rookie.startStat, baseDamage: STAGE_CREATION.Rookie.startStat, baseDodge: STAGE_CREATION.Rookie.startStat, baseArmor: STAGE_CREATION.Rookie.startStat, baseHealth: STAGE_CREATION.Rookie.startStat },
+      step: 1
+    };
+    sidebarTab = 'wizard';
+    renderCreationWizard(me);
+  }
+
+  function renderCreationWizard(me){
+    const content = document.getElementById('sidebar-content');
+    if(!content) return;
+    if(creationDraft.step===1) renderWizardTamerStep(content, me);
+    else renderWizardDigimonStep(content, me);
+  }
+
+  function renderWizardTamerStep(content, me){
+    const draft = creationDraft.tamer;
+    const attrs = ['agility','body','charisma','intelligence','willpower'];
+    const apSpent = attrs.reduce((s,a)=>s+(draft[a]-1),0);
+    const apRemaining = 10 - apSpent;
+    const spSpent = SKILL_DEFS.reduce((s,def)=>s+Number(draft.skills[def.key]||0),0);
+    const spRemaining = 25 - spSpent;
+    const attrAt5 = attrs.filter(a=>draft[a]===5).length;
+    const skillsAt5 = SKILL_DEFS.filter(def=>Number(draft.skills[def.key]||0)===5).length;
+    const errors = [];
+    if(apRemaining!==0) errors.push(`Punti Attributo da spendere: ${apRemaining} (devono arrivare esattamente a 0)`);
+    if(spRemaining!==0) errors.push(`Punti Skill da spendere: ${spRemaining} (devono arrivare esattamente a 0)`);
+    if(attrAt5>1) errors.push('Solo un Attributo può arrivare a 5 in creazione.');
+    if(skillsAt5>1) errors.push('Solo una Skill può arrivare a 5 in creazione.');
+
+    content.innerHTML = `
+      <div class="hud-frame card">
+        <div class="section-title">🧙 Creazione Guidata — Passo 1: Tamer</div>
+        <div class="muted" style="margin-bottom:8px;">10 Punti Attributo (partono da 1) · 25 Punti Skill · solo un Attributo e una Skill possono arrivare a 5.</div>
+        <div class="flex-between" style="margin-bottom:6px;"><span class="muted">Punti Attributo rimasti</span><span class="mono" style="color:${apRemaining===0?'var(--cyan)':'var(--amber)'};">${apRemaining}</span></div>
+        <div class="grid-stats">
+          ${attrs.map(a=>`
+            <div class="stat-box">
+              <div class="l">${ATTR_ABBR[a]}</div>
+              <input type="number" data-wiz-attr="${a}" min="1" max="5" value="${draft[a]}" />
+            </div>
+          `).join('')}
+        </div>
+        <div class="divider"></div>
+        <div class="flex-between" style="margin-bottom:6px;"><span class="muted">Punti Skill rimasti</span><span class="mono" style="color:${spRemaining===0?'var(--cyan)':'var(--amber)'};">${spRemaining}</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          ${SKILL_DEFS.map(def=>{
+            const max = Math.min(5, skillMax(draft, def));
+            return `<div class="stat-box" style="text-align:left;padding:6px 8px;">
+              <div class="l">${escapeHTML(def.label)} <span class="muted" style="font-size:9px;">(max ${max})</span></div>
+              <input type="number" data-wiz-skill="${def.key}" min="0" max="${max}" value="${draft.skills[def.key]||0}" />
+            </div>`;
+          }).join('')}
+        </div>
+        <div class="divider"></div>
+        ${errors.length ? `<div class="err">${errors.map(e=>escapeHTML(e)).join('<br/>')}</div>` : '<div class="muted" style="color:var(--cyan);">Tutto valido, puoi proseguire.</div>'}
+        <div class="row" style="margin-top:10px;">
+          <button class="btn ghost" id="btn-wiz-cancel">Annulla</button>
+          <button class="btn solid" id="btn-wiz-next" ${errors.length?'disabled':''}>Avanti: Digimon →</button>
+        </div>
+      </div>
+    `;
+    content.querySelectorAll('[data-wiz-attr]').forEach(inp=>{
+      inp.onchange = ()=>{
+        draft[inp.getAttribute('data-wiz-attr')] = Math.max(1, Math.min(5, Number(inp.value)||1));
+        renderWizardTamerStep(content, me);
+      };
+    });
+    content.querySelectorAll('[data-wiz-skill]').forEach(inp=>{
+      inp.onchange = ()=>{
+        const key = inp.getAttribute('data-wiz-skill');
+        const def = SKILL_DEFS.find(d=>d.key===key);
+        const max = Math.min(5, skillMax(draft, def));
+        draft.skills[key] = Math.max(0, Math.min(max, Number(inp.value)||0));
+        renderWizardTamerStep(content, me);
+      };
+    });
+    document.getElementById('btn-wiz-cancel').onclick = ()=>{ creationDraft=null; sidebarTab='scheda'; renderSidebar(me); };
+    const nextBtn = document.getElementById('btn-wiz-next');
+    if(nextBtn) nextBtn.onclick = ()=>{ creationDraft.step = 2; renderCreationWizard(me); };
+  }
+
+  function renderWizardDigimonStep(content, me){
+    const draft = creationDraft.digimon;
+    const cfg = STAGE_CREATION[draft.stage];
+    const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
+    const statLabels = { baseAccuracy:'ACC', baseDamage:'DMG', baseDodge:'DODGE', baseArmor:'ARM', baseHealth:'HP' };
+    const dpSpent = statKeys.reduce((s,k)=>s+(draft[k]-cfg.startStat),0);
+    const dpRemaining = cfg.dp - dpSpent;
+    const errors = [];
+    if(dpRemaining<0) errors.push(`Hai speso troppi DP sulle Stat (sforo di ${-dpRemaining}).`);
+
+    content.innerHTML = `
+      <div class="hud-frame card">
+        <div class="section-title">🧙 Creazione Guidata — Passo 2: Digimon</div>
+        <div class="field"><label>Nome</label><input type="text" id="wiz-d-name" value="${escapeAttr(draft.name)}" /></div>
+        <div class="row">
+          <div class="field"><label>Stage</label>
+            <select id="wiz-d-stage">${STAGES.map(s=>`<option ${draft.stage===s?'selected':''}>${s}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label>Size</label>
+            <select id="wiz-d-size">${allowedSizes(draft.stage).map(s=>`<option ${draft.size===s?'selected':''}>${s}</option>`).join('')}</select>
+          </div>
+        </div>
+        <div class="muted" style="margin-bottom:6px;">DP di partenza per ${escapeHTML(draft.stage)}: <b>${cfg.dp}</b> · Stat base: <b>${cfg.startStat}</b> ciascuna prima di spendere DP.</div>
+        <div class="flex-between" style="margin-bottom:6px;"><span class="muted">DP rimasti per le Stat</span><span class="mono" style="color:${dpRemaining>=0?'var(--cyan)':'var(--danger)'};">${dpRemaining}</span></div>
+        <div class="grid-stats" style="grid-template-columns:repeat(5,1fr);">
+          ${statKeys.map(k=>`
+            <div class="stat-box">
+              <div class="l">${statLabels[k]}</div>
+              <input type="number" data-wiz-stat="${k}" min="${cfg.startStat}" value="${draft[k]}" />
+            </div>
+          `).join('')}
+        </div>
+        <div class="muted" style="margin-top:6px;">DP non spesi in Stat verranno riservati come budget Qualities (${Math.max(0,dpRemaining)} DP).</div>
+        <div class="field" style="margin-top:8px;"><label>Personalità</label><textarea id="wiz-d-personality" rows="2">${escapeHTML(draft.personality)}</textarea></div>
+        <div class="field"><label>URL Immagine (opz.)</label><input type="text" id="wiz-d-img" value="${escapeAttr(draft.imageUrl)}" /></div>
+        <div class="divider"></div>
+        ${errors.length ? `<div class="err">${errors.map(e=>escapeHTML(e)).join('<br/>')}</div>` : '<div class="muted" style="color:var(--cyan);">Tutto valido.</div>'}
+        <div class="row" style="margin-top:10px;">
+          <button class="btn ghost" id="btn-wiz-back">← Indietro</button>
+          <button class="btn solid" id="btn-wiz-finish" ${errors.length?'disabled':''}>✅ Applica e Salva</button>
+        </div>
+        <div class="muted" id="wiz-status" style="margin-top:6px;"></div>
+      </div>
+    `;
+    document.getElementById('wiz-d-name').onchange = (e)=>{ draft.name = e.target.value; };
+    document.getElementById('wiz-d-personality').onchange = (e)=>{ draft.personality = e.target.value; };
+    document.getElementById('wiz-d-img').onchange = (e)=>{ draft.imageUrl = e.target.value; };
+    document.getElementById('wiz-d-stage').onchange = (e)=>{
+      draft.stage = e.target.value;
+      const newCfg = STAGE_CREATION[draft.stage];
+      statKeys.forEach(k=>{ draft[k] = newCfg.startStat; });
+      draft.size = allowedSizes(draft.stage)[0] || 'Medium';
+      renderWizardDigimonStep(content, me);
+    };
+    document.getElementById('wiz-d-size').onchange = (e)=>{ draft.size = e.target.value; };
+    content.querySelectorAll('[data-wiz-stat]').forEach(inp=>{
+      inp.onchange = ()=>{
+        draft[inp.getAttribute('data-wiz-stat')] = Math.max(cfg.startStat, Number(inp.value)||cfg.startStat);
+        renderWizardDigimonStep(content, me);
+      };
+    });
+    document.getElementById('btn-wiz-back').onclick = ()=>{ creationDraft.step = 1; renderCreationWizard(me); };
+    const finishBtn = document.getElementById('btn-wiz-finish');
+    if(finishBtn){
+      finishBtn.onclick = async ()=>{
+        const t = creationDraft.tamer;
+        ['agility','body','charisma','intelligence','willpower'].forEach(a=>{ me.tamer[a] = t[a]; });
+        me.tamer.skills = t.skills;
+        me.tamer.unspentGrowthPoints = 0;
+        me.tamer.currentWounds = 3 + Number(t.skills.endurance||0);
+
+        me.digimon.name = draft.name;
+        me.digimon.stage = draft.stage;
+        me.digimon.defaultStage = draft.stage;
+        me.digimon.size = draft.size;
+        me.digimon.personality = draft.personality;
+        me.digimon.imageUrl = draft.imageUrl;
+        statKeys.forEach(k=>{ me.digimon[k] = draft[k]; });
+        me.digimon.maxWounds = stageIndex(draft.stage) + Number(draft.baseHealth)*2;
+        me.digimon.currentWounds = me.digimon.maxWounds;
+        me.digimon.dpTotal = Math.max(0, dpRemaining);
+        me.digimon.qualities = [];
+        me.digimon.evolutionPoints = 0;
+        me.digimon.defaultRange = 1;
+
+        const ok = await saveMember(session.code, me);
+        const st = document.getElementById('wiz-status');
+        if(ok){
+          st.style.color='var(--text-mute)'; st.textContent = 'Personaggio creato! Torno alla scheda...';
+          creationDraft = null;
+          sidebarTab = 'scheda';
+          await pushLog(session.code, { who: session.username, role:'player', text: `${session.username} ha completato la creazione del personaggio con ${me.digimon.name||'il proprio Digimon'}.` });
+          setTimeout(()=>{ renderSidebar(me); refreshLiveParts(); }, 600);
+        } else {
+          st.style.color='var(--danger)'; st.textContent = 'Errore: ' + (lastApiError||'sconosciuto');
+        }
+      };
+    }
+  }
+
   function renderTamerCard(me, containerId){
     containerId = containerId || 'tamer-card';
     const cardEl = document.getElementById(containerId);
@@ -1268,19 +1505,22 @@
     if(!editingTamer){
       cardEl.innerHTML = `
         <div class="flex-between"><div class="section-title" style="margin:0;border:none;padding:0;">Scheda Tamer</div>
-        <button class="btn small" id="btn-edit-tamer">Modifica</button></div>
+        <span><button class="btn ghost small" id="btn-open-wizard" style="margin-right:4px;">🧙 Creazione Guidata</button><button class="btn small" id="btn-edit-tamer">Modifica</button></span></div>
         <div class="sheet-head" style="margin-top:12px;">
           ${portraitHTML(t.imageUrl, session.username)}
           <div class="info"><div class="nm">${escapeHTML(session.username)}</div><div class="tg">AGI ${t.agility} · BODY ${t.body} · CAR ${t.charisma} · INT ${t.intelligence} · WILL ${t.willpower}</div></div>
         </div>
         ${barHTML('Caselle Ferita', t.currentWounds, maxW, 'hp', 'tamer-w-minus', 'tamer-w-plus')}
         <div class="divider"></div>
-        <div class="muted" style="margin-bottom:6px;">Tamer Talents (sbloccati automaticamente)</div>
-        ${(()=>{ const unlocked = computeUnlockedTalents(t); return unlocked.length===0
-          ? '<div class="muted">Nessun Talent ancora sbloccato (servono almeno 3 punti in un Attributo).</div>'
-          : unlocked.map(tal=>`<div class="roster-item" style="padding:6px 8px;margin-bottom:4px;"><div class="flex-between"><b>${escapeHTML(tal.name)}</b><span class="tag">${ATTR_ABBR[tal.attr]} ${tal.threshold}+</span></div><div class="sub" style="margin-top:2px;">${escapeHTML(tal.text)}</div></div>`).join(''); })()}
+        <details>
+          <summary class="muted" style="cursor:pointer;margin-bottom:6px;">Tamer Talents (sbloccati automaticamente) — ${computeUnlockedTalents(t).length}</summary>
+          ${(()=>{ const unlocked = computeUnlockedTalents(t); return unlocked.length===0
+            ? '<div class="muted">Nessun Talent ancora sbloccato (servono almeno 3 punti in un Attributo).</div>'
+            : unlocked.map(tal=>`<div class="roster-item" style="padding:6px 8px;margin-bottom:4px;"><div class="flex-between"><b>${escapeHTML(tal.name)}</b><span class="tag">${ATTR_ABBR[tal.attr]} ${tal.threshold}+</span></div><div class="sub" style="margin-top:2px;">${escapeHTML(tal.text)}</div></div>`).join(''); })()}
+        </details>
       `;
       document.getElementById('btn-edit-tamer').onclick = ()=>{ editingTamer = true; renderTamerCard(me); };
+      document.getElementById('btn-open-wizard').onclick = ()=>{ openCreationWizard(me); };
       document.getElementById('tamer-w-minus').onclick = async ()=>{ me.tamer.currentWounds = Math.max(0, me.tamer.currentWounds-1); await saveMember(session.code, me); renderTamerCard(me); };
       document.getElementById('tamer-w-plus').onclick = async ()=>{ me.tamer.currentWounds = Math.min(maxW, me.tamer.currentWounds+1); await saveMember(session.code, me); renderTamerCard(me); };
     } else {
@@ -1370,7 +1610,7 @@
   function renderSidebar(me){
     const content = document.getElementById('sidebar-content');
     if(!content) return;
-    ['scheda','inventario','dex','privata'].forEach(t=>{
+    ['scheda','inventario','dex'].forEach(t=>{
       const btn = document.getElementById('tab-'+t);
       if(btn) btn.classList.toggle('active', t===sidebarTab);
     });
@@ -1389,32 +1629,12 @@
     } else if(sidebarTab==='dex'){
       content.innerHTML = `<div class="hud-frame card" id="dex-panel-card"></div>`;
       renderDexPanel(false);
-    } else if(sidebarTab==='privata'){
-      content.innerHTML = `<div class="hud-frame card" id="private-chat-card"></div>`;
-      renderPrivateChatPlayer(session.code, session.username);
+    } else if(sidebarTab==='wizard' && creationDraft){
+      renderCreationWizard(me);
+    } else {
+      sidebarTab = 'scheda';
+      renderSidebar(me);
     }
-  }
-
-  async function renderPrivateChatPlayer(code, username){
-    const cardEl = document.getElementById('private-chat-card');
-    if(!cardEl) return;
-    const log = await getPrivateLog(code, username);
-    cardEl.innerHTML = `
-      <div class="section-title">Chat Privata col Master</div>
-      <div class="muted" style="margin-bottom:8px;">Visibile solo a te e al Master — per scene in split.</div>
-      <div class="log" id="private-log-live" style="height:220px;">${logHTML(log, false)}</div>
-      <textarea id="private-text" rows="2" placeholder="Scrivi al Master..." style="margin-top:8px;"></textarea>
-      <button class="btn solid" id="btn-private-send" style="width:100%;margin-top:6px;">Invia</button>
-    `;
-    document.getElementById('btn-private-send').onclick = async ()=>{
-      const ta = document.getElementById('private-text');
-      if(!ta.value.trim()) return;
-      await pushPrivateLog(code, username, { who: username, role:'player', text: ta.value.trim() });
-      ta.value='';
-      renderPrivateChatPlayer(code, username);
-    };
-    const logLive = document.getElementById('private-log-live');
-    if(logLive) logLive.scrollTop = logLive.scrollHeight;
   }
 
   function renderDexPanel(canEdit){
@@ -1583,18 +1803,10 @@
           <div class="stat-box"><div class="v">${der.cpu}</div><div class="l">CPU</div></div>
         </div>
         <div class="row" style="margin-top:8px;">
-          <div class="field" style="margin-bottom:0;"><label>Size</label>
-            <select id="dig-size-${containerId}">${allowedSizes(d.stage).map(s=>`<option ${d.size===s?'selected':''}>${s}</option>`).join('')}</select>
-          </div>
-          <div class="field" style="margin-bottom:0;"><label>Stance</label>
-            <select id="dig-stance-${containerId}">
-              <option ${d.stance==='Neutral'?'selected':''}>Neutral</option>
-              <option ${d.stance==='Offensive'?'selected':''}>Offensive</option>
-              <option ${d.stance==='Defensive'?'selected':''}>Defensive</option>
-            </select>
-          </div>
+          <div class="stat-box"><div class="l">SIZE</div><div class="v" style="font-size:14px;">${escapeHTML(d.size)}</div></div>
+          <div class="stat-box"><div class="l">STANCE</div><div class="v" style="font-size:14px;">${escapeHTML(d.stance)}</div></div>
         </div>
-        <div class="muted" style="margin-top:4px;">Stance: ${d.stance==='Neutral'?'nessun bonus/penalità':(d.stance==='Offensive'?`+${stageIndex(d.stage)} Accuracy, −${stageIndex(d.stage)} Dodge`:`+${stageIndex(d.stage)} Dodge, −${stageIndex(d.stage)} Accuracy`)} (cambiarla costa 1 Azione, da segnare a parte)</div>
+        <div class="muted" style="margin-top:4px;">Stance: ${d.stance==='Neutral'?'nessun bonus/penalità':(d.stance==='Offensive'?`+${stageIndex(d.stage)} Accuracy, −${stageIndex(d.stage)} Dodge`:`+${stageIndex(d.stage)} Dodge, −${stageIndex(d.stage)} Accuracy`)} (modificabile da "Modifica")</div>
         <div class="divider"></div>
         ${barHTML('Battery', d.battery, batteryCap(d.stage), 'mp', 'dig-batt-minus-'+containerId, 'dig-batt-plus-'+containerId)}
         <button class="btn amber" id="btn-sig-move-${containerId}" style="width:100%;margin-top:4px;" ${(d.battery||0)<1?'disabled':''}>⚡ Usa Signature Move (Battery ${d.battery||0})</button>
@@ -1621,16 +1833,6 @@
       document.getElementById('dig-mp-plus-'+containerId).onclick = async ()=>{ me.digimon.currentMp = Math.min(me.digimon.maxMp, me.digimon.currentMp+1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
       document.getElementById('dig-batt-minus-'+containerId).onclick = async ()=>{ me.digimon.battery = Math.max(0, (me.digimon.battery||0)-1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
       document.getElementById('dig-batt-plus-'+containerId).onclick = async ()=>{ me.digimon.battery = Math.min(batteryCap(me.digimon.stage), (me.digimon.battery||0)+1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
-      const sizeSel = document.getElementById('dig-size-'+containerId);
-      if(sizeSel) sizeSel.onchange = async ()=>{ me.digimon.size = sizeSel.value; await saveMember(session.code, me); renderDigimonCard(me, containerId); };
-      const stanceSel = document.getElementById('dig-stance-'+containerId);
-      if(stanceSel) stanceSel.onchange = async ()=>{
-        me.digimon.stance = stanceSel.value;
-        await saveMember(session.code, me);
-        await pushLog(session.code, { who: session.username, role:'player', text: `${me.digimon.name||'Il Digimon'} cambia Stance in ${stanceSel.value}.` });
-        renderDigimonCard(me, containerId);
-        refreshLiveParts();
-      };
       const sigBtn = document.getElementById('btn-sig-move-'+containerId);
       if(sigBtn){
         sigBtn.onclick = async ()=>{
@@ -1718,6 +1920,19 @@
           <div class="field"><label>MP Massimi</label><input type="number" id="e-d-maxmp-${containerId}" value="${d.maxMp}" /></div>
         </div>
         <div class="field"><label>Personalità (usata dal Master per le battute)</label><textarea id="e-d-personality-${containerId}" rows="3">${escapeHTML(d.personality)}</textarea></div>
+        <div class="row">
+          <div class="field"><label>Size</label>
+            <select id="e-d-size-${containerId}">${allowedSizes(d.stage).map(s=>`<option ${d.size===s?'selected':''}>${s}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label>Stance</label>
+            <select id="e-d-stance-${containerId}">
+              <option ${d.stance==='Neutral'?'selected':''}>Neutral</option>
+              <option ${d.stance==='Offensive'?'selected':''}>Offensive</option>
+              <option ${d.stance==='Defensive'?'selected':''}>Defensive</option>
+            </select>
+          </div>
+          <div class="field" style="max-width:70px;"><label>Colore Chat</label><input type="color" id="e-d-color-${containerId}" value="${d.chatColor||'#c896ff'}" style="padding:2px;height:38px;" /></div>
+        </div>
         <div class="divider"></div>
         <div class="muted" style="margin-bottom:6px;">Stat Base (Combattimento) — le Stat Derivate (BIT/DOS/RAM/CPU) si calcolano da sole</div>
         <div class="row">
@@ -1790,6 +2005,9 @@
         me.digimon.maxWounds = Number(document.getElementById('e-d-maxw-'+containerId).value)||1;
         me.digimon.maxMp = Number(document.getElementById('e-d-maxmp-'+containerId).value)||0;
         me.digimon.personality = document.getElementById('e-d-personality-'+containerId).value;
+        me.digimon.size = document.getElementById('e-d-size-'+containerId).value;
+        me.digimon.stance = document.getElementById('e-d-stance-'+containerId).value;
+        me.digimon.chatColor = document.getElementById('e-d-color-'+containerId).value;
         me.digimon.baseAccuracy = Number(document.getElementById('e-d-acc-'+containerId).value)||0;
         me.digimon.baseDamage = Number(document.getElementById('e-d-dmg-'+containerId).value)||0;
         me.digimon.baseDodge = Number(document.getElementById('e-d-dodge-'+containerId).value)||0;
@@ -1936,6 +2154,7 @@
               <select id="speak-as">
                 <option value="master">Master (narrazione)</option>
                 ${players.map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (p.username+' — Digimon'))}</option>`).join('')}
+                ${(cachedScene.encounters||[]).map((name,i)=>`<option value="encounter:${i}">${escapeHTML(name)} (in scena)</option>`).join('')}
                 <option value="enemy">Nemico personalizzato...</option>
               </select>
             </div>
@@ -2050,19 +2269,29 @@
       const text = ta.value.trim();
       if(!text) return;
       const mode = speakAsSel ? speakAsSel.value : 'master';
-      let who = 'Master', role = 'gm', avatar = null;
+      let who = 'Master', role = 'gm', avatar = null, color = null;
       if(mode.startsWith('digimon:')){
         const username = mode.slice('digimon:'.length);
         const member = cachedRoster.find(m=>m.username===username);
         who = (member && member.digimon.name) ? member.digimon.name : username;
         role = 'digimon';
         avatar = member ? member.digimon.imageUrl : null;
+        color = member ? member.digimon.chatColor : null;
+      } else if(mode.startsWith('encounter:')){
+        const idx = Number(mode.slice('encounter:'.length));
+        who = (cachedScene.encounters||[])[idx] || 'Digimon';
+        const dexMatch = cachedDex.find(e=>e.name.trim().toLowerCase()===who.trim().toLowerCase());
+        role = 'enemy';
+        avatar = dexMatch ? dexMatch.image_url : null;
       } else if(mode==='enemy'){
         who = document.getElementById('enemy-speak-name').value.trim() || 'Nemico';
         role = 'enemy';
         avatar = document.getElementById('enemy-speak-img').value.trim() || null;
       }
-      await pushLog(code, { who, role, text, meta: avatar ? { avatar } : null });
+      const meta = {};
+      if(avatar) meta.avatar = avatar;
+      if(color) meta.color = color;
+      await pushLog(code, { who, role, text, meta: Object.keys(meta).length ? meta : null });
       ta.value='';
       refreshLiveParts();
     };
@@ -2864,7 +3093,7 @@
       return `
       <div class="log-entry ${l.role}">
         <div class="flex-between">
-          <div>${l.meta && l.meta.avatar ? `<img class="who-avatar" src="${escapeAttr(l.meta.avatar)}" onerror="this.style.display='none'" />` : ''}<span class="who mono">${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span></div>
+          <div>${l.meta && l.meta.avatar ? `<img class="who-avatar" src="${escapeAttr(l.meta.avatar)}" onerror="this.style.display='none'" />` : ''}<span class="who mono" ${l.meta && l.meta.color ? `style="color:${escapeAttr(l.meta.color)};"` : ''}>${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span></div>
           ${canModerate ? `<div><button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;">✎</button><button class="btn ghost small" data-log-del="${l.id}" style="padding:2px 6px;">✕</button></div>` : ''}
         </div>
         <div class="txt">${escapeHTML(displayText)}</div>
