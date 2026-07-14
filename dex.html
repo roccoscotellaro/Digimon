@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Digidex — Digimon: Digital Adventures 2E</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #080b10;
+    --panel: #0e141b;
+    --panel-2: #121a22;
+    --line: #1c2a30;
+    --cyan: #35e8c9;
+    --cyan-dim: #1f6e63;
+    --amber: #ff8a3d;
+    --text: #dcece8;
+    --text-mute: #6d8385;
+    --danger: #ff5d5d;
+    --radius: 2px;
+    font-family: 'Manrope', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;padding:0;background:var(--bg);color:var(--text);}
+  .mono{font-family:'Share Tech Mono', monospace;}
+  .app{min-height:100vh;background:
+      radial-gradient(circle at 15% 10%, rgba(53,232,201,0.06), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(255,138,61,0.05), transparent 45%),
+      var(--bg);
+      padding:20px;}
+  .hud-frame{border:1px solid var(--line); background:var(--panel); border-radius:var(--radius); position:relative;}
+  .hud-frame::before{content:"";position:absolute;top:-1px;left:-1px;width:14px;height:14px;border-top:2px solid var(--cyan);border-left:2px solid var(--cyan);}
+  .hud-frame::after{content:"";position:absolute;bottom:-1px;right:-1px;width:14px;height:14px;border-bottom:2px solid var(--cyan);border-right:2px solid var(--cyan);}
+  .topbar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;margin-bottom:18px;flex-wrap:wrap;gap:8px;}
+  .brand-title{font-size:15px;text-transform:uppercase;color:var(--cyan);}
+  .brand-sub{font-size:11px;color:var(--text-mute);}
+  .conn-ticker{font-size:11px;color:var(--text-mute);}
+  .conn-ticker b{color:var(--cyan);}
+  .btn{font-family:'Share Tech Mono',monospace;background:transparent;border:1px solid var(--cyan-dim);color:var(--cyan);
+    padding:8px 14px;cursor:pointer;text-transform:uppercase;font-size:12px;letter-spacing:0.05em;border-radius:var(--radius);}
+  .btn:hover{background:rgba(53,232,201,0.1);}
+  .btn.solid{background:var(--cyan);color:#04211c;border-color:var(--cyan);font-weight:700;}
+  .btn.solid:hover{background:#4ffbe0;}
+  .btn.ghost{border-color:var(--line);color:var(--text-mute);}
+  .btn.amber{border-color:var(--amber);color:var(--amber);}
+  .btn.small{padding:5px 10px;font-size:10px;}
+  input[type=text], input[type=number], textarea, select{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    padding:8px 10px; font-family:'Manrope',sans-serif; font-size:14px; border-radius:var(--radius); width:100%;
+  }
+  input[type=color]{padding:2px;height:38px;}
+  label{font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;display:block;margin-bottom:4px;}
+  .field{margin-bottom:12px;}
+  .row{display:flex;gap:12px;}
+  .row > *{flex:1;}
+  .section-title{font-size:13px;text-transform:uppercase;color:var(--cyan);letter-spacing:0.08em;margin:0 0 14px;padding-bottom:10px;border-bottom:1px solid var(--line);}
+  .card{padding:18px;margin-bottom:16px;}
+  .tag{font-size:10px;padding:2px 8px;border:1px solid var(--line);color:var(--text-mute);border-radius:20px;text-transform:uppercase;}
+  .muted{color:var(--text-mute);font-size:12px;}
+  .err{color:var(--danger);font-size:12px;}
+  .divider{height:1px;background:var(--line);margin:16px 0;}
+  .flex-between{display:flex;justify-content:space-between;align-items:center;}
+
+  .login-wrap{max-width:420px;margin:60px auto;}
+  .login-wrap h1{font-family:'Share Tech Mono',monospace;color:var(--cyan);font-size:20px;text-align:center;margin-bottom:4px;}
+  .login-wrap .sub{text-align:center;color:var(--text-mute);font-size:12px;margin-bottom:24px;}
+
+  .filter-bar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px;}
+  .filter-chip{cursor:pointer;}
+  .filter-chip.active{background:rgba(53,232,201,0.15);border-color:var(--cyan);color:var(--cyan);}
+
+  .dex-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));gap:14px;}
+  .dex-card{cursor:pointer;padding:0;overflow:hidden;transition:transform .15s;}
+  .dex-card:hover{transform:translateY(-3px);border-color:var(--cyan-dim);}
+  .dex-card .thumb{width:100%;aspect-ratio:1;background:var(--panel-2);display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  .dex-card .thumb img{width:100%;height:100%;object-fit:cover;}
+  .dex-card .thumb .placeholder{font-family:'Share Tech Mono',monospace;font-size:36px;color:var(--text-mute);}
+  .dex-card .info{padding:10px;}
+  .dex-card .name{font-family:'Share Tech Mono',monospace;font-size:13px;color:var(--cyan);}
+  .dex-card.unknown .name{color:var(--text-mute);}
+
+  .modal-overlay{position:fixed;inset:0;background:rgba(5,7,10,0.85);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;overflow-y:auto;}
+  .modal-box{max-width:560px;width:100%;max-height:90vh;overflow-y:auto;}
+  .portrait-lg{width:100%;max-height:280px;object-fit:cover;border:1px solid var(--line);margin-bottom:12px;}
+  .stat-box{text-align:center;padding:8px 4px;background:var(--panel-2);border:1px solid var(--line);}
+  .stat-box .v{font-family:'Share Tech Mono',monospace;font-size:18px;color:var(--cyan);}
+  .stat-box .l{font-size:9px;color:var(--text-mute);text-transform:uppercase;margin-top:2px;}
+  .grid-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:10px;}
+  .roster-item{padding:8px;border-bottom:1px solid var(--line);font-size:12px;}
+
+  @media (max-width:760px){
+    .app{padding:10px;}
+    .dex-grid{grid-template-columns:repeat(auto-fill, minmax(120px,1fr));}
+    .row{flex-wrap:wrap;}
+    .row > *{flex:1 1 100%;}
+    .grid-stats{grid-template-columns:repeat(3,1fr);}
+  }
+</style>
+</head>
+<body>
+<div id="root-app" class="app"></div>
+
+<script>
+(function(){
+  const root = document.getElementById('root-app');
+  const SESSION_KEY = 'digivice_session_v1';
+  let session = null;
+  let cachedDex = [];
+  let activeFilters = [];
+  let editEntry = null; // entry being edited/added in modal
+
+  function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
+
+  async function apiGet(path){
+    try{ const r = await fetch(path); const data = await r.json(); if(!r.ok) return null; return data; }catch(e){ return null; }
+  }
+  async function apiPost(path, body){
+    try{ const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); const data = await r.json(); if(!r.ok) return null; return data; }catch(e){ return null; }
+  }
+  async function apiPut(path, body){
+    try{ const r = await fetch(path, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); const data = await r.json(); if(!r.ok) return null; return data; }catch(e){ return null; }
+  }
+
+  async function getDex(code){ const d = await apiGet('/api/dex?code=' + encodeURIComponent(code)); return d ? (d.entries||[]) : []; }
+  async function addDexEntry(code, entry){ return apiPost('/api/dex', { code, ...entry }); }
+  async function updateDexEntry(code, id, fields){ return apiPut('/api/dex', { code, id, ...fields }); }
+
+  function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function escapeAttr(s){ return escapeHTML(s); }
+
+  function computeDpSpent(qualities){ return (qualities||[]).reduce((s,q)=>s+(Number(q.cost)||0),0); }
+
+  function evolutionsHTML(evolutions){
+    if(!evolutions || !evolutions.length) return '';
+    return `<div class="muted" style="margin:10px 0 4px;">Possibili Evoluzioni</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        ${evolutions.map(ev=>`
+          <div style="display:flex;flex-direction:column;align-items:center;width:56px;">
+            ${ev.imageUrl ? `<img src="${escapeAttr(ev.imageUrl)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:1px solid var(--cyan-dim);" onerror="this.style.visibility='hidden'"/>` : `<div style="width:40px;height:40px;border-radius:50%;background:var(--panel-2);border:1px solid var(--cyan-dim);"></div>`}
+            <div class="muted" style="font-size:9px;text-align:center;margin-top:2px;">${escapeHTML(ev.name)}</div>
+          </div>
+        `).join('')}
+      </div>`;
+  }
+
+  function qualitiesHTML(qualities, dpTotal){
+    if(!qualities || !qualities.length) return '';
+    return `<div class="flex-between" style="margin:10px 0 6px;">
+        <span class="muted">Qualities</span>
+        <span class="mono" style="color:${computeDpSpent(qualities)>Number(dpTotal||0)?'var(--danger)':'var(--cyan)'};">${computeDpSpent(qualities)} / ${dpTotal||0} DP</span>
+      </div>
+      ${qualities.map(q=>`
+        <div class="roster-item">
+          <div class="flex-between"><b>${escapeHTML(q.name)}</b><span class="mono">${q.cost} DP</span></div>
+          ${q.description?`<div class="muted" style="margin-top:2px;">${escapeHTML(q.description)}</div>`:''}
+        </div>
+      `).join('')}`;
+  }
+
+  function render(){
+    if(!session){ renderLogin(); }
+    else { renderDexPage(); }
+  }
+
+  function renderLogin(){
+    root.innerHTML = `
+      <div class="login-wrap hud-frame" style="padding:32px;">
+        <h1 class="mono">DIGIDEX // ACCESSO</h1>
+        <div class="sub">Inserisci lo stesso codice campagna e nome utente usati nel tavolo testuale.</div>
+        <div class="field"><label>Codice Campagna</label><input type="text" id="in-code" placeholder="es. FRONTIER01" /></div>
+        <div class="field"><label>Nome Utente</label><input type="text" id="in-user" placeholder="il tuo nome" /></div>
+        <div class="field"><label>Ruolo</label>
+          <select id="in-role"><option value="player">Giocatore</option><option value="master">Master</option></select>
+        </div>
+        <button class="btn solid" id="btn-enter" style="width:100%;padding:12px;">Entra nel Dex</button>
+        <div class="err" id="login-err" style="margin-top:8px;"></div>
+        <div class="muted" style="text-align:center;margin-top:16px;"><a href="index.html" style="color:var(--cyan);">← Torna al Tavolo Testuale</a></div>
+      </div>
+    `;
+    document.getElementById('btn-enter').onclick = ()=>{
+      const code = document.getElementById('in-code').value.trim().toUpperCase().replace(/[^A-Z0-9_-]/g,'');
+      const username = document.getElementById('in-user').value.trim();
+      const role = document.getElementById('in-role').value;
+      const errEl = document.getElementById('login-err');
+      if(!code || !username){ errEl.textContent = 'Inserisci codice campagna e nome utente.'; return; }
+      session = { code, username, role };
+      render();
+    };
+  }
+
+  function topbar(){
+    return `
+    <div class="hud-frame topbar">
+      <div>
+        <div class="brand-title mono">DIGIDEX</div>
+        <div class="brand-sub">Digimon: Digital Adventures — Compendio Campagna ${escapeHTML(session.code)}</div>
+      </div>
+      <div class="conn-ticker mono">
+        UTENTE <b>${escapeHTML(session.username)}</b> (${session.role==='master'?'Master':'Giocatore'})
+        &nbsp;<a href="index.html" class="btn ghost small" style="margin-left:8px;text-decoration:none;">← Tavolo</a>
+        &nbsp;<button class="btn ghost small" id="btn-logout">Esci</button>
+      </div>
+    </div>`;
+  }
+
+  async function renderDexPage(){
+    cachedDex = await getDex(session.code);
+    const isMaster = session.role==='master';
+    root.innerHTML = `
+      ${topbar()}
+      <div class="hud-frame card">
+        <div class="flex-between" style="margin-bottom:10px;">
+          <div class="section-title" style="margin:0;border:none;padding:0;">Digimon Registrati (${cachedDex.length})</div>
+          ${isMaster ? `<button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button>` : ''}
+        </div>
+        <div id="filter-bar" class="filter-bar"></div>
+        <div id="dex-grid" class="dex-grid"></div>
+      </div>
+    `;
+    document.getElementById('btn-logout').onclick = ()=>{ session=null; render(); };
+    const newBtn = document.getElementById('btn-new-entry');
+    if(newBtn) newBtn.onclick = ()=> openEditModal(null);
+    renderFilterBar();
+    renderGrid();
+  }
+
+  function renderFilterBar(){
+    const bar = document.getElementById('filter-bar');
+    if(!bar) return;
+    const allCats = new Set();
+    cachedDex.forEach(e=>(e.categories||[]).forEach(c=>allCats.add(c)));
+    if(allCats.size===0){ bar.innerHTML=''; return; }
+    bar.innerHTML = Array.from(allCats).sort().map(c=>`
+      <span class="tag filter-chip ${activeFilters.includes(c)?'active':''}" data-filter="${escapeAttr(c)}">${escapeHTML(c)}</span>
+    `).join('') + (activeFilters.length ? `<span class="tag filter-chip" style="color:var(--danger);border-color:var(--danger);" data-filter="__clear__">× azzera</span>` : '');
+    bar.querySelectorAll('[data-filter]').forEach(chip=>{
+      chip.onclick = ()=>{
+        const val = chip.getAttribute('data-filter');
+        if(val==='__clear__') activeFilters = [];
+        else {
+          const idx = activeFilters.indexOf(val);
+          if(idx>=0) activeFilters.splice(idx,1); else activeFilters.push(val);
+        }
+        renderFilterBar();
+        renderGrid();
+      };
+    });
+  }
+
+  function renderGrid(){
+    const grid = document.getElementById('dex-grid');
+    if(!grid) return;
+    const isMaster = session.role==='master';
+    const filtered = activeFilters.length===0 ? cachedDex : cachedDex.filter(e=>(e.categories||[]).some(c=>activeFilters.includes(c)));
+    if(filtered.length===0){ grid.innerHTML = '<div class="muted">Nessun Digimon trovato.</div>'; return; }
+    grid.innerHTML = filtered.slice().reverse().map(e=>{
+      const hidden = !isMaster && !e.discovered;
+      if(hidden){
+        return `<div class="hud-frame dex-card unknown" data-id="${e.id}">
+          <div class="thumb"><span class="placeholder">?</span></div>
+          <div class="info"><div class="name">???</div></div>
+        </div>`;
+      }
+      return `<div class="hud-frame dex-card" data-id="${e.id}">
+        <div class="thumb">${e.image_url ? `<img src="${escapeAttr(e.image_url)}" onerror="this.parentNode.innerHTML='<span class=&quot;placeholder&quot;>${escapeHTML((e.name||'?').charAt(0))}</span>'" />` : `<span class="placeholder">${escapeHTML((e.name||'?').charAt(0))}</span>`}</div>
+        <div class="info">
+          <div class="name">${escapeHTML(e.name)}</div>
+          <div class="muted" style="font-size:10px;">${escapeHTML(e.stage)}${isMaster?(e.discovered?' · scoperto':' · nascosto'):''}</div>
+        </div>
+      </div>`;
+    }).join('');
+    grid.querySelectorAll('[data-id]').forEach(card=>{
+      card.onclick = ()=>{
+        const entry = cachedDex.find(e=>String(e.id)===card.getAttribute('data-id'));
+        if(!entry) return;
+        if(!isMaster && !entry.discovered) return;
+        openDetailModal(entry);
+      };
+    });
+  }
+
+  function closeModal(){
+    const ov = document.getElementById('modal-overlay');
+    if(ov) ov.remove();
+  }
+
+  function openDetailModal(entry){
+    const isMaster = session.role==='master';
+    const bs = entry.base_stats || {};
+    const hasStats = bs.baseAccuracy || bs.baseDamage || bs.baseDodge || bs.baseArmor || bs.baseHealth;
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="hud-frame modal-box card">
+        <div class="flex-between" style="margin-bottom:10px;">
+          <div class="section-title" style="margin:0;border:none;padding:0;">${escapeHTML(entry.name)}</div>
+          <button class="btn ghost small" id="btn-close-modal">✕</button>
+        </div>
+        ${entry.image_url ? `<img class="portrait-lg" src="${escapeAttr(entry.image_url)}" onerror="this.style.display='none'" />` : ''}
+        <div class="tag" style="margin-bottom:8px;">${escapeHTML(entry.stage)}</div>
+        ${entry.categories && entry.categories.length ? `<div style="margin-bottom:8px;">${entry.categories.map(c=>`<span class="tag" style="margin-right:4px;">${escapeHTML(c)}</span>`).join('')}</div>` : ''}
+        ${entry.description ? `<div class="muted" style="margin-bottom:10px;">${escapeHTML(entry.description)}</div>` : ''}
+        ${hasStats ? `<div class="grid-stats">
+          <div class="stat-box"><div class="v">${bs.baseAccuracy||0}</div><div class="l">ACC</div></div>
+          <div class="stat-box"><div class="v">${bs.baseDamage||0}</div><div class="l">DMG</div></div>
+          <div class="stat-box"><div class="v">${bs.baseDodge||0}</div><div class="l">DODGE</div></div>
+          <div class="stat-box"><div class="v">${bs.baseArmor||0}</div><div class="l">ARM</div></div>
+          <div class="stat-box"><div class="v">${bs.baseHealth||0}</div><div class="l">HP</div></div>
+        </div>` : ''}
+        ${evolutionsHTML(entry.evolutions)}
+        ${qualitiesHTML(entry.qualities, entry.dp_total)}
+        ${entry.added_by ? `<div class="muted" style="margin-top:8px;">Aggiunto da ${escapeHTML(entry.added_by)}</div>` : ''}
+        ${isMaster ? `<div class="divider"></div><button class="btn amber" id="btn-edit-entry" style="width:100%;">Modifica</button>` : ''}
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.onclick = (e)=>{ if(e.target===overlay) closeModal(); };
+    document.getElementById('btn-close-modal').onclick = closeModal;
+    const editBtn = document.getElementById('btn-edit-entry');
+    if(editBtn) editBtn.onclick = ()=>{ closeModal(); openEditModal(entry); };
+  }
+
+  function openEditModal(entry){
+    const isNew = !entry;
+    const draft = entry ? JSON.parse(JSON.stringify(entry)) : {
+      name:'', stage:'Rookie', description:'', image_url:'', categories:[], base_stats:{}, evolutions:[], qualities:[], dp_total:0, discovered:false
+    };
+    if(!draft.evolutions) draft.evolutions = [];
+    if(!draft.qualities) draft.qualities = [];
+    if(!draft.categories) draft.categories = [];
+    const bs = draft.base_stats || {};
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="hud-frame modal-box card">
+        <div class="flex-between" style="margin-bottom:10px;">
+          <div class="section-title" style="margin:0;border:none;padding:0;">${isNew?'Nuovo Digimon':'Modifica Digimon'}</div>
+          <button class="btn ghost small" id="btn-close-modal">✕</button>
+        </div>
+        <div class="field"><label>Nome</label><input type="text" id="ed-name" value="${escapeAttr(draft.name)}" /></div>
+        <div class="row">
+          <div class="field"><label>Stage</label>
+            <select id="ed-stage">${['Baby','Rookie','Champion','Ultimate','Mega'].map(s=>`<option ${draft.stage===s?'selected':''}>${s}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label>URL Immagine</label><input type="text" id="ed-img" value="${escapeAttr(draft.image_url)}" /></div>
+        </div>
+        <div class="field"><label>Descrizione</label><textarea id="ed-desc" rows="2">${escapeHTML(draft.description)}</textarea></div>
+        <div class="field"><label>Categorie (separate da virgola)</label><input type="text" id="ed-categories" value="${escapeAttr((draft.categories||[]).join(', '))}" /></div>
+        <label style="font-size:11px;display:flex;align-items:center;gap:6px;margin:6px 0;"><input type="checkbox" id="ed-discovered" ${draft.discovered?'checked':''} /> Scoperto dai giocatori</label>
+        <div class="divider"></div>
+        <div class="muted" style="margin-bottom:6px;">Stat Base (Combattimento)</div>
+        <div class="row">
+          <div class="field"><label>Accuracy</label><input type="number" id="ed-acc" value="${bs.baseAccuracy||0}" min="0" /></div>
+          <div class="field"><label>Damage</label><input type="number" id="ed-dmg" value="${bs.baseDamage||0}" min="0" /></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Dodge</label><input type="number" id="ed-dodge" value="${bs.baseDodge||0}" min="0" /></div>
+          <div class="field"><label>Armor</label><input type="number" id="ed-arm" value="${bs.baseArmor||0}" min="0" /></div>
+        </div>
+        <div class="field"><label>Health</label><input type="number" id="ed-hp" value="${bs.baseHealth||0}" min="0" /></div>
+        <div class="divider"></div>
+        <div class="muted" style="margin-bottom:6px;">Possibili Evoluzioni</div>
+        <div id="ed-evolist"></div>
+        <div class="row">
+          <input type="text" id="ed-evo-name" placeholder="Nome evoluzione" style="flex:2;" />
+          <input type="text" id="ed-evo-img" placeholder="URL immagine (opz.)" style="flex:2;" />
+          <button class="btn small" id="btn-evo-add" style="flex:1;">Aggiungi</button>
+        </div>
+        <div class="divider"></div>
+        <div class="field"><label>DP Totali</label><input type="number" id="ed-dptotal" value="${draft.dp_total||0}" min="0" /></div>
+        <div class="muted" style="margin-bottom:6px;">Qualities</div>
+        <div id="ed-quallist"></div>
+        <div class="row">
+          <input type="text" id="ed-qual-name" placeholder="Nome Quality" style="flex:2;" />
+          <input type="number" id="ed-qual-cost" placeholder="DP" value="1" style="flex:1;" />
+        </div>
+        <div class="row" style="margin-top:6px;">
+          <input type="text" id="ed-qual-cat" placeholder="Categoria (opz.)" style="flex:1;" />
+          <input type="text" id="ed-qual-desc" placeholder="Descrizione (opz.)" style="flex:2;" />
+          <button class="btn small" id="btn-qual-add" style="flex:1;">Aggiungi</button>
+        </div>
+        <div class="divider"></div>
+        <div class="row">
+          <button class="btn ghost" id="btn-cancel-edit">Annulla</button>
+          <button class="btn solid" id="btn-save-edit">Salva</button>
+        </div>
+        <div class="muted" id="ed-status" style="margin-top:6px;"></div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.onclick = (e)=>{ if(e.target===overlay) closeModal(); };
+    document.getElementById('btn-close-modal').onclick = closeModal;
+    document.getElementById('btn-cancel-edit').onclick = closeModal;
+
+    function renderEvoList(){
+      document.getElementById('ed-evolist').innerHTML = draft.evolutions.length===0
+        ? '<div class="muted" style="margin-bottom:6px;">Nessuna evoluzione.</div>'
+        : draft.evolutions.map((ev,i)=>`<div class="flex-between" style="margin-bottom:4px;"><span>${escapeHTML(ev.name)}</span><button class="btn ghost small" data-rmevo="${i}">Rimuovi</button></div>`).join('');
+      document.querySelectorAll('[data-rmevo]').forEach(b=>{
+        b.onclick = ()=>{ draft.evolutions.splice(Number(b.getAttribute('data-rmevo')),1); renderEvoList(); };
+      });
+    }
+    function renderQualList(){
+      document.getElementById('ed-quallist').innerHTML = draft.qualities.length===0
+        ? '<div class="muted" style="margin-bottom:6px;">Nessuna Quality.</div>'
+        : draft.qualities.map((q,i)=>`<div class="flex-between" style="margin-bottom:4px;"><span>${escapeHTML(q.name)} <span class="muted">(${q.cost} DP)</span></span><button class="btn ghost small" data-rmqual="${i}">Rimuovi</button></div>`).join('');
+      document.querySelectorAll('[data-rmqual]').forEach(b=>{
+        b.onclick = ()=>{ draft.qualities.splice(Number(b.getAttribute('data-rmqual')),1); renderQualList(); };
+      });
+    }
+    renderEvoList();
+    renderQualList();
+
+    document.getElementById('btn-evo-add').onclick = ()=>{
+      const n = document.getElementById('ed-evo-name').value.trim();
+      if(!n) return;
+      draft.evolutions.push({ name:n, imageUrl: document.getElementById('ed-evo-img').value.trim() });
+      document.getElementById('ed-evo-name').value=''; document.getElementById('ed-evo-img').value='';
+      renderEvoList();
+    };
+    document.getElementById('btn-qual-add').onclick = ()=>{
+      const n = document.getElementById('ed-qual-name').value.trim();
+      if(!n) return;
+      draft.qualities.push({ name:n, cost:Number(document.getElementById('ed-qual-cost').value)||0, category:document.getElementById('ed-qual-cat').value.trim(), description:document.getElementById('ed-qual-desc').value.trim() });
+      document.getElementById('ed-qual-name').value=''; document.getElementById('ed-qual-cost').value='1';
+      document.getElementById('ed-qual-cat').value=''; document.getElementById('ed-qual-desc').value='';
+      renderQualList();
+    };
+
+    document.getElementById('btn-save-edit').onclick = async ()=>{
+      const name = document.getElementById('ed-name').value.trim();
+      const statusEl = document.getElementById('ed-status');
+      if(!name){ statusEl.style.color='var(--danger)'; statusEl.textContent='Serve un nome.'; return; }
+      const payload = {
+        name,
+        stage: document.getElementById('ed-stage').value,
+        description: document.getElementById('ed-desc').value.trim(),
+        imageUrl: document.getElementById('ed-img').value.trim(),
+        categories: document.getElementById('ed-categories').value.split(',').map(s=>s.trim()).filter(Boolean),
+        discovered: document.getElementById('ed-discovered').checked,
+        baseStats: {
+          baseAccuracy: Number(document.getElementById('ed-acc').value)||0,
+          baseDamage: Number(document.getElementById('ed-dmg').value)||0,
+          baseDodge: Number(document.getElementById('ed-dodge').value)||0,
+          baseArmor: Number(document.getElementById('ed-arm').value)||0,
+          baseHealth: Number(document.getElementById('ed-hp').value)||0
+        },
+        evolutions: draft.evolutions,
+        qualities: draft.qualities,
+        dpTotal: Number(document.getElementById('ed-dptotal').value)||0,
+        addedBy: session.username
+      };
+      let result;
+      if(isNew) result = await addDexEntry(session.code, payload);
+      else result = await updateDexEntry(session.code, entry.id, payload);
+      if(result){
+        statusEl.style.color='var(--text-mute)'; statusEl.textContent='Salvato.';
+        closeModal();
+        renderDexPage();
+      } else {
+        statusEl.style.color='var(--danger)'; statusEl.textContent='Errore nel salvataggio.';
+      }
+    };
+  }
+
+  session = loadSession();
+  render();
+})();
+</script>
+</body>
+</html>

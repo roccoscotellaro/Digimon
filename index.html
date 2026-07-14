@@ -147,6 +147,32 @@
   ::-webkit-scrollbar{width:6px;}
   ::-webkit-scrollbar-thumb{background:var(--cyan-dim);}
 
+  @media (max-width: 760px){
+    .app{padding:8px;}
+    .topbar{flex-direction:column;align-items:flex-start;gap:8px;padding:10px;}
+    .conn-ticker{font-size:10px;}
+    .brand-title{font-size:12px;}
+    .grid2{grid-template-columns:1fr;gap:12px;}
+    .card{padding:12px;}
+    .row{flex-wrap:wrap;}
+    .row > *{flex:1 1 100%;min-width:0;}
+    .grid-stats{grid-template-columns:repeat(3,1fr);}
+    .stat-box{padding:6px 3px;}
+    .stat-box .v{font-size:16px;}
+    .moves-grid{grid-template-columns:1fr;}
+    .role-pick{flex-direction:column;}
+    .login-wrap{margin:24px auto;max-width:100%;padding:20px !important;}
+    .scene-box{height:160px;}
+    .sheet-head{flex-wrap:wrap;}
+    .die3d, .die3d-static{font-size:20px !important;}
+    .roster-item .sub{font-size:11px;}
+    input[type=text], input[type=number], textarea, select{font-size:16px;}
+    .btn{font-size:11px;padding:8px 10px;}
+    .btn.small{padding:6px 8px;font-size:10px;}
+    #sidebar-content, .hud-frame.card{width:100%;}
+    div[style*="display:flex;gap:14px"]{flex-direction:column;}
+  }
+
   .portrait{width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--cyan-dim);background:#05070a;flex-shrink:0;}
   .portrait-sm{width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid var(--cyan-dim);background:#05070a;flex-shrink:0;}
   .sheet-head{display:flex;gap:12px;align-items:center;margin-bottom:14px;}
@@ -188,7 +214,6 @@
   let editingDigimon = false;
   let editingScene = false;
   let sidebarTab = 'scheda';
-  let playerChatMode = 'public';
   let cachedRoster = [];
   let cachedScene = { title:'', background:'', music:'' };
   let cachedLog = [];
@@ -418,6 +443,7 @@
 
   async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]) : []; }
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
+  async function deleteMember(code, username){ return apiDelete('/api/roster?code=' + encodeURIComponent(code) + '&username=' + encodeURIComponent(username)); }
   async function getScene(code){ const d = await apiGet('/api/scene?code=' + encodeURIComponent(code)); const s = d ? d.scene : { title:'', background:'', music:'', encounters:[] }; if(!Array.isArray(s.encounters)) s.encounters = []; return s; }
   async function saveScene(code, scene){ const d = await apiPost('/api/scene', { code, ...scene }); return !!(d && d.ok); }
   async function getLog(code){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code)); return d ? (d.log||[]) : []; }
@@ -510,7 +536,7 @@
       maxWounds:5, currentWounds:5, maxMp:3, currentMp:3,
       baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:1,
       dpTotal:0, qualities:[],
-      defaultStage:'Rookie', defaultRange:1, evolutionPoints:0, forcedEvoRoundsLeft:0,
+      defaultStage:'Rookie', defaultRange:2, evolutionPoints:0, forcedEvoRoundsLeft:0,
       battery:0, usedSigMoveThisTurn:false,
       size:'Medium', stance:'Neutral', chatColor:'#c896ff',
       moves:[
@@ -553,6 +579,7 @@
       </div>
       <div class="conn-ticker mono">
         CAMPAGNA <b>${session ? session.code : '---'}</b> &nbsp;|&nbsp; UTENTE <b>${session ? session.username : '---'}</b>
+        ${session && cachedProgression ? ` &nbsp;|&nbsp; MILESTONE <b style="color:var(--cyan);">${cachedProgression.milestone}</b> &nbsp;|&nbsp; INSP. <b style="color:var(--cyan);">${cachedProgression.inspiration}</b>` : ''}
         ${session ? `&nbsp;<button class="btn ghost small" id="btn-logout" style="margin-left:10px;">Esci</button>` : ''}
       </div>
     </div>
@@ -620,26 +647,6 @@
     }, 4000);
   }
 
-  function updateChatModeButtons(){
-    const pubBtn = document.getElementById('chatmode-public');
-    const privBtn = document.getElementById('chatmode-private');
-    if(pubBtn) pubBtn.classList.toggle('active', playerChatMode==='public');
-    if(privBtn) privBtn.classList.toggle('active', playerChatMode==='private');
-  }
-
-  async function refreshPlayerLogDisplay(code, me){
-    updateChatModeButtons();
-    const logLive = document.getElementById('log-live');
-    if(!logLive) return;
-    if(playerChatMode==='private'){
-      const plog = await getPrivateLog(code, session.username);
-      logLive.innerHTML = logHTML(plog, false);
-    } else {
-      logLive.innerHTML = logHTML(cachedLog, false);
-    }
-    logLive.scrollTop = logLive.scrollHeight;
-  }
-
   function onlineSummary(members){
     const online = (members||[]).filter(m=>m.last_seen && (Date.now()-new Date(m.last_seen).getTime())<ONLINE_WINDOW_MS);
     if(online.length===0) return 'nessun altro online';
@@ -662,16 +669,16 @@
     }
     const logLive = document.getElementById('log-live');
     if(logLive){
-      if(session.role==='player' && playerChatMode==='private'){
-        const plog = await getPrivateLog(session.code, session.username);
-        const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
-        logLive.innerHTML = logHTML(plog, false);
-        if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
-      } else {
-        const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
-        logLive.innerHTML = logHTML(cachedLog, session && session.role==='master');
-        if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
-      }
+      const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
+      logLive.innerHTML = logHTML(cachedLog, session && session.role==='master');
+      if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
+    }
+    const privateLogLiveEl = document.getElementById('private-log-live');
+    if(privateLogLiveEl && session.role==='player'){
+      const plog = await getPrivateLog(session.code, session.username);
+      const wasAtBottomP = privateLogLiveEl.scrollHeight - privateLogLiveEl.scrollTop <= privateLogLiveEl.clientHeight + 40;
+      privateLogLiveEl.innerHTML = logHTML(plog, false);
+      if(wasAtBottomP) privateLogLiveEl.scrollTop = privateLogLiveEl.scrollHeight;
     }
     const rosterLive = document.getElementById('roster-live');
     if(rosterLive && session.role==='master' && openManageIdx===null){
@@ -690,13 +697,6 @@
     if(combatSelf && session.role==='player'){
       combatSelf.innerHTML = combatSelfActionHTML(cachedCombat, session.username);
       bindCombatSelfActions(session.code, session.username);
-    }
-    const privateLogLive = document.getElementById('private-log-live');
-    if(privateLogLive && session.role==='player'){
-      const plog = await getPrivateLog(session.code, session.username);
-      const wasAtBottom = privateLogLive.scrollHeight - privateLogLive.scrollTop <= privateLogLive.clientHeight + 40;
-      privateLogLive.innerHTML = logHTML(plog, false);
-      if(wasAtBottom) privateLogLive.scrollTop = privateLogLive.scrollHeight;
     }
     const privateLogLiveMaster = document.getElementById('private-log-live-master');
     if(privateLogLiveMaster && session.role==='master' && masterPrivateThread){
@@ -1045,15 +1045,18 @@
             <div id="scene-live">${sceneHTML(cachedScene)}</div>
           </div>
 
-          <div class="hud-frame card">
-            <div class="flex-between" style="margin-bottom:8px;">
-              <div class="section-title" style="margin:0;border:none;padding:0;">Registro Narrativo</div>
-              <div style="display:flex;gap:4px;">
-                <button class="btn small" id="chatmode-public">Pubblico</button>
-                <button class="btn small" id="chatmode-private">Privata (Master)</button>
-              </div>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;">
+            <div class="hud-frame card" style="flex:1;min-width:260px;">
+              <div class="section-title">Registro Pubblico</div>
+              <div class="log" id="log-live" style="height:220px;">${logHTML(cachedLog, session.role==='master')}</div>
             </div>
-            <div class="log" id="log-live">${logHTML(cachedLog, session.role==='master')}</div>
+            <div class="hud-frame card" style="flex:1;min-width:260px;">
+              <div class="section-title">Chat Privata col Master</div>
+              <div class="muted" style="margin-bottom:6px;font-size:10px;">Visibile solo a te e al Master.</div>
+              <div class="log" id="private-log-live" style="height:220px;">${logHTML([], false)}</div>
+              <textarea id="private-text" rows="2" placeholder="Scrivi al Master..." style="margin-top:6px;"></textarea>
+              <button class="btn solid" id="btn-private-send" style="width:100%;margin-top:6px;">Invia</button>
+            </div>
           </div>
 
           <div class="hud-frame card">
@@ -1116,12 +1119,6 @@
       const ta = document.getElementById('action-text');
       const raw = ta.value.trim();
       if(!raw) return;
-      if(playerChatMode==='private'){
-        await pushPrivateLog(code, session.username, { who: session.username, role:'player', text: raw });
-        ta.value='';
-        await refreshPlayerLogDisplay(code, me);
-        return;
-      }
       const rollResult = tryParseRollShortcut(raw, me);
       const resEl = document.getElementById('action-roll-result');
       if(rollResult){
@@ -1146,10 +1143,21 @@
       };
     });
     attachLogModeration(document.getElementById('log-live'), code, me);
-    updateChatModeButtons();
-    document.getElementById('chatmode-public').onclick = async ()=>{ playerChatMode='public'; await refreshPlayerLogDisplay(code, me); };
-    document.getElementById('chatmode-private').onclick = async ()=>{ playerChatMode='private'; await refreshPlayerLogDisplay(code, me); };
     bindCombatSelfActions(code, session.username);
+    (async ()=>{
+      const plog = await getPrivateLog(code, session.username);
+      const el = document.getElementById('private-log-live');
+      if(el){ el.innerHTML = logHTML(plog, false); el.scrollTop = el.scrollHeight; }
+    })();
+    document.getElementById('btn-private-send').onclick = async ()=>{
+      const ta = document.getElementById('private-text');
+      if(!ta.value.trim()) return;
+      await pushPrivateLog(code, session.username, { who: session.username, role:'player', text: ta.value.trim() });
+      ta.value='';
+      const plog = await getPrivateLog(code, session.username);
+      const el = document.getElementById('private-log-live');
+      if(el){ el.innerHTML = logHTML(plog, false); el.scrollTop = el.scrollHeight; }
+    };
 
     startPolling();
   }
@@ -1310,20 +1318,21 @@
   };
   let creationDraft = null;
 
-  function openCreationWizard(me){
+  function openCreationWizard(me, hostId){
     if(!window.confirm('La Creazione Guidata azzera Attributi, Skill e Stat Base del Digimon per ricostruirli da zero rispettando i vincoli del manuale. Continuare?')) return;
     creationDraft = {
+      hostId: hostId || 'sidebar-content',
       tamer: { agility:1, body:1, charisma:1, intelligence:1, willpower:1, skills: defaultSkills() },
       digimon: { stage:'Rookie', size:'Medium', name: me.digimon.name||'', imageUrl: me.digimon.imageUrl||'', personality: me.digimon.personality||'',
         baseAccuracy: STAGE_CREATION.Rookie.startStat, baseDamage: STAGE_CREATION.Rookie.startStat, baseDodge: STAGE_CREATION.Rookie.startStat, baseArmor: STAGE_CREATION.Rookie.startStat, baseHealth: STAGE_CREATION.Rookie.startStat },
       step: 1
     };
-    sidebarTab = 'wizard';
+    if(creationDraft.hostId==='sidebar-content') sidebarTab = 'wizard';
     renderCreationWizard(me);
   }
 
   function renderCreationWizard(me){
-    const content = document.getElementById('sidebar-content');
+    const content = document.getElementById(creationDraft.hostId);
     if(!content) return;
     if(creationDraft.step===1) renderWizardTamerStep(content, me);
     else renderWizardDigimonStep(content, me);
@@ -1391,7 +1400,12 @@
         renderWizardTamerStep(content, me);
       };
     });
-    document.getElementById('btn-wiz-cancel').onclick = ()=>{ creationDraft=null; sidebarTab='scheda'; renderSidebar(me); };
+    document.getElementById('btn-wiz-cancel').onclick = ()=>{
+      const wasPlayerHost = creationDraft.hostId==='sidebar-content';
+      creationDraft=null;
+      if(wasPlayerHost){ sidebarTab='scheda'; renderSidebar(me); }
+      else { content.innerHTML = '<div class="muted">Creazione annullata. Chiudi e riapri "Gestisci Scheda" per tornare alla vista normale.</div>'; }
+    };
     const nextBtn = document.getElementById('btn-wiz-next');
     if(nextBtn) nextBtn.onclick = ()=>{ creationDraft.step = 2; renderCreationWizard(me); };
   }
@@ -1479,16 +1493,18 @@
         me.digimon.dpTotal = Math.max(0, dpRemaining);
         me.digimon.qualities = [];
         me.digimon.evolutionPoints = 0;
-        me.digimon.defaultRange = 1;
+        me.digimon.defaultRange = 2;
 
         const ok = await saveMember(session.code, me);
         const st = document.getElementById('wiz-status');
         if(ok){
-          st.style.color='var(--text-mute)'; st.textContent = 'Personaggio creato! Torno alla scheda...';
+          const wasPlayerHost = creationDraft.hostId==='sidebar-content';
+          st.style.color='var(--text-mute)';
+          st.textContent = wasPlayerHost ? 'Personaggio creato! Torno alla scheda...' : 'Personaggio creato! Chiudi e riapri "Gestisci Scheda" per vedere gli aggiornamenti.';
           creationDraft = null;
-          sidebarTab = 'scheda';
-          await pushLog(session.code, { who: session.username, role:'player', text: `${session.username} ha completato la creazione del personaggio con ${me.digimon.name||'il proprio Digimon'}.` });
-          setTimeout(()=>{ renderSidebar(me); refreshLiveParts(); }, 600);
+          await pushLog(session.code, { who: (session.role==='master'?'Master':session.username), role: (session.role==='master'?'gm':'player'), text: `${me.username} ha completato la creazione del personaggio con ${me.digimon.name||'il proprio Digimon'}.` });
+          if(wasPlayerHost){ sidebarTab = 'scheda'; setTimeout(()=>{ renderSidebar(me); refreshLiveParts(); }, 600); }
+          else { refreshLiveParts(); }
         } else {
           st.style.color='var(--danger)'; st.textContent = 'Errore: ' + (lastApiError||'sconosciuto');
         }
@@ -1520,7 +1536,11 @@
         </details>
       `;
       document.getElementById('btn-edit-tamer').onclick = ()=>{ editingTamer = true; renderTamerCard(me); };
-      document.getElementById('btn-open-wizard').onclick = ()=>{ openCreationWizard(me); };
+      document.getElementById('btn-open-wizard').onclick = ()=>{
+        let hostId = 'sidebar-content';
+        if(containerId && containerId.indexOf('m-tamer-')===0){ hostId = 'manage-panel-'+containerId.slice('m-tamer-'.length); }
+        openCreationWizard(me, hostId);
+      };
       document.getElementById('tamer-w-minus').onclick = async ()=>{ me.tamer.currentWounds = Math.max(0, me.tamer.currentWounds-1); await saveMember(session.code, me); renderTamerCard(me); };
       document.getElementById('tamer-w-plus').onclick = async ()=>{ me.tamer.currentWounds = Math.min(maxW, me.tamer.currentWounds+1); await saveMember(session.code, me); renderTamerCard(me); };
     } else {
@@ -1627,8 +1647,13 @@
       content.innerHTML = `<div class="hud-frame card" id="inventory-card"></div>`;
       renderInventoryCard(me);
     } else if(sidebarTab==='dex'){
-      content.innerHTML = `<div class="hud-frame card" id="dex-panel-card"></div>`;
-      renderDexPanel(false);
+      content.innerHTML = `
+        <div class="hud-frame card" style="text-align:center;">
+          <div class="section-title">Digidex</div>
+          <div class="muted" style="margin-bottom:14px;">Il Dex ora vive in una pagina a sé, con più spazio per immagini, filtri e schede complete.</div>
+          <a href="dex.html" target="_blank" class="btn solid" style="display:inline-block;text-decoration:none;padding:12px 20px;">📖 Apri il Digidex →</a>
+        </div>
+      `;
     } else if(sidebarTab==='wizard' && creationDraft){
       renderCreationWizard(me);
     } else {
@@ -2162,6 +2187,10 @@
               <input type="text" id="enemy-speak-name" placeholder="Nome nemico" style="flex:2;" />
               <input type="text" id="enemy-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
             </div>
+            <div class="row" style="margin-bottom:8px;align-items:center;">
+              <label class="muted" style="flex:2;font-size:11px;">Colore scritta in chat</label>
+              <input type="color" id="speak-color" value="#ff8a3d" style="flex:1;padding:2px;height:34px;" />
+            </div>
             <textarea id="gm-text" rows="2" placeholder="Narrazione del Master..."></textarea>
             <button class="btn amber" id="btn-gm-post" style="width:100%;margin-top:8px;">Pubblica</button>
           </div>
@@ -2198,7 +2227,10 @@
           <div class="hud-frame card" id="progression-card"></div>
           <div class="hud-frame card" id="encounter-balance-card"></div>
           <div class="hud-frame card">
-            <div class="section-title">Digidex — Digimon Incontrati</div>
+            <div class="flex-between" style="margin-bottom:6px;">
+              <div class="section-title" style="margin:0;border:none;padding:0;">Digidex — Digimon Incontrati</div>
+              <a href="dex.html" target="_blank" class="btn ghost small" style="text-decoration:none;">📖 Vista Completa</a>
+            </div>
             <div id="dex-live">${dexListHTML(cachedDex, true)}</div>
             <div class="divider"></div>
             <div class="field"><label>Nome</label><input type="text" id="dex-name" placeholder="es. Gabumon" /></div>
@@ -2261,8 +2293,23 @@
     };
     const speakAsSel = document.getElementById('speak-as');
     const enemyFields = document.getElementById('enemy-fields');
+    const colorInput = document.getElementById('speak-color');
     if(speakAsSel){
-      speakAsSel.onchange = ()=>{ enemyFields.style.display = speakAsSel.value==='enemy' ? 'flex' : 'none'; };
+      speakAsSel.onchange = ()=>{
+        enemyFields.style.display = speakAsSel.value==='enemy' ? 'flex' : 'none';
+        const mode = speakAsSel.value;
+        if(mode.startsWith('digimon:')){
+          const username = mode.slice('digimon:'.length);
+          const member = cachedRoster.find(m=>m.username===username);
+          if(colorInput) colorInput.value = (member && member.digimon.chatColor) || '#c896ff';
+        } else if(mode.startsWith('encounter:')){
+          if(colorInput) colorInput.value = '#ff5d5d';
+        } else if(mode==='enemy'){
+          if(colorInput) colorInput.value = '#ff5d5d';
+        } else {
+          if(colorInput) colorInput.value = '#ff8a3d';
+        }
+      };
     }
     document.getElementById('btn-gm-post').onclick = async ()=>{
       const ta = document.getElementById('gm-text');
@@ -2290,7 +2337,8 @@
       }
       const meta = {};
       if(avatar) meta.avatar = avatar;
-      if(color) meta.color = color;
+      const chosenColor = colorInput ? colorInput.value : color;
+      if(chosenColor) meta.color = chosenColor;
       await pushLog(code, { who, role, text, meta: Object.keys(meta).length ? meta : null });
       ta.value='';
       refreshLiveParts();
@@ -2350,6 +2398,16 @@
         renderInventoryCard(p, 'm-inventory-'+i);
         renderDigimonCard(p, 'm-digimon-'+i);
       };
+      const delBtn = document.getElementById('btn-delete-'+i);
+      if(delBtn){
+        delBtn.onclick = async ()=>{
+          if(!window.confirm(`Eliminare definitivamente il personaggio di ${p.username} (Tamer + Digimon)? L'azione non è reversibile.`)) return;
+          await deleteMember(session.code, p.username);
+          if(openManageIdx===i) openManageIdx = null;
+          await pushLog(session.code, { who:'Master', role:'gm', text: `Il personaggio di ${p.username} è stato eliminato dalla campagna.` });
+          refreshLiveParts();
+        };
+      }
     });
   }
 
@@ -2970,6 +3028,7 @@
           <div style="display:flex;gap:6px;">
             <button class="btn ghost small" id="btn-manage-${i}">Gestisci Scheda</button>
             <button class="btn small" id="btn-suggest-${i}">Suggerisci Battuta</button>
+            <button class="btn ghost small" id="btn-delete-${i}" style="color:var(--danger);border-color:rgba(255,93,93,0.4);">🗑</button>
           </div>
         </div>
         <div class="sub" style="margin-top:6px;">Digimon: ${escapeHTML(p.digimon.name || '(senza nome)')} — Ferite: ${p.digimon.currentWounds}/${p.digimon.maxWounds} — MP: ${p.digimon.currentMp}/${p.digimon.maxMp}</div>

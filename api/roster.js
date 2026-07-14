@@ -35,7 +35,20 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
-    res.setHeader('Allow', 'GET, POST');
+    if (req.method === 'DELETE') {
+      const code = cleanCode(req.query.code);
+      const username = req.query.username;
+      if (!code || !username) return res.status(400).json({ error: 'missing code or username' });
+      const { error } = await supabase
+        .from('members')
+        .delete()
+        .eq('campaign_code', code)
+        .eq('username', username);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true });
+    }
+
+    res.setHeader('Allow', 'GET, POST, DELETE');
     return res.status(405).json({ error: 'method not allowed' });
   } catch (e) {
     return res.status(500).json({ error: e.message || String(e) });
