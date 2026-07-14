@@ -388,7 +388,7 @@
         <div style="padding:6px 8px;margin-bottom:4px;border-radius:4px;${i===combat.currentIndex?'background:rgba(53,232,201,0.15);border:1px solid var(--cyan);':'background:var(--panel-2);border:1px solid var(--line);'}">
           <div class="flex-between">
             <span>${i===combat.currentIndex?'▶ ':''}<b>${escapeHTML(p.name)}</b> <span class="tag" style="margin-left:4px;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};">${p.side==='ally'?'Alleato':'Nemico'}</span></span>
-            <span class="mono">Iniz. ${p.initiative} · Az. ${p.actions===undefined?2:p.actions}/2</span>
+            <span class="mono">Iniz. ${p.initiative} · Az. ${p.actions===undefined?2:p.actions}/2 · <span style="color:var(--amber);">${escapeHTML(p.zone||'Medio')}</span></span>
           </div>
           ${p.effects && p.effects.length ? `<div style="margin-top:4px;">${effectTagsHTML(p)}</div>` : ''}
           ${p.clashWith ? `<div class="muted" style="margin-top:4px;">🤼 In Clash con ${escapeHTML((byId[p.clashWith]||{}).name||'?')} — ${p.clashController?'<b style="color:var(--cyan);">controlla</b>':'sotto controllo'}</div>` : ''}
@@ -496,6 +496,20 @@
     return { label:'Fallimento', cls:'fail' };
   }
 
+  function rollTormentCheck(boxes){
+    const dice = [rollD6(), rollD6(), rollD6()];
+    const total = dice.reduce((a,b)=>a+b,0);
+    const tn = 8 + Number(boxes||0);
+    const diff = total - tn;
+    let outcome;
+    if(diff>=5) outcome = 'crit-success';
+    else if(diff>=0) outcome = 'success';
+    else if(diff<=-10) outcome = 'deep-crit-fail';
+    else if(diff<=-5) outcome = 'crit-fail';
+    else outcome = 'fail';
+    return { dice, total, tn, outcome };
+  }
+
   function diceRowHTML(dice){
     return `<span class="dice-perspective">${dice.map((d,i)=>`<span class="die3d" style="animation-delay:${(i*0.08).toFixed(2)}s;">${DIE_FACES[d]||d}</span>`).join('')}</span>`;
   }
@@ -528,7 +542,12 @@
   }
 
   function defaultTamer(){
-    return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, imageUrl:'', currentWounds:null, inventory:[], skills: defaultSkills(), unspentGrowthPoints:0 };
+    return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, imageUrl:'', currentWounds:null, inventory:[], skills: defaultSkills(), unspentGrowthPoints:0,
+      inspirationPoints:0, tormentPenalty:0,
+      torments: [],
+      majorAspect: { text:'', usesLeft:1 },
+      minorAspect: { text:'', usesLeft:2 }
+    };
   }
   function defaultDigimon(){
     return {
@@ -539,6 +558,7 @@
       defaultStage:'Rookie', defaultRange:2, evolutionPoints:0, forcedEvoRoundsLeft:0,
       battery:0, usedSigMoveThisTurn:false,
       size:'Medium', stance:'Neutral', chatColor:'#c896ff',
+      resolveCurrent:0, resolveMax:4,
       moves:[
         {name:'Attacco Base', desc:'Colpo fisico standard.'},
         {name:'Mossa Speciale', desc:'Consuma MP, usa Intelligenza.'},
@@ -1528,6 +1548,42 @@
         </div>
         ${barHTML('Caselle Ferita', t.currentWounds, maxW, 'hp', 'tamer-w-minus', 'tamer-w-plus')}
         <div class="divider"></div>
+        <div class="flex-between" style="margin-bottom:8px;">
+          <span class="muted">Inspiration Points</span>
+          <span style="display:flex;align-items:center;gap:6px;">
+            <span class="mono" style="color:var(--cyan);font-size:16px;">${t.inspirationPoints||0}</span>
+            <button class="btn ghost small" id="ip-minus">−</button>
+            <button class="btn ghost small" id="ip-plus">+</button>
+          </span>
+        </div>
+        ${Number(t.tormentPenalty||0)!==0 ? `<div class="muted" style="color:var(--danger);margin-bottom:8px;">Penalità Torment attiva: ${t.tormentPenalty} su Tiri/bonus finché non fai un Rest.</div>` : ''}
+        <div class="divider"></div>
+        <div class="muted" style="margin-bottom:6px;">Aspects</div>
+        <div class="roster-item" style="padding:8px;margin-bottom:6px;">
+          <div class="flex-between"><b>Major</b><span class="mono">${t.majorAspect.usesLeft||0} usi</span></div>
+          <div class="sub" style="margin:4px 0;">${escapeHTML(t.majorAspect.text)||'(non impostato)'}</div>
+          ${(t.majorAspect.usesLeft||0)>0 ? `<button class="btn small" id="btn-aspect-major-use">Usa (+4 / −4)</button>` : ''}
+        </div>
+        <div class="roster-item" style="padding:8px;margin-bottom:6px;">
+          <div class="flex-between"><b>Minor</b><span class="mono">${t.minorAspect.usesLeft||0} usi</span></div>
+          <div class="sub" style="margin:4px 0;">${escapeHTML(t.minorAspect.text)||'(non impostato)'}</div>
+          ${(t.minorAspect.usesLeft||0)>0 ? `<button class="btn small" id="btn-aspect-minor-use">Usa (+2 / −2)</button>` : ''}
+        </div>
+        <div class="divider"></div>
+        <div class="flex-between" style="margin-bottom:6px;"><span class="muted">Torments</span><button class="btn ghost small" id="btn-add-torment">+ Nuovo</button></div>
+        <div id="torments-list">
+          ${(t.torments||[]).length===0 ? '<div class="muted">Nessun Torment registrato.</div>' : t.torments.map((tor,ti)=>`
+            <div class="roster-item" style="padding:8px;margin-bottom:6px;">
+              <div class="flex-between"><b>${escapeHTML(tor.name)}</b><span class="mono">${tor.boxes}/10 Caselle</span></div>
+              <div class="row" style="margin-top:6px;">
+                <button class="btn ghost small" data-torment-remove="${ti}" style="flex:1;">Rimuovi</button>
+                <button class="btn small" data-torment-check="${ti}" style="flex:1;" ${tor.usedThisRest?'disabled':''}>${tor.usedThisRest?'Già tentato (Rest)':'Torment Check'}</button>
+              </div>
+              <div class="muted" id="torment-result-${ti}" style="margin-top:4px;"></div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="divider"></div>
         <details>
           <summary class="muted" style="cursor:pointer;margin-bottom:6px;">Tamer Talents (sbloccati automaticamente) — ${computeUnlockedTalents(t).length}</summary>
           ${(()=>{ const unlocked = computeUnlockedTalents(t); return unlocked.length===0
@@ -1543,6 +1599,90 @@
       };
       document.getElementById('tamer-w-minus').onclick = async ()=>{ me.tamer.currentWounds = Math.max(0, me.tamer.currentWounds-1); await saveMember(session.code, me); renderTamerCard(me); };
       document.getElementById('tamer-w-plus').onclick = async ()=>{ me.tamer.currentWounds = Math.min(maxW, me.tamer.currentWounds+1); await saveMember(session.code, me); renderTamerCard(me); };
+      document.getElementById('ip-minus').onclick = async ()=>{ me.tamer.inspirationPoints = Math.max(0, (me.tamer.inspirationPoints||0)-1); await saveMember(session.code, me); renderTamerCard(me); };
+      document.getElementById('ip-plus').onclick = async ()=>{ me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1; await saveMember(session.code, me); renderTamerCard(me); };
+      const majorBtn = document.getElementById('btn-aspect-major-use');
+      if(majorBtn) majorBtn.onclick = async ()=>{
+        const asPenalty = window.confirm('OK = usa come bonus (+4, consuma 1 uso). Annulla = invoca la penalità (-4, ripristina l\'uso e guadagni 1 IP).');
+        if(asPenalty){
+          me.tamer.majorAspect.usesLeft = Math.max(0,(me.tamer.majorAspect.usesLeft||0)-1);
+          await pushLog(session.code, { who: session.username, role:'player', text: `Usa il Major Aspect "${me.tamer.majorAspect.text}" (+4 al prossimo Check).` });
+        } else {
+          me.tamer.majorAspect.usesLeft = 1;
+          me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1;
+          await pushLog(session.code, { who: session.username, role:'player', text: `Invoca la penalità del Major Aspect "${me.tamer.majorAspect.text}" (-4), ripristina l'uso e guadagna 1 IP.` });
+        }
+        await saveMember(session.code, me);
+        renderTamerCard(me);
+        refreshLiveParts();
+      };
+      const minorBtn = document.getElementById('btn-aspect-minor-use');
+      if(minorBtn) minorBtn.onclick = async ()=>{
+        const asPenalty = window.confirm('OK = usa come bonus (+2, consuma 1 uso). Annulla = invoca la penalità (-2, ripristina entrambi gli usi).');
+        if(asPenalty){
+          me.tamer.minorAspect.usesLeft = Math.max(0,(me.tamer.minorAspect.usesLeft||0)-1);
+          await pushLog(session.code, { who: session.username, role:'player', text: `Usa il Minor Aspect "${me.tamer.minorAspect.text}" (+2 al prossimo Check).` });
+        } else {
+          me.tamer.minorAspect.usesLeft = 2;
+          await pushLog(session.code, { who: session.username, role:'player', text: `Invoca la penalità del Minor Aspect "${me.tamer.minorAspect.text}" (-2), ripristina entrambi gli usi.` });
+        }
+        await saveMember(session.code, me);
+        renderTamerCard(me);
+        refreshLiveParts();
+      };
+      document.getElementById('btn-add-torment').onclick = async ()=>{
+        const name = window.prompt('Nome del Torment:');
+        if(!name) return;
+        const boxesStr = window.prompt('Caselle segnate iniziali (0-10):', '4');
+        const boxes = Math.max(0, Math.min(10, Number(boxesStr)||0));
+        if(!me.tamer.torments) me.tamer.torments = [];
+        me.tamer.torments.push({ name, boxes, usedThisRest:false });
+        await saveMember(session.code, me);
+        renderTamerCard(me);
+      };
+      cardEl.querySelectorAll('[data-torment-remove]').forEach(btn=>{
+        btn.onclick = async ()=>{
+          me.tamer.torments.splice(Number(btn.getAttribute('data-torment-remove')),1);
+          await saveMember(session.code, me);
+          renderTamerCard(me);
+        };
+      });
+      cardEl.querySelectorAll('[data-torment-check]').forEach(btn=>{
+        btn.onclick = async ()=>{
+          const idx = Number(btn.getAttribute('data-torment-check'));
+          const tor = me.tamer.torments[idx];
+          if(!tor || tor.usedThisRest) return;
+          const result = rollTormentCheck(tor.boxes);
+          let outcomeText;
+          if(result.outcome==='crit-success'){
+            tor.boxes = Math.max(0, tor.boxes-1);
+            me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1;
+            tor.usedThisRest = true;
+            outcomeText = 'Successo Critico! Cancella 1 Casella Torment e guadagna 1 IP.';
+          } else if(result.outcome==='success'){
+            me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1;
+            tor.usedThisRest = true;
+            outcomeText = 'Successo! Guadagna 1 IP.';
+          } else if(result.outcome==='deep-crit-fail'){
+            tor.boxes = Math.min(10, tor.boxes+1);
+            me.tamer.tormentPenalty = -5;
+            tor.usedThisRest = true;
+            outcomeText = 'Fallimento Critico Profondo! +1 Casella Torment, penalità -5 fino al Rest.';
+          } else if(result.outcome==='crit-fail'){
+            me.tamer.tormentPenalty = -2;
+            tor.usedThisRest = true;
+            outcomeText = 'Fallimento Critico! Penalità -2 fino al Rest.';
+          } else {
+            outcomeText = 'Fallimento. Nessun effetto, si può ritentare più tardi.';
+          }
+          await saveMember(session.code, me);
+          const resEl = document.getElementById('torment-result-'+idx);
+          if(resEl) resEl.innerHTML = `${diceRowHTML(result.dice)} <b>${result.total}</b> vs TN ${result.tn} — ${outcomeText}`;
+          await pushLog(session.code, { who: session.username, role:'roll', text: `Torment Check su "${tor.name}": 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText}`, meta:{dice: result.dice} });
+          if(tor.usedThisRest){ btn.disabled = true; btn.textContent = 'Già tentato (Rest)'; }
+          refreshLiveParts();
+        };
+      });
     } else {
       cardEl.innerHTML = `
         <div class="section-title">Scheda Tamer — Modifica</div>
@@ -1555,6 +1695,9 @@
           ${statBox('WILL','e-t-willpower',t.willpower)}
         </div>
         <div class="muted" style="margin-top:8px;">Endurance e le altre Skill si gestiscono nella card "Skill" qui sotto.</div>
+        <div class="divider"></div>
+        <div class="field"><label>Major Aspect</label><input type="text" id="e-t-aspect-major" value="${escapeAttr(t.majorAspect.text)}" placeholder="es. Track Star..." /></div>
+        <div class="field"><label>Minor Aspect</label><input type="text" id="e-t-aspect-minor" value="${escapeAttr(t.minorAspect.text)}" placeholder="es. Smarter Than They Act..." /></div>
         <div class="row" style="margin-top:10px;">
           <button class="btn ghost" id="btn-cancel-tamer">Annulla</button>
           <button class="btn solid" id="btn-save-tamer">Salva</button>
@@ -1568,6 +1711,8 @@
           if(el) me.tamer[k] = Number(el.value)||0;
         });
         me.tamer.imageUrl = document.getElementById('e-t-img').value.trim();
+        me.tamer.majorAspect.text = document.getElementById('e-t-aspect-major').value.trim();
+        me.tamer.minorAspect.text = document.getElementById('e-t-aspect-minor').value.trim();
         SKILL_DEFS.forEach(def=>{
           const max = skillMax(me.tamer, def);
           const cur = Number(me.tamer.skills[def.key])||0;
@@ -1836,6 +1981,9 @@
         ${barHTML('Battery', d.battery, batteryCap(d.stage), 'mp', 'dig-batt-minus-'+containerId, 'dig-batt-plus-'+containerId)}
         <button class="btn amber" id="btn-sig-move-${containerId}" style="width:100%;margin-top:4px;" ${(d.battery||0)<1?'disabled':''}>⚡ Usa Signature Move (Battery ${d.battery||0})</button>
         <div class="divider"></div>
+        ${barHTML('Resolve', d.resolveCurrent||0, d.resolveMax||4, 'mp', 'dig-res-minus-'+containerId, 'dig-res-plus-'+containerId)}
+        <div class="muted" style="font-size:10px;">Risorsa da alcune Qualities (es. Combat Monster) — Max impostabile in "Modifica".</div>
+        <div class="divider"></div>
         <div class="muted" style="margin-bottom:4px;">Evoluzione</div>
         <div class="sub" style="margin-bottom:6px;">Default: ${escapeHTML(d.defaultStage)} · Range ${d.defaultRange} (comodo fino a ${STAGES[Math.min(4, stageIndex(d.defaultStage)+Number(d.defaultRange||0))]}) · EP: ${d.evolutionPoints||0}${d.forcedEvoRoundsLeft>0?` · <span style="color:var(--danger);">Forzata: ${d.forcedEvoRoundsLeft} round rimasti</span>`:''}</div>
         <div class="row">
@@ -1858,6 +2006,8 @@
       document.getElementById('dig-mp-plus-'+containerId).onclick = async ()=>{ me.digimon.currentMp = Math.min(me.digimon.maxMp, me.digimon.currentMp+1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
       document.getElementById('dig-batt-minus-'+containerId).onclick = async ()=>{ me.digimon.battery = Math.max(0, (me.digimon.battery||0)-1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
       document.getElementById('dig-batt-plus-'+containerId).onclick = async ()=>{ me.digimon.battery = Math.min(batteryCap(me.digimon.stage), (me.digimon.battery||0)+1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
+      document.getElementById('dig-res-minus-'+containerId).onclick = async ()=>{ me.digimon.resolveCurrent = Math.max(0, (me.digimon.resolveCurrent||0)-1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
+      document.getElementById('dig-res-plus-'+containerId).onclick = async ()=>{ me.digimon.resolveCurrent = Math.min(me.digimon.resolveMax||4, (me.digimon.resolveCurrent||0)+1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
       const sigBtn = document.getElementById('btn-sig-move-'+containerId);
       if(sigBtn){
         sigBtn.onclick = async ()=>{
@@ -1980,6 +2130,7 @@
         </div>
         <div class="divider"></div>
         <div class="field"><label>DP Totali</label><input type="number" id="e-d-dptotal-${containerId}" value="${d.dpTotal||0}" min="0" /></div>
+        <div class="field"><label>Resolve Massimo</label><input type="number" id="e-d-resmax-${containerId}" value="${d.resolveMax||4}" min="0" /></div>
         <div class="muted" style="margin-bottom:6px;">Qualities</div>
         <div id="qual-list-${containerId}">${qualitiesEditableHTML(d.qualities)}</div>
         <div class="row">
@@ -2042,6 +2193,8 @@
         me.digimon.defaultRange = Number(document.getElementById('e-d-defrange-'+containerId).value)||0;
         me.digimon.evolutionPoints = Number(document.getElementById('e-d-evopts-'+containerId).value)||0;
         me.digimon.dpTotal = Number(document.getElementById('e-d-dptotal-'+containerId).value)||0;
+        me.digimon.resolveMax = Number(document.getElementById('e-d-resmax-'+containerId).value)||0;
+        if(me.digimon.resolveCurrent > me.digimon.resolveMax) me.digimon.resolveCurrent = me.digimon.resolveMax;
         me.digimon.qualities = d.qualities || [];
         if(me.digimon.currentWounds > me.digimon.maxWounds) me.digimon.currentWounds = me.digimon.maxWounds;
         if(me.digimon.currentMp > me.digimon.maxMp) me.digimon.currentMp = me.digimon.maxMp;
@@ -2532,6 +2685,7 @@
     const players = cachedRoster.filter(m=>m.role==='player');
     for(const p of players){
       p.tamer.unspentGrowthPoints = Number(p.tamer.unspentGrowthPoints||0) + 3;
+      p.tamer.inspirationPoints = Number(p.tamer.inspirationPoints||0) + 1;
       p.digimon.dpTotal = Number(p.digimon.dpTotal||0) + 3;
       await saveMember(code, p);
     }
@@ -2556,6 +2710,13 @@
         <button class="btn small" data-xp-add="1" data-xp-label="Torment Box rimosso">+1 Torment</button>
       </div>
       <button class="btn amber" id="btn-milestone-narrative" style="width:100%;margin-bottom:6px;">🌟 Assegna Milestone (Narrativo)</button>
+      <div class="divider"></div>
+      <div class="muted" style="margin-bottom:6px;">Downtime del Party (8.04)</div>
+      <div class="row" style="margin-bottom:8px;">
+        <button class="btn" id="btn-take-break" style="flex:1;">☕ Break</button>
+        <button class="btn solid" id="btn-take-rest" style="flex:1;">😴 Rest</button>
+      </div>
+      <div class="muted" style="margin-bottom:8px;">Break: Ferite piene + 1 EP. Rest: Ferite piene + EP piene + rimuove penalità Torment + reset "Torment Check" e Aspects.</div>
       <div class="muted" style="margin-top:8px;">Correzione manuale</div>
       <div class="row">
         <input type="number" id="prog-milestone-manual" value="${prog.milestone}" style="flex:1;" />
@@ -2580,7 +2741,7 @@
       await pushLog(code, { who:'Sistema', role:'gm', text: `+${amount} XP (${label}). XP: ${prog.xp}/7.` });
       if(hitMilestone){
         await grantMilestoneRewards(code);
-        await pushLog(code, { who:'Sistema', role:'gm', text: `🌟 Milestone ${prog.milestone} raggiunta! Ogni giocatore riceve 3 Growth Points e il proprio Digimon 3 DP Bonus. Il party guadagna 1 Punto Ispirazione.` });
+        await pushLog(code, { who:'Sistema', role:'gm', text: `🌟 Milestone ${prog.milestone} raggiunta! Ogni giocatore riceve 3 Growth Points, 1 IP, e il proprio Digimon 3 DP Bonus. Il party guadagna 1 Punto Ispirazione.` });
       }
       renderProgressionMaster(code);
       refreshLiveParts();
@@ -2595,8 +2756,34 @@
       await saveProgression(code, prog);
       cachedProgression = prog;
       await grantMilestoneRewards(code);
-      await pushLog(code, { who:'Sistema', role:'gm', text: `🌟 Milestone ${prog.milestone} raggiunta (narrativa)! Ogni giocatore riceve 3 Growth Points e il proprio Digimon 3 DP Bonus. Il party guadagna 1 Punto Ispirazione.` });
+      await pushLog(code, { who:'Sistema', role:'gm', text: `🌟 Milestone ${prog.milestone} raggiunta (narrativa)! Ogni giocatore riceve 3 Growth Points, 1 IP, e il proprio Digimon 3 DP Bonus. Il party guadagna 1 Punto Ispirazione.` });
       renderProgressionMaster(code);
+      refreshLiveParts();
+    };
+    document.getElementById('btn-take-break').onclick = async ()=>{
+      const players = cachedRoster.filter(m=>m.role==='player');
+      for(const p of players){
+        p.tamer.currentWounds = 3 + Number(p.tamer.skills.endurance||0);
+        p.digimon.currentWounds = p.digimon.maxWounds;
+        const cap = cachedProgression ? Number(cachedProgression.milestone||0) : 0;
+        p.digimon.evolutionPoints = Math.min(cap, Number(p.digimon.evolutionPoints||0)+1);
+        await saveMember(code, p);
+      }
+      await pushLog(code, { who:'Sistema', role:'gm', text: `☕ Il party prende un Break: Ferite recuperate del tutto, +1 Evolution Point a testa.` });
+      refreshLiveParts();
+    };
+    document.getElementById('btn-take-rest').onclick = async ()=>{
+      const players = cachedRoster.filter(m=>m.role==='player');
+      for(const p of players){
+        p.tamer.currentWounds = 3 + Number(p.tamer.skills.endurance||0);
+        p.digimon.currentWounds = p.digimon.maxWounds;
+        const cap = cachedProgression ? Number(cachedProgression.milestone||0) : 0;
+        p.digimon.evolutionPoints = cap;
+        p.tamer.tormentPenalty = 0;
+        (p.tamer.torments||[]).forEach(t=>{ t.usedThisRest = false; });
+        await saveMember(code, p);
+      }
+      await pushLog(code, { who:'Sistema', role:'gm', text: `😴 Il party fa un Rest: Ferite ed Evolution Points recuperati del tutto, penalità Torment rimosse, Torment Check di nuovo disponibili.` });
       refreshLiveParts();
     };
     document.getElementById('btn-prog-manual-save').onclick = async ()=>{
@@ -2645,6 +2832,11 @@
     if(logLive) logLive.scrollTop = logLive.scrollHeight;
   }
 
+  const ZONES = ['Corto','Medio','Lungo'];
+  function zoneIndex(z){ const i = ZONES.indexOf(z); return i<0?1:i; }
+  function zoneDistance(a,b){ return Math.abs(zoneIndex(a)-zoneIndex(b)); }
+  function zonePenalty(distance){ if(distance<=0) return 0; if(distance===1) return -2; return -4; }
+
   function renderCombatManager(code, players){
     const cardEl = document.getElementById('combat-mgr-card');
     if(!cardEl) return;
@@ -2687,6 +2879,10 @@
               <select data-action-select="${p.id}" style="flex:2;">${ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost})</option>`).join('')}</select>
               <button class="btn small" data-action-use="${p.id}" style="flex:1;">Usa</button>
               <button class="btn ghost small" data-action-reset="${p.id}" style="flex:1;">↺ 2</button>
+            </div>
+            <div class="row" style="margin-top:6px;">
+              <select data-zone-select="${p.id}" style="flex:2;">${ZONES.map(z=>`<option ${p.zone===z?'selected':''}>${z}</option>`).join('')}</select>
+              <button class="btn small" data-zone-move="${p.id}" style="flex:1;">🏃 Muovi (1 Az.)</button>
             </div>
             <div style="margin-top:6px;">${effectTagsHTML(p)}${(p.effects||[]).map((e,ei)=>`<button class="btn ghost small" data-effect-remove="${p.id}|${ei}" style="padding:1px 6px;margin-left:2px;">✕</button>`).join('')}</div>
             <div class="row" style="margin-top:4px;">
@@ -2772,18 +2968,22 @@
         }
         const aStats = getParticipantCombatStats(attacker);
         const tStats = getParticipantCombatStats(target);
-        const accRoll = rollPool(aStats.accuracy);
+        const zDist = zoneDistance(attacker.zone||'Medio', target.zone||'Medio');
+        const zPenalty = zonePenalty(zDist);
+        const effAccuracy = Math.max(0, aStats.accuracy + zPenalty);
+        const accRoll = rollPool(effAccuracy);
         const dodgeRoll = rollPool(tStats.dodge);
         let logText, dealt = 0;
+        const zoneNote = zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza: ${attacker.zone||'Medio'}→${target.zone||'Medio'})` : '';
         if(accRoll.successes <= dodgeRoll.successes){
-          logText = `⚔ ${attacker.name} attacca ${target.name}: Accuracy ${aStats.accuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO`;
+          logText = `⚔ ${attacker.name} attacca ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO`;
         } else {
           const excess = accRoll.successes - dodgeRoll.successes;
           const raw = excess + aStats.damage;
           dealt = Math.max(0, raw - tStats.armor);
           await applyDamageToParticipant(code, combat, target, dealt);
           const w = getParticipantWounds(target);
-          logText = `⚔ ${attacker.name} attacca ${target.name}: Accuracy ${aStats.accuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! (${excess}+DMG ${aStats.damage})-ARM ${tStats.armor} = ${dealt} danno → ${target.name} ${w.current}/${w.max} Ferite`;
+          logText = `⚔ ${attacker.name} attacca ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! (${excess}+DMG ${aStats.damage})-ARM ${tStats.armor} = ${dealt} danno → ${target.name} ${w.current}/${w.max} Ferite`;
         }
         if(resEl){
           resEl.innerHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">vs</span>${diceRowHTML(dodgeRoll.dice)}${dealt>0?`<span class="roll-total">${dealt} danno</span>`:''}`;
@@ -2881,6 +3081,26 @@
         await persistAndRefresh();
       };
     });
+    cardEl.querySelectorAll('[data-zone-move]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-zone-move');
+        const p = combat.participants.find(x=>x.id===id);
+        const sel = cardEl.querySelector(`[data-zone-select="${id}"]`);
+        if(!p || !sel) return;
+        const target = sel.value;
+        if(target === (p.zone||'Medio')){ return; }
+        const result = trySpendAction(p, 'move');
+        const statusEl = document.getElementById('combat-mgr-status');
+        if(!result.ok){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; }
+          return;
+        }
+        const from = p.zone||'Medio';
+        p.zone = target;
+        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si sposta da ${from} a ${target} raggio (1 Azione) — restano ${p.actions}/2 Azioni.` });
+        await persistAndRefresh();
+      };
+    });
     cardEl.querySelectorAll('[data-effect-apply]').forEach(btn=>{
       btn.onclick = async ()=>{
         const id = btn.getAttribute('data-effect-apply');
@@ -2911,7 +3131,7 @@
       if(combat.participants.some(p=>p.username===username)) return;
       const member = cachedRoster.find(m=>m.username===username);
       const ram = member ? computeDerivedStats(member.digimon).ram : 0;
-      combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:username, side:'ally', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], isPC:true, username });
+      combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:username, side:'ally', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], zone:'Medio', isPC:true, username });
       await persistAndRefresh();
     };
     const dexFillSelect = document.getElementById('combat-enemy-fromdex');
@@ -2939,7 +3159,7 @@
       const armor = Number(document.getElementById('combat-enemy-arm').value)||0;
       const maxWounds = Number(document.getElementById('combat-enemy-hp').value)||1;
       combat.participants.push({
-        id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name, side:'enemy', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], isPC:false,
+        id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name, side:'enemy', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], zone:'Medio', isPC:false,
         accuracy, damage, dodge, armor, maxWounds, currentWounds: maxWounds
       });
       await persistAndRefresh();
