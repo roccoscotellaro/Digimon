@@ -93,6 +93,9 @@
   .log-entry.roll{background:rgba(126,231,135,0.05);border-radius:4px;padding:8px;border-bottom:1px solid rgba(126,231,135,0.15);}
   .log-entry.request .who{color:var(--amber);}
   .log-entry.request{background:rgba(255,138,61,0.06);border-radius:4px;padding:8px;border-bottom:1px solid rgba(255,138,61,0.2);}
+  .log-entry.enemy .who{color:var(--danger);}
+  .log-entry.enemy{background:rgba(255,93,93,0.06);border-radius:4px;padding:8px;border-bottom:1px solid rgba(255,93,93,0.2);}
+  .who-avatar{width:22px;height:22px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;border:1px solid var(--line);}
   .log-entry .txt{color:var(--text);margin-top:2px;line-height:1.4;}
   .log-entry .meta{font-size:10px;color:var(--text-mute);margin-left:8px;}
 
@@ -189,7 +192,184 @@
   let cachedLog = [];
   let cachedDex = [];
   let dexActiveFilters = [];
+  let dexAddEvolutions = [];
   let dexCanEditGlobal = false;
+  let cachedMe = null;
+  let animatedLogIds = new Set();
+  let cachedCombat = null;
+  let cachedProgression = null;
+
+  async function getProgression(code){ const d = await apiGet('/api/progression?code=' + encodeURIComponent(code)); return d ? d.progression : { milestone:0, xp:0, inspiration:0 }; }
+  async function saveProgression(code, data){ return apiPost('/api/progression', { code, ...data }); }
+
+  async function getCombat(code){ const d = await apiGet('/api/combat?code=' + encodeURIComponent(code)); return d ? d.combat : null; }
+  async function saveCombat(code, data){ return apiPost('/api/combat', { code, data }); }
+
+  function buildInitiativeOrder(participants){
+    const sideA = participants.filter(p=>p.side==='ally').slice().sort((a,b)=>b.initiative-a.initiative);
+    const sideB = participants.filter(p=>p.side==='enemy').slice().sort((a,b)=>b.initiative-a.initiative);
+    const order = [];
+    let qA = sideA.slice(), qB = sideB.slice();
+    let currentSide = (qA[0] ? qA[0].initiative : -Infinity) >= (qB[0] ? qB[0].initiative : -Infinity) ? 'A' : 'B';
+    while(qA.length || qB.length){
+      if(currentSide==='A'){
+        if(qA.length){ order.push(qA.shift()); currentSide = 'B'; }
+        else { order.push(qB.shift()); }
+      } else {
+        if(qB.length){ order.push(qB.shift()); currentSide = 'A'; }
+        else { order.push(qA.shift()); }
+      }
+    }
+    return order.map(p=>p.id);
+  }
+
+  const ACTION_DEFS = [
+    { key:'move', label:'Muovi', cost:1 },
+    { key:'attack', label:'Attacca', cost:1, oncePerRound:true },
+    { key:'difficult_move', label:'Movimento Difficile', cost:2 },
+    { key:'holdback', label:'Trattieni Colpo', cost:1 },
+    { key:'skill_tamer', label:'Skill Check (Tamer)', cost:1 },
+    { key:'skill_digimon', label:'Skill Check (Digimon)', cost:2 },
+    { key:'stance', label:'Cambio Stance', cost:1 },
+    { key:'clash', label:'Clash', cost:1 },
+    { key:'bolster', label:'Bolster', cost:1 },
+    { key:'aid', label:'Aid', cost:1 },
+    { key:'other1', label:'Altro (1 Azione)', cost:1 },
+    { key:'other2', label:'Altro (2 Azioni)', cost:2 }
+  ];
+
+  function trySpendAction(participant, actionKey){
+    const def = ACTION_DEFS.find(a=>a.key===actionKey);
+    if(!def) return { ok:false, msg:'Azione non valida' };
+    if(def.oncePerRound && participant.attackedThisRound) return { ok:false, msg:'Ha già usato Attacca questo round.' };
+    if((participant.actions===undefined?2:participant.actions) < def.cost) return { ok:false, msg:'Azioni insufficienti.' };
+    if(participant.actions===undefined) participant.actions = 2;
+    participant.actions -= def.cost;
+    if(def.oncePerRound) participant.attackedThisRound = true;
+    return { ok:true, def };
+  }
+
+  function defaultCombat(){
+    return { active:false, round:1, currentIndex:0, participants:[], order:[] };
+  }
+
+  function recalcCombatOrder(combat){
+    combat.order = buildInitiativeOrder(combat.participants);
+    combat.currentIndex = 0;
+    combat.round = 1;
+    combat.participants.forEach(p=>{ p.actions = 2; p.attackedThisRound = false; });
+  }
+
+  function combatSelfActionHTML(combat, username){
+    if(!combat || !combat.active) return '';
+    const p = (combat.participants||[]).find(x=>x.username===username);
+    if(!p) return '';
+    const acts = p.actions===undefined?2:p.actions;
+    return `
+      <div class="divider"></div>
+      <div class="muted" style="margin-bottom:6px;">Le tue Azioni: <span class="mono" style="color:var(--cyan);">${acts}/2</span></div>
+      <div class="row">
+        <select id="self-action-select" style="flex:2;">${ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost})</option>`).join('')}</select>
+        <button class="btn small" id="btn-self-action-use" style="flex:1;">Usa</button>
+      </div>
+      <div class="muted" id="self-action-status" style="margin-top:4px;"></div>
+    `;
+  }
+
+  function bindCombatSelfActions(code, username){
+    const btn = document.getElementById('btn-self-action-use');
+    if(!btn) return;
+    btn.onclick = async ()=>{
+      if(!cachedCombat || !cachedCombat.active) return;
+      const p = cachedCombat.participants.find(x=>x.username===username);
+      if(!p) return;
+      const sel = document.getElementById('self-action-select');
+      const result = trySpendAction(p, sel.value);
+      const statusEl = document.getElementById('self-action-status');
+      if(!result.ok){
+        statusEl.style.color = 'var(--danger)';
+        statusEl.textContent = result.msg;
+        return;
+      }
+      await saveCombat(code, cachedCombat);
+      await pushLog(code, { who: p.name, role:'player', text: `${p.name} usa ${result.def.label} (${result.def.cost} Azione/i) — restano ${p.actions}/2 Azioni.` });
+      refreshLiveParts();
+    };
+  }
+
+  function renderEncounterBalance(){
+    const cardEl = document.getElementById('encounter-balance-card');
+    if(!cardEl) return;
+    const milestone = cachedProgression ? Number(cachedProgression.milestone||0) : 0;
+    const partySize = cachedRoster.filter(m=>m.role==='player').length || 1;
+    cardEl.innerHTML = `
+      <div class="section-title">Bilanciamento Incontro</div>
+      <div class="muted" style="margin-bottom:8px;">Formula del manuale (Game Master's Index 3.0): (DP Base Default Range + Milestone×4 + Bonus Difficoltà) × N. Giocatori.</div>
+      <div class="row">
+        <div class="field"><label>DP Base Default Range</label><input type="number" id="eb-basedp" value="10" min="0" /></div>
+        <div class="field"><label>Difficoltà</label>
+          <select id="eb-difficulty">
+            <option value="0">Easy (+0)</option>
+            <option value="5" selected>Normal (+5)</option>
+            <option value="10">Hard (+10)</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Milestone Party</label><input type="number" id="eb-milestone" value="${milestone}" min="0" /></div>
+        <div class="field"><label>N. Giocatori</label><input type="number" id="eb-partysize" value="${partySize}" min="1" /></div>
+      </div>
+      <div class="muted" style="margin:8px 0;">Budget Incontro: <span class="mono" id="eb-budget" style="color:var(--cyan);font-size:16px;">0</span> DP</div>
+      <div class="divider"></div>
+      <div class="muted" style="margin-bottom:6px;">Distribuzione tra Nemici</div>
+      <div class="row">
+        <div class="field"><label>N. Nemici</label><input type="number" id="eb-enemies" value="3" min="1" /></div>
+        <div class="field"><label>Stage sopra Default Range (ognuno)</label><input type="number" id="eb-stagesabove" value="0" min="0" /></div>
+      </div>
+      <div class="muted" id="eb-result" style="margin-top:6px;"></div>
+    `;
+    const recalc = ()=>{
+      const baseDp = Number(document.getElementById('eb-basedp').value)||0;
+      const diff = Number(document.getElementById('eb-difficulty').value)||0;
+      const ms = Number(document.getElementById('eb-milestone').value)||0;
+      const ps = Number(document.getElementById('eb-partysize').value)||1;
+      const budget = (baseDp + ms*4 + diff) * ps;
+      document.getElementById('eb-budget').textContent = budget;
+      const enemies = Number(document.getElementById('eb-enemies').value)||1;
+      const stagesAbove = Number(document.getElementById('eb-stagesabove').value)||0;
+      const spentOnEntry = enemies*10 + enemies*stagesAbove*20;
+      const remaining = budget - spentOnEntry;
+      const perEnemy = Math.floor(remaining / enemies);
+      const resEl = document.getElementById('eb-result');
+      resEl.style.color = remaining<0 ? 'var(--danger)' : 'var(--text-mute)';
+      resEl.innerHTML = `Costo ingresso Nemici: ${spentOnEntry} DP (10/nemico + 20/Stage sopra il range).<br/>DP Bonus rimanenti da distribuire: <b>${remaining}</b> (~${perEnemy} DP a testa, min. 3 in Health ciascuno).`;
+    };
+    cardEl.querySelectorAll('input, select').forEach(el=> el.addEventListener('input', recalc));
+    recalc();
+  }
+
+  function combatDisplayHTML(combat){
+    if(!combat || !combat.active) return '<div class="muted">Nessun combattimento in corso.</div>';
+    const byId = {};
+    combat.participants.forEach(p=>byId[p.id]=p);
+    const orderList = (combat.order||[]).map(id=>byId[id]).filter(Boolean);
+    return `
+      <div class="flex-between" style="margin-bottom:8px;">
+        <span class="mono" style="color:var(--cyan);">ROUND ${combat.round}</span>
+      </div>
+      ${orderList.length===0 ? '<div class="muted">Ordine non ancora calcolato.</div>' : orderList.map((p,i)=>`
+        <div style="padding:6px 8px;margin-bottom:4px;border-radius:4px;${i===combat.currentIndex?'background:rgba(53,232,201,0.15);border:1px solid var(--cyan);':'background:var(--panel-2);border:1px solid var(--line);'}">
+          <div class="flex-between">
+            <span>${i===combat.currentIndex?'▶ ':''}<b>${escapeHTML(p.name)}</b> <span class="tag" style="margin-left:4px;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};">${p.side==='ally'?'Alleato':'Nemico'}</span></span>
+            <span class="mono">Iniz. ${p.initiative} · Az. ${p.actions===undefined?2:p.actions}/2</span>
+          </div>
+          ${p.effects && p.effects.length ? `<div style="margin-top:4px;">${effectTagsHTML(p)}</div>` : ''}
+          ${p.clashWith ? `<div class="muted" style="margin-top:4px;">🤼 In Clash con ${escapeHTML((byId[p.clashWith]||{}).name||'?')} — ${p.clashController?'<b style="color:var(--cyan);">controlla</b>':'sotto controllo'}</div>` : ''}
+        </div>
+      `).join('')}
+    `;
+  }
+  let dexEditOpenId = null;
 
   // ---------- session persistence ----------
   function saveSession(s){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }catch(e){} }
@@ -243,6 +423,8 @@
   async function editLogEntry(code, id, text){ return apiPut('/api/log', { code, id, text }); }
   async function deleteLogEntry(code, id){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
   async function heartbeat(code, username){ return apiPost('/api/heartbeat', { code, username }); }
+  async function getPrivateLog(code, thread){ const d = await apiGet('/api/private-log?code=' + encodeURIComponent(code) + '&thread=' + encodeURIComponent(thread)); return d ? (d.log||[]) : []; }
+  async function pushPrivateLog(code, thread, entry){ return apiPost('/api/private-log', { code, thread, ...entry }); }
   async function getDex(code){ const d = await apiGet('/api/dex?code=' + encodeURIComponent(code)); return d ? (d.entries||[]) : []; }
   async function addDexEntry(code, entry){ return apiPost('/api/dex', { code, ...entry }); }
   async function updateDexEntry(code, id, fields){ return apiPut('/api/dex', { code, id, ...fields }); }
@@ -318,13 +500,17 @@
   }
 
   function defaultTamer(){
-    return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, imageUrl:'', currentWounds:null, inventory:[], skills: defaultSkills() };
+    return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, imageUrl:'', currentWounds:null, inventory:[], skills: defaultSkills(), unspentGrowthPoints:0 };
   }
   function defaultDigimon(){
     return {
       name:'', stage:'Rookie', personality:'', imageUrl:'',
       maxWounds:5, currentWounds:5, maxMp:3, currentMp:3,
       baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:1,
+      dpTotal:0, qualities:[],
+      defaultStage:'Rookie', defaultRange:1, evolutionPoints:0, forcedEvoRoundsLeft:0,
+      battery:0, usedSigMoveThisTurn:false,
+      size:'Medium', stance:'Neutral',
       moves:[
         {name:'Attacco Base', desc:'Colpo fisico standard.'},
         {name:'Mossa Speciale', desc:'Consuma MP, usa Intelligenza.'},
@@ -445,6 +631,8 @@
     cachedScene = await getScene(session.code);
     cachedLog = await getLog(session.code);
     cachedDex = await getDex(session.code);
+    cachedCombat = await getCombat(session.code);
+    cachedProgression = await getProgression(session.code);
 
     const sceneLive = document.getElementById('scene-live');
     if(sceneLive){
@@ -466,7 +654,28 @@
       bindRosterManageButtons(players);
     }
     const dexLive = document.getElementById('dex-live');
-    if(dexLive){ dexLive.innerHTML = dexListHTML(cachedDex, session.role==='master'); if(session.role==='master') bindDexEditButtons(session.code); }
+    if(dexLive && dexEditOpenId===null){ dexLive.innerHTML = dexListHTML(cachedDex, session.role==='master'); if(session.role==='master') bindDexEditButtons(session.code); }
+    const combatLive = document.getElementById('combat-live');
+    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
+    const combatSelf = document.getElementById('combat-self-actions');
+    if(combatSelf && session.role==='player'){
+      combatSelf.innerHTML = combatSelfActionHTML(cachedCombat, session.username);
+      bindCombatSelfActions(session.code, session.username);
+    }
+    const privateLogLive = document.getElementById('private-log-live');
+    if(privateLogLive && session.role==='player'){
+      const plog = await getPrivateLog(session.code, session.username);
+      const wasAtBottom = privateLogLive.scrollHeight - privateLogLive.scrollTop <= privateLogLive.clientHeight + 40;
+      privateLogLive.innerHTML = logHTML(plog, false);
+      if(wasAtBottom) privateLogLive.scrollTop = privateLogLive.scrollHeight;
+    }
+    const privateLogLiveMaster = document.getElementById('private-log-live-master');
+    if(privateLogLiveMaster && session.role==='master' && masterPrivateThread){
+      const plog = await getPrivateLog(session.code, masterPrivateThread);
+      const wasAtBottom = privateLogLiveMaster.scrollHeight - privateLogLiveMaster.scrollTop <= privateLogLiveMaster.clientHeight + 40;
+      privateLogLiveMaster.innerHTML = logHTML(plog, false);
+      if(wasAtBottom) privateLogLiveMaster.scrollTop = privateLogLiveMaster.scrollHeight;
+    }
     const errBanner = document.getElementById('api-err-banner');
     if(errBanner) errBanner.outerHTML = lastApiError ? `<div id="api-err-banner" class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(lastApiError)}</div>` : '<div id="api-err-banner"></div>';
   }
@@ -543,19 +752,29 @@
     return filterBar + filtered.slice().reverse().map(e=>{
       const bs = e.base_stats || {};
       const hasStats = bs.baseAccuracy || bs.baseDamage || bs.baseDodge || bs.baseArmor || bs.baseHealth;
+      if(!canEdit && !e.discovered){
+        return `
+        <div class="roster-item" id="dex-item-${e.id}">
+          <div style="display:flex;gap:10px;align-items:center;">
+            <div class="portrait-sm" style="display:flex;align-items:center;justify-content:center;color:var(--text-mute);font-family:'Share Tech Mono',monospace;">?</div>
+            <div><span class="name" style="color:var(--text-mute);">???</span><div class="muted" style="font-size:10px;">Non ancora incontrato</div></div>
+          </div>
+        </div>`;
+      }
       return `
       <div class="roster-item" id="dex-item-${e.id}">
         <div style="display:flex;gap:10px;align-items:flex-start;">
           ${portraitHTML(e.image_url, e.name, 'sm')}
           <div style="flex:1;">
             <div class="flex-between">
-              <div><span class="name">${escapeHTML(e.name)}</span><span class="tag" style="margin-left:6px;">${escapeHTML(e.stage)}</span></div>
+              <div><span class="name">${escapeHTML(e.name)}</span><span class="tag" style="margin-left:6px;">${escapeHTML(e.stage)}</span>${canEdit ? `<span class="tag" style="margin-left:4px;color:${e.discovered?'var(--cyan)':'var(--text-mute)'};border-color:${e.discovered?'var(--cyan-dim)':'var(--line)'};">${e.discovered?'scoperto':'nascosto'}</span>` : ''}</div>
               ${canEdit ? `<button class="btn ghost small" data-dex-edit="${e.id}">Modifica</button>` : ''}
             </div>
             ${e.description ? `<div class="sub" style="margin-top:3px;">${escapeHTML(e.description)}</div>` : ''}
             ${hasStats ? `<div class="muted" style="margin-top:4px;font-size:10px;">ACC ${bs.baseAccuracy||0} · DMG ${bs.baseDamage||0} · DODGE ${bs.baseDodge||0} · ARM ${bs.baseArmor||0} · HP ${bs.baseHealth||0}</div>` : ''}
             ${e.categories && e.categories.length ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">${e.categories.map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>` : ''}
             ${e.evolutions && e.evolutions.length ? evolutionsReadonlyHTML(e.evolutions) : ''}
+            ${e.qualities && e.qualities.length ? `<div class="muted" style="margin-top:4px;">Qualities: ${computeDpSpent(e.qualities)}/${e.dp_total||0} DP (${e.qualities.length})</div>` : ''}
             ${e.added_by ? `<div class="muted" style="margin-top:2px;">aggiunto da ${escapeHTML(e.added_by)}</div>` : ''}
           </div>
         </div>
@@ -570,6 +789,7 @@
     if(!el) return;
     const bs = entry.base_stats || {};
     let localEvo = (entry.evolutions || []).slice();
+    let localQual = (entry.qualities || []).slice();
     el.innerHTML = `
       <div class="divider"></div>
       <div class="field"><label>Nome</label><input type="text" id="dex-e-name-${entry.id}" value="${escapeAttr(entry.name)}" /></div>
@@ -598,6 +818,19 @@
         <input type="text" id="dex-e-evoimg-${entry.id}" placeholder="URL immagine (opz.)" style="flex:2;" />
         <button class="btn small" id="dex-e-evoadd-${entry.id}" style="flex:1;">Aggiungi</button>
       </div>
+      <div class="field" style="margin-top:8px;"><label>DP Totali</label><input type="number" id="dex-e-dptotal-${entry.id}" value="${entry.dp_total||0}" min="0" /></div>
+      <label style="font-size:11px;display:flex;align-items:center;gap:6px;margin:6px 0;"><input type="checkbox" id="dex-e-discovered-${entry.id}" ${entry.discovered?'checked':''} /> Scoperto dai giocatori</label>
+      <div class="muted" style="margin:8px 0 4px;">Qualities</div>
+      <div id="dex-e-quallist-${entry.id}">${qualitiesEditableHTML(localQual)}</div>
+      <div class="row">
+        <input type="text" id="dex-e-qualname-${entry.id}" placeholder="Nome Quality" style="flex:2;" />
+        <input type="number" id="dex-e-qualcost-${entry.id}" placeholder="DP" value="1" style="flex:1;" />
+      </div>
+      <div class="row" style="margin-top:6px;">
+        <input type="text" id="dex-e-qualcat-${entry.id}" placeholder="Categoria (opz.)" style="flex:1;" />
+        <input type="text" id="dex-e-qualdesc-${entry.id}" placeholder="Descrizione (opz.)" style="flex:2;" />
+        <button class="btn small" id="dex-e-qualadd-${entry.id}" style="flex:1;">Aggiungi</button>
+      </div>
       <div class="row" style="margin-top:10px;">
         <button class="btn ghost" id="dex-e-cancel-${entry.id}">Annulla</button>
         <button class="btn solid" id="dex-e-save-${entry.id}">Salva</button>
@@ -623,7 +856,31 @@
       document.getElementById('dex-e-evolist-'+entry.id).innerHTML = evolutionsEditableHTML(localEvo);
       bindEvo();
     };
-    document.getElementById('dex-e-cancel-'+entry.id).onclick = ()=>{ el.innerHTML=''; };
+    const bindQual = ()=>{
+      document.querySelectorAll(`#dex-e-quallist-${entry.id} [data-rmquality]`).forEach(btn=>{
+        btn.onclick = ()=>{
+          localQual.splice(Number(btn.getAttribute('data-rmquality')),1);
+          document.getElementById('dex-e-quallist-'+entry.id).innerHTML = qualitiesEditableHTML(localQual);
+          bindQual();
+        };
+      });
+    };
+    bindQual();
+    document.getElementById('dex-e-qualadd-'+entry.id).onclick = ()=>{
+      const name = document.getElementById('dex-e-qualname-'+entry.id).value.trim();
+      if(!name) return;
+      const cost = Number(document.getElementById('dex-e-qualcost-'+entry.id).value)||0;
+      const category = document.getElementById('dex-e-qualcat-'+entry.id).value.trim();
+      const description = document.getElementById('dex-e-qualdesc-'+entry.id).value.trim();
+      localQual.push({ name, cost, category, description });
+      document.getElementById('dex-e-qualname-'+entry.id).value='';
+      document.getElementById('dex-e-qualcost-'+entry.id).value='1';
+      document.getElementById('dex-e-qualcat-'+entry.id).value='';
+      document.getElementById('dex-e-qualdesc-'+entry.id).value='';
+      document.getElementById('dex-e-quallist-'+entry.id).innerHTML = qualitiesEditableHTML(localQual);
+      bindQual();
+    };
+    document.getElementById('dex-e-cancel-'+entry.id).onclick = ()=>{ el.innerHTML=''; dexEditOpenId = null; };
     document.getElementById('dex-e-save-'+entry.id).onclick = async ()=>{
       const fields = {
         name: document.getElementById('dex-e-name-'+entry.id).value.trim(),
@@ -638,13 +895,17 @@
           baseArmor: Number(document.getElementById('dex-e-arm-'+entry.id).value)||0,
           baseHealth: Number(document.getElementById('dex-e-hp-'+entry.id).value)||0
         },
-        evolutions: localEvo
+        evolutions: localEvo,
+        qualities: localQual,
+        dpTotal: Number(document.getElementById('dex-e-dptotal-'+entry.id).value)||0,
+        discovered: document.getElementById('dex-e-discovered-'+entry.id).checked
       };
       const ok = await updateDexEntry(code, entry.id, fields);
       const st = document.getElementById('dex-e-status-'+entry.id);
       if(ok){
-        Object.assign(entry, { name:fields.name, stage:fields.stage, description:fields.description, image_url:fields.imageUrl, base_stats:fields.baseStats, evolutions:fields.evolutions, categories:fields.categories });
+        Object.assign(entry, { name:fields.name, stage:fields.stage, description:fields.description, image_url:fields.imageUrl, base_stats:fields.baseStats, evolutions:fields.evolutions, categories:fields.categories, qualities:fields.qualities, dp_total:fields.dpTotal, discovered:fields.discovered });
         el.innerHTML='';
+        dexEditOpenId = null;
         const dexLive = document.getElementById('dex-live');
         if(dexLive){ dexLive.innerHTML = dexListHTML(cachedDex, true); bindDexEditButtons(code); }
       } else {
@@ -658,7 +919,7 @@
       btn.onclick = ()=>{
         const id = btn.getAttribute('data-dex-edit');
         const entry = cachedDex.find(e=>String(e.id)===String(id));
-        if(entry) renderDexEditForm(code, entry);
+        if(entry){ dexEditOpenId = id; renderDexEditForm(code, entry); }
       };
     });
   }
@@ -666,6 +927,32 @@
   function bindDexForm(code, username){
     const btn = document.getElementById('btn-dex-add');
     if(!btn) return;
+
+    const bindAddEvoRemove = ()=>{
+      const listEl = document.getElementById('dex-add-evolist');
+      if(!listEl) return;
+      listEl.querySelectorAll('[data-rmevo]').forEach(b=>{
+        b.onclick = ()=>{
+          dexAddEvolutions.splice(Number(b.getAttribute('data-rmevo')),1);
+          listEl.innerHTML = evolutionsEditableHTML(dexAddEvolutions);
+          bindAddEvoRemove();
+        };
+      });
+    };
+    bindAddEvoRemove();
+    const evoAddBtn = document.getElementById('btn-dex-evo-add');
+    if(evoAddBtn){
+      evoAddBtn.onclick = ()=>{
+        const n = document.getElementById('dex-evo-name').value.trim();
+        if(!n) return;
+        dexAddEvolutions.push({ name:n, imageUrl: document.getElementById('dex-evo-img').value.trim() });
+        document.getElementById('dex-evo-name').value='';
+        document.getElementById('dex-evo-img').value='';
+        document.getElementById('dex-add-evolist').innerHTML = evolutionsEditableHTML(dexAddEvolutions);
+        bindAddEvoRemove();
+      };
+    }
+
     btn.onclick = async ()=>{
       const name = document.getElementById('dex-name').value.trim();
       const stage = document.getElementById('dex-stage').value;
@@ -675,7 +962,16 @@
       const categories = catInput ? catInput.value.split(',').map(s=>s.trim()).filter(Boolean) : [];
       const statusEl = document.getElementById('dex-status');
       if(!name){ statusEl.style.color='var(--danger)'; statusEl.textContent = 'Serve almeno un nome.'; return; }
-      const d = await addDexEntry(code, { name, stage, description, imageUrl, addedBy: username, categories });
+      const baseStats = {
+        baseAccuracy: Number((document.getElementById('dex-acc')||{}).value)||0,
+        baseDamage: Number((document.getElementById('dex-dmg')||{}).value)||0,
+        baseDodge: Number((document.getElementById('dex-dodge')||{}).value)||0,
+        baseArmor: Number((document.getElementById('dex-arm')||{}).value)||0,
+        baseHealth: Number((document.getElementById('dex-hp')||{}).value)||0
+      };
+      const discoveredCheckbox = document.getElementById('dex-discovered');
+      const discovered = discoveredCheckbox ? discoveredCheckbox.checked : false;
+      const d = await addDexEntry(code, { name, stage, description, imageUrl, addedBy: username, categories, baseStats, evolutions: dexAddEvolutions, discovered });
       if(d && d.entry){
         statusEl.style.color = 'var(--text-mute)';
         statusEl.textContent = 'Aggiunto al Dex.';
@@ -683,6 +979,11 @@
         document.getElementById('dex-desc').value='';
         document.getElementById('dex-img').value='';
         if(catInput) catInput.value='';
+        ['dex-acc','dex-dmg','dex-dodge','dex-arm','dex-hp'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value='0'; });
+        dexAddEvolutions = [];
+        if(discoveredCheckbox) discoveredCheckbox.checked = false;
+        const evoListEl = document.getElementById('dex-add-evolist');
+        if(evoListEl){ evoListEl.innerHTML = evolutionsEditableHTML(dexAddEvolutions); bindAddEvoRemove(); }
         cachedDex.push(d.entry);
         const dexLive = document.getElementById('dex-live');
         if(dexLive){ dexLive.innerHTML = dexListHTML(cachedDex, true); bindDexEditButtons(code); }
@@ -698,9 +999,12 @@
     const code = session.code;
     cachedRoster = (await getRoster(code)).map(normalizeMember);
     const me = normalizeMember(cachedRoster.find(m=>m.username===session.username) || { username: session.username, role:'player' });
+    cachedMe = me;
     cachedScene = await getScene(code);
     cachedLog = await getLog(code);
     cachedDex = await getDex(code);
+    cachedCombat = await getCombat(code);
+    cachedProgression = await getProgression(code);
 
     root.innerHTML = `
       ${topbar('Vista Giocatore')}
@@ -708,6 +1012,7 @@
         <div>
           <div class="hud-frame card">
             <div class="section-title">Scena Attuale</div>
+            <div class="muted mono" style="margin-bottom:8px;">Milestone ${cachedProgression?cachedProgression.milestone:0} · Ispirazione ${cachedProgression?cachedProgression.inspiration:0}</div>
             <div id="scene-live">${sceneHTML(cachedScene)}</div>
           </div>
 
@@ -717,9 +1022,16 @@
           </div>
 
           <div class="hud-frame card">
+            <div class="section-title">Combattimento</div>
+            <div id="combat-live">${combatDisplayHTML(cachedCombat)}</div>
+            <div id="combat-self-actions">${combatSelfActionHTML(cachedCombat, session.username)}</div>
+          </div>
+
+          <div class="hud-frame card">
             <div class="section-title">Dichiara un'Azione</div>
             <textarea id="action-text" rows="3" placeholder="Scrivi cosa fa il tuo Tamer o il tuo Digimon..."></textarea>
             <div class="muted" style="margin-top:4px;">Scorciatoia: scrivi <code>/tira NomeSkill [TN]</code> (es. <code>/tira awareness 15</code>) per tirare direttamente in chat.</div>
+            <div id="action-roll-result" style="margin-top:8px;"></div>
             <div class="row" style="margin-top:8px;">
               <button class="btn" id="btn-correct">Correggi Italiano</button>
               <button class="btn solid" id="btn-send-action">Invia al Registro</button>
@@ -745,6 +1057,7 @@
             <button class="btn small" id="tab-scheda" style="flex:1;">Scheda</button>
             <button class="btn small" id="tab-inventario" style="flex:1;">Inventario</button>
             <button class="btn small" id="tab-dex" style="flex:1;">Dex</button>
+            <button class="btn small" id="tab-privata" style="flex:1;">Privata</button>
           </div>
           <div id="sidebar-content"></div>
         </div>
@@ -755,6 +1068,7 @@
     document.getElementById('tab-scheda').onclick = ()=>{ sidebarTab='scheda'; renderSidebar(me); };
     document.getElementById('tab-inventario').onclick = ()=>{ sidebarTab='inventario'; renderSidebar(me); };
     document.getElementById('tab-dex').onclick = ()=>{ sidebarTab='dex'; renderSidebar(me); };
+    document.getElementById('tab-privata').onclick = ()=>{ sidebarTab='privata'; renderSidebar(me); };
 
     document.getElementById('btn-logout').onclick = logout;
     document.getElementById('btn-correct').onclick = async ()=>{
@@ -770,8 +1084,14 @@
       const raw = ta.value.trim();
       if(!raw) return;
       const rollResult = tryParseRollShortcut(raw, me);
+      const resEl = document.getElementById('action-roll-result');
       if(rollResult){
-        await pushLog(code, { who: session.username, role:'roll', text: rollResult });
+        if(rollResult.dice && resEl){
+          resEl.innerHTML = `${diceRowHTML(rollResult.dice)}<span class="roll-total">${rollResult.resultLabel}</span>${rollResult.verdict?`<span class="roll-verdict ${rollResult.verdict.cls}">${rollResult.verdict.label}</span>`:''}`;
+        } else if(resEl){
+          resEl.innerHTML = '';
+        }
+        await pushLog(code, { who: session.username, role:'roll', text: rollResult.text, meta: rollResult.dice ? { dice: rollResult.dice } : null });
       } else {
         await pushLog(code, { who: session.username, role:'player', text: raw });
       }
@@ -786,7 +1106,8 @@
         refreshLiveParts();
       };
     });
-    attachLogModeration(document.getElementById('log-live'), code);
+    attachLogModeration(document.getElementById('log-live'), code, me);
+    bindCombatSelfActions(code, session.username);
 
     startPolling();
   }
@@ -800,9 +1121,27 @@
     if(!cardEl) return;
     const t = me.tamer;
     if(!editingSkills){
+      const gp = Number(t.unspentGrowthPoints||0);
       cardEl.innerHTML = `
         <div class="flex-between"><div class="section-title" style="margin:0;border:none;padding:0;">Skill</div>
         <button class="btn small" id="btn-edit-skills">Modifica</button></div>
+        ${gp>0 ? `
+          <div class="hud-frame" style="padding:8px;margin:10px 0;border-color:var(--cyan-dim);">
+            <div class="flex-between" style="margin-bottom:6px;"><span class="muted">Growth Points disponibili</span><span class="mono" style="color:var(--cyan);">${gp}</span></div>
+            <div class="row">
+              <select id="gp-skill-select" style="flex:2;">${SKILL_DEFS.map(d=>`<option value="${d.key}">${escapeHTML(d.label)}</option>`).join('')}</select>
+              <button class="btn small" id="btn-gp-skill" style="flex:1;">+1 Skill (1 GP)</button>
+            </div>
+            ${gp>=3 ? `
+            <div class="row" style="margin-top:6px;">
+              <select id="gp-attr-select" style="flex:2;">
+                <option value="agility">Agility</option><option value="body">Body</option><option value="charisma">Charisma</option><option value="intelligence">Intelligence</option><option value="willpower">Willpower</option>
+              </select>
+              <button class="btn small" id="btn-gp-attr" style="flex:1;">+1 Attributo (3 GP)</button>
+            </div>` : ''}
+            <div class="muted" id="gp-status" style="margin-top:4px;"></div>
+          </div>
+        ` : ''}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:12px;">
           ${SKILL_DEFS.map(def=>`
             <div class="stat-box" style="text-align:left;padding:6px 8px;">
@@ -820,6 +1159,37 @@
         <div id="skill-roll-panel-${containerId}" style="margin-top:12px;"></div>
       `;
       document.getElementById('btn-edit-skills').onclick = ()=>{ editingSkills = true; renderSkillsCard(me); };
+      const gpSkillBtn = document.getElementById('btn-gp-skill');
+      if(gpSkillBtn){
+        gpSkillBtn.onclick = async ()=>{
+          const key = document.getElementById('gp-skill-select').value;
+          const def = SKILL_DEFS.find(d=>d.key===key);
+          const max = skillMax(t, def);
+          const statusEl = document.getElementById('gp-status');
+          if(Number(t.skills[key])||0 >= max){ statusEl.style.color='var(--danger)'; statusEl.textContent = `${def.label} è già al massimo consentito (${max}).`; return; }
+          t.skills[key] = (Number(t.skills[key])||0) + 1;
+          t.unspentGrowthPoints = Number(t.unspentGrowthPoints||0) - 1;
+          await saveMember(session.code, me);
+          renderSkillsCard(me, containerId);
+        };
+      }
+      const gpAttrBtn = document.getElementById('btn-gp-attr');
+      if(gpAttrBtn){
+        gpAttrBtn.onclick = async ()=>{
+          const attr = document.getElementById('gp-attr-select').value;
+          const statusEl = document.getElementById('gp-status');
+          const current = Number(t[attr])||0;
+          const milestone = cachedProgression ? Number(cachedProgression.milestone||0) : 0;
+          let cap = 5;
+          if(milestone>=6) cap = 7; else if(milestone>=3) cap = 6;
+          if(current >= cap){ statusEl.style.color='var(--danger)'; statusEl.textContent = `Tetto attuale per gli Attributi: ${cap} (Milestone ${milestone}).`; return; }
+          t[attr] = current + 1;
+          t.unspentGrowthPoints = Number(t.unspentGrowthPoints||0) - 3;
+          await saveMember(session.code, me);
+          renderSkillsCard(me, containerId);
+          renderTamerCard(me);
+        };
+      }
       cardEl.querySelectorAll('[data-roll-skill]').forEach(btn=>{
         btn.onclick = ()=>{ openSkillRollPanel(me, btn.getAttribute('data-roll-skill'), containerId); };
       });
@@ -865,6 +1235,30 @@
     }
   }
 
+  const TALENT_DEFS = [
+    { attr:'agility', threshold:3, name:'Quick Step', text:'Quando prendi l\'Azione Reposition, guadagni +1 Successo al risultato finale.' },
+    { attr:'agility', threshold:5, name:'Strike Fast', text:'Special Order "FULL SPEED AHEAD" (2 Azioni): il Digimon guadagna 1 Azione extra, da usare per Muovi o Movimento Difficile.' },
+    { attr:'body', threshold:3, name:'Bulk Up', text:'Quando prendi l\'Azione Reinforce, guadagni +1 Successo al risultato finale.' },
+    { attr:'body', threshold:5, name:'Energy Burst', text:'Special Order "DON\'T WORRY YOU\'LL HEAL" (1 Azione): il Digimon recupera 1 Casella Ferita (2 se ha Ferite Temporanee).' },
+    { attr:'body', threshold:7, name:'Overpower', text:'Special Order "I\'M WITH YOU" (1 Azione, una volta a riposo): dopo un tiro Accuracy del Digimon, i 4 contano come Successi.' },
+    { attr:'charisma', threshold:3, name:'Direct Team', text:'La penalità -2 per dirigere Digimon che non sono il tuo si riduce a -1.' },
+    { attr:'charisma', threshold:5, name:'Swagger', text:'Special Order "HEY YOU" (1 Azione): applica [TAUNT] a un Nemico per 3 round.' },
+    { attr:'charisma', threshold:6, name:'Peak Performance', text:'Special Order "I BELIEVE IN YOU" (2 Azioni, una volta a combattimento): un Digimon alleato guadagna [BASTION 2] fino al tuo prossimo turno.' },
+    { attr:'charisma', threshold:7, name:'Revitalize', text:'Special Order "WAKE UP, DON\'T QUIT NOW" (2 Azioni, una volta a riposo): rianima un Digimon sconfitto.' },
+    { attr:'intelligence', threshold:3, name:'Experienced', text:'Guadagni +1 Punto Skill extra da spendere.' },
+    { attr:'intelligence', threshold:5, name:'Calculated', text:'Special Order: puoi trasformare Bolster in +1 Successo invece di +2 dadi.' },
+    { attr:'intelligence', threshold:6, name:'Signature Versatility', text:'Special Order "TIME FOR PLAN B" (Azione Libera, una volta a combattimento): il prossimo Attacco del Digimon conta come Signature Move.' },
+    { attr:'intelligence', threshold:7, name:'Enemy Scan', text:'Special Order "I\'VE FOUND AN EXPLOIT" (2 Azioni, una volta a riposo): infliggi [DEBILITATE] a un Nemico con Potenza pari al suo Stage.' },
+    { attr:'willpower', threshold:3, name:'Potential', text:'Guadagni 1 Punto Ispirazione Temporaneo all\'inizio di ogni sessione.' },
+    { attr:'willpower', threshold:5, name:'Purify Partner', text:'Special Order "TOUGH IT OUT" (1 Azione): cura il Digimon da un Effetto Negativo, come [CLEANSE].' },
+    { attr:'willpower', threshold:6, name:'Challenger', text:'Quando si tira l\'Iniziativa, il tuo Digimon guadagna Ferite Temporanee pari ai tuoi Successi Willpower + lo Stage più alto tra i nemici (max 5).' },
+    { attr:'willpower', threshold:7, name:'Miracle', text:'Spendendo 7 IP puoi aggiungere/sottrarre Willpower+5 a un Check, Dodge o Accuracy Pool.' }
+  ];
+
+  function computeUnlockedTalents(tamer){
+    return TALENT_DEFS.filter(t => Number(tamer[t.attr]||0) >= t.threshold);
+  }
+
   function renderTamerCard(me, containerId){
     containerId = containerId || 'tamer-card';
     const cardEl = document.getElementById(containerId);
@@ -880,6 +1274,11 @@
           <div class="info"><div class="nm">${escapeHTML(session.username)}</div><div class="tg">AGI ${t.agility} · BODY ${t.body} · CAR ${t.charisma} · INT ${t.intelligence} · WILL ${t.willpower}</div></div>
         </div>
         ${barHTML('Caselle Ferita', t.currentWounds, maxW, 'hp', 'tamer-w-minus', 'tamer-w-plus')}
+        <div class="divider"></div>
+        <div class="muted" style="margin-bottom:6px;">Tamer Talents (sbloccati automaticamente)</div>
+        ${(()=>{ const unlocked = computeUnlockedTalents(t); return unlocked.length===0
+          ? '<div class="muted">Nessun Talent ancora sbloccato (servono almeno 3 punti in un Attributo).</div>'
+          : unlocked.map(tal=>`<div class="roster-item" style="padding:6px 8px;margin-bottom:4px;"><div class="flex-between"><b>${escapeHTML(tal.name)}</b><span class="tag">${ATTR_ABBR[tal.attr]} ${tal.threshold}+</span></div><div class="sub" style="margin-top:2px;">${escapeHTML(tal.text)}</div></div>`).join(''); })()}
       `;
       document.getElementById('btn-edit-tamer').onclick = ()=>{ editingTamer = true; renderTamerCard(me); };
       document.getElementById('tamer-w-minus').onclick = async ()=>{ me.tamer.currentWounds = Math.max(0, me.tamer.currentWounds-1); await saveMember(session.code, me); renderTamerCard(me); };
@@ -971,7 +1370,7 @@
   function renderSidebar(me){
     const content = document.getElementById('sidebar-content');
     if(!content) return;
-    ['scheda','inventario','dex'].forEach(t=>{
+    ['scheda','inventario','dex','privata'].forEach(t=>{
       const btn = document.getElementById('tab-'+t);
       if(btn) btn.classList.toggle('active', t===sidebarTab);
     });
@@ -990,7 +1389,32 @@
     } else if(sidebarTab==='dex'){
       content.innerHTML = `<div class="hud-frame card" id="dex-panel-card"></div>`;
       renderDexPanel(false);
+    } else if(sidebarTab==='privata'){
+      content.innerHTML = `<div class="hud-frame card" id="private-chat-card"></div>`;
+      renderPrivateChatPlayer(session.code, session.username);
     }
+  }
+
+  async function renderPrivateChatPlayer(code, username){
+    const cardEl = document.getElementById('private-chat-card');
+    if(!cardEl) return;
+    const log = await getPrivateLog(code, username);
+    cardEl.innerHTML = `
+      <div class="section-title">Chat Privata col Master</div>
+      <div class="muted" style="margin-bottom:8px;">Visibile solo a te e al Master — per scene in split.</div>
+      <div class="log" id="private-log-live" style="height:220px;">${logHTML(log, false)}</div>
+      <textarea id="private-text" rows="2" placeholder="Scrivi al Master..." style="margin-top:8px;"></textarea>
+      <button class="btn solid" id="btn-private-send" style="width:100%;margin-top:6px;">Invia</button>
+    `;
+    document.getElementById('btn-private-send').onclick = async ()=>{
+      const ta = document.getElementById('private-text');
+      if(!ta.value.trim()) return;
+      await pushPrivateLog(code, username, { who: username, role:'player', text: ta.value.trim() });
+      ta.value='';
+      renderPrivateChatPlayer(code, username);
+    };
+    const logLive = document.getElementById('private-log-live');
+    if(logLive) logLive.scrollTop = logLive.scrollHeight;
   }
 
   function renderDexPanel(canEdit){
@@ -1010,19 +1434,57 @@
         </div>
         <div class="field"><label>Categorie (separate da virgola, es. Deva, Angelo)</label><input type="text" id="dex-categories" placeholder="es. Deva, Angelo, Vaccine" /></div>
         <div class="field"><label>Descrizione</label><textarea id="dex-desc" rows="2" placeholder="Cosa avete scoperto su questo Digimon..."></textarea></div>
-        <button class="btn solid" id="btn-dex-add" style="width:100%;">Aggiungi al Dex</button>
+        <div class="muted" style="margin:8px 0 4px;">Stat Base (Combattimento) — opzionale, puoi completarle anche dopo con "Modifica"</div>
+        <div class="row">
+          <div class="field"><label>Accuracy</label><input type="number" id="dex-acc" value="0" min="0" /></div>
+          <div class="field"><label>Damage</label><input type="number" id="dex-dmg" value="0" min="0" /></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Dodge</label><input type="number" id="dex-dodge" value="0" min="0" /></div>
+          <div class="field"><label>Armor</label><input type="number" id="dex-arm" value="0" min="0" /></div>
+        </div>
+        <div class="field"><label>Health</label><input type="number" id="dex-hp" value="0" min="0" /></div>
+        <div class="muted" style="margin:8px 0 4px;">Possibili Evoluzioni</div>
+        <div id="dex-add-evolist">${evolutionsEditableHTML(dexAddEvolutions)}</div>
+        <div class="row">
+          <input type="text" id="dex-evo-name" placeholder="Nome evoluzione" style="flex:2;" />
+          <input type="text" id="dex-evo-img" placeholder="URL immagine (opz.)" style="flex:2;" />
+          <button class="btn small" id="btn-dex-evo-add" style="flex:1;">Aggiungi</button>
+        </div>
+        <label style="font-size:11px;display:flex;align-items:center;gap:6px;margin:6px 0;"><input type="checkbox" id="dex-discovered" /> Già scoperto dai giocatori</label>
+        <button class="btn solid" id="btn-dex-add" style="width:100%;margin-top:4px;">Aggiungi al Dex</button>
         <div class="muted" id="dex-status" style="margin-top:6px;"></div>
       ` : `<div class="muted" style="margin-top:8px;">Solo il Master può aggiungere nuove voci al Dex.</div>`}
     `;
     if(canEdit){ bindDexForm(session.code, session.username); bindDexEditButtons(session.code); }
   }
 
+  const SIZES = ['Small','Medium','Large','Huge','Gigantic','Colossal'];
+  const SIZE_DEFS = {
+    Small:    { ram:2, cpu:-1, bit:1 },
+    Medium:   { ram:1, bit:1 },
+    Large:    { cpu:1, bit:1 },
+    Huge:     { cpu:1, dos:1 },
+    Gigantic: { ram:-1, cpu:2, dos:1 },
+    Colossal: { ram:-1, cpu:2, dos:1 }
+  };
+  function maxSizeIndexForStage(stage){ return Math.min(SIZES.length-1, stageIndex(stage)+1); }
+  function allowedSizes(stage){ return SIZES.slice(0, maxSizeIndexForStage(stage)+1); }
+
+  function stanceModifiers(d){
+    const sv = stageIndex(d.stage);
+    if(d.stance==='Offensive') return { accuracy: sv, dodge: -sv };
+    if(d.stance==='Defensive') return { accuracy: -sv, dodge: sv };
+    return { accuracy:0, dodge:0 };
+  }
+
   function computeDerivedStats(d){
+    const sizeMod = SIZE_DEFS[d.size] || {};
     return {
-      bit: Math.max(0, Math.floor(Number(d.baseAccuracy||0)/3)),
-      dos: Math.max(0, Math.floor(Number(d.baseDamage||0)/3)),
-      ram: Math.max(0, Math.floor(Number(d.baseDodge||0)/3)),
-      cpu: Math.max(0, Math.floor(Number(d.baseArmor||0)/3))
+      bit: Math.max(0, Math.floor(Number(d.baseAccuracy||0)/3) + (sizeMod.bit||0)),
+      dos: Math.max(0, Math.floor(Number(d.baseDamage||0)/3) + (sizeMod.dos||0)),
+      ram: Math.max(0, Math.floor(Number(d.baseDodge||0)/3) + (sizeMod.ram||0)),
+      cpu: Math.max(0, Math.floor(Number(d.baseArmor||0)/3) + (sizeMod.cpu||0))
     };
   }
 
@@ -1047,6 +1509,41 @@
       <div class="flex-between" style="margin-bottom:4px;">
         <span>${escapeHTML(ev.name)}</span>
         <button class="btn ghost small" data-rmevo="${i}">Rimuovi</button>
+      </div>
+    `).join('');
+  }
+
+  const STAGES = ['Baby','Rookie','Champion','Ultimate','Mega'];
+  function stageIndex(s){ const i = STAGES.indexOf(s); return i<0?0:i; }
+  function batteryCap(stage){ return stageIndex(stage)+1; }
+  function evolutionCost(d, targetStage){
+    const comfortableMax = stageIndex(d.defaultStage) + Number(d.defaultRange||0);
+    return Math.max(0, stageIndex(targetStage) - comfortableMax);
+  }
+
+  function computeDpSpent(qualities){
+    return (qualities||[]).reduce((sum,q)=>sum+(Number(q.cost)||0),0);
+  }
+
+  function qualitiesReadonlyHTML(qualities){
+    if(!qualities || qualities.length===0) return '<div class="muted">Nessuna Quality registrata.</div>';
+    return qualities.map(q=>`
+      <div class="roster-item" style="padding:6px 8px;margin-bottom:4px;">
+        <div class="flex-between">
+          <span><b>${escapeHTML(q.name)}</b>${q.category?` <span class="tag" style="margin-left:4px;">${escapeHTML(q.category)}</span>`:''}</span>
+          <span class="mono">${q.cost} DP</span>
+        </div>
+        ${q.description ? `<div class="sub" style="margin-top:2px;">${escapeHTML(q.description)}</div>` : ''}
+      </div>
+    `).join('');
+  }
+
+  function qualitiesEditableHTML(qualities){
+    if(!qualities || qualities.length===0) return '<div class="muted" style="margin-bottom:6px;">Nessuna Quality aggiunta.</div>';
+    return qualities.map((q,i)=>`
+      <div class="flex-between" style="margin-bottom:4px;">
+        <span>${escapeHTML(q.name)} <span class="muted">(${q.cost} DP)</span></span>
+        <button class="btn ghost small" data-rmquality="${i}">Rimuovi</button>
       </div>
     `).join('');
   }
@@ -1085,12 +1582,117 @@
           <div class="stat-box"><div class="v">${der.ram}</div><div class="l">RAM</div></div>
           <div class="stat-box"><div class="v">${der.cpu}</div><div class="l">CPU</div></div>
         </div>
+        <div class="row" style="margin-top:8px;">
+          <div class="field" style="margin-bottom:0;"><label>Size</label>
+            <select id="dig-size-${containerId}">${allowedSizes(d.stage).map(s=>`<option ${d.size===s?'selected':''}>${s}</option>`).join('')}</select>
+          </div>
+          <div class="field" style="margin-bottom:0;"><label>Stance</label>
+            <select id="dig-stance-${containerId}">
+              <option ${d.stance==='Neutral'?'selected':''}>Neutral</option>
+              <option ${d.stance==='Offensive'?'selected':''}>Offensive</option>
+              <option ${d.stance==='Defensive'?'selected':''}>Defensive</option>
+            </select>
+          </div>
+        </div>
+        <div class="muted" style="margin-top:4px;">Stance: ${d.stance==='Neutral'?'nessun bonus/penalità':(d.stance==='Offensive'?`+${stageIndex(d.stage)} Accuracy, −${stageIndex(d.stage)} Dodge`:`+${stageIndex(d.stage)} Dodge, −${stageIndex(d.stage)} Accuracy`)} (cambiarla costa 1 Azione, da segnare a parte)</div>
+        <div class="divider"></div>
+        ${barHTML('Battery', d.battery, batteryCap(d.stage), 'mp', 'dig-batt-minus-'+containerId, 'dig-batt-plus-'+containerId)}
+        <button class="btn amber" id="btn-sig-move-${containerId}" style="width:100%;margin-top:4px;" ${(d.battery||0)<1?'disabled':''}>⚡ Usa Signature Move (Battery ${d.battery||0})</button>
+        <div class="divider"></div>
+        <div class="muted" style="margin-bottom:4px;">Evoluzione</div>
+        <div class="sub" style="margin-bottom:6px;">Default: ${escapeHTML(d.defaultStage)} · Range ${d.defaultRange} (comodo fino a ${STAGES[Math.min(4, stageIndex(d.defaultStage)+Number(d.defaultRange||0))]}) · EP: ${d.evolutionPoints||0}${d.forcedEvoRoundsLeft>0?` · <span style="color:var(--danger);">Forzata: ${d.forcedEvoRoundsLeft} round rimasti</span>`:''}</div>
+        <div class="row">
+          <select id="evo-target-${containerId}" style="flex:2;">${STAGES.map(s=>`<option ${s===d.stage?'selected':''}>${s}</option>`).join('')}</select>
+          <button class="btn small" id="btn-evolve-${containerId}" style="flex:1;">🧬 Evolvi</button>
+          <button class="btn ghost small" id="btn-force-evolve-${containerId}" style="flex:1;">⚡ Forza</button>
+        </div>
+        <div class="muted" id="evo-status-${containerId}" style="margin-top:4px;"></div>
+        <div class="divider"></div>
+        <div class="flex-between" style="margin-bottom:6px;">
+          <span class="muted">Qualities</span>
+          <span class="mono" style="color:${computeDpSpent(d.qualities)>Number(d.dpTotal||0)?'var(--danger)':'var(--cyan)'};">${computeDpSpent(d.qualities)} / ${d.dpTotal||0} DP</span>
+        </div>
+        ${qualitiesReadonlyHTML(d.qualities)}
       `;
       document.getElementById('btn-edit-digimon-'+containerId).onclick = ()=>{ editingDigimon = true; renderDigimonCard(me, containerId); };
       document.getElementById('dig-w-minus-'+containerId).onclick = async ()=>{ me.digimon.currentWounds = Math.max(0, me.digimon.currentWounds-1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
       document.getElementById('dig-w-plus-'+containerId).onclick = async ()=>{ me.digimon.currentWounds = Math.min(me.digimon.maxWounds, me.digimon.currentWounds+1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
       document.getElementById('dig-mp-minus-'+containerId).onclick = async ()=>{ me.digimon.currentMp = Math.max(0, me.digimon.currentMp-1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
       document.getElementById('dig-mp-plus-'+containerId).onclick = async ()=>{ me.digimon.currentMp = Math.min(me.digimon.maxMp, me.digimon.currentMp+1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
+      document.getElementById('dig-batt-minus-'+containerId).onclick = async ()=>{ me.digimon.battery = Math.max(0, (me.digimon.battery||0)-1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
+      document.getElementById('dig-batt-plus-'+containerId).onclick = async ()=>{ me.digimon.battery = Math.min(batteryCap(me.digimon.stage), (me.digimon.battery||0)+1); await saveMember(session.code, me); renderDigimonCard(me, containerId); };
+      const sizeSel = document.getElementById('dig-size-'+containerId);
+      if(sizeSel) sizeSel.onchange = async ()=>{ me.digimon.size = sizeSel.value; await saveMember(session.code, me); renderDigimonCard(me, containerId); };
+      const stanceSel = document.getElementById('dig-stance-'+containerId);
+      if(stanceSel) stanceSel.onchange = async ()=>{
+        me.digimon.stance = stanceSel.value;
+        await saveMember(session.code, me);
+        await pushLog(session.code, { who: session.username, role:'player', text: `${me.digimon.name||'Il Digimon'} cambia Stance in ${stanceSel.value}.` });
+        renderDigimonCard(me, containerId);
+        refreshLiveParts();
+      };
+      const sigBtn = document.getElementById('btn-sig-move-'+containerId);
+      if(sigBtn){
+        sigBtn.onclick = async ()=>{
+          const spent = Number(me.digimon.battery||0);
+          if(spent<1) return;
+          me.digimon.battery = 0;
+          me.digimon.usedSigMoveThisTurn = true;
+          await saveMember(session.code, me);
+          await pushLog(session.code, { who: me.digimon.name||session.username, role:'roll', text: `⚡ ${me.digimon.name||'Il Digimon'} usa la Signature Move! Bonus da Battery: +${spent} Accuracy/Damage (o +${spent} da dividere tra Accuracy e Potenza Effetto se [SUPPORT]) su questo attacco.` });
+          renderDigimonCard(me, containerId);
+          refreshLiveParts();
+        };
+      }
+      const evoBtn = document.getElementById('btn-evolve-'+containerId);
+      if(evoBtn){
+        evoBtn.onclick = async ()=>{
+          const target = document.getElementById('evo-target-'+containerId).value;
+          const statusEl = document.getElementById('evo-status-'+containerId);
+          const cost = evolutionCost(me.digimon, target);
+          if(cost > Number(me.digimon.evolutionPoints||0)){
+            statusEl.style.color='var(--danger)';
+            statusEl.textContent = `Servono ${cost} Evolution Points (ne hai ${me.digimon.evolutionPoints||0}). Costa comunque 1 Azione da segnare a parte.`;
+            return;
+          }
+          me.digimon.evolutionPoints = Number(me.digimon.evolutionPoints||0) - cost;
+          me.digimon.stage = target;
+          await saveMember(session.code, me);
+          await pushLog(session.code, { who: session.username, role:'player', text: `${me.digimon.name||'Il Digimon'} evolve a ${target}${cost>0?` (spesi ${cost} Evolution Points)`:''}. Ricorda di segnare 1 Azione spesa.` });
+          statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Evoluzione applicata.';
+          renderDigimonCard(me, containerId);
+          refreshLiveParts();
+        };
+      }
+      const forceBtn = document.getElementById('btn-force-evolve-'+containerId);
+      if(forceBtn){
+        forceBtn.onclick = async ()=>{
+          const target = document.getElementById('evo-target-'+containerId).value;
+          const statusEl = document.getElementById('evo-status-'+containerId);
+          const cost = evolutionCost(me.digimon, target);
+          const tn = 18 + cost;
+          const willVal = me.tamer.willpower;
+          const { dice, total } = rollSkillCheck(willVal, 0);
+          const verdict = evaluateVsTN(total, tn);
+          let outcomeText;
+          if(verdict.cls==='crit-success'){
+            me.digimon.stage = me.digimon.defaultStage;
+            outcomeText = `Successo Critico! Evolve e torna subito al Default Stage (${me.digimon.defaultStage}).`;
+          } else if(verdict.cls==='success'){
+            me.digimon.stage = target;
+            me.digimon.forcedEvoRoundsLeft = 3;
+            outcomeText = `Successo! Evolve a ${target} per 3 round, poi tornerà sotto il Default Stage.`;
+          } else {
+            outcomeText = `${verdict.label}. Nessuna evoluzione forzata — possibili conseguenze pericolose a discrezione del Master.`;
+          }
+          await saveMember(session.code, me);
+          await pushLog(session.code, { who: session.username, role:'roll', text: `⚡ Forza Evoluzione (TN ${tn}): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText}`, meta:{ dice } });
+          statusEl.style.color='var(--text-mute)'; statusEl.textContent = outcomeText;
+          renderDigimonCard(me, containerId);
+          renderTamerCard(me);
+          refreshLiveParts();
+        };
+      }
       cardEl.querySelectorAll('[data-pool]').forEach(btn=>{
         btn.onclick = async ()=>{
           const statKey = btn.getAttribute('data-pool');
@@ -1099,7 +1701,7 @@
           const resEl = document.getElementById('pool-roll-result-'+containerId);
           if(resEl) resEl.innerHTML = `${diceRowHTML(dice)}<span class="roll-total">${successes} successi</span>`;
           const logText = `Pool Check ${statLabel} (${d[statKey]}d6): [${dice.join(',')}] → ${successes} successi`;
-          await pushLog(session.code, { who: (d.name||session.username), role:'roll', text: logText });
+          await pushLog(session.code, { who: (d.name||session.username), role:'roll', text: logText, meta: { dice, successes } });
           refreshLiveParts();
         };
       });
@@ -1127,12 +1729,59 @@
           <div class="field"><label>Armor</label><input type="number" id="e-d-arm-${containerId}" value="${d.baseArmor}" min="0" /></div>
         </div>
         <div class="field"><label>Health (base)</label><input type="number" id="e-d-hp-${containerId}" value="${d.baseHealth}" min="0" /></div>
+        <div class="divider"></div>
+        <div class="muted" style="margin-bottom:6px;">Evoluzione</div>
+        <div class="row">
+          <div class="field"><label>Default Stage</label>
+            <select id="e-d-defstage-${containerId}">${STAGES.map(s=>`<option ${d.defaultStage===s?'selected':''}>${s}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label>Default Range</label><input type="number" id="e-d-defrange-${containerId}" value="${d.defaultRange||1}" min="0" /></div>
+          <div class="field"><label>Evolution Points</label><input type="number" id="e-d-evopts-${containerId}" value="${d.evolutionPoints||0}" min="0" /></div>
+        </div>
+        <div class="divider"></div>
+        <div class="field"><label>DP Totali</label><input type="number" id="e-d-dptotal-${containerId}" value="${d.dpTotal||0}" min="0" /></div>
+        <div class="muted" style="margin-bottom:6px;">Qualities</div>
+        <div id="qual-list-${containerId}">${qualitiesEditableHTML(d.qualities)}</div>
+        <div class="row">
+          <input type="text" id="e-d-qual-name-${containerId}" placeholder="Nome Quality" style="flex:2;" />
+          <input type="number" id="e-d-qual-cost-${containerId}" placeholder="DP" value="1" style="flex:1;" />
+        </div>
+        <div class="row" style="margin-top:6px;">
+          <input type="text" id="e-d-qual-cat-${containerId}" placeholder="Categoria (opz.)" style="flex:1;" />
+          <input type="text" id="e-d-qual-desc-${containerId}" placeholder="Descrizione (opz.)" style="flex:2;" />
+          <button class="btn small" id="btn-add-qual-${containerId}" style="flex:1;">Aggiungi</button>
+        </div>
         <div class="row" style="margin-top:10px;">
           <button class="btn ghost" id="btn-cancel-digimon-${containerId}">Annulla</button>
           <button class="btn solid" id="btn-save-digimon-${containerId}">Salva</button>
         </div>
         <div class="muted" id="save-status-digimon-${containerId}" style="margin-top:6px;"></div>
       `;
+      const bindQualRemove = ()=>{
+        document.querySelectorAll(`#qual-list-${containerId} [data-rmquality]`).forEach(b=>{
+          b.onclick = ()=>{
+            d.qualities.splice(Number(b.getAttribute('data-rmquality')),1);
+            document.getElementById('qual-list-'+containerId).innerHTML = qualitiesEditableHTML(d.qualities);
+            bindQualRemove();
+          };
+        });
+      };
+      bindQualRemove();
+      document.getElementById('btn-add-qual-'+containerId).onclick = ()=>{
+        const name = document.getElementById('e-d-qual-name-'+containerId).value.trim();
+        if(!name) return;
+        const cost = Number(document.getElementById('e-d-qual-cost-'+containerId).value)||0;
+        const category = document.getElementById('e-d-qual-cat-'+containerId).value.trim();
+        const description = document.getElementById('e-d-qual-desc-'+containerId).value.trim();
+        if(!d.qualities) d.qualities = [];
+        d.qualities.push({ name, cost, category, description });
+        document.getElementById('e-d-qual-name-'+containerId).value='';
+        document.getElementById('e-d-qual-cost-'+containerId).value='1';
+        document.getElementById('e-d-qual-cat-'+containerId).value='';
+        document.getElementById('e-d-qual-desc-'+containerId).value='';
+        document.getElementById('qual-list-'+containerId).innerHTML = qualitiesEditableHTML(d.qualities);
+        bindQualRemove();
+      };
       document.getElementById('btn-cancel-digimon-'+containerId).onclick = ()=>{ editingDigimon = false; renderDigimonCard(me, containerId); };
       document.getElementById('btn-save-digimon-'+containerId).onclick = async ()=>{
         me.digimon.name = document.getElementById('e-d-name-'+containerId).value;
@@ -1146,6 +1795,11 @@
         me.digimon.baseDodge = Number(document.getElementById('e-d-dodge-'+containerId).value)||0;
         me.digimon.baseArmor = Number(document.getElementById('e-d-arm-'+containerId).value)||0;
         me.digimon.baseHealth = Number(document.getElementById('e-d-hp-'+containerId).value)||0;
+        me.digimon.defaultStage = document.getElementById('e-d-defstage-'+containerId).value;
+        me.digimon.defaultRange = Number(document.getElementById('e-d-defrange-'+containerId).value)||0;
+        me.digimon.evolutionPoints = Number(document.getElementById('e-d-evopts-'+containerId).value)||0;
+        me.digimon.dpTotal = Number(document.getElementById('e-d-dptotal-'+containerId).value)||0;
+        me.digimon.qualities = d.qualities || [];
         if(me.digimon.currentWounds > me.digimon.maxWounds) me.digimon.currentWounds = me.digimon.maxWounds;
         if(me.digimon.currentMp > me.digimon.maxMp) me.digimon.currentMp = me.digimon.maxMp;
         const ok = await saveMember(session.code, me);
@@ -1191,7 +1845,7 @@
         const resEl = document.getElementById('roll-result-'+containerId);
         resEl.innerHTML = `${diceRowHTML(dice)}<span class="roll-total">${total}</span>${verdict?`<span class="roll-verdict ${verdict.cls}">${verdict.label}</span>`:''}`;
         const logText = `tira ${def.label} (${ATTR_ABBR[chosenAttr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal} = ${total}` + (verdict ? ` vs TN ${tnVal} → ${verdict.label}` : '');
-        await pushLog(session.code, { who: session.username, role:'roll', text: logText });
+        await pushLog(session.code, { who: session.username, role:'roll', text: logText, meta: { dice, total, verdict: verdict?verdict.label:null } });
         refreshLiveParts();
       };
     };
@@ -1210,13 +1864,16 @@
       rest = parts.slice(0,-1).join(' ');
     }
     const query = rest.trim().toLowerCase();
-    if(!query) return null;
+    if(!query) return { text: `⚠ comando non riconosciuto: "${rest}". Usa /tira <NomeSkill|Accuracy|Dodge|Health> [TN]`, dice:null };
 
     const poolMap = { 'accuracy':'baseAccuracy', 'acc':'baseAccuracy', 'dodge':'baseDodge', 'schivata':'baseDodge', 'health':'baseHealth', 'hp':'baseHealth', 'salute':'baseHealth' };
     if(poolMap[query]){
       const statKey = poolMap[query];
       const { dice, successes } = rollPool(me.digimon[statKey]);
-      return `tira Pool Check ${query.toUpperCase()} (${me.digimon[statKey]}d6): [${dice.join(',')}] → ${successes} successi`;
+      return {
+        dice, isPool:true, resultLabel: `${successes} successi`, verdict:null,
+        text: `tira Pool Check ${query.toUpperCase()} (${me.digimon[statKey]}d6): [${dice.join(',')}] → ${successes} successi`
+      };
     }
 
     const def = SKILL_DEFS.find(d=>d.label.toLowerCase()===query || d.label.toLowerCase().startsWith(query) || query.startsWith(d.label.toLowerCase()));
@@ -1226,9 +1883,12 @@
       const skillVal = me.tamer.skills[def.key];
       const { dice, total } = rollSkillCheck(attrVal, skillVal);
       const verdict = evaluateVsTN(total, tn);
-      return `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal} = ${total}` + (verdict ? ` vs TN ${tn} → ${verdict.label}` : '');
+      return {
+        dice, isPool:false, resultLabel: String(total), verdict,
+        text: `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal} = ${total}` + (verdict ? ` vs TN ${tn} → ${verdict.label}` : '')
+      };
     }
-    return `⚠ comando non riconosciuto: "${rest}". Usa /tira <NomeSkill|Accuracy|Dodge|Health> [TN]`;
+    return { text: `⚠ comando non riconosciuto: "${rest}". Usa /tira <NomeSkill|Accuracy|Dodge|Health> [TN]`, dice:null };
   }
 
   function statBox(label, id, val){
@@ -1242,7 +1902,9 @@
     cachedScene = await getScene(code);
     cachedLog = await getLog(code);
     cachedDex = await getDex(code);
+    cachedCombat = await getCombat(code);
     const players = cachedRoster.filter(m=>m.role==='player');
+    cachedProgression = await getProgression(code);
 
     root.innerHTML = `
       ${topbar('Vista Master')}
@@ -1270,8 +1932,24 @@
           <div class="hud-frame card">
             <div class="section-title">Registro Narrativo</div>
             <div class="log" id="log-live">${logHTML(cachedLog, session.role==='master')}</div>
-            <textarea id="gm-text" rows="2" placeholder="Narrazione del Master..." style="margin-top:10px;"></textarea>
-            <button class="btn amber" id="btn-gm-post" style="width:100%;margin-top:8px;">Pubblica come Master</button>
+            <div class="field" style="margin-top:10px;"><label>Parla come</label>
+              <select id="speak-as">
+                <option value="master">Master (narrazione)</option>
+                ${players.map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (p.username+' — Digimon'))}</option>`).join('')}
+                <option value="enemy">Nemico personalizzato...</option>
+              </select>
+            </div>
+            <div class="row" id="enemy-fields" style="display:none;margin-bottom:8px;">
+              <input type="text" id="enemy-speak-name" placeholder="Nome nemico" style="flex:2;" />
+              <input type="text" id="enemy-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
+            </div>
+            <textarea id="gm-text" rows="2" placeholder="Narrazione del Master..."></textarea>
+            <button class="btn amber" id="btn-gm-post" style="width:100%;margin-top:8px;">Pubblica</button>
+          </div>
+
+          <div class="hud-frame card">
+            <div class="section-title">Combattimento</div>
+            <div id="combat-live">${combatDisplayHTML(cachedCombat)}</div>
           </div>
         </div>
 
@@ -1296,6 +1974,10 @@
             <div class="field"><label>TN (opzionale, solo per Skill)</label><input type="number" id="req-tn" placeholder="es. 15" /></div>
             <button class="btn amber" id="btn-request-roll" style="width:100%;">Richiedi Tiro</button>
           </div>
+          <div class="hud-frame card" id="combat-mgr-card"></div>
+          <div class="hud-frame card" id="private-chat-master-card"></div>
+          <div class="hud-frame card" id="progression-card"></div>
+          <div class="hud-frame card" id="encounter-balance-card"></div>
           <div class="hud-frame card">
             <div class="section-title">Digidex — Digimon Incontrati</div>
             <div id="dex-live">${dexListHTML(cachedDex, true)}</div>
@@ -1309,7 +1991,25 @@
             </div>
             <div class="field"><label>Categorie (separate da virgola, es. Deva, Angelo)</label><input type="text" id="dex-categories" placeholder="es. Deva, Angelo, Vaccine" /></div>
         <div class="field"><label>Descrizione</label><textarea id="dex-desc" rows="2" placeholder="Cosa avete scoperto su questo Digimon..."></textarea></div>
-            <button class="btn solid" id="btn-dex-add" style="width:100%;">Aggiungi al Dex</button>
+            <div class="muted" style="margin:8px 0 4px;">Stat Base (Combattimento) — opzionale, puoi completarle anche dopo con "Modifica"</div>
+            <div class="row">
+              <div class="field"><label>Accuracy</label><input type="number" id="dex-acc" value="0" min="0" /></div>
+              <div class="field"><label>Damage</label><input type="number" id="dex-dmg" value="0" min="0" /></div>
+            </div>
+            <div class="row">
+              <div class="field"><label>Dodge</label><input type="number" id="dex-dodge" value="0" min="0" /></div>
+              <div class="field"><label>Armor</label><input type="number" id="dex-arm" value="0" min="0" /></div>
+            </div>
+            <div class="field"><label>Health</label><input type="number" id="dex-hp" value="0" min="0" /></div>
+            <div class="muted" style="margin:8px 0 4px;">Possibili Evoluzioni</div>
+            <div id="dex-add-evolist">${evolutionsEditableHTML(dexAddEvolutions)}</div>
+            <div class="row">
+              <input type="text" id="dex-evo-name" placeholder="Nome evoluzione" style="flex:2;" />
+              <input type="text" id="dex-evo-img" placeholder="URL immagine (opz.)" style="flex:2;" />
+              <button class="btn small" id="btn-dex-evo-add" style="flex:1;">Aggiungi</button>
+            </div>
+            <label style="font-size:11px;display:flex;align-items:center;gap:6px;margin:6px 0;"><input type="checkbox" id="dex-discovered" /> Già scoperto dai giocatori</label>
+            <button class="btn solid" id="btn-dex-add" style="width:100%;margin-top:4px;">Aggiungi al Dex</button>
             <div class="muted" id="dex-status" style="margin-top:6px;"></div>
           </div>
         </div>
@@ -1321,6 +2021,10 @@
     bindDexForm(code, session.username);
     bindDexEditButtons(code);
     bindEncountersPanel(code, session.username);
+    renderCombatManager(code, players);
+    renderPrivateChatMaster(code, players);
+    renderProgressionMaster(code);
+    renderEncounterBalance();
     attachLogModeration(document.getElementById('log-live'), code);
     document.getElementById('btn-logout').onclick = logout;
     document.getElementById('btn-save-scene').onclick = async ()=>{
@@ -1336,10 +2040,29 @@
       statusEl.textContent = ok ? 'Scena aggiornata per tutti i giocatori.' : ('Errore: ' + (lastApiError||''));
       if(ok) refreshLiveParts();
     };
+    const speakAsSel = document.getElementById('speak-as');
+    const enemyFields = document.getElementById('enemy-fields');
+    if(speakAsSel){
+      speakAsSel.onchange = ()=>{ enemyFields.style.display = speakAsSel.value==='enemy' ? 'flex' : 'none'; };
+    }
     document.getElementById('btn-gm-post').onclick = async ()=>{
       const ta = document.getElementById('gm-text');
-      if(!ta.value.trim()) return;
-      await pushLog(code, { who:'Master', role:'gm', text: ta.value.trim() });
+      const text = ta.value.trim();
+      if(!text) return;
+      const mode = speakAsSel ? speakAsSel.value : 'master';
+      let who = 'Master', role = 'gm', avatar = null;
+      if(mode.startsWith('digimon:')){
+        const username = mode.slice('digimon:'.length);
+        const member = cachedRoster.find(m=>m.username===username);
+        who = (member && member.digimon.name) ? member.digimon.name : username;
+        role = 'digimon';
+        avatar = member ? member.digimon.imageUrl : null;
+      } else if(mode==='enemy'){
+        who = document.getElementById('enemy-speak-name').value.trim() || 'Nemico';
+        role = 'enemy';
+        avatar = document.getElementById('enemy-speak-img').value.trim() || null;
+      }
+      await pushLog(code, { who, role, text, meta: avatar ? { avatar } : null });
       ta.value='';
       refreshLiveParts();
     };
@@ -1352,7 +2075,8 @@
         const poolLabels = { baseAccuracy:'Accuracy (Pool)', baseDodge:'Dodge (Pool)', baseHealth:'Health (Pool)' };
         const label = poolLabels[skillKey] || (SKILL_DEFS.find(d=>d.key===skillKey)||{}).label || skillKey;
         const tnPart = (tn && !poolLabels[skillKey]) ? ` (TN ${tn})` : '';
-        await pushLog(code, { who:'Master', role:'request', text: `Richiesta a ${targetPlayer}: tira ${label}${tnPart}` });
+        const payload = `${targetPlayer}|${skillKey}|${tn||''}`;
+        await pushLog(code, { who:'Master', role:'request', text: `Richiesta a ${targetPlayer}: tira ${label}${tnPart}::REQ::${payload}` });
         refreshLiveParts();
       };
     }
@@ -1398,6 +2122,606 @@
         renderDigimonCard(p, 'm-digimon-'+i);
       };
     });
+  }
+
+  function getParticipantClashStats(p){
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      if(member) return computeDerivedStats(member.digimon);
+      return { cpu:0, ram:0 };
+    }
+    return { cpu: Math.max(0, Math.floor(Number(p.armor||0)/3)), ram: Number(p.ram||0) };
+  }
+
+  function getParticipantWounds(p){
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      if(member) return { current: member.digimon.currentWounds, max: member.digimon.maxWounds };
+    }
+    return { current: p.currentWounds||0, max: p.maxWounds||1 };
+  }
+
+  const EFFECT_DEFS = [
+    { key:'fear', label:'Fear', type:'negative', mods:{ accuracy:-1 } },
+    { key:'slow', label:'Slow', type:'negative', mods:{ dodge:-1 } },
+    { key:'frail', label:'Frail', type:'negative', mods:{ armor:-1 } },
+    { key:'dull', label:'Dull', type:'negative', mods:{ damage:-1 } },
+    { key:'confuse', label:'Confuse', type:'negative', mods:{ accuracy:-1, dodge:-1 } },
+    { key:'distract', label:'Distract', type:'negative', mods:{ accuracy:-1, dodge:-1 } },
+    { key:'keen', label:'Keen', type:'positive', mods:{ accuracy:1 } },
+    { key:'swift', label:'Swift', type:'positive', mods:{ dodge:1 } },
+    { key:'sturdy', label:'Sturdy', type:'positive', mods:{ armor:1 } },
+    { key:'sharpen', label:'Sharpen', type:'positive', mods:{ damage:1 } },
+    { key:'nimble', label:'Nimble', type:'positive', mods:{ accuracy:1, dodge:1 } },
+    { key:'burn', label:'Burn', type:'negative', mods:{}, tick:true },
+    { key:'poison', label:'Poison', type:'negative', mods:{}, tick:true }
+  ];
+
+  function computeEffectModifiers(p){
+    const mod = { accuracy:0, damage:0, dodge:0, armor:0 };
+    (p.effects||[]).forEach(e=>{
+      const def = EFFECT_DEFS.find(d=>d.key===e.key);
+      if(!def) return;
+      Object.keys(def.mods||{}).forEach(stat=>{
+        mod[stat] += def.mods[stat] * Number(e.potency||1);
+      });
+    });
+    return mod;
+  }
+
+  function effectTagsHTML(p){
+    if(!p.effects || p.effects.length===0) return '';
+    return p.effects.map(e=>{
+      const def = EFFECT_DEFS.find(d=>d.key===e.key);
+      return `<span class="tag" style="margin-left:4px;color:${def&&def.type==='positive'?'var(--cyan)':'var(--danger)'};border-color:${def&&def.type==='positive'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};">${def?def.label:e.key} ${e.potency}(${e.duration})</span>`;
+    }).join('');
+  }
+
+  async function tickEffectsForParticipant(code, combat, p){
+    if(!p.effects || p.effects.length===0) return [];
+    const logs = [];
+    p.effects.forEach(e=>{
+      const def = EFFECT_DEFS.find(d=>d.key===e.key);
+      if(def && def.tick){
+        const dmg = Number(e.potency||1);
+        logs.push(`${p.name} subisce ${dmg} danno da ${def.label}.`);
+        applyDamageToParticipantSync(p, dmg);
+      }
+    });
+    p.effects.forEach(e=>{ e.duration = Number(e.duration||1) - 1; });
+    const expired = p.effects.filter(e=>e.duration<=0);
+    expired.forEach(e=>{
+      const def = EFFECT_DEFS.find(d=>d.key===e.key);
+      logs.push(`${def?def.label:e.key} su ${p.name} è terminato.`);
+    });
+    p.effects = p.effects.filter(e=>e.duration>0);
+    return logs;
+  }
+
+  function applyDamageToParticipantSync(p, amount){
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      if(member) member.digimon.currentWounds = Math.max(0, member.digimon.currentWounds - amount);
+    } else {
+      p.currentWounds = Math.max(0, (p.currentWounds||0) - amount);
+    }
+  }
+
+  function getParticipantCombatStats(p){
+    let base;
+    let stanceMod = { accuracy:0, dodge:0 };
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      base = member ? { accuracy: member.digimon.baseAccuracy, damage: member.digimon.baseDamage, dodge: member.digimon.baseDodge, armor: member.digimon.baseArmor } : { accuracy:0, damage:0, dodge:0, armor:0 };
+      if(member) stanceMod = stanceModifiers(member.digimon);
+    } else {
+      base = { accuracy: p.accuracy||0, damage: p.damage||0, dodge: p.dodge||0, armor: p.armor||0 };
+    }
+    const mod = computeEffectModifiers(p);
+    return {
+      accuracy: Math.max(0, base.accuracy + mod.accuracy + stanceMod.accuracy),
+      damage: Math.max(0, base.damage + mod.damage),
+      dodge: Math.max(0, base.dodge + mod.dodge + stanceMod.dodge),
+      armor: Math.max(0, base.armor + mod.armor)
+    };
+  }
+
+  async function applyDamageToParticipant(code, combat, p, amount){
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      if(member){
+        member.digimon.currentWounds = Math.max(0, member.digimon.currentWounds - amount);
+        await saveMember(code, member);
+      }
+    } else {
+      p.currentWounds = Math.max(0, (p.currentWounds||0) - amount);
+      await saveCombat(code, combat);
+    }
+  }
+
+  let masterPrivateThread = null;
+
+  async function grantMilestoneRewards(code){
+    const players = cachedRoster.filter(m=>m.role==='player');
+    for(const p of players){
+      p.tamer.unspentGrowthPoints = Number(p.tamer.unspentGrowthPoints||0) + 3;
+      p.digimon.dpTotal = Number(p.digimon.dpTotal||0) + 3;
+      await saveMember(code, p);
+    }
+  }
+
+  async function renderProgressionMaster(code){
+    const cardEl = document.getElementById('progression-card');
+    if(!cardEl) return;
+    const prog = cachedProgression || { milestone:0, xp:0, inspiration:0 };
+    cardEl.innerHTML = `
+      <div class="section-title">Progressione Party</div>
+      <div class="grid-stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:10px;">
+        <div class="stat-box"><div class="v">${prog.milestone}</div><div class="l">Milestone</div></div>
+        <div class="stat-box"><div class="v">${prog.xp}/7</div><div class="l">XP</div></div>
+        <div class="stat-box"><div class="v">${prog.inspiration}</div><div class="l">Ispirazione</div></div>
+      </div>
+      <div class="muted" style="margin-bottom:6px;">Aggiungi XP</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
+        <button class="btn small" data-xp-add="1" data-xp-label="Sessione senza Combattimento">+1 No-Combat</button>
+        <button class="btn small" data-xp-add="1" data-xp-label="Combattimento Concluso">+1 Combattimento</button>
+        <button class="btn small" data-xp-add="1" data-xp-label="Boss Extra">+1 Boss</button>
+        <button class="btn small" data-xp-add="1" data-xp-label="Torment Box rimosso">+1 Torment</button>
+      </div>
+      <button class="btn amber" id="btn-milestone-narrative" style="width:100%;margin-bottom:6px;">🌟 Assegna Milestone (Narrativo)</button>
+      <div class="muted" style="margin-top:8px;">Correzione manuale</div>
+      <div class="row">
+        <input type="number" id="prog-milestone-manual" value="${prog.milestone}" style="flex:1;" />
+        <input type="number" id="prog-xp-manual" value="${prog.xp}" style="flex:1;" />
+        <input type="number" id="prog-insp-manual" value="${prog.inspiration}" style="flex:1;" />
+        <button class="btn ghost small" id="btn-prog-manual-save" style="flex:1;">Salva</button>
+      </div>
+      <div class="muted" id="prog-status" style="margin-top:6px;"></div>
+    `;
+
+    async function applyXp(amount, label){
+      prog.xp = Number(prog.xp||0) + amount;
+      let hitMilestone = false;
+      while(prog.xp >= 7){
+        prog.xp -= 7;
+        prog.milestone += 1;
+        prog.inspiration = Number(prog.inspiration||0) + 1;
+        hitMilestone = true;
+      }
+      await saveProgression(code, prog);
+      cachedProgression = prog;
+      await pushLog(code, { who:'Sistema', role:'gm', text: `+${amount} XP (${label}). XP: ${prog.xp}/7.` });
+      if(hitMilestone){
+        await grantMilestoneRewards(code);
+        await pushLog(code, { who:'Sistema', role:'gm', text: `🌟 Milestone ${prog.milestone} raggiunta! Ogni giocatore riceve 3 Growth Points e il proprio Digimon 3 DP Bonus. Il party guadagna 1 Punto Ispirazione.` });
+      }
+      renderProgressionMaster(code);
+      refreshLiveParts();
+    }
+
+    cardEl.querySelectorAll('[data-xp-add]').forEach(btn=>{
+      btn.onclick = ()=> applyXp(Number(btn.getAttribute('data-xp-add')), btn.getAttribute('data-xp-label'));
+    });
+    document.getElementById('btn-milestone-narrative').onclick = async ()=>{
+      prog.milestone += 1;
+      prog.inspiration = Number(prog.inspiration||0) + 1;
+      await saveProgression(code, prog);
+      cachedProgression = prog;
+      await grantMilestoneRewards(code);
+      await pushLog(code, { who:'Sistema', role:'gm', text: `🌟 Milestone ${prog.milestone} raggiunta (narrativa)! Ogni giocatore riceve 3 Growth Points e il proprio Digimon 3 DP Bonus. Il party guadagna 1 Punto Ispirazione.` });
+      renderProgressionMaster(code);
+      refreshLiveParts();
+    };
+    document.getElementById('btn-prog-manual-save').onclick = async ()=>{
+      prog.milestone = Number(document.getElementById('prog-milestone-manual').value)||0;
+      prog.xp = Number(document.getElementById('prog-xp-manual').value)||0;
+      prog.inspiration = Number(document.getElementById('prog-insp-manual').value)||0;
+      const ok = await saveProgression(code, prog);
+      cachedProgression = prog;
+      const st = document.getElementById('prog-status');
+      st.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
+      st.textContent = ok ? 'Salvato.' : ('Errore: '+(lastApiError||''));
+      renderProgressionMaster(code);
+    };
+  }
+
+  async function renderPrivateChatMaster(code, players){
+    const cardEl = document.getElementById('private-chat-master-card');
+    if(!cardEl) return;
+    if(!masterPrivateThread && players.length>0) masterPrivateThread = players[0].username;
+    if(players.length===0){
+      cardEl.innerHTML = `<div class="section-title">Chat Privata</div><div class="muted">Nessun giocatore ancora collegato.</div>`;
+      return;
+    }
+    const log = masterPrivateThread ? await getPrivateLog(code, masterPrivateThread) : [];
+    cardEl.innerHTML = `
+      <div class="section-title">Chat Privata</div>
+      <div class="field"><label>Con chi</label>
+        <select id="private-thread-select">${players.map(p=>`<option value="${escapeAttr(p.username)}" ${p.username===masterPrivateThread?'selected':''}>${escapeHTML(p.username)}</option>`).join('')}</select>
+      </div>
+      <div class="log" id="private-log-live-master" style="height:220px;">${logHTML(log, false)}</div>
+      <textarea id="private-text-master" rows="2" placeholder="Scrivi in privato..." style="margin-top:8px;"></textarea>
+      <button class="btn amber" id="btn-private-send-master" style="width:100%;margin-top:6px;">Invia</button>
+    `;
+    document.getElementById('private-thread-select').onchange = (e)=>{
+      masterPrivateThread = e.target.value;
+      renderPrivateChatMaster(code, players);
+    };
+    document.getElementById('btn-private-send-master').onclick = async ()=>{
+      const ta = document.getElementById('private-text-master');
+      if(!ta.value.trim() || !masterPrivateThread) return;
+      await pushPrivateLog(code, masterPrivateThread, { who:'Master', role:'gm', text: ta.value.trim() });
+      ta.value='';
+      renderPrivateChatMaster(code, players);
+    };
+    const logLive = document.getElementById('private-log-live-master');
+    if(logLive) logLive.scrollTop = logLive.scrollHeight;
+  }
+
+  function renderCombatManager(code, players){
+    const cardEl = document.getElementById('combat-mgr-card');
+    if(!cardEl) return;
+    if(!cachedCombat) cachedCombat = defaultCombat();
+    const combat = cachedCombat;
+
+    if(!combat.active){
+      cardEl.innerHTML = `
+        <div class="section-title">Gestione Combattimento</div>
+        <div class="muted" style="margin-bottom:10px;">Nessun combattimento attivo.</div>
+        <button class="btn solid" id="btn-combat-start" style="width:100%;">Inizia Combattimento</button>
+      `;
+      document.getElementById('btn-combat-start').onclick = async ()=>{
+        cachedCombat = defaultCombat();
+        cachedCombat.active = true;
+        await saveCombat(code, cachedCombat);
+        renderCombatManager(code, players);
+        const combatLive = document.getElementById('combat-live');
+        if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
+      };
+      return;
+    }
+
+    cardEl.innerHTML = `
+      <div class="section-title">Gestione Combattimento</div>
+      <div id="combat-participants-list">
+        ${combat.participants.length===0 ? '<div class="muted" style="margin-bottom:8px;">Nessun partecipante ancora aggiunto.</div>' : combat.participants.map((p,i)=>{
+          const w = getParticipantWounds(p);
+          const acts = p.actions===undefined?2:p.actions;
+          return `
+          <div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line);">
+            <div class="flex-between">
+              <span>${escapeHTML(p.name)} <span class="tag" style="margin-left:4px;">${p.side==='ally'?'Alleato':'Nemico'}</span> <span class="muted" style="margin-left:4px;font-size:10px;">${w.current}/${w.max} Ferite · Az. ${acts}/2</span></span>
+              <span style="display:flex;align-items:center;gap:6px;">
+                <input type="number" data-part-init="${p.id}" value="${p.initiative}" style="width:60px;padding:4px;" />
+                <button class="btn ghost small" data-part-remove="${p.id}">✕</button>
+              </span>
+            </div>
+            <div class="row" style="margin-top:6px;">
+              <select data-action-select="${p.id}" style="flex:2;">${ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost})</option>`).join('')}</select>
+              <button class="btn small" data-action-use="${p.id}" style="flex:1;">Usa</button>
+              <button class="btn ghost small" data-action-reset="${p.id}" style="flex:1;">↺ 2</button>
+            </div>
+            <div style="margin-top:6px;">${effectTagsHTML(p)}${(p.effects||[]).map((e,ei)=>`<button class="btn ghost small" data-effect-remove="${p.id}|${ei}" style="padding:1px 6px;margin-left:2px;">✕</button>`).join('')}</div>
+            <div class="row" style="margin-top:4px;">
+              <select data-effect-select="${p.id}" style="flex:2;">${EFFECT_DEFS.map(e=>`<option value="${e.key}">${escapeHTML(e.label)}</option>`).join('')}</select>
+              <input type="number" data-effect-potency="${p.id}" value="1" min="1" placeholder="Pot." style="flex:1;" />
+              <input type="number" data-effect-duration="${p.id}" value="3" min="1" max="3" placeholder="Dur." style="flex:1;" />
+              <button class="btn small" data-effect-apply="${p.id}" style="flex:1;">+Effetto</button>
+            </div>
+          </div>
+        `;}).join('')}
+      </div>
+      <div class="divider"></div>
+      <div class="section-title" style="font-size:11px;">⚔ Risolvi Attacco</div>
+      <div class="row">
+        <select id="combat-attacker" style="flex:1;">${combat.participants.map(p=>`<option value="${p.id}">${escapeHTML(p.name)}</option>`).join('')}</select>
+        <select id="combat-target" style="flex:1;">${combat.participants.map(p=>`<option value="${p.id}">${escapeHTML(p.name)}</option>`).join('')}</select>
+      </div>
+      <button class="btn amber" id="btn-combat-attack" style="width:100%;margin-top:6px;">⚔ Risolvi Attacco</button>
+      <div id="combat-attack-result" style="margin-top:8px;"></div>
+      <div class="divider"></div>
+      <div class="section-title" style="font-size:11px;">🤼 Clash (usa Attaccante/Bersaglio sopra)</div>
+      <div class="row">
+        <button class="btn small" id="btn-combat-clash-start" style="flex:1;">Inizia/Contesa</button>
+        <button class="btn ghost small" id="btn-combat-clash-end" style="flex:1;">Termina</button>
+      </div>
+      <div id="combat-clash-result" style="margin-top:8px;"></div>
+      <div class="divider"></div>
+      <div class="row">
+        <select id="combat-add-player" style="flex:2;">
+          <option value="">Aggiungi giocatore...</option>
+          ${players.map(p=>`<option value="${escapeAttr(p.username)}">${escapeHTML(p.username)}</option>`).join('')}
+        </select>
+        <button class="btn small" id="btn-combat-add-player" style="flex:1;">+ Aggiungi</button>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <select id="combat-enemy-fromdex" style="flex:1;">
+          <option value="">Da Dex (opzionale)...</option>
+          ${cachedDex.map(e=>`<option value="${e.id}">${escapeHTML(e.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="row" style="margin-top:6px;">
+        <input type="text" id="combat-enemy-name" placeholder="Nome nemico" style="flex:2;" />
+        <input type="number" id="combat-enemy-ram" placeholder="RAM" value="0" style="flex:1;" />
+      </div>
+      <div class="row" style="margin-top:6px;">
+        <input type="number" id="combat-enemy-acc" placeholder="Accuracy" value="0" style="flex:1;" />
+        <input type="number" id="combat-enemy-dmg" placeholder="Damage" value="0" style="flex:1;" />
+      </div>
+      <div class="row" style="margin-top:6px;">
+        <input type="number" id="combat-enemy-dodge" placeholder="Dodge" value="0" style="flex:1;" />
+        <input type="number" id="combat-enemy-arm" placeholder="Armor" value="0" style="flex:1;" />
+        <input type="number" id="combat-enemy-hp" placeholder="Health" value="1" style="flex:1;" />
+      </div>
+      <button class="btn small" id="btn-combat-add-enemy" style="width:100%;margin-top:6px;">+ Aggiungi Nemico</button>
+      <div class="divider"></div>
+      <button class="btn" id="btn-combat-roll-all" style="width:100%;margin-bottom:8px;">🎲 Tira Iniziativa per Tutti</button>
+      <button class="btn solid" id="btn-combat-calc-order" style="width:100%;margin-bottom:8px;">Calcola Ordine</button>
+      <div class="row">
+        <button class="btn amber" id="btn-combat-next-turn" style="flex:1;">Turno Successivo</button>
+        <button class="btn ghost" id="btn-combat-end" style="flex:1;">Termina</button>
+      </div>
+      <div class="muted" id="combat-mgr-status" style="margin-top:6px;"></div>
+    `;
+
+    const persistAndRefresh = async ()=>{
+      await saveCombat(code, cachedCombat);
+      renderCombatManager(code, players);
+      const combatLive = document.getElementById('combat-live');
+      if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
+    };
+
+    const attackBtn = document.getElementById('btn-combat-attack');
+    if(attackBtn){
+      attackBtn.onclick = async ()=>{
+        const attackerId = document.getElementById('combat-attacker').value;
+        const targetId = document.getElementById('combat-target').value;
+        const attacker = combat.participants.find(p=>p.id===attackerId);
+        const target = combat.participants.find(p=>p.id===targetId);
+        const resEl = document.getElementById('combat-attack-result');
+        if(!attacker || !target || attacker.id===target.id){
+          if(resEl) resEl.innerHTML = '<div class="err">Scegli attaccante e bersaglio diversi.</div>';
+          return;
+        }
+        const aStats = getParticipantCombatStats(attacker);
+        const tStats = getParticipantCombatStats(target);
+        const accRoll = rollPool(aStats.accuracy);
+        const dodgeRoll = rollPool(tStats.dodge);
+        let logText, dealt = 0;
+        if(accRoll.successes <= dodgeRoll.successes){
+          logText = `⚔ ${attacker.name} attacca ${target.name}: Accuracy ${aStats.accuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO`;
+        } else {
+          const excess = accRoll.successes - dodgeRoll.successes;
+          const raw = excess + aStats.damage;
+          dealt = Math.max(0, raw - tStats.armor);
+          await applyDamageToParticipant(code, combat, target, dealt);
+          const w = getParticipantWounds(target);
+          logText = `⚔ ${attacker.name} attacca ${target.name}: Accuracy ${aStats.accuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! (${excess}+DMG ${aStats.damage})-ARM ${tStats.armor} = ${dealt} danno → ${target.name} ${w.current}/${w.max} Ferite`;
+        }
+        if(resEl){
+          resEl.innerHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">vs</span>${diceRowHTML(dodgeRoll.dice)}${dealt>0?`<span class="roll-total">${dealt} danno</span>`:''}`;
+        }
+        await pushLog(code, { who:'Master', role:'roll', text: logText, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
+        renderCombatManager(code, players);
+        refreshLiveParts();
+      };
+    }
+
+    const clashStartBtn = document.getElementById('btn-combat-clash-start');
+    if(clashStartBtn){
+      clashStartBtn.onclick = async ()=>{
+        const aId = document.getElementById('combat-attacker').value;
+        const bId = document.getElementById('combat-target').value;
+        const a = combat.participants.find(p=>p.id===aId);
+        const b = combat.participants.find(p=>p.id===bId);
+        const resEl = document.getElementById('combat-clash-result');
+        if(!a || !b || a.id===b.id){
+          if(resEl) resEl.innerHTML = '<div class="err">Scegli due partecipanti diversi.</div>';
+          return;
+        }
+        const aStats = getParticipantClashStats(a);
+        const bStats = getParticipantClashStats(b);
+        const aRoll = rollSkillCheck(aStats.cpu, aStats.ram);
+        const bRoll = rollSkillCheck(bStats.cpu, bStats.ram);
+        let winner, loser;
+        if(aRoll.total > bRoll.total){ winner=a; loser=b; }
+        else if(bRoll.total > aRoll.total){ winner=b; loser=a; }
+        else if(aStats.cpu !== bStats.cpu){ winner = aStats.cpu>bStats.cpu ? a : b; loser = winner===a?b:a; }
+        else { winner = a; loser = b; }
+        a.clashWith = b.id; b.clashWith = a.id;
+        a.clashController = (winner.id===a.id); b.clashController = (winner.id===b.id);
+        if(a.isPC){ const m=cachedRoster.find(x=>x.username===a.username); if(m){ m.digimon.stance='Neutral'; await saveMember(code, m); } }
+        if(b.isPC){ const m=cachedRoster.find(x=>x.username===b.username); if(m){ m.digimon.stance='Neutral'; await saveMember(code, m); } }
+        const logText = `🤼 Clash: ${a.name} (3d6+CPU${aStats.cpu}+RAM${aStats.ram}=${aRoll.total}) vs ${b.name} (3d6+CPU${bStats.cpu}+RAM${bStats.ram}=${bRoll.total}) → controlla ${winner.name}. Entrambi tornano in Stance Neutrale.`;
+        await pushLog(code, { who:'Master', role:'gm', text: logText });
+        if(resEl) resEl.innerHTML = `<div class="muted">Controlla il Clash: <b style="color:var(--cyan);">${escapeHTML(winner.name)}</b></div>`;
+        await persistAndRefresh();
+      };
+    }
+    const clashEndBtn = document.getElementById('btn-combat-clash-end');
+    if(clashEndBtn){
+      clashEndBtn.onclick = async ()=>{
+        const aId = document.getElementById('combat-attacker').value;
+        const bId = document.getElementById('combat-target').value;
+        const a = combat.participants.find(p=>p.id===aId);
+        const b = combat.participants.find(p=>p.id===bId);
+        if(a){ a.clashWith=null; a.clashController=false; }
+        if(b){ b.clashWith=null; b.clashController=false; }
+        await pushLog(code, { who:'Master', role:'gm', text: `🏁 Il Clash tra ${a?a.name:'?'} e ${b?b.name:'?'} è terminato.` });
+        const resEl = document.getElementById('combat-clash-result');
+        if(resEl) resEl.innerHTML = '';
+        await persistAndRefresh();
+      };
+    }
+
+    cardEl.querySelectorAll('[data-part-init]').forEach(inp=>{
+      inp.onchange = async ()=>{
+        const id = inp.getAttribute('data-part-init');
+        const p = combat.participants.find(x=>x.id===id);
+        if(p) p.initiative = Number(inp.value)||0;
+        await saveCombat(code, combat);
+      };
+    });
+    cardEl.querySelectorAll('[data-part-remove]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-part-remove');
+        combat.participants = combat.participants.filter(x=>x.id!==id);
+        await persistAndRefresh();
+      };
+    });
+    cardEl.querySelectorAll('[data-action-use]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-action-use');
+        const p = combat.participants.find(x=>x.id===id);
+        const sel = cardEl.querySelector(`[data-action-select="${id}"]`);
+        if(!p || !sel) return;
+        const result = trySpendAction(p, sel.value);
+        const statusEl = document.getElementById('combat-mgr-status');
+        if(!result.ok){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; }
+          return;
+        }
+        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} usa ${result.def.label} (${result.def.cost} Azione/i) — restano ${p.actions}/2 Azioni.` });
+        await persistAndRefresh();
+        refreshLiveParts();
+      };
+    });
+    cardEl.querySelectorAll('[data-action-reset]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-action-reset');
+        const p = combat.participants.find(x=>x.id===id);
+        if(p){ p.actions = 2; p.attackedThisRound = false; }
+        await persistAndRefresh();
+      };
+    });
+    cardEl.querySelectorAll('[data-effect-apply]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-effect-apply');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p) return;
+        const key = cardEl.querySelector(`[data-effect-select="${id}"]`).value;
+        const potency = Number(cardEl.querySelector(`[data-effect-potency="${id}"]`).value)||1;
+        const duration = Math.min(3, Number(cardEl.querySelector(`[data-effect-duration="${id}"]`).value)||3);
+        if(!p.effects) p.effects = [];
+        p.effects.push({ key, potency, duration });
+        const def = EFFECT_DEFS.find(d=>d.key===key);
+        await pushLog(code, { who:'Master', role:'gm', text: `${p.name} riceve ${def?def.label:key} (Potenza ${potency}, Durata ${duration}).` });
+        await persistAndRefresh();
+      };
+    });
+    cardEl.querySelectorAll('[data-effect-remove]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const [id, idx] = btn.getAttribute('data-effect-remove').split('|');
+        const p = combat.participants.find(x=>x.id===id);
+        if(p && p.effects) p.effects.splice(Number(idx),1);
+        await persistAndRefresh();
+      };
+    });
+
+    document.getElementById('btn-combat-add-player').onclick = async ()=>{
+      const username = document.getElementById('combat-add-player').value;
+      if(!username) return;
+      if(combat.participants.some(p=>p.username===username)) return;
+      const member = cachedRoster.find(m=>m.username===username);
+      const ram = member ? computeDerivedStats(member.digimon).ram : 0;
+      combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:username, side:'ally', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], isPC:true, username });
+      await persistAndRefresh();
+    };
+    const dexFillSelect = document.getElementById('combat-enemy-fromdex');
+    if(dexFillSelect){
+      dexFillSelect.onchange = ()=>{
+        const entry = cachedDex.find(e=>String(e.id)===String(dexFillSelect.value));
+        if(!entry) return;
+        const bs = entry.base_stats || {};
+        document.getElementById('combat-enemy-name').value = entry.name;
+        document.getElementById('combat-enemy-acc').value = bs.baseAccuracy||0;
+        document.getElementById('combat-enemy-dmg').value = bs.baseDamage||0;
+        document.getElementById('combat-enemy-dodge').value = bs.baseDodge||0;
+        document.getElementById('combat-enemy-arm').value = bs.baseArmor||0;
+        document.getElementById('combat-enemy-hp').value = bs.baseHealth||1;
+        document.getElementById('combat-enemy-ram').value = Math.max(0, Math.floor(Number(bs.baseDodge||0)/3));
+      };
+    }
+    document.getElementById('btn-combat-add-enemy').onclick = async ()=>{
+      const name = document.getElementById('combat-enemy-name').value.trim();
+      if(!name) return;
+      const ram = Number(document.getElementById('combat-enemy-ram').value)||0;
+      const accuracy = Number(document.getElementById('combat-enemy-acc').value)||0;
+      const damage = Number(document.getElementById('combat-enemy-dmg').value)||0;
+      const dodge = Number(document.getElementById('combat-enemy-dodge').value)||0;
+      const armor = Number(document.getElementById('combat-enemy-arm').value)||0;
+      const maxWounds = Number(document.getElementById('combat-enemy-hp').value)||1;
+      combat.participants.push({
+        id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name, side:'enemy', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], isPC:false,
+        accuracy, damage, dodge, armor, maxWounds, currentWounds: maxWounds
+      });
+      await persistAndRefresh();
+    };
+    document.getElementById('btn-combat-roll-all').onclick = async ()=>{
+      combat.participants.forEach(p=>{
+        const { dice, total } = rollSkillCheck(0, p.ram||0); // 3d6 + RAM (attrVal unused, pass 0)
+        p.initiative = total;
+      });
+      await persistAndRefresh();
+    };
+    document.getElementById('btn-combat-calc-order').onclick = async ()=>{
+      if(combat.participants.length===0) return;
+      recalcCombatOrder(combat);
+      await persistAndRefresh();
+    };
+    document.getElementById('btn-combat-next-turn').onclick = async ()=>{
+      if(!combat.order || combat.order.length===0) return;
+      const finishing = combat.participants.find(p=>p.id===combat.order[combat.currentIndex]);
+      if(finishing){
+        finishing.actions = 2;
+        finishing.attackedThisRound = false;
+        if(finishing.isPC){
+          const fMember = cachedRoster.find(m=>m.username===finishing.username);
+          if(fMember){
+            if(!fMember.digimon.usedSigMoveThisTurn){
+              fMember.digimon.battery = Math.min(batteryCap(fMember.digimon.stage), Number(fMember.digimon.battery||0)+1);
+            }
+            fMember.digimon.usedSigMoveThisTurn = false;
+            await saveMember(code, fMember);
+          }
+        }
+      }
+      combat.currentIndex++;
+      if(combat.currentIndex >= combat.order.length){
+        combat.currentIndex = 0;
+        combat.round++;
+      }
+      const starting = combat.participants.find(p=>p.id===combat.order[combat.currentIndex]);
+      if(starting){
+        const tickLogs = await tickEffectsForParticipant(code, combat, starting);
+        for(const line of tickLogs){
+          await pushLog(code, { who:'Sistema', role:'gm', text: line });
+        }
+        if(starting.isPC){
+          const member = cachedRoster.find(m=>m.username===starting.username);
+          if(member){
+            if(member.digimon.forcedEvoRoundsLeft > 0){
+              member.digimon.forcedEvoRoundsLeft -= 1;
+              if(member.digimon.forcedEvoRoundsLeft <= 0){
+                const revertIdx = Math.max(0, stageIndex(member.digimon.defaultStage)-1);
+                member.digimon.stage = STAGES[revertIdx];
+                await pushLog(code, { who:'Sistema', role:'gm', text: `${member.digimon.name||member.username} torna a ${member.digimon.stage} (fine Evoluzione Forzata).` });
+              }
+            }
+            await saveMember(code, member);
+          }
+        }
+      }
+      await persistAndRefresh();
+    };
+    document.getElementById('btn-combat-end').onclick = async ()=>{
+      if(!window.confirm('Terminare il combattimento e azzerare i partecipanti?')) return;
+      cachedCombat = defaultCombat();
+      await saveCombat(code, cachedCombat);
+      renderCombatManager(code, players);
+      const combatLive = document.getElementById('combat-live');
+      if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
+    };
   }
 
   function rosterItemHTML(p, i){
@@ -1502,7 +2826,7 @@
       btn.onclick = async ()=>{
         const idx = Number(btn.getAttribute('data-quickdex'));
         const name = cachedScene.encounters[idx];
-        const d = await addDexEntry(code, { name, stage:'Rookie', description:'', imageUrl:'', addedBy: username });
+        const d = await addDexEntry(code, { name, stage:'Rookie', description:'', imageUrl:'', addedBy: username, discovered: true });
         if(d && d.entry){
           cachedDex.push(d.entry);
           live.innerHTML = encountersEditableHTML(cachedScene.encounters);
@@ -1516,23 +2840,48 @@
 
   function logHTML(log, canModerate){
     if(!log || log.length===0) return '<div class="muted">Il registro è vuoto. Le azioni appariranno qui.</div>';
-    return log.map(l=>`
+    return log.map(l=>{
+      let displayText = l.text;
+      let fulfillBtn = '';
+      if(l.role==='request' && l.text.includes('::REQ::')){
+        const [shown, payload] = l.text.split('::REQ::');
+        displayText = shown;
+        const parts = payload.split('|');
+        const target = parts[0], skillKey = parts[1], tn = parts[2]||'';
+        if(session && session.role==='player' && session.username===target){
+          fulfillBtn = `<button class="btn amber small" style="margin-top:6px;" data-fulfill-target="${escapeAttr(target)}" data-fulfill-skill="${escapeAttr(skillKey)}" data-fulfill-tn="${escapeAttr(tn)}">🎲 Tira ora</button>`;
+        }
+      }
+      let diceHTML = '';
+      if(l.meta && Array.isArray(l.meta.dice)){
+        const alreadyAnimated = animatedLogIds.has(l.id);
+        diceHTML = `<div style="margin:4px 0;">${l.meta.dice.map((d,i)=>alreadyAnimated
+          ? `<span style="display:inline-block;font-size:22px;color:var(--cyan);margin-right:2px;">${DIE_FACES[d]||d}</span>`
+          : `<span class="die3d" style="font-size:22px;margin-right:2px;animation-delay:${(i*0.08).toFixed(2)}s;">${DIE_FACES[d]||d}</span>`
+        ).join('')}</div>`;
+        animatedLogIds.add(l.id);
+      }
+      return `
       <div class="log-entry ${l.role}">
         <div class="flex-between">
-          <div><span class="who mono">${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span></div>
+          <div>${l.meta && l.meta.avatar ? `<img class="who-avatar" src="${escapeAttr(l.meta.avatar)}" onerror="this.style.display='none'" />` : ''}<span class="who mono">${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span></div>
           ${canModerate ? `<div><button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;">✎</button><button class="btn ghost small" data-log-del="${l.id}" style="padding:2px 6px;">✕</button></div>` : ''}
         </div>
-        <div class="txt">${escapeHTML(l.text)}</div>
+        <div class="txt">${escapeHTML(displayText)}</div>
+        ${diceHTML}
+        ${fulfillBtn}
       </div>
-    `).join('');
+    `;
+    }).join('');
   }
 
-  function attachLogModeration(container, code){
+  function attachLogModeration(container, code, me){
     if(!container || container.dataset.modBound) return;
     container.dataset.modBound = '1';
     container.addEventListener('click', async (e)=>{
       const editBtn = e.target.closest('[data-log-edit]');
       const delBtn = e.target.closest('[data-log-del]');
+      const fulfillBtn = e.target.closest('[data-fulfill-target]');
       if(editBtn){
         const id = editBtn.getAttribute('data-log-edit');
         const entry = cachedLog.find(l=>String(l.id)===String(id));
@@ -1546,6 +2895,34 @@
         const id = delBtn.getAttribute('data-log-del');
         if(window.confirm('Eliminare questo messaggio dal registro?')){
           await deleteLogEntry(code, id);
+          refreshLiveParts();
+        }
+      }
+      if(fulfillBtn && me){
+        const skillKey = fulfillBtn.getAttribute('data-fulfill-skill');
+        const tn = fulfillBtn.getAttribute('data-fulfill-tn');
+        const poolKeys = ['baseAccuracy','baseDodge','baseHealth'];
+        let text = null;
+        let rollMeta = null;
+        if(poolKeys.includes(skillKey)){
+          const { dice, successes } = rollPool(me.digimon[skillKey]);
+          const label = skillKey==='baseAccuracy'?'Accuracy':(skillKey==='baseDodge'?'Dodge':'Health');
+          text = `tira Pool Check ${label} (${me.digimon[skillKey]}d6): [${dice.join(',')}] → ${successes} successi (richiesto dal Master)`;
+          rollMeta = { dice, successes };
+        } else {
+          const def = SKILL_DEFS.find(d=>d.key===skillKey);
+          if(def){
+            const attr = def.attrs[0];
+            const attrVal = me.tamer[attr];
+            const skillVal = me.tamer.skills[def.key];
+            const { dice, total } = rollSkillCheck(attrVal, skillVal);
+            const verdict = evaluateVsTN(total, tn);
+            text = `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal} = ${total}` + (verdict?` vs TN ${tn} → ${verdict.label}`:'') + ' (richiesto dal Master)';
+            rollMeta = { dice, total, verdict: verdict?verdict.label:null };
+          }
+        }
+        if(text){
+          await pushLog(code, { who: session.username, role:'roll', text, meta: rollMeta });
           refreshLiveParts();
         }
       }

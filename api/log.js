@@ -16,7 +16,7 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'POST') {
-      const { code, who, role, text } = req.body || {};
+      const { code, who, role, text, meta } = req.body || {};
       const campaignCode = cleanCode(code);
       if (!campaignCode || !who || !text) {
         return res.status(400).json({ error: 'missing code, who or text' });
@@ -26,7 +26,8 @@ module.exports = async (req, res) => {
         campaign_code: campaignCode,
         who: String(who).slice(0, 60),
         role: role || 'player',
-        text: String(text).slice(0, 2000)
+        text: String(text).slice(0, 2000),
+        meta: meta || null
       }).select().single();
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ entry: data });
