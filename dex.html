@@ -132,14 +132,14 @@
 
   function computeDpSpent(qualities){ return (qualities||[]).reduce((s,q)=>s+(Number(q.cost)||0),0); }
 
-  function evolutionsHTML(evolutions){
+  function evolutionsHTML(evolutions, label){
     if(!evolutions || !evolutions.length) return '';
-    return `<div class="muted" style="margin:10px 0 4px;">Possibili Evoluzioni</div>
+    return `<div class="muted" style="margin:10px 0 4px;">${label||'Possibili Evoluzioni'}</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;">
         ${evolutions.map(ev=>`
-          <div style="display:flex;flex-direction:column;align-items:center;width:56px;">
+          <div style="display:flex;flex-direction:column;align-items:center;width:56px;${ev.id?'cursor:pointer;':''}" ${ev.id?`data-nav-evo="${ev.id}"`:''}>
             ${ev.imageUrl ? `<img src="${escapeAttr(ev.imageUrl)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:1px solid var(--cyan-dim);" onerror="this.style.visibility='hidden'"/>` : `<div style="width:40px;height:40px;border-radius:50%;background:var(--panel-2);border:1px solid var(--cyan-dim);"></div>`}
-            <div class="muted" style="font-size:9px;text-align:center;margin-top:2px;">${escapeHTML(ev.name)}</div>
+            <div class="muted" style="font-size:9px;text-align:center;margin-top:2px;${ev.id?'color:var(--cyan);':''}">${escapeHTML(ev.name)}</div>
           </div>
         `).join('')}
       </div>`;
@@ -213,7 +213,7 @@
       <div class="hud-frame card">
         <div class="flex-between" style="margin-bottom:10px;">
           <div class="section-title" style="margin:0;border:none;padding:0;">Digimon Registrati (${cachedDex.length})</div>
-          ${isMaster ? `<button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button>` : ''}
+          ${isMaster ? `<span><button class="btn ghost small" id="btn-import-seed" style="margin-right:6px;">📥 Importa Digimon Comuni</button><button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button></span>` : ''}
         </div>
         <div id="filter-bar" class="filter-bar"></div>
         <div id="dex-grid" class="dex-grid"></div>
@@ -222,6 +222,8 @@
     document.getElementById('btn-logout').onclick = ()=>{ session=null; render(); };
     const newBtn = document.getElementById('btn-new-entry');
     if(newBtn) newBtn.onclick = ()=> openEditModal(null);
+    const importBtn = document.getElementById('btn-import-seed');
+    if(importBtn) importBtn.onclick = ()=> openImportModal();
     renderFilterBar();
     renderGrid();
   }
@@ -310,7 +312,8 @@
           <div class="stat-box"><div class="v">${bs.baseArmor||0}</div><div class="l">ARM</div></div>
           <div class="stat-box"><div class="v">${bs.baseHealth||0}</div><div class="l">HP</div></div>
         </div>` : ''}
-        ${evolutionsHTML(entry.evolutions)}
+        ${evolutionsHTML(entry.evolvesFrom || entry.evolves_from, 'Pre-Evoluzioni (da cosa evolve)')}
+        ${evolutionsHTML(entry.evolutions, 'Possibili Evoluzioni (in cosa evolve)')}
         ${qualitiesHTML(entry.qualities, entry.dp_total)}
         ${entry.added_by ? `<div class="muted" style="margin-top:8px;">Aggiunto da ${escapeHTML(entry.added_by)}</div>` : ''}
         ${isMaster ? `<div class="divider"></div><button class="btn amber" id="btn-edit-entry" style="width:100%;">Modifica</button>` : ''}
@@ -318,9 +321,169 @@
     `;
     document.body.appendChild(overlay);
     overlay.onclick = (e)=>{ if(e.target===overlay) closeModal(); };
+    overlay.querySelectorAll('[data-nav-evo]').forEach(el=>{
+      el.onclick = ()=>{
+        const targetId = el.getAttribute('data-nav-evo');
+        const targetEntry = cachedDex.find(e=>String(e.id)===String(targetId));
+        if(targetEntry){ closeModal(); openDetailModal(targetEntry); }
+      };
+    });
     document.getElementById('btn-close-modal').onclick = closeModal;
     const editBtn = document.getElementById('btn-edit-entry');
     if(editBtn) editBtn.onclick = ()=>{ closeModal(); openEditModal(entry); };
+  }
+
+  const SPECIES_SEED = [
+    { line:'Agumon', chain:[
+      {name:'Koromon', stage:'Baby', desc:'Piccolo e affamato, la forma Baby di Agumon.', stats:{baseAccuracy:2, baseDamage:3, baseDodge:2, baseArmor:1, baseHealth:2}},
+      {name:'Agumon', stage:'Rookie', desc:'Rettile bipede leale e coraggioso, sputa piccole fiamme.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:3, baseArmor:3, baseHealth:3}},
+      {name:'Greymon', stage:'Champion', desc:'Dinosauro corazzato dal morso potente.', stats:{baseAccuracy:8, baseDamage:10, baseDodge:6, baseArmor:5, baseHealth:6}},
+      {name:'MetalGreymon', stage:'Ultimate', desc:'Mezzo organico, mezzo cybernetico, con la Giga Distruzione.', stats:{baseAccuracy:12, baseDamage:15, baseDodge:8, baseArmor:7, baseHealth:8}},
+      {name:'WarGreymon', stage:'Mega', desc:'Il guerriero supremo, con la Gaia Force e la Terra Destroyer.', stats:{baseAccuracy:15, baseDamage:19, baseDodge:11, baseArmor:9, baseHealth:11}},
+    ]},
+    { line:'Gabumon', chain:[
+      {name:'Tsunomon', stage:'Baby', desc:'Piccola palla con un corno, forma Baby di Gabumon.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}},
+      {name:'Gabumon', stage:'Rookie', desc:'Rettile timido che indossa una pelliccia di Garurumon.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}},
+      {name:'Garurumon', stage:'Champion', desc:'Lupo blu velocissimo con l\'Howling Blaster.', stats:{baseAccuracy:6, baseDamage:7, baseDodge:10, baseArmor:5, baseHealth:7}},
+      {name:'WereGarurumon', stage:'Ultimate', desc:'Licantropo agile e feroce.', stats:{baseAccuracy:9, baseDamage:10, baseDodge:14, baseArmor:7, baseHealth:10}},
+      {name:'MetalGarurumon', stage:'Mega', desc:'Lupo cibernetico con i Missili Freezing.', stats:{baseAccuracy:11, baseDamage:13, baseDodge:19, baseArmor:9, baseHealth:13}},
+    ]},
+    { line:'Biyomon', chain:[
+      {name:'Yokomon', stage:'Baby', desc:'Piccolo uccellino, forma Baby di Biyomon.', stats:{baseAccuracy:3, baseDamage:2, baseDodge:2, baseArmor:1, baseHealth:2}},
+      {name:'Biyomon', stage:'Rookie', desc:'Uccellino rosa affettuoso e leale.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}},
+      {name:'Birdramon', stage:'Champion', desc:'Enorme uccello di fuoco.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:7, baseArmor:4, baseHealth:6}},
+      {name:'Garudamon', stage:'Ultimate', desc:'Guerriera alata con artigli d\'acciaio.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:10, baseArmor:6, baseHealth:8}},
+      {name:'Phoenixmon', stage:'Mega', desc:'Fenice leggendaria capace di rinascere dalle fiamme.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:13, baseArmor:7, baseHealth:11}},
+    ]},
+    { line:'Tentomon', chain:[
+      {name:'Motimon', stage:'Baby', desc:'Piccola gelatina rotonda, forma Baby di Tentomon.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:3, baseHealth:2}},
+      {name:'Tentomon', stage:'Rookie', desc:'Insetto curioso ed erudito.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}},
+      {name:'Kabuterimon', stage:'Champion', desc:'Scarabeo gigante con attacchi elettrici.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:10, baseHealth:9}},
+      {name:'MegaKabuterimon', stage:'Ultimate', desc:'Scarabeo corazzato dal Corno Elettrico.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:7, baseArmor:14, baseHealth:13}},
+      {name:'HerculesKabuterimon', stage:'Mega', desc:'Colosso corazzato dalla potenza devastante.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:9, baseArmor:19, baseHealth:17}},
+    ]},
+    { line:'Palmon', chain:[
+      {name:'Tanemon', stage:'Baby', desc:'Piccolo seme rotondo, forma Baby di Palmon.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}},
+      {name:'Palmon', stage:'Rookie', desc:'Pianta gentile con foglie a forma di stella.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}},
+      {name:'Togemon', stage:'Champion', desc:'Cactus pugile dai pugni esplosivi.', stats:{baseAccuracy:7, baseDamage:6, baseDodge:10, baseArmor:5, baseHealth:7}},
+      {name:'Lillymon', stage:'Ultimate', desc:'Fata dei fiori elegante e agile.', stats:{baseAccuracy:10, baseDamage:9, baseDodge:14, baseArmor:7, baseHealth:10}},
+      {name:'Rosemon', stage:'Mega', desc:'Regina dei fiori con la frusta di spine.', stats:{baseAccuracy:13, baseDamage:11, baseDodge:19, baseArmor:9, baseHealth:13}},
+    ]},
+    { line:'Gomamon', chain:[
+      {name:'Bukamon', stage:'Baby', desc:'Piccola foca marina, forma Baby di Gomamon.', stats:{baseAccuracy:1, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:3}},
+      {name:'Gomamon', stage:'Rookie', desc:'Foca giocherellona e leale amica.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:5}},
+      {name:'Ikkakumon', stage:'Champion', desc:'Trichecho con un corno d\'arpone.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:6, baseArmor:8, baseHealth:10}},
+      {name:'Zudomon', stage:'Ultimate', desc:'Guerriero marino con il martello Vulcan.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:9, baseArmor:11, baseHealth:14}},
+      {name:'Vikemon', stage:'Mega', desc:'Vichingo gigante armato di ascia ghiacciata.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:11, baseArmor:15, baseHealth:19}},
+    ]},
+    { line:'Patamon', chain:[
+      {name:'Tokomon', stage:'Baby', desc:'Piccola creatura con grandi orecchie, forma Baby di Patamon.', stats:{baseAccuracy:3, baseDamage:2, baseDodge:2, baseArmor:1, baseHealth:2}},
+      {name:'Patamon', stage:'Rookie', desc:'Piccolo Digimon volante dal cuore gentile.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}},
+      {name:'Angemon', stage:'Champion', desc:'Angelo guerriero con il bastone sacro.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}},
+      {name:'MagnaAngemon', stage:'Ultimate', desc:'Angelo corazzato capace di aprire portali.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:9, baseArmor:7, baseHealth:8}},
+      {name:'Seraphimon', stage:'Mega', desc:'Angelo supremo, giudice della luce.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:11, baseArmor:9, baseHealth:11}},
+    ]},
+    { line:'Veemon', chain:[
+      {name:'Chibomon', stage:'Baby', desc:'Piccola creatura blu, forma Baby di Veemon.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:2}},
+      {name:'Veemon', stage:'Rookie', desc:'Rettile blu energico e testardo.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:4}},
+      {name:'ExVeemon', stage:'Champion', desc:'Guerriero blu dai pugni potenti.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}},
+      {name:'Paildramon', stage:'Ultimate', desc:'Drago cibernetico frutto di un DNA Digivolve.', stats:{baseAccuracy:10, baseDamage:10, baseDodge:10, baseArmor:10, baseHealth:10}},
+      {name:'Imperialdramon', stage:'Mega', desc:'Drago imperiale dal potere immenso.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:13, baseArmor:13, baseHealth:13}},
+    ]},
+  ];
+
+  function openImportModal(){
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="hud-frame modal-box card">
+        <div class="flex-between" style="margin-bottom:10px;">
+          <div class="section-title" style="margin:0;border:none;padding:0;">Importa Digimon Comuni</div>
+          <button class="btn ghost small" id="btn-close-modal">✕</button>
+        </div>
+        <div class="muted" style="margin-bottom:12px;">8 linee evolutive famose (40 Digimon), con Pre-Evoluzioni/Evoluzioni già collegate e Stat Base precompilate secondo l'archetipo di ciascuna linea (puoi comunque ritoccarle da "Modifica"). Deseleziona chi non ti serve.</div>
+        <div id="import-lines"></div>
+        <div class="divider"></div>
+        <div class="row">
+          <button class="btn ghost" id="btn-cancel-import">Annulla</button>
+          <button class="btn solid" id="btn-do-import">Importa Selezionati</button>
+        </div>
+        <div class="muted" id="import-status" style="margin-top:6px;"></div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.onclick = (e)=>{ if(e.target===overlay) closeModal(); };
+    document.getElementById('btn-close-modal').onclick = closeModal;
+    document.getElementById('btn-cancel-import').onclick = closeModal;
+
+    const linesEl = document.getElementById('import-lines');
+    linesEl.innerHTML = SPECIES_SEED.map((line,li)=>`
+      <div class="roster-item" style="margin-bottom:8px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" data-line-check="${li}" checked /> <b>${escapeHTML(line.line)}</b>
+        </label>
+        <div style="margin-left:20px;margin-top:4px;display:flex;flex-wrap:wrap;gap:8px;">
+          ${line.chain.map((sp,si)=>{
+            const already = cachedDex.some(e=>e.name.trim().toLowerCase()===sp.name.trim().toLowerCase());
+            return `<label style="display:flex;align-items:center;gap:4px;font-size:11px;${already?'opacity:0.5;':''}">
+              <input type="checkbox" data-species-check="${li}-${si}" ${already?'disabled':'checked'} />
+              ${escapeHTML(sp.name)} <span class="muted">(${sp.stage})</span>${already?' <span class="muted">già presente</span>':''}
+            </label>`;
+          }).join('')}
+        </div>
+      </div>
+    `).join('');
+
+    linesEl.querySelectorAll('[data-line-check]').forEach(cb=>{
+      cb.onchange = ()=>{
+        const li = cb.getAttribute('data-line-check');
+        linesEl.querySelectorAll(`[data-species-check^="${li}-"]`).forEach(sc=>{ if(!sc.disabled) sc.checked = cb.checked; });
+      };
+    });
+
+    document.getElementById('btn-do-import').onclick = async ()=>{
+      const statusEl = document.getElementById('import-status');
+      statusEl.textContent = 'Importazione in corso...';
+      const toImport = [];
+      SPECIES_SEED.forEach((line,li)=>{
+        line.chain.forEach((sp,si)=>{
+          const cb = linesEl.querySelector(`[data-species-check="${li}-${si}"]`);
+          if(cb && cb.checked && !cb.disabled) toImport.push(sp);
+        });
+      });
+      if(toImport.length===0){ statusEl.textContent='Nessun Digimon selezionato.'; return; }
+      const insertedByName = {};
+      for(const sp of toImport){
+        const result = await addDexEntry(session.code, {
+          name: sp.name, stage: sp.stage, description: sp.desc, imageUrl: '',
+          addedBy: session.username, discovered: false, categories: [], baseStats: sp.stats || {}, evolutions: [], evolvesFrom: []
+        });
+        if(result && result.entry) insertedByName[sp.name] = result.entry;
+      }
+      cachedDex = await getDex(session.code);
+      const byName = {};
+      cachedDex.forEach(e=>{ byName[e.name.trim().toLowerCase()] = e; });
+      for(const line of SPECIES_SEED){
+        for(let si=0; si<line.chain.length; si++){
+          const sp = line.chain[si];
+          const current = byName[sp.name.trim().toLowerCase()];
+          if(!current || !insertedByName[sp.name]) continue;
+          const prev = si>0 ? byName[line.chain[si-1].name.trim().toLowerCase()] : null;
+          const next = si<line.chain.length-1 ? byName[line.chain[si+1].name.trim().toLowerCase()] : null;
+          const evolvesFrom = prev ? [{ id: prev.id, name: prev.name, imageUrl: prev.image_url||'' }] : [];
+          const evolutions = next ? [{ id: next.id, name: next.name, imageUrl: next.image_url||'' }] : [];
+          await updateDexEntry(session.code, current.id, {
+            name: current.name, stage: current.stage, description: current.description, imageUrl: current.image_url,
+            baseStats: current.base_stats, categories: current.categories, qualities: current.qualities,
+            dpTotal: current.dp_total, discovered: current.discovered, evolutions, evolvesFrom
+          });
+        }
+      }
+      statusEl.style.color = 'var(--cyan)';
+      statusEl.textContent = `Importati ${Object.keys(insertedByName).length} Digimon, con evoluzioni collegate.`;
+      setTimeout(()=>{ closeModal(); renderDexPage(); }, 1200);
+    };
   }
 
   function openEditModal(entry){
@@ -329,6 +492,7 @@
       name:'', stage:'Rookie', description:'', image_url:'', categories:[], base_stats:{}, evolutions:[], qualities:[], dp_total:0, discovered:false
     };
     if(!draft.evolutions) draft.evolutions = [];
+    if(!draft.evolvesFrom) draft.evolvesFrom = [];
     if(!draft.qualities) draft.qualities = [];
     if(!draft.categories) draft.categories = [];
     const bs = draft.base_stats || {};
@@ -364,11 +528,22 @@
         </div>
         <div class="field"><label>Health</label><input type="number" id="ed-hp" value="${bs.baseHealth||0}" min="0" /></div>
         <div class="divider"></div>
-        <div class="muted" style="margin-bottom:6px;">Possibili Evoluzioni</div>
+        <datalist id="dex-species-list">
+          ${cachedDex.filter(e=>isNew || e.id!==entry.id).map(e=>`<option value="${escapeAttr(e.name)}">`).join('')}
+        </datalist>
+        <div class="muted" style="margin-bottom:6px;">Pre-Evoluzioni (da cosa evolve)</div>
+        <div id="ed-preevolist"></div>
+        <div class="row">
+          <input type="text" id="ed-preevo-name" list="dex-species-list" placeholder="Cerca un Digimon già nel Dex..." style="flex:2;" />
+          <input type="text" id="ed-preevo-img" placeholder="URL immagine (se non nel Dex)" style="flex:2;" />
+          <button class="btn small" id="btn-preevo-add" style="flex:1;">Aggiungi</button>
+        </div>
+        <div class="divider"></div>
+        <div class="muted" style="margin-bottom:6px;">Possibili Evoluzioni (in cosa evolve)</div>
         <div id="ed-evolist"></div>
         <div class="row">
-          <input type="text" id="ed-evo-name" placeholder="Nome evoluzione" style="flex:2;" />
-          <input type="text" id="ed-evo-img" placeholder="URL immagine (opz.)" style="flex:2;" />
+          <input type="text" id="ed-evo-name" list="dex-species-list" placeholder="Cerca un Digimon già nel Dex..." style="flex:2;" />
+          <input type="text" id="ed-evo-img" placeholder="URL immagine (se non nel Dex)" style="flex:2;" />
           <button class="btn small" id="btn-evo-add" style="flex:1;">Aggiungi</button>
         </div>
         <div class="divider"></div>
@@ -400,9 +575,17 @@
     function renderEvoList(){
       document.getElementById('ed-evolist').innerHTML = draft.evolutions.length===0
         ? '<div class="muted" style="margin-bottom:6px;">Nessuna evoluzione.</div>'
-        : draft.evolutions.map((ev,i)=>`<div class="flex-between" style="margin-bottom:4px;"><span>${escapeHTML(ev.name)}</span><button class="btn ghost small" data-rmevo="${i}">Rimuovi</button></div>`).join('');
+        : draft.evolutions.map((ev,i)=>`<div class="flex-between" style="margin-bottom:4px;"><span>${escapeHTML(ev.name)}${ev.id?' <span class="muted">(collegato)</span>':''}</span><button class="btn ghost small" data-rmevo="${i}">Rimuovi</button></div>`).join('');
       document.querySelectorAll('[data-rmevo]').forEach(b=>{
         b.onclick = ()=>{ draft.evolutions.splice(Number(b.getAttribute('data-rmevo')),1); renderEvoList(); };
+      });
+    }
+    function renderPreEvoList(){
+      document.getElementById('ed-preevolist').innerHTML = draft.evolvesFrom.length===0
+        ? '<div class="muted" style="margin-bottom:6px;">Nessuna Pre-Evoluzione.</div>'
+        : draft.evolvesFrom.map((ev,i)=>`<div class="flex-between" style="margin-bottom:4px;"><span>${escapeHTML(ev.name)}${ev.id?' <span class="muted">(collegato)</span>':''}</span><button class="btn ghost small" data-rmpreevo="${i}">Rimuovi</button></div>`).join('');
+      document.querySelectorAll('[data-rmpreevo]').forEach(b=>{
+        b.onclick = ()=>{ draft.evolvesFrom.splice(Number(b.getAttribute('data-rmpreevo')),1); renderPreEvoList(); };
       });
     }
     function renderQualList(){
@@ -414,14 +597,27 @@
       });
     }
     renderEvoList();
+    renderPreEvoList();
     renderQualList();
 
+    function resolveSpeciesLink(name, manualImg){
+      const match = cachedDex.find(e=>e.name.trim().toLowerCase()===name.trim().toLowerCase());
+      if(match) return { id: match.id, name: match.name, imageUrl: match.image_url||'' };
+      return { name, imageUrl: manualImg||'' };
+    }
     document.getElementById('btn-evo-add').onclick = ()=>{
       const n = document.getElementById('ed-evo-name').value.trim();
       if(!n) return;
-      draft.evolutions.push({ name:n, imageUrl: document.getElementById('ed-evo-img').value.trim() });
+      draft.evolutions.push(resolveSpeciesLink(n, document.getElementById('ed-evo-img').value.trim()));
       document.getElementById('ed-evo-name').value=''; document.getElementById('ed-evo-img').value='';
       renderEvoList();
+    };
+    document.getElementById('btn-preevo-add').onclick = ()=>{
+      const n = document.getElementById('ed-preevo-name').value.trim();
+      if(!n) return;
+      draft.evolvesFrom.push(resolveSpeciesLink(n, document.getElementById('ed-preevo-img').value.trim()));
+      document.getElementById('ed-preevo-name').value=''; document.getElementById('ed-preevo-img').value='';
+      renderPreEvoList();
     };
     document.getElementById('btn-qual-add').onclick = ()=>{
       const n = document.getElementById('ed-qual-name').value.trim();
@@ -451,6 +647,7 @@
           baseHealth: Number(document.getElementById('ed-hp').value)||0
         },
         evolutions: draft.evolutions,
+        evolvesFrom: draft.evolvesFrom,
         qualities: draft.qualities,
         dpTotal: Number(document.getElementById('ed-dptotal').value)||0,
         addedBy: session.username

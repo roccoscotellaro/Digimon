@@ -15,7 +15,7 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'POST') {
-      const { code, name, stage, description, imageUrl, addedBy, baseStats, evolutions, categories, qualities, dpTotal, discovered } = req.body || {};
+      const { code, name, stage, description, imageUrl, addedBy, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered } = req.body || {};
       const campaignCode = cleanCode(code);
       if (!campaignCode || !name) return res.status(400).json({ error: 'missing code or name' });
       await supabase.from('campaigns').upsert({ code: campaignCode }, { onConflict: 'code' });
@@ -28,6 +28,7 @@ module.exports = async (req, res) => {
         added_by: addedBy || '',
         base_stats: baseStats || {},
         evolutions: Array.isArray(evolutions) ? evolutions : [],
+        evolves_from: Array.isArray(evolvesFrom) ? evolvesFrom : [],
         categories: Array.isArray(categories) ? categories : [],
         qualities: Array.isArray(qualities) ? qualities : [],
         dp_total: Number(dpTotal)||0,
@@ -38,7 +39,7 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'PUT') {
-      const { code, id, name, stage, description, imageUrl, baseStats, evolutions, categories, qualities, dpTotal, discovered } = req.body || {};
+      const { code, id, name, stage, description, imageUrl, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered } = req.body || {};
       const campaignCode = cleanCode(code);
       if (!campaignCode || !id) return res.status(400).json({ error: 'missing code or id' });
       const { error } = await supabase.from('dex_entries').update({
@@ -48,6 +49,7 @@ module.exports = async (req, res) => {
         image_url: imageUrl || '',
         base_stats: baseStats || {},
         evolutions: Array.isArray(evolutions) ? evolutions : [],
+        evolves_from: Array.isArray(evolvesFrom) ? evolvesFrom : [],
         categories: Array.isArray(categories) ? categories : [],
         qualities: Array.isArray(qualities) ? qualities : [],
         dp_total: Number(dpTotal)||0,

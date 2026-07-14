@@ -214,6 +214,7 @@
   let editingDigimon = false;
   let editingScene = false;
   let sidebarTab = 'scheda';
+  let playerChatMode = 'public';
   let cachedRoster = [];
   let cachedScene = { title:'', background:'', music:'' };
   let cachedLog = [];
@@ -559,6 +560,7 @@
       battery:0, usedSigMoveThisTurn:false,
       size:'Medium', stance:'Neutral', chatColor:'#c896ff',
       resolveCurrent:0, resolveMax:4,
+      stageStats:{},
       moves:[
         {name:'Attacco Base', desc:'Colpo fisico standard.'},
         {name:'Mossa Speciale', desc:'Consuma MP, usa Intelligenza.'},
@@ -600,6 +602,7 @@
       <div class="conn-ticker mono">
         CAMPAGNA <b>${session ? session.code : '---'}</b> &nbsp;|&nbsp; UTENTE <b>${session ? session.username : '---'}</b>
         ${session && cachedProgression ? ` &nbsp;|&nbsp; MILESTONE <b style="color:var(--cyan);">${cachedProgression.milestone}</b> &nbsp;|&nbsp; INSP. <b style="color:var(--cyan);">${cachedProgression.inspiration}</b>` : ''}
+        ${session ? `&nbsp;<a href="dex.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">📖 Digidex</a>` : ''}
         ${session ? `&nbsp;<button class="btn ghost small" id="btn-logout" style="margin-left:10px;">Esci</button>` : ''}
       </div>
     </div>
@@ -667,6 +670,28 @@
     }, 4000);
   }
 
+  function updateChatModeButtons(){
+    const pubBtn = document.getElementById('chatmode-public');
+    const privBtn = document.getElementById('chatmode-private');
+    if(pubBtn) pubBtn.classList.toggle('active', playerChatMode==='public');
+    if(privBtn) privBtn.classList.toggle('active', playerChatMode==='private');
+    const hint = document.getElementById('action-hint');
+    if(hint) hint.style.display = playerChatMode==='private' ? 'none' : 'block';
+  }
+
+  async function refreshPlayerLogDisplay(code, me){
+    updateChatModeButtons();
+    const logLive = document.getElementById('log-live');
+    if(!logLive) return;
+    if(playerChatMode==='private'){
+      const plog = await getPrivateLog(code, session.username);
+      logLive.innerHTML = logHTML(plog, false);
+    } else {
+      logLive.innerHTML = logHTML(cachedLog, false);
+    }
+    logLive.scrollTop = logLive.scrollHeight;
+  }
+
   function onlineSummary(members){
     const online = (members||[]).filter(m=>m.last_seen && (Date.now()-new Date(m.last_seen).getTime())<ONLINE_WINDOW_MS);
     if(online.length===0) return 'nessun altro online';
@@ -689,16 +714,16 @@
     }
     const logLive = document.getElementById('log-live');
     if(logLive){
-      const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
-      logLive.innerHTML = logHTML(cachedLog, session && session.role==='master');
-      if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
-    }
-    const privateLogLiveEl = document.getElementById('private-log-live');
-    if(privateLogLiveEl && session.role==='player'){
-      const plog = await getPrivateLog(session.code, session.username);
-      const wasAtBottomP = privateLogLiveEl.scrollHeight - privateLogLiveEl.scrollTop <= privateLogLiveEl.clientHeight + 40;
-      privateLogLiveEl.innerHTML = logHTML(plog, false);
-      if(wasAtBottomP) privateLogLiveEl.scrollTop = privateLogLiveEl.scrollHeight;
+      if(session.role==='player' && playerChatMode==='private'){
+        const plog = await getPrivateLog(session.code, session.username);
+        const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
+        logLive.innerHTML = logHTML(plog, false);
+        if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
+      } else {
+        const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
+        logLive.innerHTML = logHTML(cachedLog, session && session.role==='master');
+        if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
+      }
     }
     const rosterLive = document.getElementById('roster-live');
     if(rosterLive && session.role==='master' && openManageIdx===null){
@@ -1065,34 +1090,21 @@
             <div id="scene-live">${sceneHTML(cachedScene)}</div>
           </div>
 
-          <div style="display:flex;gap:14px;flex-wrap:wrap;">
-            <div class="hud-frame card" style="flex:1;min-width:260px;">
-              <div class="section-title">Registro Pubblico</div>
-              <div class="log" id="log-live" style="height:220px;">${logHTML(cachedLog, session.role==='master')}</div>
-            </div>
-            <div class="hud-frame card" style="flex:1;min-width:260px;">
-              <div class="section-title">Chat Privata col Master</div>
-              <div class="muted" style="margin-bottom:6px;font-size:10px;">Visibile solo a te e al Master.</div>
-              <div class="log" id="private-log-live" style="height:220px;">${logHTML([], false)}</div>
-              <textarea id="private-text" rows="2" placeholder="Scrivi al Master..." style="margin-top:6px;"></textarea>
-              <button class="btn solid" id="btn-private-send" style="width:100%;margin-top:6px;">Invia</button>
-            </div>
-          </div>
-
           <div class="hud-frame card">
-            <div class="section-title">Combattimento</div>
-            <div id="combat-live">${combatDisplayHTML(cachedCombat)}</div>
-            <div id="combat-self-actions">${combatSelfActionHTML(cachedCombat, session.username)}</div>
-          </div>
-
-          <div class="hud-frame card">
-            <div class="section-title">Dichiara un'Azione</div>
-            <textarea id="action-text" rows="3" placeholder="Scrivi cosa fa il tuo Tamer o il tuo Digimon..."></textarea>
-            <div class="muted" style="margin-top:4px;">Scorciatoia: scrivi <code>/tira NomeSkill [TN]</code> (es. <code>/tira awareness 15</code>) per tirare direttamente in chat.</div>
+            <div class="flex-between" style="margin-bottom:8px;">
+              <div class="section-title" style="margin:0;border:none;padding:0;">Registro</div>
+              <div style="display:flex;gap:4px;">
+                <button class="btn small" id="chatmode-public">Pubblico</button>
+                <button class="btn small" id="chatmode-private">Privata (Master)</button>
+              </div>
+            </div>
+            <div class="log" id="log-live" style="height:220px;">${logHTML(cachedLog, session.role==='master')}</div>
+            <textarea id="action-text" rows="3" placeholder="Scrivi cosa fa il tuo Tamer o il tuo Digimon..." style="margin-top:10px;"></textarea>
+            <div class="muted" id="action-hint" style="margin-top:4px;">Scorciatoia: scrivi <code>/tira NomeSkill [TN]</code> (es. <code>/tira awareness 15</code>) per tirare direttamente in chat.</div>
             <div id="action-roll-result" style="margin-top:8px;"></div>
             <div class="row" style="margin-top:8px;">
               <button class="btn" id="btn-correct">Correggi Italiano</button>
-              <button class="btn solid" id="btn-send-action">Invia al Registro</button>
+              <button class="btn solid" id="btn-send-action">Invia</button>
             </div>
             <div class="muted" id="correct-status" style="margin-top:6px;"></div>
           </div>
@@ -1108,13 +1120,18 @@
               `).join('')}
             </div>
           </div>
+
+          <div class="hud-frame card">
+            <div class="section-title">Combattimento</div>
+            <div id="combat-live">${combatDisplayHTML(cachedCombat)}</div>
+            <div id="combat-self-actions">${combatSelfActionHTML(cachedCombat, session.username)}</div>
+          </div>
         </div>
 
         <div>
           <div class="hud-frame" style="padding:6px;margin-bottom:16px;display:flex;gap:6px;">
             <button class="btn small" id="tab-scheda" style="flex:1;">Scheda</button>
             <button class="btn small" id="tab-inventario" style="flex:1;">Inventario</button>
-            <button class="btn small" id="tab-dex" style="flex:1;">Dex</button>
           </div>
           <div id="sidebar-content"></div>
         </div>
@@ -1124,7 +1141,6 @@
     renderSidebar(me);
     document.getElementById('tab-scheda').onclick = ()=>{ sidebarTab='scheda'; renderSidebar(me); };
     document.getElementById('tab-inventario').onclick = ()=>{ sidebarTab='inventario'; renderSidebar(me); };
-    document.getElementById('tab-dex').onclick = ()=>{ sidebarTab='dex'; renderSidebar(me); };
 
     document.getElementById('btn-logout').onclick = logout;
     document.getElementById('btn-correct').onclick = async ()=>{
@@ -1139,6 +1155,12 @@
       const ta = document.getElementById('action-text');
       const raw = ta.value.trim();
       if(!raw) return;
+      if(playerChatMode==='private'){
+        await pushPrivateLog(code, session.username, { who: session.username, role:'player', text: raw });
+        ta.value='';
+        await refreshPlayerLogDisplay(code, me);
+        return;
+      }
       const rollResult = tryParseRollShortcut(raw, me);
       const resEl = document.getElementById('action-roll-result');
       if(rollResult){
@@ -1164,20 +1186,9 @@
     });
     attachLogModeration(document.getElementById('log-live'), code, me);
     bindCombatSelfActions(code, session.username);
-    (async ()=>{
-      const plog = await getPrivateLog(code, session.username);
-      const el = document.getElementById('private-log-live');
-      if(el){ el.innerHTML = logHTML(plog, false); el.scrollTop = el.scrollHeight; }
-    })();
-    document.getElementById('btn-private-send').onclick = async ()=>{
-      const ta = document.getElementById('private-text');
-      if(!ta.value.trim()) return;
-      await pushPrivateLog(code, session.username, { who: session.username, role:'player', text: ta.value.trim() });
-      ta.value='';
-      const plog = await getPrivateLog(code, session.username);
-      const el = document.getElementById('private-log-live');
-      if(el){ el.innerHTML = logHTML(plog, false); el.scrollTop = el.scrollHeight; }
-    };
+    updateChatModeButtons();
+    document.getElementById('chatmode-public').onclick = async ()=>{ playerChatMode='public'; await refreshPlayerLogDisplay(code, me); };
+    document.getElementById('chatmode-private').onclick = async ()=>{ playerChatMode='private'; await refreshPlayerLogDisplay(code, me); };
 
     startPolling();
   }
@@ -1337,6 +1348,23 @@
     Mega:     { dp:40, startStat:5 }
   };
   let creationDraft = null;
+
+  function applyStageStatScaling(digimon, oldStage, newStage){
+    if(!oldStage || !newStage || oldStage===newStage) return;
+    const oldCfg = STAGE_CREATION[oldStage] || STAGE_CREATION.Rookie;
+    const newCfg = STAGE_CREATION[newStage] || STAGE_CREATION.Rookie;
+    const delta = newCfg.startStat - oldCfg.startStat;
+    if(delta !== 0){
+      ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'].forEach(k=>{
+        digimon[k] = Math.max(0, Number(digimon[k]||0) + delta);
+      });
+    }
+    const oldMax = Number(digimon.maxWounds) || (stageIndex(oldStage) + Number(digimon.baseHealth||0)*2);
+    const missing = Math.max(0, oldMax - Number(digimon.currentWounds||0));
+    const newMax = stageIndex(newStage) + Number(digimon.baseHealth||0)*2;
+    digimon.maxWounds = newMax;
+    digimon.currentWounds = Math.max(0, Math.min(newMax, newMax - missing));
+  }
 
   function openCreationWizard(me, hostId){
     if(!window.confirm('La Creazione Guidata azzera Attributi, Skill e Stat Base del Digimon per ricostruirli da zero rispettando i vincoli del manuale. Continuare?')) return;
@@ -1558,15 +1586,17 @@
         </div>
         ${Number(t.tormentPenalty||0)!==0 ? `<div class="muted" style="color:var(--danger);margin-bottom:8px;">Penalità Torment attiva: ${t.tormentPenalty} su Tiri/bonus finché non fai un Rest.</div>` : ''}
         <div class="divider"></div>
-        <div class="muted" style="margin-bottom:6px;">Aspects</div>
+        <div class="muted" style="margin-bottom:6px;">Aspects — tratti di personalità che danno bonus o penalità ai Check, a scelta del giocatore</div>
         <div class="roster-item" style="padding:8px;margin-bottom:6px;">
           <div class="flex-between"><b>Major</b><span class="mono">${t.majorAspect.usesLeft||0} usi</span></div>
-          <div class="sub" style="margin:4px 0;">${escapeHTML(t.majorAspect.text)||'(non impostato)'}</div>
+          <div class="muted" style="font-size:10px;margin-top:2px;">Un tratto prominente della personalità (es. "Track Star: atletico ma competitivo") — dà +4 a un Check pertinente, o -4 se ti giochi il lato negativo.</div>
+          <div class="sub" style="margin:4px 0;">${escapeHTML(t.majorAspect.text)||'(non impostato — scrivilo in "Modifica")'}</div>
           ${(t.majorAspect.usesLeft||0)>0 ? `<button class="btn small" id="btn-aspect-major-use">Usa (+4 / −4)</button>` : ''}
         </div>
         <div class="roster-item" style="padding:8px;margin-bottom:6px;">
           <div class="flex-between"><b>Minor</b><span class="mono">${t.minorAspect.usesLeft||0} usi</span></div>
-          <div class="sub" style="margin:4px 0;">${escapeHTML(t.minorAspect.text)||'(non impostato)'}</div>
+          <div class="muted" style="font-size:10px;margin-top:2px;">Un tratto più sottile, meno evidente del Major — dà +2 a un Check pertinente, o -2 se ti giochi il lato negativo.</div>
+          <div class="sub" style="margin:4px 0;">${escapeHTML(t.minorAspect.text)||'(non impostato — scrivilo in "Modifica")'}</div>
           ${(t.minorAspect.usesLeft||0)>0 ? `<button class="btn small" id="btn-aspect-minor-use">Usa (+2 / −2)</button>` : ''}
         </div>
         <div class="divider"></div>
@@ -1584,12 +1614,16 @@
           `).join('')}
         </div>
         <div class="divider"></div>
-        <details>
-          <summary class="muted" style="cursor:pointer;margin-bottom:6px;">Tamer Talents (sbloccati automaticamente) — ${computeUnlockedTalents(t).length}</summary>
-          ${(()=>{ const unlocked = computeUnlockedTalents(t); return unlocked.length===0
-            ? '<div class="muted">Nessun Talent ancora sbloccato (servono almeno 3 punti in un Attributo).</div>'
-            : unlocked.map(tal=>`<div class="roster-item" style="padding:6px 8px;margin-bottom:4px;"><div class="flex-between"><b>${escapeHTML(tal.name)}</b><span class="tag">${ATTR_ABBR[tal.attr]} ${tal.threshold}+</span></div><div class="sub" style="margin-top:2px;">${escapeHTML(tal.text)}</div></div>`).join(''); })()}
-        </details>
+        <div class="hud-frame" style="padding:10px;border-color:var(--cyan-dim);">
+          <details ${computeUnlockedTalents(t).length>0?'open':''}>
+            <summary class="mono" style="cursor:pointer;color:var(--cyan);font-size:12px;text-transform:uppercase;letter-spacing:0.05em;">⭐ Tamer Talents sbloccati — ${computeUnlockedTalents(t).length}</summary>
+            <div style="margin-top:8px;">
+              ${(()=>{ const unlocked = computeUnlockedTalents(t); return unlocked.length===0
+                ? '<div class="muted">Nessun Talent ancora sbloccato (servono almeno 3 punti in un Attributo).</div>'
+                : unlocked.map(tal=>`<div class="roster-item" style="padding:6px 8px;margin-bottom:4px;"><div class="flex-between"><b>${escapeHTML(tal.name)}</b><span class="tag">${ATTR_ABBR[tal.attr]} ${tal.threshold}+</span></div><div class="sub" style="margin-top:2px;">${escapeHTML(tal.text)}</div></div>`).join(''); })()}
+            </div>
+          </details>
+        </div>
       `;
       document.getElementById('btn-edit-tamer').onclick = ()=>{ editingTamer = true; renderTamerCard(me); };
       document.getElementById('btn-open-wizard').onclick = ()=>{
@@ -1775,7 +1809,7 @@
   function renderSidebar(me){
     const content = document.getElementById('sidebar-content');
     if(!content) return;
-    ['scheda','inventario','dex'].forEach(t=>{
+    ['scheda','inventario'].forEach(t=>{
       const btn = document.getElementById('tab-'+t);
       if(btn) btn.classList.toggle('active', t===sidebarTab);
     });
@@ -1791,14 +1825,6 @@
     } else if(sidebarTab==='inventario'){
       content.innerHTML = `<div class="hud-frame card" id="inventory-card"></div>`;
       renderInventoryCard(me);
-    } else if(sidebarTab==='dex'){
-      content.innerHTML = `
-        <div class="hud-frame card" style="text-align:center;">
-          <div class="section-title">Digidex</div>
-          <div class="muted" style="margin-bottom:14px;">Il Dex ora vive in una pagina a sé, con più spazio per immagini, filtri e schede complete.</div>
-          <a href="dex.html" target="_blank" class="btn solid" style="display:inline-block;text-decoration:none;padding:12px 20px;">📖 Apri il Digidex →</a>
-        </div>
-      `;
     } else if(sidebarTab==='wizard' && creationDraft){
       renderCreationWizard(me);
     } else {
@@ -1911,6 +1937,37 @@
     return Math.max(0, stageIndex(targetStage) - comfortableMax);
   }
 
+  function snapshotCurrentStatsToStage(d, stage){
+    if(!d.stageStats) d.stageStats = {};
+    d.stageStats[stage] = {
+      baseAccuracy: d.baseAccuracy, baseDamage: d.baseDamage, baseDodge: d.baseDodge,
+      baseArmor: d.baseArmor, baseHealth: d.baseHealth, maxWounds: d.maxWounds, maxMp: d.maxMp, size: d.size
+    };
+  }
+
+  function applyStageChange(d, oldStage, newStage){
+    if(oldStage === newStage) return;
+    snapshotCurrentStatsToStage(d, oldStage);
+    if(!d.stageStats) d.stageStats = {};
+    const saved = d.stageStats[newStage];
+    if(saved){
+      d.baseAccuracy = saved.baseAccuracy; d.baseDamage = saved.baseDamage; d.baseDodge = saved.baseDodge;
+      d.baseArmor = saved.baseArmor; d.baseHealth = saved.baseHealth;
+      d.maxWounds = saved.maxWounds; d.maxMp = saved.maxMp;
+      d.size = saved.size || allowedSizes(newStage)[0] || 'Medium';
+    } else {
+      const cfg = STAGE_CREATION[newStage] || { startStat:1 };
+      d.baseAccuracy = cfg.startStat; d.baseDamage = cfg.startStat; d.baseDodge = cfg.startStat;
+      d.baseArmor = cfg.startStat; d.baseHealth = cfg.startStat;
+      d.maxWounds = stageIndex(newStage) + cfg.startStat*2;
+      d.size = allowedSizes(newStage)[0] || 'Medium';
+    }
+    d.stage = newStage;
+    if(d.currentWounds > d.maxWounds) d.currentWounds = d.maxWounds;
+    if(d.currentMp > d.maxMp) d.currentMp = d.maxMp;
+    if(!allowedSizes(newStage).includes(d.size)) d.size = allowedSizes(newStage)[0] || 'Medium';
+  }
+
   function computeDpSpent(qualities){
     return (qualities||[]).reduce((sum,q)=>sum+(Number(q.cost)||0),0);
   }
@@ -1985,7 +2042,7 @@
         <div class="muted" style="font-size:10px;">Risorsa da alcune Qualities (es. Combat Monster) — Max impostabile in "Modifica".</div>
         <div class="divider"></div>
         <div class="muted" style="margin-bottom:4px;">Evoluzione</div>
-        <div class="sub" style="margin-bottom:6px;">Default: ${escapeHTML(d.defaultStage)} · Range ${d.defaultRange} (comodo fino a ${STAGES[Math.min(4, stageIndex(d.defaultStage)+Number(d.defaultRange||0))]}) · EP: ${d.evolutionPoints||0}${d.forcedEvoRoundsLeft>0?` · <span style="color:var(--danger);">Forzata: ${d.forcedEvoRoundsLeft} round rimasti</span>`:''}</div>
+        <div class="sub" style="margin-bottom:6px;">Il tuo Digimon riposa normalmente a <b>${escapeHTML(d.defaultStage)}</b> e può salire fino a <b>${STAGES[Math.min(4, stageIndex(d.defaultStage)+Number(d.defaultRange||0))]}</b> senza spendere Evolution Points (Default Range: ${d.defaultRange}). Evolution Points disponibili: ${d.evolutionPoints||0}${d.forcedEvoRoundsLeft>0?` · <span style="color:var(--danger);">Evoluzione Forzata: ${d.forcedEvoRoundsLeft} round rimasti</span>`:''}</div>
         <div class="row">
           <select id="evo-target-${containerId}" style="flex:2;">${STAGES.map(s=>`<option ${s===d.stage?'selected':''}>${s}</option>`).join('')}</select>
           <button class="btn small" id="btn-evolve-${containerId}" style="flex:1;">🧬 Evolvi</button>
@@ -2033,10 +2090,10 @@
             return;
           }
           me.digimon.evolutionPoints = Number(me.digimon.evolutionPoints||0) - cost;
-          me.digimon.stage = target;
+          applyStageChange(me.digimon, me.digimon.stage, target);
           await saveMember(session.code, me);
-          await pushLog(session.code, { who: session.username, role:'player', text: `${me.digimon.name||'Il Digimon'} evolve a ${target}${cost>0?` (spesi ${cost} Evolution Points)`:''}. Ricorda di segnare 1 Azione spesa.` });
-          statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Evoluzione applicata.';
+          await pushLog(session.code, { who: session.username, role:'player', text: `${me.digimon.name||'Il Digimon'} evolve a ${target}${cost>0?` (spesi ${cost} Evolution Points)`:''} — Stat aggiornate automaticamente. Ricorda di segnare 1 Azione spesa.` });
+          statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Evoluzione applicata, Stat aggiornate.';
           renderDigimonCard(me, containerId);
           refreshLiveParts();
         };
@@ -2053,12 +2110,12 @@
           const verdict = evaluateVsTN(total, tn);
           let outcomeText;
           if(verdict.cls==='crit-success'){
-            me.digimon.stage = me.digimon.defaultStage;
-            outcomeText = `Successo Critico! Evolve e torna subito al Default Stage (${me.digimon.defaultStage}).`;
+            applyStageChange(me.digimon, me.digimon.stage, me.digimon.defaultStage);
+            outcomeText = `Successo Critico! Evolve e torna subito al Default Stage (${me.digimon.defaultStage}) — Stat aggiornate.`;
           } else if(verdict.cls==='success'){
-            me.digimon.stage = target;
+            applyStageChange(me.digimon, me.digimon.stage, target);
             me.digimon.forcedEvoRoundsLeft = 3;
-            outcomeText = `Successo! Evolve a ${target} per 3 round, poi tornerà sotto il Default Stage.`;
+            outcomeText = `Successo! Evolve a ${target} per 3 round (Stat aggiornate), poi tornerà sotto il Default Stage.`;
           } else {
             outcomeText = `${verdict.label}. Nessuna evoluzione forzata — possibili conseguenze pericolose a discrezione del Master.`;
           }
@@ -3211,8 +3268,9 @@
               member.digimon.forcedEvoRoundsLeft -= 1;
               if(member.digimon.forcedEvoRoundsLeft <= 0){
                 const revertIdx = Math.max(0, stageIndex(member.digimon.defaultStage)-1);
-                member.digimon.stage = STAGES[revertIdx];
-                await pushLog(code, { who:'Sistema', role:'gm', text: `${member.digimon.name||member.username} torna a ${member.digimon.stage} (fine Evoluzione Forzata).` });
+                const revertStage = STAGES[revertIdx];
+                applyStageChange(member.digimon, member.digimon.stage, revertStage);
+                await pushLog(code, { who:'Sistema', role:'gm', text: `${member.digimon.name||member.username} torna a ${member.digimon.stage} (fine Evoluzione Forzata) — Stat aggiornate.` });
               }
             }
             await saveMember(code, member);
