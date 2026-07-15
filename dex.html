@@ -251,13 +251,16 @@
     });
   }
 
+  const STAGE_ORDER = ['Baby','Rookie','Champion','Ultimate','Mega'];
+
   function renderGrid(){
     const grid = document.getElementById('dex-grid');
     if(!grid) return;
     const isMaster = session.role==='master';
     const filtered = activeFilters.length===0 ? cachedDex : cachedDex.filter(e=>(e.categories||[]).some(c=>activeFilters.includes(c)));
     if(filtered.length===0){ grid.innerHTML = '<div class="muted">Nessun Digimon trovato.</div>'; return; }
-    grid.innerHTML = filtered.slice().reverse().map(e=>{
+
+    function cardHTML(e){
       const hidden = !isMaster && !e.discovered;
       if(hidden){
         return `<div class="hud-frame dex-card unknown" data-id="${e.id}">
@@ -272,7 +275,26 @@
           <div class="muted" style="font-size:10px;">${escapeHTML(e.stage)}${isMaster?(e.discovered?' · scoperto':' · nascosto'):''}</div>
         </div>
       </div>`;
+    }
+
+    const groups = {};
+    filtered.forEach(e=>{
+      const st = STAGE_ORDER.includes(e.stage) ? e.stage : 'Altro';
+      if(!groups[st]) groups[st] = [];
+      groups[st].push(e);
+    });
+    const stagesToShow = STAGE_ORDER.filter(s=>groups[s]).concat(groups['Altro'] ? ['Altro'] : []);
+
+    grid.innerHTML = stagesToShow.map(stage=>{
+      const entries = groups[stage].slice().sort((a,b)=>a.name.localeCompare(b.name, 'it', {sensitivity:'base'}));
+      return `
+        <div style="grid-column:1/-1;margin-top:10px;">
+          <div class="section-title" style="margin-bottom:8px;font-size:12px;">${escapeHTML(stage)} (${entries.length})</div>
+        </div>
+        ${entries.map(cardHTML).join('')}
+      `;
     }).join('');
+
     grid.querySelectorAll('[data-id]').forEach(card=>{
       card.onclick = ()=>{
         const entry = cachedDex.find(e=>String(e.id)===card.getAttribute('data-id'));
@@ -335,60 +357,60 @@
 
   const SPECIES_SEED = [
     { line:'Agumon', chain:[
-      {name:'Koromon', stage:'Baby', desc:'Piccolo e affamato, la forma Baby di Agumon.', stats:{baseAccuracy:2, baseDamage:3, baseDodge:2, baseArmor:1, baseHealth:2}},
-      {name:'Agumon', stage:'Rookie', desc:'Rettile bipede leale e coraggioso, sputa piccole fiamme.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:3, baseArmor:3, baseHealth:3}},
-      {name:'Greymon', stage:'Champion', desc:'Dinosauro corazzato dal morso potente.', stats:{baseAccuracy:8, baseDamage:10, baseDodge:6, baseArmor:5, baseHealth:6}},
-      {name:'MetalGreymon', stage:'Ultimate', desc:'Mezzo organico, mezzo cybernetico, con la Giga Distruzione.', stats:{baseAccuracy:12, baseDamage:15, baseDodge:8, baseArmor:7, baseHealth:8}},
-      {name:'WarGreymon', stage:'Mega', desc:'Il guerriero supremo, con la Gaia Force e la Terra Destroyer.', stats:{baseAccuracy:15, baseDamage:19, baseDodge:11, baseArmor:9, baseHealth:11}},
+      {name:'Koromon', stage:'Baby', desc:'Piccolo e affamato, la forma Baby di Agumon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:3, baseDodge:2, baseArmor:1, baseHealth:2}},
+      {name:'Agumon', stage:'Rookie', desc:'Rettile bipede leale e coraggioso, sputa piccole fiamme. Attacco: Pepper Breath.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:3, baseArmor:3, baseHealth:3}},
+      {name:'Greymon', stage:'Champion', desc:'Dinosauro corazzato dal morso potente. Attacco: Nova Blast.', stats:{baseAccuracy:8, baseDamage:10, baseDodge:6, baseArmor:5, baseHealth:6}},
+      {name:'MetalGreymon', stage:'Ultimate', desc:'Mezzo organico, mezzo cybernetico, con la Giga Distruzione. Attacco: Giga Blaster.', stats:{baseAccuracy:12, baseDamage:15, baseDodge:8, baseArmor:7, baseHealth:8}},
+      {name:'WarGreymon', stage:'Mega', desc:'Il guerriero supremo, con la Gaia Force e la Terra Destroyer. Attacco: Terra Force.', stats:{baseAccuracy:15, baseDamage:19, baseDodge:11, baseArmor:9, baseHealth:11}},
     ]},
     { line:'Gabumon', chain:[
-      {name:'Tsunomon', stage:'Baby', desc:'Piccola palla con un corno, forma Baby di Gabumon.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}},
-      {name:'Gabumon', stage:'Rookie', desc:'Rettile timido che indossa una pelliccia di Garurumon.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}},
-      {name:'Garurumon', stage:'Champion', desc:'Lupo blu velocissimo con l\'Howling Blaster.', stats:{baseAccuracy:6, baseDamage:7, baseDodge:10, baseArmor:5, baseHealth:7}},
-      {name:'WereGarurumon', stage:'Ultimate', desc:'Licantropo agile e feroce.', stats:{baseAccuracy:9, baseDamage:10, baseDodge:14, baseArmor:7, baseHealth:10}},
-      {name:'MetalGarurumon', stage:'Mega', desc:'Lupo cibernetico con i Missili Freezing.', stats:{baseAccuracy:11, baseDamage:13, baseDodge:19, baseArmor:9, baseHealth:13}},
+      {name:'Tsunomon', stage:'Baby', desc:'Piccola palla con un corno, forma Baby di Gabumon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}},
+      {name:'Gabumon', stage:'Rookie', desc:'Rettile timido che indossa una pelliccia di Garurumon. Attacco: Blue Blaster.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}},
+      {name:'Garurumon', stage:'Champion', desc:'Lupo blu velocissimo con l\'Howling Blaster. Attacco: Howling Blaster.', stats:{baseAccuracy:6, baseDamage:7, baseDodge:10, baseArmor:5, baseHealth:7}},
+      {name:'WereGarurumon', stage:'Ultimate', desc:'Licantropo agile e feroce. Attacco: Wolf Claw.', stats:{baseAccuracy:9, baseDamage:10, baseDodge:14, baseArmor:7, baseHealth:10}},
+      {name:'MetalGarurumon', stage:'Mega', desc:'Lupo cibernetico con i Missili Freezing. Attacco: Freezing Missile.', stats:{baseAccuracy:11, baseDamage:13, baseDodge:19, baseArmor:9, baseHealth:13}},
     ]},
     { line:'Biyomon', chain:[
-      {name:'Yokomon', stage:'Baby', desc:'Piccolo uccellino, forma Baby di Biyomon.', stats:{baseAccuracy:3, baseDamage:2, baseDodge:2, baseArmor:1, baseHealth:2}},
-      {name:'Biyomon', stage:'Rookie', desc:'Uccellino rosa affettuoso e leale.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}},
-      {name:'Birdramon', stage:'Champion', desc:'Enorme uccello di fuoco.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:7, baseArmor:4, baseHealth:6}},
-      {name:'Garudamon', stage:'Ultimate', desc:'Guerriera alata con artigli d\'acciaio.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:10, baseArmor:6, baseHealth:8}},
-      {name:'Phoenixmon', stage:'Mega', desc:'Fenice leggendaria capace di rinascere dalle fiamme.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:13, baseArmor:7, baseHealth:11}},
+      {name:'Yokomon', stage:'Baby', desc:'Piccolo uccellino, forma Baby di Biyomon. Attacco: Sonic Wave.', stats:{baseAccuracy:3, baseDamage:2, baseDodge:2, baseArmor:1, baseHealth:2}},
+      {name:'Biyomon', stage:'Rookie', desc:'Uccellino rosa affettuoso e leale. Attacco: Magical Fire.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}},
+      {name:'Birdramon', stage:'Champion', desc:'Enorme uccello di fuoco. Attacco: Meteor Wing.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:7, baseArmor:4, baseHealth:6}},
+      {name:'Garudamon', stage:'Ultimate', desc:'Guerriera alata con artigli d\'acciaio. Attacco: Wing Blade.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:10, baseArmor:6, baseHealth:8}},
+      {name:'Phoenixmon', stage:'Mega', desc:'Fenice leggendaria capace di rinascere dalle fiamme. Attacco: Crimson Flame.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:13, baseArmor:7, baseHealth:11}},
     ]},
     { line:'Tentomon', chain:[
-      {name:'Motimon', stage:'Baby', desc:'Piccola gelatina rotonda, forma Baby di Tentomon.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:3, baseHealth:2}},
-      {name:'Tentomon', stage:'Rookie', desc:'Insetto curioso ed erudito.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}},
-      {name:'Kabuterimon', stage:'Champion', desc:'Scarabeo gigante con attacchi elettrici.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:10, baseHealth:9}},
-      {name:'MegaKabuterimon', stage:'Ultimate', desc:'Scarabeo corazzato dal Corno Elettrico.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:7, baseArmor:14, baseHealth:13}},
-      {name:'HerculesKabuterimon', stage:'Mega', desc:'Colosso corazzato dalla potenza devastante.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:9, baseArmor:19, baseHealth:17}},
+      {name:'Motimon', stage:'Baby', desc:'Piccola gelatina rotonda, forma Baby di Tentomon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:3, baseHealth:2}},
+      {name:'Tentomon', stage:'Rookie', desc:'Insetto curioso ed erudito. Attacco: Super Shocker.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}},
+      {name:'Kabuterimon', stage:'Champion', desc:'Scarabeo gigante con attacchi elettrici. Attacco: Electro Shocker.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:10, baseHealth:9}},
+      {name:'MegaKabuterimon', stage:'Ultimate', desc:'Scarabeo corazzato dal Corno Elettrico. Attacco: Horn Buster.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:7, baseArmor:14, baseHealth:13}},
+      {name:'HerculesKabuterimon', stage:'Mega', desc:'Colosso corazzato dalla potenza devastante. Attacco: Giga Blaster.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:9, baseArmor:19, baseHealth:17}},
     ]},
     { line:'Palmon', chain:[
-      {name:'Tanemon', stage:'Baby', desc:'Piccolo seme rotondo, forma Baby di Palmon.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}},
-      {name:'Palmon', stage:'Rookie', desc:'Pianta gentile con foglie a forma di stella.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}},
-      {name:'Togemon', stage:'Champion', desc:'Cactus pugile dai pugni esplosivi.', stats:{baseAccuracy:7, baseDamage:6, baseDodge:10, baseArmor:5, baseHealth:7}},
-      {name:'Lillymon', stage:'Ultimate', desc:'Fata dei fiori elegante e agile.', stats:{baseAccuracy:10, baseDamage:9, baseDodge:14, baseArmor:7, baseHealth:10}},
-      {name:'Rosemon', stage:'Mega', desc:'Regina dei fiori con la frusta di spine.', stats:{baseAccuracy:13, baseDamage:11, baseDodge:19, baseArmor:9, baseHealth:13}},
+      {name:'Tanemon', stage:'Baby', desc:'Piccolo seme rotondo, forma Baby di Palmon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}},
+      {name:'Palmon', stage:'Rookie', desc:'Pianta gentile con foglie a forma di stella. Attacco: Poison Ivy.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}},
+      {name:'Togemon', stage:'Champion', desc:'Cactus pugile dai pugni esplosivi. Attacco: Needle Spray.', stats:{baseAccuracy:7, baseDamage:6, baseDodge:10, baseArmor:5, baseHealth:7}},
+      {name:'Lillymon', stage:'Ultimate', desc:'Fata dei fiori elegante e agile. Attacco: Flower Cannon.', stats:{baseAccuracy:10, baseDamage:9, baseDodge:14, baseArmor:7, baseHealth:10}},
+      {name:'Rosemon', stage:'Mega', desc:'Regina dei fiori con la frusta di spine. Attacco: Forbidden Temptation.', stats:{baseAccuracy:13, baseDamage:11, baseDodge:19, baseArmor:9, baseHealth:13}},
     ]},
     { line:'Gomamon', chain:[
-      {name:'Bukamon', stage:'Baby', desc:'Piccola foca marina, forma Baby di Gomamon.', stats:{baseAccuracy:1, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:3}},
-      {name:'Gomamon', stage:'Rookie', desc:'Foca giocherellona e leale amica.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:5}},
-      {name:'Ikkakumon', stage:'Champion', desc:'Trichecho con un corno d\'arpone.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:6, baseArmor:8, baseHealth:10}},
-      {name:'Zudomon', stage:'Ultimate', desc:'Guerriero marino con il martello Vulcan.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:9, baseArmor:11, baseHealth:14}},
-      {name:'Vikemon', stage:'Mega', desc:'Vichingo gigante armato di ascia ghiacciata.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:11, baseArmor:15, baseHealth:19}},
+      {name:'Bukamon', stage:'Baby', desc:'Piccola foca marina, forma Baby di Gomamon. Attacco: Bubble Blow.', stats:{baseAccuracy:1, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:3}},
+      {name:'Gomamon', stage:'Rookie', desc:'Foca giocherellona e leale amica. Attacco: Marching Fishes.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:5}},
+      {name:'Ikkakumon', stage:'Champion', desc:'Trichecho con un corno d\'arpone. Attacco: Harpoon Torpedo.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:6, baseArmor:8, baseHealth:10}},
+      {name:'Zudomon', stage:'Ultimate', desc:'Guerriero marino con il martello Vulcan. Attacco: Vulcan\'s Hammer.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:9, baseArmor:11, baseHealth:14}},
+      {name:'Vikemon', stage:'Mega', desc:'Vichingo gigante armato di ascia ghiacciata. Attacco: Vikings Cutter.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:11, baseArmor:15, baseHealth:19}},
     ]},
     { line:'Patamon', chain:[
-      {name:'Tokomon', stage:'Baby', desc:'Piccola creatura con grandi orecchie, forma Baby di Patamon.', stats:{baseAccuracy:3, baseDamage:2, baseDodge:2, baseArmor:1, baseHealth:2}},
-      {name:'Patamon', stage:'Rookie', desc:'Piccolo Digimon volante dal cuore gentile.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}},
-      {name:'Angemon', stage:'Champion', desc:'Angelo guerriero con il bastone sacro.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}},
-      {name:'MagnaAngemon', stage:'Ultimate', desc:'Angelo corazzato capace di aprire portali.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:9, baseArmor:7, baseHealth:8}},
-      {name:'Seraphimon', stage:'Mega', desc:'Angelo supremo, giudice della luce.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:11, baseArmor:9, baseHealth:11}},
+      {name:'Tokomon', stage:'Baby', desc:'Piccola creatura con grandi orecchie, forma Baby di Patamon. Attacco: Bubble Blow.', stats:{baseAccuracy:3, baseDamage:2, baseDodge:2, baseArmor:1, baseHealth:2}},
+      {name:'Patamon', stage:'Rookie', desc:'Piccolo Digimon volante dal cuore gentile. Attacco: Boom Bubble.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}},
+      {name:'Angemon', stage:'Champion', desc:'Angelo guerriero con il bastone sacro. Attacco: Hand of Fate.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}},
+      {name:'MagnaAngemon', stage:'Ultimate', desc:'Angelo corazzato capace di aprire portali. Attacco: Gate of Destiny.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:9, baseArmor:7, baseHealth:8}},
+      {name:'Seraphimon', stage:'Mega', desc:'Angelo supremo, giudice della luce. Attacco: Testament.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:11, baseArmor:9, baseHealth:11}},
     ]},
     { line:'Veemon', chain:[
-      {name:'Chibomon', stage:'Baby', desc:'Piccola creatura blu, forma Baby di Veemon.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:2}},
-      {name:'Veemon', stage:'Rookie', desc:'Rettile blu energico e testardo.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:4}},
-      {name:'ExVeemon', stage:'Champion', desc:'Guerriero blu dai pugni potenti.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}},
-      {name:'Paildramon', stage:'Ultimate', desc:'Drago cibernetico frutto di un DNA Digivolve.', stats:{baseAccuracy:10, baseDamage:10, baseDodge:10, baseArmor:10, baseHealth:10}},
-      {name:'Imperialdramon', stage:'Mega', desc:'Drago imperiale dal potere immenso.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:13, baseArmor:13, baseHealth:13}},
+      {name:'Chibomon', stage:'Baby', desc:'Piccola creatura blu, forma Baby di Veemon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:2}},
+      {name:'Veemon', stage:'Rookie', desc:'Rettile blu energico e testardo. Attacco: Vee Headbutt.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:4}},
+      {name:'ExVeemon', stage:'Champion', desc:'Guerriero blu dai pugni potenti. Attacco: Vee Laser.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}},
+      {name:'Paildramon', stage:'Ultimate', desc:'Drago cibernetico frutto di un DNA Digivolve. Attacco: Desperado Blaster.', stats:{baseAccuracy:10, baseDamage:10, baseDodge:10, baseArmor:10, baseHealth:10}},
+      {name:'Imperialdramon', stage:'Mega', desc:'Drago imperiale dal potere immenso. Attacco: Positron Laser.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:13, baseArmor:13, baseHealth:13}},
     ]},
   ];
 

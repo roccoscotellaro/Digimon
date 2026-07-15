@@ -269,11 +269,33 @@
   function trySpendAction(participant, actionKey){
     const def = ACTION_DEFS.find(a=>a.key===actionKey);
     if(!def) return { ok:false, msg:'Azione non valida' };
-    if(def.oncePerRound && participant.attackedThisRound) return { ok:false, msg:'Ha già usato Attacca questo round.' };
+    if(actionKey==='move' && (participant.effects||[]).some(e=>e.key==='root')){
+      return { ok:false, msg:'È sotto [ROOT]: non può usare Muovi finché l\'Effetto non termina.' };
+    }
+    if(def.oncePerRound && participant.attackedThisRound){
+      let hasAmmo = false;
+      if(participant.isPC){
+        const member = cachedRoster.find(m=>m.username===participant.username);
+        if(member){
+          const qMech = computeQualityMechanics(member.digimon.qualities);
+          if(qMech.ammoRank>0){
+            if(participant.ammoUsesLeft===undefined) participant.ammoUsesLeft = stageIndex(member.digimon.stage)+1;
+            if(participant.ammoUsesLeft>0) hasAmmo = true;
+          }
+        }
+      }
+      if(!hasAmmo) return { ok:false, msg:'Ha già usato Attacca questo round.' };
+    }
     if((participant.actions===undefined?2:participant.actions) < def.cost) return { ok:false, msg:'Azioni insufficienti.' };
     if(participant.actions===undefined) participant.actions = 2;
     participant.actions -= def.cost;
-    if(def.oncePerRound) participant.attackedThisRound = true;
+    if(def.oncePerRound){
+      if(participant.attackedThisRound && participant.ammoUsesLeft>0){
+        participant.ammoUsesLeft -= 1;
+      } else {
+        participant.attackedThisRound = true;
+      }
+    }
     return { ok:true, def };
   }
 
@@ -561,11 +583,9 @@
       size:'Medium', stance:'Neutral', chatColor:'#c896ff',
       resolveCurrent:0, resolveMax:4,
       stageStats:{},
-      moves:[
-        {name:'Attacco Base', desc:'Colpo fisico standard.'},
-        {name:'Mossa Speciale', desc:'Consuma MP, usa Intelligenza.'},
-        {name:'Difenditi', desc:'Postura difensiva, nessun costo.'},
-        {name:'Muoviti', desc:'Riposiziona sul campo.'}
+      attacks:[
+        { name:'Colpo Base', shape:'Melee', type:'Damage', effectKey:'', extraTags:'', desc:'Un attacco fisico semplice.', signature:false, reach:0 },
+        { name:'Raggio a Distanza', shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc:'Un colpo dalla distanza.', signature:false, reach:1 }
       ]
     };
   }
@@ -579,7 +599,7 @@
     if(m.tamer.currentWounds===null || m.tamer.currentWounds===undefined) m.tamer.currentWounds = 3+Number(m.tamer.skills.endurance||0);
     if(!Array.isArray(m.tamer.inventory)) m.tamer.inventory = [];
     m.digimon = Object.assign(defaultDigimon(), m.digimon||{});
-    if(!m.digimon.moves || !m.digimon.moves.length) m.digimon.moves = defaultDigimon().moves;
+    if(!m.digimon.attacks || !m.digimon.attacks.length) m.digimon.attacks = defaultDigimon().attacks;
     return m;
   }
 
@@ -1100,7 +1120,7 @@
             </div>
             <div class="log" id="log-live" style="height:220px;">${logHTML(cachedLog, session.role==='master')}</div>
             <textarea id="action-text" rows="3" placeholder="Scrivi cosa fa il tuo Tamer o il tuo Digimon..." style="margin-top:10px;"></textarea>
-            <div class="muted" id="action-hint" style="margin-top:4px;">Scorciatoia: scrivi <code>/tira NomeSkill [TN]</code> (es. <code>/tira awareness 15</code>) per tirare direttamente in chat.</div>
+            <div class="muted" id="action-hint" style="margin-top:4px;">Scorciatoia: scrivi <code>/tira NomeSkill [TN] [major|minor]</code> (es. <code>/tira awareness 15 major</code>) per tirare in chat, opzionalmente usando un Aspect.</div>
             <div id="action-roll-result" style="margin-top:8px;"></div>
             <div class="row" style="margin-top:8px;">
               <button class="btn" id="btn-correct">Correggi Italiano</button>
@@ -1110,12 +1130,13 @@
           </div>
 
           <div class="hud-frame card">
-            <div class="section-title">Mosse di ${escapeHTML(me.digimon.name || 'Digimon')}</div>
+            <div class="section-title">Attacchi di ${escapeHTML(me.digimon.name || 'Digimon')}</div>
             <div class="moves-grid">
-              ${me.digimon.moves.map((m,i)=>`
+              ${me.digimon.attacks.map((a,i)=>`
                 <button class="move-btn" data-move-idx="${i}">
-                  <div class="name mono">${escapeHTML(m.name)}</div>
-                  <div class="desc">${escapeHTML(m.desc)}</div>
+                  <div class="name mono">${a.signature?'⭐ ':''}${escapeHTML(a.name)}</div>
+                  <div class="desc">${attackTagsHTML(a)}</div>
+                  ${a.desc ? `<div class="desc" style="margin-top:3px;">${escapeHTML(a.desc)}</div>` : ''}
                 </button>
               `).join('')}
             </div>
@@ -1161,7 +1182,7 @@
         await refreshPlayerLogDisplay(code, me);
         return;
       }
-      const rollResult = tryParseRollShortcut(raw, me);
+      const rollResult = await tryParseRollShortcut(raw, me);
       const resEl = document.getElementById('action-roll-result');
       if(rollResult){
         if(rollResult.dice && resEl){
@@ -1179,8 +1200,8 @@
     document.querySelectorAll('[data-move-idx]').forEach(btn=>{
       btn.onclick = async ()=>{
         const idx = Number(btn.getAttribute('data-move-idx'));
-        const move = me.digimon.moves[idx];
-        await pushLog(code, { who: session.username, role:'player', text: `${me.digimon.name || 'Il Digimon'} usa ${move.name}!` });
+        const atk = me.digimon.attacks[idx];
+        await pushLog(code, { who: session.username, role:'player', text: `${me.digimon.name || 'Il Digimon'} dichiara ${atk.name}! (${attackTagsPlain(atk)}) — il Master lo risolve dal Combat Manager.` });
         refreshLiveParts();
       };
     });
@@ -1968,6 +1989,27 @@
     if(!allowedSizes(newStage).includes(d.size)) d.size = allowedSizes(newStage)[0] || 'Medium';
   }
 
+  function attackTagsPlain(a){
+    const tags = [`[${a.shape.toUpperCase()}${a.shape==='Range'?' '+(a.reach||1):''}]`, `[${a.type.toUpperCase()}]`];
+    if(a.type==='Support' && a.effectKey){
+      const def = EFFECT_DEFS.find(d=>d.key===a.effectKey);
+      if(def) tags.push(`[${def.label.toUpperCase()}]`);
+    }
+    if(a.extraTags) tags.push(a.extraTags);
+    return tags.join(' ');
+  }
+  function attackTagsHTML(a){
+    const shapeColor = a.shape==='Melee' ? 'var(--amber)' : 'var(--cyan)';
+    const typeColor = a.type==='Damage' ? 'var(--danger)' : '#c896ff';
+    let html = `<span class="tag" style="color:${shapeColor};border-color:${shapeColor};margin-right:3px;">${a.shape==='Melee'?'🗡️':'🏹'} ${a.shape}${a.shape==='Range'?' ('+(a.reach||1)+' zone)':''}</span><span class="tag" style="color:${typeColor};border-color:${typeColor};margin-right:3px;">${a.type==='Damage'?'💥':'✨'} ${a.type}</span>`;
+    if(a.type==='Support' && a.effectKey){
+      const def = EFFECT_DEFS.find(d=>d.key===a.effectKey);
+      if(def) html += `<span class="tag" style="margin-right:3px;">${def.label}</span>`;
+    }
+    if(a.extraTags) html += `<span class="tag">${escapeHTML(a.extraTags)}</span>`;
+    return html;
+  }
+
   function computeDpSpent(qualities){
     return (qualities||[]).reduce((sum,q)=>sum+(Number(q.cost)||0),0);
   }
@@ -1983,6 +2025,37 @@
         ${q.description ? `<div class="sub" style="margin-top:2px;">${escapeHTML(q.description)}</div>` : ''}
       </div>
     `).join('');
+  }
+
+  const QUALITY_CATALOG = [
+    { name:'Certain Strike', category:'Attack', dpPerRank:2, maxRank:3, mechanic:'certainStrike', desc:'Aggiunge Successi automatici garantiti alla Pool Accuracy pari ai Ranks, su un Attacco [DAMAGE].' },
+    { name:'Weapon', category:'Attack', dpPerRank:1, maxRank:5, mechanic:'weapon', desc:'Aggiunge +1 Damage per Rank a un Attacco.' },
+    { name:'Ammo', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'ammo', desc:'Un Attacco ignora la regola "una volta a round" — utilizzabile più volte per combattimento, fino a un numero di volte pari allo Stage.' },
+    { name:'Combat Monster', category:'Static', dpPerRank:2, maxRank:3, mechanic:'combatMonster', desc:'Guadagna Resolve pari al danno subito (max Stage+2). Quando colpisce con un Attacco, tutto il Resolve si aggiunge al Danno e si azzera.' },
+    { name:'Charge Attack', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'Un Attacco [MELEE] permette di Muoversi prima o dopo, nella stessa Azione (richiede Movimento non gestito dal sito).' },
+    { name:'Heavy Recoil', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'Un Attacco [RANGE] ignora la penalità di Melee-adiacenza, ma ha un contraccolpo (dettagli a discrezione del Master).' },
+    { name:'Substitute', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'Se il Dodge fallisce, puoi tentare un Check RAM (TN 10+BIT dell\'Attaccante) per annullare il colpo, perdendo Caselle Ferita pari a Stage+1.' },
+    { name:'Bullet Proof', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'Attacchi ripetuti dello stesso Nemico nello stesso round subiscono una penalità crescente pari al tuo Stage.' },
+    { name:'Point Blank', category:'Clash', dpPerRank:1, maxRank:1, mechanic:'', desc:'Puoi usare Attacchi [RANGE] come se fossero [MELEE] durante un Clash.' },
+    { name:'Reach', category:'Clash', dpPerRank:1, maxRank:1, mechanic:'', desc:'Puoi Clashare da più lontano del normale (dettagli a discrezione del Master).' },
+    { name:'Monster Strength', category:'Clash', dpPerRank:1, maxRank:1, mechanic:'monsterStrength', desc:'Puoi Lanciare o Muovere in Clash un avversario 2+ Size più grande di te.' },
+    { name:'Titan Power', category:'Clash', dpPerRank:1, maxRank:1, mechanic:'', desc:'Puoi Lanciare avversari ancora più grandi rispetto a Monster Strength.' },
+    { name:'Armor Piercing', category:'Attack', dpPerRank:2, maxRank:2, mechanic:'', desc:'L\'Attacco infligge Danno Unalterable extra (ignora Armor) pari ai Successi in eccesso, fino ai Ranks.' },
+    { name:'Second Wind', category:'Static', dpPerRank:2, maxRank:1, mechanic:'', desc:'Una volta a combattimento, recupera Caselle Ferita quando scendi a 0.' },
+    { name:'Resistance', category:'Static', dpPerRank:2, maxRank:3, mechanic:'', desc:'Riduce la Potenza degli Effetti negativi subiti pari ai Ranks.' },
+    { name:'Data Specialization: Wrestlemania', category:'Clash', dpPerRank:2, maxRank:1, mechanic:'wrestlemania', desc:'In Clash, sblocca l\'Azione Finisher: dopo un Attacco riuscito, tira CPU o BIT (TN 10+Stage) per danno bonus, poi il Clash finisce.' }
+  ];
+  function computeQualityMechanics(qualities){
+    const m = { certainStrike:0, weapon:0, ammoRank:0, combatMonster:0, monsterStrength:false, wrestlemania:false };
+    (qualities||[]).forEach(q=>{
+      if(q.mechanic==='certainStrike') m.certainStrike += Number(q.rank||1);
+      if(q.mechanic==='weapon') m.weapon += Number(q.rank||1);
+      if(q.mechanic==='ammo') m.ammoRank = Math.max(m.ammoRank, Number(q.rank||1));
+      if(q.mechanic==='combatMonster') m.combatMonster = Math.max(m.combatMonster, Number(q.rank||1));
+      if(q.mechanic==='monsterStrength') m.monsterStrength = true;
+      if(q.mechanic==='wrestlemania') m.wrestlemania = true;
+    });
+    return m;
   }
 
   function qualitiesEditableHTML(qualities){
@@ -2010,6 +2083,7 @@
           <div class="info"><div class="nm">${escapeHTML(d.name||'(senza nome)')}</div><div class="tg">${escapeHTML(d.stage)}</div></div>
         </div>
         ${barHTML('Caselle Ferita', d.currentWounds, d.maxWounds, 'hp', 'dig-w-minus-'+containerId, 'dig-w-plus-'+containerId)}
+        ${Number(d.tempWounds||0)>0 ? `<div class="muted" style="margin-top:-4px;margin-bottom:8px;color:var(--cyan);">🛡️ +${d.tempWounds} Caselle Ferita Temporanee (Shield)</div>` : ''}
         ${barHTML('MP', d.currentMp, d.maxMp, 'mp', 'dig-mp-minus-'+containerId, 'dig-mp-plus-'+containerId)}
         ${d.personality ? `<div class="muted" style="margin-top:8px;"><i>${escapeHTML(d.personality)}</i></div>` : ''}
         <div class="divider"></div>
@@ -2177,6 +2251,27 @@
         </div>
         <div class="field"><label>Health (base)</label><input type="number" id="e-d-hp-${containerId}" value="${d.baseHealth}" min="0" /></div>
         <div class="divider"></div>
+        <div class="muted" style="margin-bottom:6px;">Attacchi (Tag: [MELEE]/[RANGE] + [DAMAGE]/[SUPPORT])</div>
+        <div id="atk-list-${containerId}"></div>
+        <div class="row">
+          <input type="text" id="atk-name-${containerId}" placeholder="Nome Attacco" style="flex:2;" />
+          <select id="atk-shape-${containerId}" style="flex:1;"><option>Melee</option><option>Range</option></select>
+          <select id="atk-type-${containerId}" style="flex:1;"><option>Damage</option><option>Support</option></select>
+          <select id="atk-reach-${containerId}" style="flex:1;"><option value="1">Portata 1 zona</option><option value="2">Portata 2 zone</option></select>
+        </div>
+        <div class="row" style="margin-top:6px;">
+          <select id="atk-effect-${containerId}" style="flex:1;">
+            <option value="">— nessun Effetto —</option>
+            ${EFFECT_DEFS.map(e=>`<option value="${e.key}">${e.label}</option>`).join('')}
+          </select>
+          <input type="text" id="atk-extra-${containerId}" placeholder="Altri Tag (es. [WEAPON 2])" style="flex:1;" />
+        </div>
+        <div class="row" style="margin-top:6px;">
+          <input type="text" id="atk-desc-${containerId}" placeholder="Descrizione breve" style="flex:2;" />
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;flex:1;"><input type="checkbox" id="atk-sig-${containerId}" /> Signature Move</label>
+          <button class="btn small" id="btn-atk-add-${containerId}" style="flex:1;">Aggiungi</button>
+        </div>
+        <div class="divider"></div>
         <div class="muted" style="margin-bottom:6px;">Evoluzione</div>
         <div class="row">
           <div class="field"><label>Default Stage</label>
@@ -2191,8 +2286,15 @@
         <div class="muted" style="margin-bottom:6px;">Qualities</div>
         <div id="qual-list-${containerId}">${qualitiesEditableHTML(d.qualities)}</div>
         <div class="row">
-          <input type="text" id="e-d-qual-name-${containerId}" placeholder="Nome Quality" style="flex:2;" />
-          <input type="number" id="e-d-qual-cost-${containerId}" placeholder="DP" value="1" style="flex:1;" />
+          <select id="e-d-qual-catalog-${containerId}" style="flex:2;">
+            <option value="">— Quality personalizzata —</option>
+            ${QUALITY_CATALOG.map((q,qi)=>`<option value="${qi}">${escapeHTML(q.name)} (${q.category}, ${q.dpPerRank} DP/Rank)</option>`).join('')}
+          </select>
+          <input type="number" id="e-d-qual-rank-${containerId}" value="1" min="1" placeholder="Rank" style="flex:1;" />
+        </div>
+        <div class="row" style="margin-top:6px;">
+          <input type="text" id="e-d-qual-name-${containerId}" placeholder="Nome (se personalizzata)" style="flex:2;" />
+          <input type="number" id="e-d-qual-cost-${containerId}" placeholder="DP totali" value="1" style="flex:1;" />
         </div>
         <div class="row" style="margin-top:6px;">
           <input type="text" id="e-d-qual-cat-${containerId}" placeholder="Categoria (opz.)" style="flex:1;" />
@@ -2205,6 +2307,38 @@
         </div>
         <div class="muted" id="save-status-digimon-${containerId}" style="margin-top:6px;"></div>
       `;
+      const renderAtkList = ()=>{
+        const listEl = document.getElementById('atk-list-'+containerId);
+        listEl.innerHTML = (d.attacks||[]).length===0 ? '<div class="muted" style="margin-bottom:6px;">Nessun Attacco.</div>' : d.attacks.map((a,i)=>`
+          <div class="flex-between" style="margin-bottom:6px;">
+            <span>${a.signature?'⭐ ':''}<b>${escapeHTML(a.name)}</b> ${attackTagsHTML(a)}</span>
+            <button class="btn ghost small" data-rmatk="${i}">Rimuovi</button>
+          </div>
+        `).join('');
+        listEl.querySelectorAll('[data-rmatk]').forEach(b=>{
+          b.onclick = ()=>{ d.attacks.splice(Number(b.getAttribute('data-rmatk')),1); renderAtkList(); };
+        });
+      };
+      renderAtkList();
+      document.getElementById('btn-atk-add-'+containerId).onclick = ()=>{
+        const name = document.getElementById('atk-name-'+containerId).value.trim();
+        if(!name) return;
+        const shape = document.getElementById('atk-shape-'+containerId).value;
+        const type = document.getElementById('atk-type-'+containerId).value;
+        const effectKey = type==='Support' ? document.getElementById('atk-effect-'+containerId).value : '';
+        const extraTags = document.getElementById('atk-extra-'+containerId).value.trim();
+        const desc = document.getElementById('atk-desc-'+containerId).value.trim();
+        const signature = document.getElementById('atk-sig-'+containerId).checked;
+        if(!d.attacks) d.attacks = [];
+        if(signature) d.attacks.forEach(a=>a.signature=false);
+        const reach = shape==='Range' ? Number(document.getElementById('atk-reach-'+containerId).value)||1 : 0;
+        d.attacks.push({ name, shape, type, effectKey, extraTags, desc, signature, reach });
+        document.getElementById('atk-name-'+containerId).value='';
+        document.getElementById('atk-extra-'+containerId).value='';
+        document.getElementById('atk-desc-'+containerId).value='';
+        document.getElementById('atk-sig-'+containerId).checked=false;
+        renderAtkList();
+      };
       const bindQualRemove = ()=>{
         document.querySelectorAll(`#qual-list-${containerId} [data-rmquality]`).forEach(b=>{
           b.onclick = ()=>{
@@ -2216,17 +2350,34 @@
       };
       bindQualRemove();
       document.getElementById('btn-add-qual-'+containerId).onclick = ()=>{
-        const name = document.getElementById('e-d-qual-name-'+containerId).value.trim();
-        if(!name) return;
-        const cost = Number(document.getElementById('e-d-qual-cost-'+containerId).value)||0;
-        const category = document.getElementById('e-d-qual-cat-'+containerId).value.trim();
-        const description = document.getElementById('e-d-qual-desc-'+containerId).value.trim();
-        if(!d.qualities) d.qualities = [];
-        d.qualities.push({ name, cost, category, description });
+        const catalogIdx = document.getElementById('e-d-qual-catalog-'+containerId).value;
+        const rank = Math.max(1, Number(document.getElementById('e-d-qual-rank-'+containerId).value)||1);
+        let name, cost, category, description, mechanic='';
+        if(catalogIdx !== ''){
+          const q = QUALITY_CATALOG[Number(catalogIdx)];
+          if(!q) return;
+          const clampedRank = Math.min(q.maxRank, rank);
+          name = `${q.name}${q.maxRank>1?` (Rank ${clampedRank})`:''}`;
+          cost = q.dpPerRank * clampedRank;
+          category = q.category;
+          description = q.desc;
+          mechanic = q.mechanic;
+          if(!d.qualities) d.qualities = [];
+          d.qualities.push({ name, cost, category, description, mechanic, rank: clampedRank });
+        } else {
+          name = document.getElementById('e-d-qual-name-'+containerId).value.trim();
+          if(!name) return;
+          cost = Number(document.getElementById('e-d-qual-cost-'+containerId).value)||0;
+          category = document.getElementById('e-d-qual-cat-'+containerId).value.trim();
+          description = document.getElementById('e-d-qual-desc-'+containerId).value.trim();
+          if(!d.qualities) d.qualities = [];
+          d.qualities.push({ name, cost, category, description });
+        }
         document.getElementById('e-d-qual-name-'+containerId).value='';
         document.getElementById('e-d-qual-cost-'+containerId).value='1';
         document.getElementById('e-d-qual-cat-'+containerId).value='';
         document.getElementById('e-d-qual-desc-'+containerId).value='';
+        document.getElementById('e-d-qual-rank-'+containerId).value='1';
         document.getElementById('qual-list-'+containerId).innerHTML = qualitiesEditableHTML(d.qualities);
         bindQualRemove();
       };
@@ -2270,6 +2421,8 @@
     const panel = document.getElementById('skill-roll-panel-'+containerId);
     if(!panel) return;
     let chosenAttr = def.attrs[0];
+    const majorLeft = me.tamer.majorAspect ? (me.tamer.majorAspect.usesLeft||0) : 0;
+    const minorLeft = me.tamer.minorAspect ? (me.tamer.minorAspect.usesLeft||0) : 0;
     const draw = ()=>{
       panel.innerHTML = `
         <div class="hud-frame" style="padding:10px;">
@@ -2280,6 +2433,13 @@
             </div>
           ` : ''}
           <div class="field"><label>TN (opzionale, la decide il Master)</label><input type="number" id="roll-tn-${containerId}" placeholder="es. 15" /></div>
+          ${majorLeft>0 || minorLeft>0 ? `
+            <div class="muted" style="margin-bottom:6px;">Aspects (applica bonus al tiro)</div>
+            <div class="row" style="margin-bottom:8px;">
+              ${majorLeft>0 ? `<label style="display:flex;align-items:center;gap:4px;font-size:11px;flex:1;"><input type="checkbox" id="roll-aspect-major-${containerId}" /> Major (+4, ${majorLeft} usi)</label>` : ''}
+              ${minorLeft>0 ? `<label style="display:flex;align-items:center;gap:4px;font-size:11px;flex:1;"><input type="checkbox" id="roll-aspect-minor-${containerId}" /> Minor (+2, ${minorLeft} usi)</label>` : ''}
+            </div>
+          ` : ''}
           <button class="btn solid" id="roll-confirm-${containerId}" style="width:100%;">Tira 3d6</button>
           <div id="roll-result-${containerId}" style="margin-top:10px;"></div>
         </div>
@@ -2293,11 +2453,26 @@
         const tnVal = document.getElementById('roll-tn-'+containerId).value;
         const attrVal = me.tamer[chosenAttr];
         const skillVal = me.tamer.skills[skillKey];
-        const { dice, total } = rollSkillCheck(attrVal, skillVal);
+        const { dice, total: baseTotal } = rollSkillCheck(attrVal, skillVal);
+        let total = baseTotal;
+        let aspectNote = '';
+        const majorBox = document.getElementById('roll-aspect-major-'+containerId);
+        const minorBox = document.getElementById('roll-aspect-minor-'+containerId);
+        if(majorBox && majorBox.checked){
+          total += 4;
+          me.tamer.majorAspect.usesLeft = Math.max(0,(me.tamer.majorAspect.usesLeft||0)-1);
+          aspectNote += ` +4 Major Aspect (${me.tamer.majorAspect.text})`;
+        }
+        if(minorBox && minorBox.checked){
+          total += 2;
+          me.tamer.minorAspect.usesLeft = Math.max(0,(me.tamer.minorAspect.usesLeft||0)-1);
+          aspectNote += ` +2 Minor Aspect (${me.tamer.minorAspect.text})`;
+        }
+        if(aspectNote) await saveMember(session.code, me);
         const verdict = evaluateVsTN(total, tnVal);
         const resEl = document.getElementById('roll-result-'+containerId);
         resEl.innerHTML = `${diceRowHTML(dice)}<span class="roll-total">${total}</span>${verdict?`<span class="roll-verdict ${verdict.cls}">${verdict.label}</span>`:''}`;
-        const logText = `tira ${def.label} (${ATTR_ABBR[chosenAttr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal} = ${total}` + (verdict ? ` vs TN ${tnVal} → ${verdict.label}` : '');
+        const logText = `tira ${def.label} (${ATTR_ABBR[chosenAttr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict ? ` vs TN ${tnVal} → ${verdict.label}` : '');
         await pushLog(session.code, { who: session.username, role:'roll', text: logText, meta: { dice, total, verdict: verdict?verdict.label:null } });
         refreshLiveParts();
       };
@@ -2305,19 +2480,23 @@
     draw();
   }
 
-  function tryParseRollShortcut(raw, me){
+  async function tryParseRollShortcut(raw, me){
     const m = raw.match(/^\/(tira|r)\s+(.+)$/i);
     if(!m) return null;
     let rest = m[2].trim();
     let tn = null;
-    const parts = rest.split(/\s+/);
-    const lastWord = parts[parts.length-1];
+    let aspectWanted = null;
+    let parts = rest.split(/\s+/);
+    let lastWord = parts[parts.length-1].toLowerCase();
+    if(['major','maggiore'].includes(lastWord)){ aspectWanted='major'; parts = parts.slice(0,-1); lastWord = parts[parts.length-1]||''; }
+    else if(['minor','minore'].includes(lastWord)){ aspectWanted='minor'; parts = parts.slice(0,-1); lastWord = parts[parts.length-1]||''; }
     if(/^\d+$/.test(lastWord)){
       tn = Number(lastWord);
-      rest = parts.slice(0,-1).join(' ');
+      parts = parts.slice(0,-1);
     }
+    rest = parts.join(' ');
     const query = rest.trim().toLowerCase();
-    if(!query) return { text: `⚠ comando non riconosciuto: "${rest}". Usa /tira <NomeSkill|Accuracy|Dodge|Health> [TN]`, dice:null };
+    if(!query) return { text: `⚠ comando non riconosciuto: "${rest}". Usa /tira <NomeSkill|Accuracy|Dodge|Health> [TN] [major|minor]`, dice:null };
 
     const poolMap = { 'accuracy':'baseAccuracy', 'acc':'baseAccuracy', 'dodge':'baseDodge', 'schivata':'baseDodge', 'health':'baseHealth', 'hp':'baseHealth', 'salute':'baseHealth' };
     if(poolMap[query]){
@@ -2334,14 +2513,29 @@
       const attr = def.attrs[0];
       const attrVal = me.tamer[attr];
       const skillVal = me.tamer.skills[def.key];
-      const { dice, total } = rollSkillCheck(attrVal, skillVal);
+      const { dice, total: baseTotal } = rollSkillCheck(attrVal, skillVal);
+      let total = baseTotal;
+      let aspectNote = '';
+      if(aspectWanted==='major' && me.tamer.majorAspect && (me.tamer.majorAspect.usesLeft||0)>0){
+        total += 4;
+        me.tamer.majorAspect.usesLeft -= 1;
+        aspectNote = ` +4 Major Aspect (${me.tamer.majorAspect.text})`;
+        await saveMember(session.code, me);
+      } else if(aspectWanted==='minor' && me.tamer.minorAspect && (me.tamer.minorAspect.usesLeft||0)>0){
+        total += 2;
+        me.tamer.minorAspect.usesLeft -= 1;
+        aspectNote = ` +2 Minor Aspect (${me.tamer.minorAspect.text})`;
+        await saveMember(session.code, me);
+      } else if(aspectWanted){
+        aspectNote = ` (nessun uso di Aspect ${aspectWanted} disponibile, ignorato)`;
+      }
       const verdict = evaluateVsTN(total, tn);
       return {
         dice, isPool:false, resultLabel: String(total), verdict,
-        text: `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal} = ${total}` + (verdict ? ` vs TN ${tn} → ${verdict.label}` : '')
+        text: `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict ? ` vs TN ${tn} → ${verdict.label}` : '')
       };
     }
-    return { text: `⚠ comando non riconosciuto: "${rest}". Usa /tira <NomeSkill|Accuracy|Dodge|Health> [TN]`, dice:null };
+    return { text: `⚠ comando non riconosciuto: "${rest}". Usa /tira <NomeSkill|Accuracy|Dodge|Health> [TN] [major|minor]`, dice:null };
   }
 
   function statBox(label, id, val){
@@ -2633,9 +2827,9 @@
   function getParticipantWounds(p){
     if(p.isPC){
       const member = cachedRoster.find(m=>m.username===p.username);
-      if(member) return { current: member.digimon.currentWounds, max: member.digimon.maxWounds };
+      if(member) return { current: member.digimon.currentWounds, max: member.digimon.maxWounds, temp: Number(member.digimon.tempWounds||0) };
     }
-    return { current: p.currentWounds||0, max: p.maxWounds||1 };
+    return { current: p.currentWounds||0, max: p.maxWounds||1, temp: Number(p.tempWounds||0) };
   }
 
   const EFFECT_DEFS = [
@@ -2651,8 +2845,55 @@
     { key:'sharpen', label:'Sharpen', type:'positive', mods:{ damage:1 } },
     { key:'nimble', label:'Nimble', type:'positive', mods:{ accuracy:1, dodge:1 } },
     { key:'burn', label:'Burn', type:'negative', mods:{}, tick:true },
-    { key:'poison', label:'Poison', type:'negative', mods:{}, tick:true }
+    { key:'poison', label:'Poison', type:'negative', mods:{}, tick:true },
+    { key:'exploit', label:'Exploit', type:'negative', mods:{ dodge:-1, armor:-1 } },
+    { key:'fury', label:'Fury', type:'positive', mods:{ accuracy:1, damage:1 } },
+    { key:'pacify', label:'Pacify', type:'negative', mods:{ accuracy:-1, damage:-1 } },
+    { key:'debilitate', label:'Debilitate', type:'negative', mods:{ accuracy:-1, damage:-1, dodge:-1, armor:-1 } },
+    { key:'bastion', label:'Bastion', type:'positive', mods:{ accuracy:1, damage:1, dodge:1, armor:1 } },
+    { key:'daring', label:'Daring', type:'positive', mods:{ accuracy:1, armor:1 } },
+    { key:'root', label:'Root', type:'negative', mods:{}, blocksMove:true },
+    { key:'pull', label:'Pull', type:'negative', mods:{}, instant:'pull' },
+    { key:'push', label:'Push', type:'negative', mods:{}, instant:'push' },
+    { key:'cleanse', label:'Cleanse', type:'positive', mods:{}, instant:'cleanse' },
+    { key:'shield', label:'Shield', type:'positive', mods:{}, instant:'shield' }
   ];
+
+  async function applyInstantEffect(code, target, key, potency){
+    const def = EFFECT_DEFS.find(d=>d.key===key);
+    if(!def || !def.instant) return null;
+    if(def.instant==='pull'){
+      const from = target.zone||'Medio';
+      const zi = Math.max(0, zoneIndex(from)-Math.max(1,potency));
+      target.zone = ZONES[zi];
+      return `${target.name} viene attirato da ${from} a ${target.zone}.`;
+    }
+    if(def.instant==='push'){
+      const from = target.zone||'Medio';
+      const zi = Math.min(2, zoneIndex(from)+Math.max(1,potency));
+      target.zone = ZONES[zi];
+      return `${target.name} viene respinto da ${from} a ${target.zone}.`;
+    }
+    if(def.instant==='cleanse'){
+      let removedCount = 0;
+      target.effects = (target.effects||[]).filter(e=>{
+        const d = EFFECT_DEFS.find(x=>x.key===e.key);
+        if(d && d.type==='negative' && removedCount<potency){ removedCount++; return false; }
+        return true;
+      });
+      return `${target.name} viene purificato: rimossi ${removedCount} Effetti negativi.`;
+    }
+    if(def.instant==='shield'){
+      if(target.isPC){
+        const member = cachedRoster.find(m=>m.username===target.username);
+        if(member){ member.digimon.tempWounds = Number(member.digimon.tempWounds||0)+potency; await saveMember(code, member); }
+      } else {
+        target.tempWounds = Number(target.tempWounds||0)+potency;
+      }
+      return `${target.name} guadagna ${potency} Caselle Ferita Temporanee.`;
+    }
+    return null;
+  }
 
   function computeEffectModifiers(p){
     const mod = { accuracy:0, damage:0, dodge:0, armor:0 };
@@ -2707,31 +2948,61 @@
   function getParticipantCombatStats(p){
     let base;
     let stanceMod = { accuracy:0, dodge:0 };
+    let qMech = { certainStrike:0, weapon:0, ammoRank:0, combatMonster:0, monsterStrength:false };
     if(p.isPC){
       const member = cachedRoster.find(m=>m.username===p.username);
       base = member ? { accuracy: member.digimon.baseAccuracy, damage: member.digimon.baseDamage, dodge: member.digimon.baseDodge, armor: member.digimon.baseArmor } : { accuracy:0, damage:0, dodge:0, armor:0 };
-      if(member) stanceMod = stanceModifiers(member.digimon);
+      if(member){ stanceMod = stanceModifiers(member.digimon); qMech = computeQualityMechanics(member.digimon.qualities); }
     } else {
       base = { accuracy: p.accuracy||0, damage: p.damage||0, dodge: p.dodge||0, armor: p.armor||0 };
     }
     const mod = computeEffectModifiers(p);
     return {
       accuracy: Math.max(0, base.accuracy + mod.accuracy + stanceMod.accuracy),
-      damage: Math.max(0, base.damage + mod.damage),
+      damage: Math.max(0, base.damage + mod.damage + qMech.weapon),
       dodge: Math.max(0, base.dodge + mod.dodge + stanceMod.dodge),
-      armor: Math.max(0, base.armor + mod.armor)
+      armor: Math.max(0, base.armor + mod.armor),
+      certainStrike: qMech.certainStrike,
+      combatMonsterRank: qMech.combatMonster,
+      monsterStrength: qMech.monsterStrength
     };
+  }
+
+  function getParticipantSizeIndex(p){
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      if(member) return SIZES.indexOf(member.digimon.size) >=0 ? SIZES.indexOf(member.digimon.size) : 1;
+    }
+    return 1; // Medium default for enemies (Size not tracked for them)
   }
 
   async function applyDamageToParticipant(code, combat, p, amount){
     if(p.isPC){
       const member = cachedRoster.find(m=>m.username===p.username);
       if(member){
-        member.digimon.currentWounds = Math.max(0, member.digimon.currentWounds - amount);
+        let remaining = amount;
+        const shield = Number(member.digimon.tempWounds||0);
+        if(shield>0 && remaining>0){
+          const absorbed = Math.min(shield, remaining);
+          member.digimon.tempWounds = shield - absorbed;
+          remaining -= absorbed;
+        }
+        member.digimon.currentWounds = Math.max(0, member.digimon.currentWounds - remaining);
+        const qMech = computeQualityMechanics(member.digimon.qualities);
+        if(qMech.combatMonster>0 && amount>0){
+          member.digimon.resolveCurrent = Math.min(Number(member.digimon.resolveMax||0), Number(member.digimon.resolveCurrent||0)+amount);
+        }
         await saveMember(code, member);
       }
     } else {
-      p.currentWounds = Math.max(0, (p.currentWounds||0) - amount);
+      let remaining = amount;
+      const shield = Number(p.tempWounds||0);
+      if(shield>0 && remaining>0){
+        const absorbed = Math.min(shield, remaining);
+        p.tempWounds = shield - absorbed;
+        remaining -= absorbed;
+      }
+      p.currentWounds = Math.max(0, (p.currentWounds||0) - remaining);
       await saveCombat(code, combat);
     }
   }
@@ -2957,6 +3228,9 @@
         <select id="combat-attacker" style="flex:1;">${combat.participants.map(p=>`<option value="${p.id}">${escapeHTML(p.name)}</option>`).join('')}</select>
         <select id="combat-target" style="flex:1;">${combat.participants.map(p=>`<option value="${p.id}">${escapeHTML(p.name)}</option>`).join('')}</select>
       </div>
+      <div class="row" style="margin-top:6px;">
+        <select id="combat-attack-choice" style="flex:1;"><option value="">(attacco generico)</option></select>
+      </div>
       <button class="btn amber" id="btn-combat-attack" style="width:100%;margin-top:6px;">⚔ Risolvi Attacco</button>
       <div id="combat-attack-result" style="margin-top:8px;"></div>
       <div class="divider"></div>
@@ -2966,6 +3240,7 @@
         <button class="btn ghost small" id="btn-combat-clash-end" style="flex:1;">Termina</button>
       </div>
       <div id="combat-clash-result" style="margin-top:8px;"></div>
+      <div id="combat-clash-actions" style="margin-top:8px;"></div>
       <div class="divider"></div>
       <div class="row">
         <select id="combat-add-player" style="flex:2;">
@@ -3011,6 +3286,194 @@
       if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
     };
 
+    function populateAttackChoice(){
+      const attackerId = document.getElementById('combat-attacker').value;
+      const attacker = combat.participants.find(p=>p.id===attackerId);
+      const sel = document.getElementById('combat-attack-choice');
+      if(!sel) return;
+      let atks = [];
+      if(attacker && attacker.isPC){
+        const member = cachedRoster.find(m=>m.username===attacker.username);
+        if(member) atks = member.digimon.attacks || [];
+      }
+      sel.innerHTML = '<option value="">(attacco generico)</option>' + atks.map((a,i)=>`<option value="${i}">${a.signature?'⭐ ':''}${escapeHTML(a.name)} — ${a.shape}/${a.type}</option>`).join('');
+    }
+    const attackerSel = document.getElementById('combat-attacker');
+    const targetSel = document.getElementById('combat-target');
+    if(attackerSel) attackerSel.onchange = ()=>{ populateAttackChoice(); renderClashActions(); };
+    if(targetSel) targetSel.onchange = renderClashActions;
+    populateAttackChoice();
+
+    function renderClashActions(){
+      const panel = document.getElementById('combat-clash-actions');
+      if(!panel) return;
+      const aId = document.getElementById('combat-attacker').value;
+      const bId = document.getElementById('combat-target').value;
+      const a = combat.participants.find(p=>p.id===aId);
+      const b = combat.participants.find(p=>p.id===bId);
+      if(!a || !b || a.id===b.id || a.clashWith!==b.id || b.clashWith!==a.id){
+        panel.innerHTML = '<div class="muted">Seleziona due partecipanti attualmente in Clash tra loro per vedere le Azioni disponibili.</div>';
+        return;
+      }
+      const controller = a.clashController ? a : (b.clashController ? b : null);
+      const opponent = controller ? (controller===a ? b : a) : null;
+      if(!controller){ panel.innerHTML = '<div class="muted">Nessun Controller determinato — usa "Inizia/Contesa".</div>'; return; }
+      let hasWrestlemania = false;
+      if(controller.isPC){
+        const cMember = cachedRoster.find(m=>m.username===controller.username);
+        if(cMember) hasWrestlemania = computeQualityMechanics(cMember.digimon.qualities).wrestlemania;
+      }
+      panel.innerHTML = `
+        <div class="muted" style="margin-bottom:4px;">Controller: <b style="color:var(--cyan);">${escapeHTML(controller.name)}</b> · Opponent: <b>${escapeHTML(opponent.name)}</b>${opponent.clashPinned?' <span class="tag" style="color:var(--danger);border-color:var(--danger);">PINNATO</span>':''}</div>
+        <div class="row">
+          <button class="btn small" id="btn-clash-attack" style="flex:1;">⚔ Attacco (Dodge ½)</button>
+          <button class="btn small" id="btn-clash-pin" style="flex:1;" ${opponent.clashPinned?'disabled':''}>📌 Pin</button>
+          <button class="btn small" id="btn-clash-throw" style="flex:1;">🤾 Lancia</button>
+        </div>
+        ${hasWrestlemania ? `<div class="row" style="margin-top:6px;"><button class="btn amber" id="btn-clash-finisher" style="flex:1;">🏆 Finisher (Wrestlemania)</button></div>` : ''}
+        <div class="row" style="margin-top:6px;">
+          <button class="btn ghost small" id="btn-clash-weak" style="flex:1;">🥊 Attacco Disperato</button>
+          <button class="btn ghost small" id="btn-clash-comeback" style="flex:1;" ${opponent.clashPinned?'disabled':''}>💪 Comeback</button>
+          <button class="btn ghost small" id="btn-clash-contestpin" style="flex:1;" ${!opponent.clashPinned?'disabled':''}>🔓 Contest Pin</button>
+        </div>
+        <div class="muted" id="clash-action-result" style="margin-top:6px;"></div>
+      `;
+      const resEl = ()=>document.getElementById('clash-action-result');
+
+      const finisherBtn = document.getElementById('btn-clash-finisher');
+      if(finisherBtn){
+        finisherBtn.onclick = async ()=>{
+          const cStats = getParticipantCombatStats(controller);
+          const oStats = getParticipantCombatStats(opponent);
+          const accRoll = rollPool(cStats.accuracy);
+          const dodgeRoll = rollPool(Math.floor(oStats.dodge/2));
+          let text, dealt=0;
+          if(accRoll.successes<=dodgeRoll.successes){
+            text = `🏆 Finisher di ${controller.name} su ${opponent.name}: MANCATO (${accRoll.successes} vs ${dodgeRoll.successes} succ.) — il Clash finisce comunque.`;
+          } else {
+            const excess = accRoll.successes-dodgeRoll.successes;
+            dealt = Math.max(0, excess+cStats.damage-oStats.armor);
+            const cMember = cachedRoster.find(m=>m.username===controller.username);
+            const stageNum = cMember ? stageIndex(cMember.digimon.stage)+1 : 1;
+            const tn = 10+stageNum;
+            const finVal = Math.max(cStats.cpu, cStats.bit||0);
+            const { dice, total } = rollSkillCheck(finVal, 0);
+            const verdict = evaluateVsTN(total, tn);
+            let bonus = 0, bonusNote='';
+            if(verdict && (verdict.cls==='success'||verdict.cls==='crit-success')){
+              bonus = stageNum;
+              if(verdict.cls==='crit-success'){
+                const bestDerived = Math.max(cStats.bit||0, cStats.dos||0, cStats.ram||0, cStats.cpu||0);
+                if(bestDerived>stageNum) bonus = bestDerived;
+              }
+              dealt += bonus;
+              bonusNote = ` +${bonus} bonus Finisher (Check ${total} vs TN ${tn}, ${verdict.label})`;
+            } else {
+              bonusNote = ` nessun bonus (Check ${total} vs TN ${tn}, Fallito)`;
+            }
+            await applyDamageToParticipant(code, combat, opponent, dealt);
+            const w = getParticipantWounds(opponent);
+            text = `🏆 Finisher di ${controller.name} su ${opponent.name}: COLPITO! ${dealt} danno${bonusNote} → ${opponent.name} ${w.current}/${w.max} Ferite — il Clash finisce.`;
+          }
+          controller.clashWith=null; controller.clashController=false; controller.clashPinned=false; controller.clashComebackBonus=0;
+          opponent.clashWith=null; opponent.clashController=false; opponent.clashPinned=false; opponent.clashComebackBonus=0;
+          await pushLog(code, { who:'Master', role:'roll', text, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
+          await persistAndRefresh();
+        };
+      }
+
+      document.getElementById('btn-clash-attack').onclick = async ()=>{
+        const cStats = getParticipantCombatStats(controller);
+        const oStats = getParticipantCombatStats(opponent);
+        const accRoll = rollPool(cStats.accuracy);
+        const dodgeRoll = rollPool(Math.floor(oStats.dodge/2));
+        let dealt=0, text;
+        if(accRoll.successes<=dodgeRoll.successes){
+          text = `⚔ ${controller.name} attacca ${opponent.name} nel Clash: Acc ${cStats.accuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} vs Dodge½ ${Math.floor(oStats.dodge/2)}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} → MANCATO`;
+        } else {
+          const excess = accRoll.successes-dodgeRoll.successes;
+          dealt = Math.max(0, excess+cStats.damage-oStats.armor);
+          await applyDamageToParticipant(code, combat, opponent, dealt);
+          const w = getParticipantWounds(opponent);
+          text = `⚔ ${controller.name} attacca ${opponent.name} nel Clash: Acc ${cStats.accuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} vs Dodge½ ${Math.floor(oStats.dodge/2)}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} → COLPITO! ${dealt} danno → ${opponent.name} ${w.current}/${w.max} Ferite`;
+        }
+        await pushLog(code, { who:'Master', role:'roll', text, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
+        await persistAndRefresh();
+        renderClashActions();
+      };
+      document.getElementById('btn-clash-pin').onclick = async ()=>{
+        opponent.clashPinned = true;
+        await pushLog(code, { who:'Master', role:'gm', text: `📌 ${controller.name} pinna ${opponent.name}: non può Fuggire o fare Comeback finché non riesce un Contest Pin.` });
+        await persistAndRefresh();
+        renderClashActions();
+      };
+      document.getElementById('btn-clash-throw').onclick = async ()=>{
+        const cStats = getParticipantCombatStats(controller);
+        const oStats = getParticipantCombatStats(opponent);
+        const cSizeIdx = getParticipantSizeIndex(controller);
+        const oSizeIdx = getParticipantSizeIndex(opponent);
+        if((oSizeIdx - cSizeIdx) >= 2 && !cStats.monsterStrength){
+          const resEl2 = document.getElementById('clash-action-result');
+          if(resEl2) resEl2.innerHTML = `<div class="err">${opponent.name} è 2+ Size più grande di ${controller.name}: serve Monster Strength (o Titan Power) per Lanciarlo.</div>`;
+          return;
+        }
+        const dealt = Math.max(0, cStats.damage - oStats.armor);
+        await applyDamageToParticipant(code, combat, opponent, dealt);
+        const zi = Math.min(2, zoneIndex(opponent.zone||'Medio')+1);
+        opponent.zone = ZONES[zi];
+        controller.clashWith=null; controller.clashController=false; controller.clashPinned=false; controller.clashComebackBonus=0;
+        opponent.clashWith=null; opponent.clashController=false; opponent.clashPinned=false; opponent.clashComebackBonus=0;
+        const w = getParticipantWounds(opponent);
+        await pushLog(code, { who:'Master', role:'gm', text: `🤾 ${controller.name} lancia ${opponent.name} (${dealt} danno, ora a ${opponent.zone}) — il Clash finisce.` });
+        await persistAndRefresh();
+      };
+      document.getElementById('btn-clash-weak').onclick = async ()=>{
+        const oStats = getParticipantCombatStats(opponent);
+        const cStats = getParticipantCombatStats(controller);
+        const accRoll = rollPool(oStats.accuracy);
+        const dodgeRoll = rollPool(Math.floor(cStats.dodge/2));
+        let dealt=0, text;
+        if(accRoll.successes<=dodgeRoll.successes){
+          text = `🥊 ${opponent.name} tenta un Attacco Disperato su ${controller.name}: MANCATO (${accRoll.successes} vs ${dodgeRoll.successes} succ.)`;
+        } else {
+          const excess = accRoll.successes-dodgeRoll.successes;
+          const raw = Math.max(0, excess+oStats.damage-cStats.armor);
+          dealt = Math.ceil(raw/2);
+          await applyDamageToParticipant(code, combat, controller, dealt);
+          const w = getParticipantWounds(controller);
+          text = `🥊 ${opponent.name} tenta un Attacco Disperato su ${controller.name}: COLPITO! ${dealt} danno (dimezzato) → ${controller.name} ${w.current}/${w.max} Ferite`;
+        }
+        await pushLog(code, { who:'Master', role:'roll', text, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
+        await persistAndRefresh();
+        renderClashActions();
+      };
+      document.getElementById('btn-clash-comeback').onclick = async ()=>{
+        opponent.clashComebackBonus = 3;
+        await pushLog(code, { who:'Master', role:'gm', text: `💪 ${opponent.name} si prepara al Comeback: +3 alla prossima Contesa del Clash.` });
+        await persistAndRefresh();
+        renderClashActions();
+      };
+      document.getElementById('btn-clash-contestpin').onclick = async ()=>{
+        const oStats = getParticipantClashStats(opponent);
+        const cStats = getParticipantClashStats(controller);
+        const tn = 12 + cStats.cpu;
+        const val = Math.max(oStats.cpu, oStats.ram);
+        const { dice, total } = rollSkillCheck(val, 0);
+        let text;
+        if(total >= tn){
+          opponent.clashPinned = false;
+          opponent.clashComebackBonus = 2;
+          text = `🔓 ${opponent.name} tenta Contest Pin: 3d6[${dice.join(',')}]+${val}=${total} vs TN ${tn} → Successo! Pin rotto, +2 alla prossima Contesa.`;
+        } else {
+          text = `🔓 ${opponent.name} tenta Contest Pin: 3d6[${dice.join(',')}]+${val}=${total} vs TN ${tn} → Fallito, resta Pinnato.`;
+        }
+        await pushLog(code, { who:'Master', role:'roll', text, meta:{dice} });
+        await persistAndRefresh();
+        renderClashActions();
+      };
+    }
+    renderClashActions();
+
     const attackBtn = document.getElementById('btn-combat-attack');
     if(attackBtn){
       attackBtn.onclick = async ()=>{
@@ -3023,31 +3486,81 @@
           if(resEl) resEl.innerHTML = '<div class="err">Scegli attaccante e bersaglio diversi.</div>';
           return;
         }
+        let atk = null;
+        const atkChoiceEl = document.getElementById('combat-attack-choice');
+        if(attacker.isPC && atkChoiceEl && atkChoiceEl.value !== ''){
+          const member = cachedRoster.find(m=>m.username===attacker.username);
+          if(member) atk = (member.digimon.attacks||[])[Number(atkChoiceEl.value)];
+        }
+        const zDist = zoneDistance(attacker.zone||'Medio', target.zone||'Medio');
+        if(atk && atk.shape==='Melee' && zDist>0){
+          if(resEl) resEl.innerHTML = `<div class="err">${atk.name} è [MELEE]: serve la stessa zona di ${target.name} (ora: ${attacker.zone||'Medio'}→${target.zone||'Medio'}). Usa "🏃 Muovi" per avvicinarti.</div>`;
+          return;
+        }
+        if(atk && atk.shape==='Range' && zDist > (atk.reach||1)){
+          if(resEl) resEl.innerHTML = `<div class="err">${atk.name} è [RANGE ${atk.reach||1}]: ${target.name} è troppo lontano (distanza ${zDist} zone, ${attacker.zone||'Medio'}→${target.zone||'Medio'}).</div>`;
+          return;
+        }
         const aStats = getParticipantCombatStats(attacker);
         const tStats = getParticipantCombatStats(target);
-        const zDist = zoneDistance(attacker.zone||'Medio', target.zone||'Medio');
         const zPenalty = zonePenalty(zDist);
         const effAccuracy = Math.max(0, aStats.accuracy + zPenalty);
         const accRoll = rollPool(effAccuracy);
+        if(aStats.certainStrike>0) accRoll.successes += aStats.certainStrike;
         const dodgeRoll = rollPool(tStats.dodge);
-        let logText, dealt = 0;
         const zoneNote = zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza: ${attacker.zone||'Medio'}→${target.zone||'Medio'})` : '';
-        if(accRoll.successes <= dodgeRoll.successes){
-          logText = `⚔ ${attacker.name} attacca ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO`;
+        const certainNote = aStats.certainStrike>0 ? ` +${aStats.certainStrike} [CERTAIN]` : '';
+        const atkLabel = atk ? `${atk.name} ${attackTagsPlain(atk)}` : 'Attacco generico';
+        let logText, dealt = 0;
+
+        if(atk && atk.type==='Support'){
+          if(accRoll.successes <= dodgeRoll.successes){
+            logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO, nessun Effetto applicato.`;
+          } else if(atk.effectKey){
+            const def = EFFECT_DEFS.find(d=>d.key===atk.effectKey);
+            const potencyStr = window.prompt(`Potenza di ${def?def.label:atk.effectKey} da applicare a ${target.name}:`, '1');
+            const potency = Math.max(1, Number(potencyStr)||1);
+            if(def && def.instant){
+              const msg = await applyInstantEffect(code, target, atk.effectKey, potency);
+              logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! ${msg}`;
+            } else {
+              const durationStr = window.prompt('Durata (round, max 3):', '3');
+              const duration = Math.min(3, Math.max(1, Number(durationStr)||3));
+              if(!target.effects) target.effects = [];
+              target.effects.push({ key: atk.effectKey, potency, duration });
+              logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! Applica ${def?def.label:atk.effectKey} (Potenza ${potency}, Durata ${duration}).`;
+            }
+          } else {
+            logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: colpisce, ma non ha un Effetto collegato da applicare.`;
+          }
         } else {
-          const excess = accRoll.successes - dodgeRoll.successes;
-          const raw = excess + aStats.damage;
-          dealt = Math.max(0, raw - tStats.armor);
-          await applyDamageToParticipant(code, combat, target, dealt);
-          const w = getParticipantWounds(target);
-          logText = `⚔ ${attacker.name} attacca ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! (${excess}+DMG ${aStats.damage})-ARM ${tStats.armor} = ${dealt} danno → ${target.name} ${w.current}/${w.max} Ferite`;
+          if(accRoll.successes <= dodgeRoll.successes){
+            logText = `⚔ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO`;
+          } else {
+            const excess = accRoll.successes - dodgeRoll.successes;
+            let raw = excess + aStats.damage;
+            let combatMonsterNote = '';
+            if(attacker.isPC){
+              const aMember = cachedRoster.find(m=>m.username===attacker.username);
+              if(aMember && Number(aMember.digimon.resolveCurrent||0)>0 && computeQualityMechanics(aMember.digimon.qualities).combatMonster>0){
+                const resolveSpent = Number(aMember.digimon.resolveCurrent||0);
+                raw += resolveSpent;
+                aMember.digimon.resolveCurrent = 0;
+                await saveMember(code, aMember);
+                combatMonsterNote = ` +${resolveSpent} Resolve (Combat Monster, azzerato)`;
+              }
+            }
+            dealt = Math.max(0, raw - tStats.armor);
+            await applyDamageToParticipant(code, combat, target, dealt);
+            const w = getParticipantWounds(target);
+            logText = `⚔ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! (${excess}+DMG ${aStats.damage})${combatMonsterNote}-ARM ${tStats.armor} = ${dealt} danno → ${target.name} ${w.current}/${w.max} Ferite`;
+          }
         }
         if(resEl){
           resEl.innerHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">vs</span>${diceRowHTML(dodgeRoll.dice)}${dealt>0?`<span class="roll-total">${dealt} danno</span>`:''}`;
         }
         await pushLog(code, { who:'Master', role:'roll', text: logText, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
-        renderCombatManager(code, players);
-        refreshLiveParts();
+        await persistAndRefresh();
       };
     }
 
@@ -3065,18 +3578,32 @@
         }
         const aStats = getParticipantClashStats(a);
         const bStats = getParticipantClashStats(b);
-        const aRoll = rollSkillCheck(aStats.cpu, aStats.ram);
-        const bRoll = rollSkillCheck(bStats.cpu, bStats.ram);
-        let winner, loser;
-        if(aRoll.total > bRoll.total){ winner=a; loser=b; }
-        else if(bRoll.total > aRoll.total){ winner=b; loser=a; }
-        else if(aStats.cpu !== bStats.cpu){ winner = aStats.cpu>bStats.cpu ? a : b; loser = winner===a?b:a; }
-        else { winner = a; loser = b; }
+        const wasClashPair = a.clashWith===b.id && b.clashWith===a.id;
+        const aPinned = wasClashPair && a.clashPinned && !a.clashController;
+        const bPinned = wasClashPair && b.clashPinned && !b.clashController;
+        let winner, loser, aRoll, bRoll, autoWin=false;
+        if(aPinned || bPinned){
+          winner = aPinned ? b : a; loser = aPinned ? a : b;
+          autoWin = true;
+        } else {
+          const aBonus = a.clashComebackBonus||0;
+          const bBonus = b.clashComebackBonus||0;
+          aRoll = rollSkillCheck(aStats.cpu, aStats.ram); aRoll.total += aBonus;
+          bRoll = rollSkillCheck(bStats.cpu, bStats.ram); bRoll.total += bBonus;
+          if(aRoll.total > bRoll.total){ winner=a; loser=b; }
+          else if(bRoll.total > aRoll.total){ winner=b; loser=a; }
+          else if(aStats.cpu !== bStats.cpu){ winner = aStats.cpu>bStats.cpu ? a : b; loser = winner===a?b:a; }
+          else { winner = a; loser = b; }
+        }
+        a.clashComebackBonus = 0; b.clashComebackBonus = 0;
+        a.clashPinned = false; b.clashPinned = false;
         a.clashWith = b.id; b.clashWith = a.id;
         a.clashController = (winner.id===a.id); b.clashController = (winner.id===b.id);
         if(a.isPC){ const m=cachedRoster.find(x=>x.username===a.username); if(m){ m.digimon.stance='Neutral'; await saveMember(code, m); } }
         if(b.isPC){ const m=cachedRoster.find(x=>x.username===b.username); if(m){ m.digimon.stance='Neutral'; await saveMember(code, m); } }
-        const logText = `🤼 Clash: ${a.name} (3d6+CPU${aStats.cpu}+RAM${aStats.ram}=${aRoll.total}) vs ${b.name} (3d6+CPU${bStats.cpu}+RAM${bStats.ram}=${bRoll.total}) → controlla ${winner.name}. Entrambi tornano in Stance Neutrale.`;
+        const logText = autoWin
+          ? `🤼 Clash: il Pin era ancora attivo, ${winner.name} controlla automaticamente senza tirare. Entrambi tornano in Stance Neutrale.`
+          : `🤼 Clash: ${a.name} (3d6+CPU${aStats.cpu}+RAM${aStats.ram}=${aRoll.total}) vs ${b.name} (3d6+CPU${bStats.cpu}+RAM${bStats.ram}=${bRoll.total}) → controlla ${winner.name}. Entrambi tornano in Stance Neutrale.`;
         await pushLog(code, { who:'Master', role:'gm', text: logText });
         if(resEl) resEl.innerHTML = `<div class="muted">Controlla il Clash: <b style="color:var(--cyan);">${escapeHTML(winner.name)}</b></div>`;
         await persistAndRefresh();
@@ -3089,8 +3616,8 @@
         const bId = document.getElementById('combat-target').value;
         const a = combat.participants.find(p=>p.id===aId);
         const b = combat.participants.find(p=>p.id===bId);
-        if(a){ a.clashWith=null; a.clashController=false; }
-        if(b){ b.clashWith=null; b.clashController=false; }
+        if(a){ a.clashWith=null; a.clashController=false; a.clashPinned=false; a.clashComebackBonus=0; }
+        if(b){ b.clashWith=null; b.clashController=false; b.clashPinned=false; b.clashComebackBonus=0; }
         await pushLog(code, { who:'Master', role:'gm', text: `🏁 Il Clash tra ${a?a.name:'?'} e ${b?b.name:'?'} è terminato.` });
         const resEl = document.getElementById('combat-clash-result');
         if(resEl) resEl.innerHTML = '';
@@ -3166,10 +3693,15 @@
         const key = cardEl.querySelector(`[data-effect-select="${id}"]`).value;
         const potency = Number(cardEl.querySelector(`[data-effect-potency="${id}"]`).value)||1;
         const duration = Math.min(3, Number(cardEl.querySelector(`[data-effect-duration="${id}"]`).value)||3);
-        if(!p.effects) p.effects = [];
-        p.effects.push({ key, potency, duration });
         const def = EFFECT_DEFS.find(d=>d.key===key);
-        await pushLog(code, { who:'Master', role:'gm', text: `${p.name} riceve ${def?def.label:key} (Potenza ${potency}, Durata ${duration}).` });
+        if(def && def.instant){
+          const msg = await applyInstantEffect(code, p, key, potency);
+          await pushLog(code, { who:'Master', role:'gm', text: `✨ ${msg}` });
+        } else {
+          if(!p.effects) p.effects = [];
+          p.effects.push({ key, potency, duration });
+          await pushLog(code, { who:'Master', role:'gm', text: `${p.name} riceve ${def?def.label:key} (Potenza ${potency}, Durata ${duration}).` });
+        }
         await persistAndRefresh();
       };
     });
@@ -3188,7 +3720,7 @@
       if(combat.participants.some(p=>p.username===username)) return;
       const member = cachedRoster.find(m=>m.username===username);
       const ram = member ? computeDerivedStats(member.digimon).ram : 0;
-      combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:username, side:'ally', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], zone:'Medio', isPC:true, username });
+      combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:username, side:'ally', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], zone:'Medio', clashPinned:false, clashComebackBonus:0, isPC:true, username });
       await persistAndRefresh();
     };
     const dexFillSelect = document.getElementById('combat-enemy-fromdex');
@@ -3216,7 +3748,7 @@
       const armor = Number(document.getElementById('combat-enemy-arm').value)||0;
       const maxWounds = Number(document.getElementById('combat-enemy-hp').value)||1;
       combat.participants.push({
-        id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name, side:'enemy', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], zone:'Medio', isPC:false,
+        id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name, side:'enemy', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], zone:'Medio', clashPinned:false, clashComebackBonus:0, isPC:false,
         accuracy, damage, dodge, armor, maxWounds, currentWounds: maxWounds
       });
       await persistAndRefresh();
@@ -3309,7 +3841,7 @@
             <button class="btn ghost small" id="btn-delete-${i}" style="color:var(--danger);border-color:rgba(255,93,93,0.4);">🗑</button>
           </div>
         </div>
-        <div class="sub" style="margin-top:6px;">Digimon: ${escapeHTML(p.digimon.name || '(senza nome)')} — Ferite: ${p.digimon.currentWounds}/${p.digimon.maxWounds} — MP: ${p.digimon.currentMp}/${p.digimon.maxMp}</div>
+        <div class="sub" style="margin-top:6px;">Digimon: ${escapeHTML(p.digimon.name || '(senza nome)')} — Ferite: ${p.digimon.currentWounds}/${p.digimon.maxWounds}${p.digimon.tempWounds>0?` (+${p.digimon.tempWounds} Shield)`:''} — MP: ${p.digimon.currentMp}/${p.digimon.maxMp}</div>
         <div class="sub">AGI ${p.tamer.agility} · BODY ${p.tamer.body} · CAR ${p.tamer.charisma} · INT ${p.tamer.intelligence} · WILL ${p.tamer.willpower}</div>
         <div id="suggest-box-${i}" class="suggest-box" style="display:none;"></div>
         <div id="manage-panel-${i}" style="display:none;margin-top:10px;"></div>
@@ -3481,9 +4013,25 @@
             const attr = def.attrs[0];
             const attrVal = me.tamer[attr];
             const skillVal = me.tamer.skills[def.key];
-            const { dice, total } = rollSkillCheck(attrVal, skillVal);
+            const { dice, total: baseTotal } = rollSkillCheck(attrVal, skillVal);
+            let total = baseTotal;
+            let aspectNote = '';
+            const majorLeft = me.tamer.majorAspect ? (me.tamer.majorAspect.usesLeft||0) : 0;
+            const minorLeft = me.tamer.minorAspect ? (me.tamer.minorAspect.usesLeft||0) : 0;
+            if(majorLeft>0 || minorLeft>0){
+              const choice = window.prompt(`Usare un Aspect? Scrivi "major" (+4, ${majorLeft} usi), "minor" (+2, ${minorLeft} usi), o lascia vuoto per nessuno.`, '');
+              if(choice && choice.trim().toLowerCase().startsWith('major') && majorLeft>0){
+                total += 4; me.tamer.majorAspect.usesLeft -= 1;
+                aspectNote = ` +4 Major Aspect (${me.tamer.majorAspect.text})`;
+                await saveMember(session.code, me);
+              } else if(choice && choice.trim().toLowerCase().startsWith('minor') && minorLeft>0){
+                total += 2; me.tamer.minorAspect.usesLeft -= 1;
+                aspectNote = ` +2 Minor Aspect (${me.tamer.minorAspect.text})`;
+                await saveMember(session.code, me);
+              }
+            }
             const verdict = evaluateVsTN(total, tn);
-            text = `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal} = ${total}` + (verdict?` vs TN ${tn} → ${verdict.label}`:'') + ' (richiesto dal Master)';
+            text = `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict?` vs TN ${tn} → ${verdict.label}`:'') + ' (richiesto dal Master)';
             rollMeta = { dice, total, verdict: verdict?verdict.label:null };
           }
         }
