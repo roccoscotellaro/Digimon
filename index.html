@@ -502,11 +502,11 @@
     return { dice, total };
   }
 
-  function rollPool(n){
+  function rollPool(n, countFours){
     const count = Math.max(0, Number(n)||0);
     const dice = [];
     for(let i=0;i<count;i++) dice.push(rollD6());
-    const successes = dice.filter(d=>d>=5).length;
+    const successes = dice.filter(d=>d>= (countFours?4:5)).length;
     return { dice, successes };
   }
 
@@ -569,7 +569,8 @@
       inspirationPoints:0, tormentPenalty:0,
       torments: [],
       majorAspect: { text:'', usesLeft:1 },
-      minorAspect: { text:'', usesLeft:2 }
+      minorAspect: { text:'', usesLeft:2 },
+      specialOrdersUsed: {}
     };
   }
   function defaultDigimon(){
@@ -584,8 +585,8 @@
       resolveCurrent:0, resolveMax:4,
       stageStats:{},
       attacks:[
-        { name:'Colpo Base', shape:'Melee', type:'Damage', effectKey:'', extraTags:'', desc:'Un attacco fisico semplice.', signature:false, reach:0 },
-        { name:'Raggio a Distanza', shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc:'Un colpo dalla distanza.', signature:false, reach:1 }
+        { name:'Colpo Base', shape:'Melee', type:'Damage', effectKey:'', extraTags:'', desc:'Un attacco fisico semplice.', signature:false, reach:0, areaAttack:false },
+        { name:'Raggio a Distanza', shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc:'Un colpo dalla distanza.', signature:false, reach:1, areaAttack:false }
       ]
     };
   }
@@ -1339,22 +1340,22 @@
 
   const TALENT_DEFS = [
     { attr:'agility', threshold:3, name:'Quick Step', text:'Quando prendi l\'Azione Reposition, guadagni +1 Successo al risultato finale.' },
-    { attr:'agility', threshold:5, name:'Strike Fast', text:'Special Order "FULL SPEED AHEAD" (2 Azioni): il Digimon guadagna 1 Azione extra, da usare per Muovi o Movimento Difficile.' },
+    { attr:'agility', threshold:5, name:'Strike Fast', text:'Special Order "FULL SPEED AHEAD" (2 Azioni): il Digimon guadagna 1 Azione extra, da usare per Muovi o Movimento Difficile.', order:'strikeFast', cost:2, once:null },
     { attr:'body', threshold:3, name:'Bulk Up', text:'Quando prendi l\'Azione Reinforce, guadagni +1 Successo al risultato finale.' },
-    { attr:'body', threshold:5, name:'Energy Burst', text:'Special Order "DON\'T WORRY YOU\'LL HEAL" (1 Azione): il Digimon recupera 1 Casella Ferita (2 se ha Ferite Temporanee).' },
-    { attr:'body', threshold:7, name:'Overpower', text:'Special Order "I\'M WITH YOU" (1 Azione, una volta a riposo): dopo un tiro Accuracy del Digimon, i 4 contano come Successi.' },
+    { attr:'body', threshold:5, name:'Energy Burst', text:'Special Order "DON\'T WORRY YOU\'LL HEAL" (1 Azione): il Digimon recupera 1 Casella Ferita (2 se ha Ferite Temporanee).', order:'energyBurst', cost:1, once:null },
+    { attr:'body', threshold:7, name:'Overpower', text:'Special Order "I\'M WITH YOU" (1 Azione, una volta a riposo): dopo un tiro Accuracy del Digimon, i 4 contano come Successi.', order:'overpower', cost:1, once:'rest' },
     { attr:'charisma', threshold:3, name:'Direct Team', text:'La penalità -2 per dirigere Digimon che non sono il tuo si riduce a -1.' },
-    { attr:'charisma', threshold:5, name:'Swagger', text:'Special Order "HEY YOU" (1 Azione): applica [TAUNT] a un Nemico per 3 round.' },
-    { attr:'charisma', threshold:6, name:'Peak Performance', text:'Special Order "I BELIEVE IN YOU" (2 Azioni, una volta a combattimento): un Digimon alleato guadagna [BASTION 2] fino al tuo prossimo turno.' },
-    { attr:'charisma', threshold:7, name:'Revitalize', text:'Special Order "WAKE UP, DON\'T QUIT NOW" (2 Azioni, una volta a riposo): rianima un Digimon sconfitto.' },
+    { attr:'charisma', threshold:5, name:'Swagger', text:'Special Order "HEY YOU" (1 Azione): applica [TAUNT] a un Nemico per 3 round.', order:'swagger', cost:1, once:null },
+    { attr:'charisma', threshold:6, name:'Peak Performance', text:'Special Order "I BELIEVE IN YOU" (2 Azioni, una volta a combattimento): un Digimon alleato guadagna [BASTION 2] fino al tuo prossimo turno.', order:'peakPerformance', cost:2, once:'combat' },
+    { attr:'charisma', threshold:7, name:'Revitalize', text:'Special Order "WAKE UP, DON\'T QUIT NOW" (2 Azioni, una volta a riposo): rianima un Digimon sconfitto.', order:'revitalize', cost:2, once:'rest' },
     { attr:'intelligence', threshold:3, name:'Experienced', text:'Guadagni +1 Punto Skill extra da spendere.' },
     { attr:'intelligence', threshold:5, name:'Calculated', text:'Special Order: puoi trasformare Bolster in +1 Successo invece di +2 dadi.' },
-    { attr:'intelligence', threshold:6, name:'Signature Versatility', text:'Special Order "TIME FOR PLAN B" (Azione Libera, una volta a combattimento): il prossimo Attacco del Digimon conta come Signature Move.' },
-    { attr:'intelligence', threshold:7, name:'Enemy Scan', text:'Special Order "I\'VE FOUND AN EXPLOIT" (2 Azioni, una volta a riposo): infliggi [DEBILITATE] a un Nemico con Potenza pari al suo Stage.' },
+    { attr:'intelligence', threshold:6, name:'Signature Versatility', text:'Special Order "TIME FOR PLAN B" (Azione Libera, una volta a combattimento): il prossimo Attacco del Digimon conta come Signature Move.', order:'signatureVersatility', cost:0, once:'combat' },
+    { attr:'intelligence', threshold:7, name:'Enemy Scan', text:'Special Order "I\'VE FOUND AN EXPLOIT" (2 Azioni, una volta a riposo): infliggi [DEBILITATE] a un Nemico con Potenza pari al suo Stage.', order:'enemyScan', cost:2, once:'rest' },
     { attr:'willpower', threshold:3, name:'Potential', text:'Guadagni 1 Punto Ispirazione Temporaneo all\'inizio di ogni sessione.' },
-    { attr:'willpower', threshold:5, name:'Purify Partner', text:'Special Order "TOUGH IT OUT" (1 Azione): cura il Digimon da un Effetto Negativo, come [CLEANSE].' },
+    { attr:'willpower', threshold:5, name:'Purify Partner', text:'Special Order "TOUGH IT OUT" (1 Azione): cura il Digimon da un Effetto Negativo, come [CLEANSE].', order:'purifyPartner', cost:1, once:null },
     { attr:'willpower', threshold:6, name:'Challenger', text:'Quando si tira l\'Iniziativa, il tuo Digimon guadagna Ferite Temporanee pari ai tuoi Successi Willpower + lo Stage più alto tra i nemici (max 5).' },
-    { attr:'willpower', threshold:7, name:'Miracle', text:'Spendendo 7 IP puoi aggiungere/sottrarre Willpower+5 a un Check, Dodge o Accuracy Pool.' }
+    { attr:'willpower', threshold:7, name:'Miracle', text:'Spendendo 7 IP puoi aggiungere/sottrarre Willpower+5 a un Check, Dodge o Accuracy Pool.', order:'miracle', cost:0, once:null }
   ];
 
   function computeUnlockedTalents(tamer){
@@ -1991,6 +1992,7 @@
 
   function attackTagsPlain(a){
     const tags = [`[${a.shape.toUpperCase()}${a.shape==='Range'?' '+(a.reach||1):''}]`, `[${a.type.toUpperCase()}]`];
+    if(a.areaAttack) tags.push('[AREA]');
     if(a.type==='Support' && a.effectKey){
       const def = EFFECT_DEFS.find(d=>d.key===a.effectKey);
       if(def) tags.push(`[${def.label.toUpperCase()}]`);
@@ -2002,6 +2004,7 @@
     const shapeColor = a.shape==='Melee' ? 'var(--amber)' : 'var(--cyan)';
     const typeColor = a.type==='Damage' ? 'var(--danger)' : '#c896ff';
     let html = `<span class="tag" style="color:${shapeColor};border-color:${shapeColor};margin-right:3px;">${a.shape==='Melee'?'🗡️':'🏹'} ${a.shape}${a.shape==='Range'?' ('+(a.reach||1)+' zone)':''}</span><span class="tag" style="color:${typeColor};border-color:${typeColor};margin-right:3px;">${a.type==='Damage'?'💥':'✨'} ${a.type}</span>`;
+    if(a.areaAttack) html += `<span class="tag" style="color:var(--amber);border-color:var(--amber);margin-right:3px;">🌪 Area</span>`;
     if(a.type==='Support' && a.effectKey){
       const def = EFFECT_DEFS.find(d=>d.key===a.effectKey);
       if(def) html += `<span class="tag" style="margin-right:3px;">${def.label}</span>`;
@@ -2042,11 +2045,11 @@
     { name:'Titan Power', category:'Clash', dpPerRank:1, maxRank:1, mechanic:'', desc:'Puoi Lanciare avversari ancora più grandi rispetto a Monster Strength.' },
     { name:'Armor Piercing', category:'Attack', dpPerRank:2, maxRank:2, mechanic:'', desc:'L\'Attacco infligge Danno Unalterable extra (ignora Armor) pari ai Successi in eccesso, fino ai Ranks.' },
     { name:'Second Wind', category:'Static', dpPerRank:2, maxRank:1, mechanic:'', desc:'Una volta a combattimento, recupera Caselle Ferita quando scendi a 0.' },
-    { name:'Resistance', category:'Static', dpPerRank:2, maxRank:3, mechanic:'', desc:'Riduce la Potenza degli Effetti negativi subiti pari ai Ranks.' },
+    { name:'Resistance', category:'Static', dpPerRank:2, maxRank:3, mechanic:'resistance', desc:'Riduce la Potenza degli Effetti negativi subiti pari ai Ranks (min. 1).' },
     { name:'Data Specialization: Wrestlemania', category:'Clash', dpPerRank:2, maxRank:1, mechanic:'wrestlemania', desc:'In Clash, sblocca l\'Azione Finisher: dopo un Attacco riuscito, tira CPU o BIT (TN 10+Stage) per danno bonus, poi il Clash finisce.' }
   ];
   function computeQualityMechanics(qualities){
-    const m = { certainStrike:0, weapon:0, ammoRank:0, combatMonster:0, monsterStrength:false, wrestlemania:false };
+    const m = { certainStrike:0, weapon:0, ammoRank:0, combatMonster:0, monsterStrength:false, wrestlemania:false, resistance:0 };
     (qualities||[]).forEach(q=>{
       if(q.mechanic==='certainStrike') m.certainStrike += Number(q.rank||1);
       if(q.mechanic==='weapon') m.weapon += Number(q.rank||1);
@@ -2054,6 +2057,7 @@
       if(q.mechanic==='combatMonster') m.combatMonster = Math.max(m.combatMonster, Number(q.rank||1));
       if(q.mechanic==='monsterStrength') m.monsterStrength = true;
       if(q.mechanic==='wrestlemania') m.wrestlemania = true;
+      if(q.mechanic==='resistance') m.resistance += Number(q.rank||1);
     });
     return m;
   }
@@ -2269,6 +2273,7 @@
         <div class="row" style="margin-top:6px;">
           <input type="text" id="atk-desc-${containerId}" placeholder="Descrizione breve" style="flex:2;" />
           <label style="display:flex;align-items:center;gap:4px;font-size:11px;flex:1;"><input type="checkbox" id="atk-sig-${containerId}" /> Signature Move</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;flex:1;"><input type="checkbox" id="atk-area-${containerId}" /> Area Attack</label>
           <button class="btn small" id="btn-atk-add-${containerId}" style="flex:1;">Aggiungi</button>
         </div>
         <div class="divider"></div>
@@ -2332,11 +2337,13 @@
         if(!d.attacks) d.attacks = [];
         if(signature) d.attacks.forEach(a=>a.signature=false);
         const reach = shape==='Range' ? Number(document.getElementById('atk-reach-'+containerId).value)||1 : 0;
-        d.attacks.push({ name, shape, type, effectKey, extraTags, desc, signature, reach });
+        const areaAttack = document.getElementById('atk-area-'+containerId).checked;
+        d.attacks.push({ name, shape, type, effectKey, extraTags, desc, signature, reach, areaAttack });
         document.getElementById('atk-name-'+containerId).value='';
         document.getElementById('atk-extra-'+containerId).value='';
         document.getElementById('atk-desc-'+containerId).value='';
         document.getElementById('atk-sig-'+containerId).checked=false;
+        document.getElementById('atk-area-'+containerId).checked=false;
         renderAtkList();
       };
       const bindQualRemove = ()=>{
@@ -2423,6 +2430,8 @@
     let chosenAttr = def.attrs[0];
     const majorLeft = me.tamer.majorAspect ? (me.tamer.majorAspect.usesLeft||0) : 0;
     const minorLeft = me.tamer.minorAspect ? (me.tamer.minorAspect.usesLeft||0) : 0;
+    const hasMiracle = computeUnlockedTalents(me.tamer).some(t=>t.order==='miracle');
+    const ipAvailable = Number(me.tamer.inspirationPoints||0);
     const draw = ()=>{
       panel.innerHTML = `
         <div class="hud-frame" style="padding:10px;">
@@ -2439,6 +2448,9 @@
               ${majorLeft>0 ? `<label style="display:flex;align-items:center;gap:4px;font-size:11px;flex:1;"><input type="checkbox" id="roll-aspect-major-${containerId}" /> Major (+4, ${majorLeft} usi)</label>` : ''}
               ${minorLeft>0 ? `<label style="display:flex;align-items:center;gap:4px;font-size:11px;flex:1;"><input type="checkbox" id="roll-aspect-minor-${containerId}" /> Minor (+2, ${minorLeft} usi)</label>` : ''}
             </div>
+          ` : ''}
+          ${hasMiracle && ipAvailable>=7 ? `
+            <label style="display:flex;align-items:center;gap:4px;font-size:11px;margin-bottom:8px;"><input type="checkbox" id="roll-miracle-${containerId}" /> Miracle: +Willpower+5 (costa 7 IP, hai ${ipAvailable})</label>
           ` : ''}
           <button class="btn solid" id="roll-confirm-${containerId}" style="width:100%;">Tira 3d6</button>
           <div id="roll-result-${containerId}" style="margin-top:10px;"></div>
@@ -2458,6 +2470,7 @@
         let aspectNote = '';
         const majorBox = document.getElementById('roll-aspect-major-'+containerId);
         const minorBox = document.getElementById('roll-aspect-minor-'+containerId);
+        const miracleBox = document.getElementById('roll-miracle-'+containerId);
         if(majorBox && majorBox.checked){
           total += 4;
           me.tamer.majorAspect.usesLeft = Math.max(0,(me.tamer.majorAspect.usesLeft||0)-1);
@@ -2467,6 +2480,12 @@
           total += 2;
           me.tamer.minorAspect.usesLeft = Math.max(0,(me.tamer.minorAspect.usesLeft||0)-1);
           aspectNote += ` +2 Minor Aspect (${me.tamer.minorAspect.text})`;
+        }
+        if(miracleBox && miracleBox.checked && Number(me.tamer.inspirationPoints||0)>=7){
+          const bonus = me.tamer.willpower + 5;
+          total += bonus;
+          me.tamer.inspirationPoints -= 7;
+          aspectNote += ` +${bonus} Miracle (-7 IP)`;
         }
         if(aspectNote) await saveMember(session.code, me);
         const verdict = evaluateVsTN(total, tnVal);
@@ -2852,6 +2871,7 @@
     { key:'debilitate', label:'Debilitate', type:'negative', mods:{ accuracy:-1, damage:-1, dodge:-1, armor:-1 } },
     { key:'bastion', label:'Bastion', type:'positive', mods:{ accuracy:1, damage:1, dodge:1, armor:1 } },
     { key:'daring', label:'Daring', type:'positive', mods:{ accuracy:1, armor:1 } },
+    { key:'taunt', label:'Taunt', type:'negative', mods:{ accuracy:-1 } },
     { key:'root', label:'Root', type:'negative', mods:{}, blocksMove:true },
     { key:'pull', label:'Pull', type:'negative', mods:{}, instant:'pull' },
     { key:'push', label:'Push', type:'negative', mods:{}, instant:'push' },
@@ -2897,11 +2917,18 @@
 
   function computeEffectModifiers(p){
     const mod = { accuracy:0, damage:0, dodge:0, armor:0 };
+    let resistance = 0;
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      if(member) resistance = computeQualityMechanics(member.digimon.qualities).resistance;
+    }
     (p.effects||[]).forEach(e=>{
       const def = EFFECT_DEFS.find(d=>d.key===e.key);
       if(!def) return;
+      let potency = Number(e.potency||1);
+      if(def.type==='negative' && resistance>0) potency = Math.max(1, potency - resistance);
       Object.keys(def.mods||{}).forEach(stat=>{
-        mod[stat] += def.mods[stat] * Number(e.potency||1);
+        mod[stat] += def.mods[stat] * potency;
       });
     });
     return mod;
@@ -2918,11 +2945,16 @@
   async function tickEffectsForParticipant(code, combat, p){
     if(!p.effects || p.effects.length===0) return [];
     const logs = [];
+    let resistance = 0;
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      if(member) resistance = computeQualityMechanics(member.digimon.qualities).resistance;
+    }
     p.effects.forEach(e=>{
       const def = EFFECT_DEFS.find(d=>d.key===e.key);
       if(def && def.tick){
-        const dmg = Number(e.potency||1);
-        logs.push(`${p.name} subisce ${dmg} danno da ${def.label}.`);
+        const dmg = Math.max(1, Number(e.potency||1) - resistance);
+        logs.push(`${p.name} subisce ${dmg} danno da ${def.label}${resistance>0?` (Resistance -${resistance})`:''}.`);
         applyDamageToParticipantSync(p, dmg);
       }
     });
@@ -2966,6 +2998,14 @@
       combatMonsterRank: qMech.combatMonster,
       monsterStrength: qMech.monsterStrength
     };
+  }
+
+  function getParticipantResistance(p){
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      if(member) return computeQualityMechanics(member.digimon.qualities).resistance;
+    }
+    return 0;
   }
 
   function getParticipantSizeIndex(p){
@@ -3109,6 +3149,8 @@
         p.digimon.evolutionPoints = cap;
         p.tamer.tormentPenalty = 0;
         (p.tamer.torments||[]).forEach(t=>{ t.usedThisRest = false; });
+        if(!p.tamer.specialOrdersUsed) p.tamer.specialOrdersUsed = {};
+        TALENT_DEFS.filter(t=>t.once==='rest').forEach(t=>{ p.tamer.specialOrdersUsed[t.order] = false; });
         await saveMember(code, p);
       }
       await pushLog(code, { who:'Sistema', role:'gm', text: `😴 Il party fa un Rest: Ferite ed Evolution Points recuperati del tutto, penalità Torment rimosse, Torment Check di nuovo disponibili.` });
@@ -3181,6 +3223,12 @@
         cachedCombat = defaultCombat();
         cachedCombat.active = true;
         await saveCombat(code, cachedCombat);
+        for(const p of players){
+          const orderKeys = TALENT_DEFS.filter(t=>t.once==='combat').map(t=>t.order);
+          let changed = false;
+          orderKeys.forEach(k=>{ if(p.tamer.specialOrdersUsed && p.tamer.specialOrdersUsed[k]){ p.tamer.specialOrdersUsed[k]=false; changed=true; } });
+          if(changed) await saveMember(code, p);
+        }
         renderCombatManager(code, players);
         const combatLive = document.getElementById('combat-live');
         if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
@@ -3212,6 +3260,21 @@
               <select data-zone-select="${p.id}" style="flex:2;">${ZONES.map(z=>`<option ${p.zone===z?'selected':''}>${z}</option>`).join('')}</select>
               <button class="btn small" data-zone-move="${p.id}" style="flex:1;">🏃 Muovi (1 Az.)</button>
             </div>
+            ${(()=>{
+              if(!p.isPC) return '';
+              const pMember = cachedRoster.find(m=>m.username===p.username);
+              if(!pMember) return '';
+              const orders = computeUnlockedTalents(pMember.tamer).filter(t=>t.order);
+              if(orders.length===0) return '';
+              return `<div class="row" style="margin-top:6px;">
+                <select data-order-select="${p.id}" style="flex:2;">${orders.map(o=>{
+                  const used = pMember.tamer.specialOrdersUsed && pMember.tamer.specialOrdersUsed[o.order];
+                  const blocked = o.once && used;
+                  return `<option value="${o.order}" ${blocked?'disabled':''}>${escapeHTML(o.name)} (${o.cost} Az.)${blocked?' — già usato':''}</option>`;
+                }).join('')}</select>
+                <button class="btn amber small" data-order-use="${p.id}" style="flex:1;">✦ Special Order</button>
+              </div>`;
+            })()}
             <div style="margin-top:6px;">${effectTagsHTML(p)}${(p.effects||[]).map((e,ei)=>`<button class="btn ghost small" data-effect-remove="${p.id}|${ei}" style="padding:1px 6px;margin-left:2px;">✕</button>`).join('')}</div>
             <div class="row" style="margin-top:4px;">
               <select data-effect-select="${p.id}" style="flex:2;">${EFFECT_DEFS.map(e=>`<option value="${e.key}">${escapeHTML(e.label)}</option>`).join('')}</select>
@@ -3232,6 +3295,7 @@
         <select id="combat-attack-choice" style="flex:1;"><option value="">(attacco generico)</option></select>
       </div>
       <button class="btn amber" id="btn-combat-attack" style="width:100%;margin-top:6px;">⚔ Risolvi Attacco</button>
+      <button class="btn" id="btn-combat-attack-area" style="width:100%;margin-top:6px;display:none;">🌪 Risolvi come Area (colpisce tutti nella zona del bersaglio)</button>
       <div id="combat-attack-result" style="margin-top:8px;"></div>
       <div class="divider"></div>
       <div class="section-title" style="font-size:11px;">🤼 Clash (usa Attaccante/Bersaglio sopra)</div>
@@ -3297,11 +3361,27 @@
         if(member) atks = member.digimon.attacks || [];
       }
       sel.innerHTML = '<option value="">(attacco generico)</option>' + atks.map((a,i)=>`<option value="${i}">${a.signature?'⭐ ':''}${escapeHTML(a.name)} — ${a.shape}/${a.type}</option>`).join('');
+      updateAreaButtonVisibility();
+    }
+    function updateAreaButtonVisibility(){
+      const attackerId = document.getElementById('combat-attacker').value;
+      const attacker = combat.participants.find(p=>p.id===attackerId);
+      const sel = document.getElementById('combat-attack-choice');
+      const areaBtn = document.getElementById('btn-combat-attack-area');
+      if(!sel || !areaBtn) return;
+      let atk = null;
+      if(attacker && attacker.isPC && sel.value !== ''){
+        const member = cachedRoster.find(m=>m.username===attacker.username);
+        if(member) atk = (member.digimon.attacks||[])[Number(sel.value)];
+      }
+      areaBtn.style.display = (atk && atk.areaAttack) ? 'block' : 'none';
     }
     const attackerSel = document.getElementById('combat-attacker');
     const targetSel = document.getElementById('combat-target');
+    const attackChoiceSel = document.getElementById('combat-attack-choice');
     if(attackerSel) attackerSel.onchange = ()=>{ populateAttackChoice(); renderClashActions(); };
     if(targetSel) targetSel.onchange = renderClashActions;
+    if(attackChoiceSel) attackChoiceSel.onchange = updateAreaButtonVisibility;
     populateAttackChoice();
 
     function renderClashActions(){
@@ -3505,10 +3585,12 @@
         const tStats = getParticipantCombatStats(target);
         const zPenalty = zonePenalty(zDist);
         const effAccuracy = Math.max(0, aStats.accuracy + zPenalty);
-        const accRoll = rollPool(effAccuracy);
+        const overpowerUsed = !!attacker.overpowerActive;
+        const accRoll = rollPool(effAccuracy, overpowerUsed);
+        if(overpowerUsed) attacker.overpowerActive = false;
         if(aStats.certainStrike>0) accRoll.successes += aStats.certainStrike;
         const dodgeRoll = rollPool(tStats.dodge);
-        const zoneNote = zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza: ${attacker.zone||'Medio'}→${target.zone||'Medio'})` : '';
+        const zoneNote = (zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza: ${attacker.zone||'Medio'}→${target.zone||'Medio'})` : '') + (overpowerUsed ? ' [Overpower: 4 conta come Successo]' : '');
         const certainNote = aStats.certainStrike>0 ? ` +${aStats.certainStrike} [CERTAIN]` : '';
         const atkLabel = atk ? `${atk.name} ${attackTagsPlain(atk)}` : 'Attacco generico';
         let logText, dealt = 0;
@@ -3560,6 +3642,88 @@
           resEl.innerHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">vs</span>${diceRowHTML(dodgeRoll.dice)}${dealt>0?`<span class="roll-total">${dealt} danno</span>`:''}`;
         }
         await pushLog(code, { who:'Master', role:'roll', text: logText, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
+        await persistAndRefresh();
+      };
+    }
+
+    const areaAttackBtn = document.getElementById('btn-combat-attack-area');
+    if(areaAttackBtn){
+      areaAttackBtn.onclick = async ()=>{
+        const attackerId = document.getElementById('combat-attacker').value;
+        const targetId = document.getElementById('combat-target').value;
+        const attacker = combat.participants.find(p=>p.id===attackerId);
+        const centerTarget = combat.participants.find(p=>p.id===targetId);
+        const resEl = document.getElementById('combat-attack-result');
+        if(!attacker || !centerTarget){
+          if(resEl) resEl.innerHTML = '<div class="err">Scegli attaccante e bersaglio.</div>';
+          return;
+        }
+        const atkChoiceEl = document.getElementById('combat-attack-choice');
+        let atk = null;
+        if(attacker.isPC && atkChoiceEl && atkChoiceEl.value !== ''){
+          const member = cachedRoster.find(m=>m.username===attacker.username);
+          if(member) atk = (member.digimon.attacks||[])[Number(atkChoiceEl.value)];
+        }
+        if(!atk || !atk.areaAttack){
+          if(resEl) resEl.innerHTML = '<div class="err">L\'attacco selezionato non è un Area Attack.</div>';
+          return;
+        }
+        const zone = centerTarget.zone || 'Medio';
+        const victims = combat.participants.filter(p=>p.id!==attacker.id && p.side!==attacker.side && (p.zone||'Medio')===zone);
+        if(victims.length===0){
+          if(resEl) resEl.innerHTML = `<div class="err">Nessun bersaglio avversario nella zona ${zone}.</div>`;
+          return;
+        }
+        const aStats = getParticipantCombatStats(attacker);
+        const effAccuracy = Math.max(0, aStats.accuracy);
+        const accRoll = rollPool(effAccuracy);
+        if(aStats.certainStrike>0) accRoll.successes += aStats.certainStrike;
+        const lines = [`🌪 ${attacker.name} usa ${atk.name} ${attackTagsPlain(atk)} come Area Attack sulla zona ${zone} (Accuracy ${effAccuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} succ.):`];
+        let combatMonsterGain = 0;
+        for(const v of victims){
+          const vStats = getParticipantCombatStats(v);
+          const dodgeRoll = rollPool(vStats.dodge);
+          if(accRoll.successes <= dodgeRoll.successes){
+            lines.push(`— ${v.name}: MANCATO (Dodge ${vStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ.)`);
+            continue;
+          }
+          const excess = accRoll.successes - dodgeRoll.successes;
+          if(atk.type==='Support'){
+            if(atk.effectKey){
+              const def = EFFECT_DEFS.find(d=>d.key===atk.effectKey);
+              const isPositive = def && def.type==='positive';
+              const finalPotency = isPositive ? 0 : 1;
+              if(def && def.instant){
+                const msg = await applyInstantEffect(code, v, atk.effectKey, 1);
+                lines.push(`— ${v.name}: COLPITO! ${msg}`);
+              } else if(finalPotency>0){
+                if(!v.effects) v.effects=[];
+                v.effects.push({ key: atk.effectKey, potency:1, duration:1 });
+                lines.push(`— ${v.name}: COLPITO! Applica ${def?def.label:atk.effectKey} (Potenza 1, Durata 1 — ridotto da Area).`);
+              } else {
+                lines.push(`— ${v.name}: COLPITO! Effetto positivo azzerato dalla penalità Area (nessun effetto).`);
+              }
+            } else {
+              lines.push(`— ${v.name}: COLPITO! (nessun Effetto collegato)`);
+            }
+          } else {
+            const raw = excess + aStats.damage;
+            const dealt = Math.max(0, Math.ceil((raw - vStats.armor)/2));
+            await applyDamageToParticipant(code, combat, v, dealt);
+            if(dealt>0) combatMonsterGain += dealt;
+            const w = getParticipantWounds(v);
+            lines.push(`— ${v.name}: COLPITO! ${dealt} danno (dimezzato da Area) → ${w.current}/${w.max} Ferite`);
+          }
+        }
+        if(attacker.isPC && atk.type!=='Support'){
+          const aMember = cachedRoster.find(m=>m.username===attacker.username);
+          if(aMember && Number(aMember.digimon.resolveCurrent||0)>0 && computeQualityMechanics(aMember.digimon.qualities).combatMonster>0){
+            aMember.digimon.resolveCurrent = 0;
+            await saveMember(code, aMember);
+          }
+        }
+        if(resEl) resEl.innerHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">colpisce ${victims.length} bersagli in zona ${zone}</span>`;
+        await pushLog(code, { who:'Master', role:'roll', text: lines.join(' | '), meta:{ dice: accRoll.dice } });
         await persistAndRefresh();
       };
     }
@@ -3682,6 +3846,101 @@
         const from = p.zone||'Medio';
         p.zone = target;
         await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si sposta da ${from} a ${target} raggio (1 Azione) — restano ${p.actions}/2 Azioni.` });
+        await persistAndRefresh();
+      };
+    });
+    cardEl.querySelectorAll('[data-order-use]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-order-use');
+        const p = combat.participants.find(x=>x.id===id);
+        const sel = cardEl.querySelector(`[data-order-select="${id}"]`);
+        if(!p || !sel || !p.isPC) return;
+        const member = cachedRoster.find(m=>m.username===p.username);
+        if(!member) return;
+        const orderKey = sel.value;
+        const talent = TALENT_DEFS.find(t=>t.order===orderKey);
+        if(!talent) return;
+        if(!member.tamer.specialOrdersUsed) member.tamer.specialOrdersUsed = {};
+        if(talent.once && member.tamer.specialOrdersUsed[orderKey]){
+          const statusEl = document.getElementById('combat-mgr-status');
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `${talent.name} già usato — serve un Rest/nuovo combattimento.`; }
+          return;
+        }
+        if(talent.cost>0){
+          if((p.actions===undefined?2:p.actions) < talent.cost){
+            const statusEl = document.getElementById('combat-mgr-status');
+            if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = 'Azioni insufficienti per questo Special Order.'; }
+            return;
+          }
+          p.actions -= talent.cost;
+        }
+        let logText = `✦ ${p.name} usa Special Order "${talent.name}".`;
+        if(orderKey==='strikeFast'){
+          p.actions += 1;
+          logText += ' Guadagna 1 Azione extra (da usare per Muovi).';
+        } else if(orderKey==='energyBurst'){
+          const heal = Number(member.digimon.tempWounds||0)>0 ? 2 : 1;
+          member.digimon.currentWounds = Math.min(member.digimon.maxWounds, member.digimon.currentWounds+heal);
+          logText += ` Recupera ${heal} Casella/e Ferita.`;
+        } else if(orderKey==='overpower'){
+          p.overpowerActive = true;
+          logText += ' Il prossimo tiro Accuracy conta i 4 come Successi.';
+        } else if(orderKey==='swagger'){
+          const targetId = document.getElementById('combat-target').value;
+          const tgt = combat.participants.find(x=>x.id===targetId);
+          if(tgt){
+            if(!tgt.effects) tgt.effects=[];
+            tgt.effects.push({ key:'taunt', potency:1, duration:3 });
+            logText += ` Applica [TAUNT] a ${tgt.name} per 3 round.`;
+          } else {
+            logText += ' (Scegli un Bersaglio nel menu Attaccante/Bersaglio prima di usarlo.)';
+          }
+        } else if(orderKey==='peakPerformance'){
+          const targetId = document.getElementById('combat-target').value;
+          const tgt = combat.participants.find(x=>x.id===targetId);
+          if(tgt){
+            if(!tgt.effects) tgt.effects=[];
+            tgt.effects.push({ key:'bastion', potency:2, duration:1 });
+            logText += ` ${tgt.name} guadagna [BASTION 2] fino al prossimo turno.`;
+          } else {
+            logText += ' (Scegli un Bersaglio alleato nel menu Attaccante/Bersaglio prima di usarlo.)';
+          }
+        } else if(orderKey==='revitalize'){
+          const targetId = document.getElementById('combat-target').value;
+          const tgt = combat.participants.find(x=>x.id===targetId);
+          if(tgt){
+            const w = getParticipantWounds(tgt);
+            if(w.current<=0){
+              await applyDamageToParticipant(code, combat, tgt, -1);
+              logText += ` ${tgt.name} viene rianimato con 1 Casella Ferita.`;
+            } else {
+              logText += ` ${tgt.name} non è sconfitto — Revitalize richiede un Digimon a 0 Ferite.`;
+            }
+          } else {
+            logText += ' (Scegli il Bersaglio sconfitto nel menu Attaccante/Bersaglio prima di usarlo.)';
+          }
+        } else if(orderKey==='signatureVersatility'){
+          member.digimon.battery = Math.max(member.digimon.battery, 1);
+          logText += ' Il prossimo Attacco può essere dichiarato come Signature Move anche a Battery bassa.';
+        } else if(orderKey==='enemyScan'){
+          const targetId = document.getElementById('combat-target').value;
+          const tgt = combat.participants.find(x=>x.id===targetId);
+          if(tgt){
+            const tgtStage = tgt.isPC ? (cachedRoster.find(m=>m.username===tgt.username)?.digimon.stage) : null;
+            const potency = tgtStage ? stageIndex(tgtStage)+1 : 2;
+            if(!tgt.effects) tgt.effects=[];
+            tgt.effects.push({ key:'debilitate', potency, duration:3 });
+            logText += ` Applica [DEBILITATE ${potency}] a ${tgt.name} per 3 round.`;
+          } else {
+            logText += ' (Scegli il Bersaglio nemico nel menu Attaccante/Bersaglio prima di usarlo.)';
+          }
+        } else if(orderKey==='purifyPartner'){
+          const msg = await applyInstantEffect(code, p, 'cleanse', 1);
+          logText += ` ${msg}`;
+        }
+        member.tamer.specialOrdersUsed[orderKey] = true;
+        await saveMember(code, member);
+        await pushLog(code, { who: p.name, role:'gm', text: logText });
         await persistAndRefresh();
       };
     });
