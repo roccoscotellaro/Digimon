@@ -83,7 +83,7 @@
 
   .modal-overlay{position:fixed;inset:0;background:rgba(5,7,10,0.85);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;overflow-y:auto;}
   .modal-box{max-width:560px;width:100%;max-height:90vh;overflow-y:auto;}
-  .portrait-lg{width:100%;max-height:280px;object-fit:cover;border:1px solid var(--line);margin-bottom:12px;}
+  .portrait-lg{width:100%;max-height:400px;object-fit:contain;background:var(--panel-2);border:1px solid var(--line);margin-bottom:12px;}
   .stat-box{text-align:center;padding:8px 4px;background:var(--panel-2);border:1px solid var(--line);}
   .stat-box .v{font-family:'Share Tech Mono',monospace;font-size:18px;color:var(--cyan);}
   .stat-box .l{font-size:9px;color:var(--text-mute);text-transform:uppercase;margin-top:2px;}
@@ -225,7 +225,7 @@
       <div class="hud-frame card">
         <div class="flex-between" style="margin-bottom:10px;">
           <div class="section-title" style="margin:0;border:none;padding:0;">Digimon Registrati (${cachedDex.length})</div>
-          ${isMaster ? `<span><button class="btn ghost small" id="btn-import-seed" style="margin-right:6px;">📥 Importa Digimon Comuni</button><button class="btn ghost small" id="btn-import-villains" style="margin-right:6px;color:var(--danger);border-color:rgba(255,93,93,0.4);">😈 Importa Digimon Cattivi</button><button class="btn ghost small" id="btn-bulk-images" style="margin-right:6px;">🖼️ Incolla Immagini</button><button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button></span>` : ''}
+          ${isMaster ? `<span><button class="btn ghost small" id="btn-import-seed2" style="margin-right:6px;color:var(--cyan);">🎴 Importa/Correggi Famosi</button><button class="btn ghost small" id="btn-bulk-images" style="margin-right:6px;">🖼️ Incolla Immagini</button><button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button></span>` : ''}
         </div>
         <div id="filter-bar" class="filter-bar"></div>
         <div id="dex-grid" class="dex-grid"></div>
@@ -234,12 +234,10 @@
     document.getElementById('btn-logout').onclick = ()=>{ session=null; render(); };
     const newBtn = document.getElementById('btn-new-entry');
     if(newBtn) newBtn.onclick = ()=> openEditModal(null);
-    const importBtn = document.getElementById('btn-import-seed');
-    if(importBtn) importBtn.onclick = ()=> openImportModal(SPECIES_SEED, 'Importa Digimon Comuni');
-    const importVillainsBtn = document.getElementById('btn-import-villains');
-    if(importVillainsBtn) importVillainsBtn.onclick = ()=> openImportModal(SPECIES_SEED_VILLAINS, 'Importa Digimon Cattivi');
     const bulkImagesBtn = document.getElementById('btn-bulk-images');
     if(bulkImagesBtn) bulkImagesBtn.onclick = ()=> openBulkImageModal();
+    const importSeed2Btn = document.getElementById('btn-import-seed2');
+    if(importSeed2Btn) importSeed2Btn.onclick = ()=> openImportModal(SPECIES_SEED.concat(SPECIES_SEED_VILLAINS, SPECIES_SEED_2), 'Importa/Correggi Digimon Famosi');
     renderFilterBar();
     renderGrid();
   }
@@ -448,7 +446,7 @@ Devimon: https://..."></textarea>
         ${evolutionsHTML(entry.evolutions, 'Possibili Evoluzioni (in cosa evolve)')}
         ${qualitiesHTML(entry.qualities, entry.dp_total)}
         ${entry.added_by ? `<div class="muted" style="margin-top:8px;">Aggiunto da ${escapeHTML(entry.added_by)}</div>` : ''}
-        ${isMaster ? `<div class="divider"></div><button class="btn amber" id="btn-edit-entry" style="width:100%;">Modifica</button>` : ''}
+        ${isMaster ? `<div class="divider"></div><div class="row"><button class="btn amber" id="btn-edit-entry" style="flex:2;">Modifica</button><button class="btn ghost" id="btn-delete-entry-detail" style="flex:1;color:var(--danger);border-color:rgba(255,93,93,0.4);">🗑 Elimina</button></div>` : ''}
       </div>
     `;
     document.body.appendChild(overlay);
@@ -475,6 +473,15 @@ Devimon: https://..."></textarea>
     document.getElementById('btn-close-modal').onclick = closeModal;
     const editBtn = document.getElementById('btn-edit-entry');
     if(editBtn) editBtn.onclick = ()=>{ closeModal(); openEditModal(entry); };
+    const deleteBtnDetail = document.getElementById('btn-delete-entry-detail');
+    if(deleteBtnDetail){
+      deleteBtnDetail.onclick = async ()=>{
+        if(!window.confirm(`Eliminare definitivamente "${entry.name}" dal Dex? Non si può annullare.`)) return;
+        await deleteDexEntry(session.code, entry.id);
+        closeModal();
+        renderDexPage();
+      };
+    }
   }
 
   const SPECIES_SEED = [
@@ -540,8 +547,10 @@ Devimon: https://..."></textarea>
       {name:'Yaamon', stage:'Baby', desc:'Piccolo folletto dispettoso, forma Baby di Impmon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:3, baseDodge:2, baseArmor:1, baseHealth:2}},
       {name:'Impmon', stage:'Rookie', desc:'Folletto viola orgoglioso, rifiuta di evolvere nel modo tradizionale. Attacco: Infernal Funnel.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:3, baseArmor:3, baseHealth:3}},
       {name:'Devimon', stage:'Champion', desc:'Signore delle tenebre alato, corruppe il File Island. Attacco: Touch of Evil.', stats:{baseAccuracy:8, baseDamage:10, baseDodge:6, baseArmor:5, baseHealth:6}},
-      {name:'Myotismon', stage:'Ultimate', desc:'Vampiro Digimon elegante e crudele. Attacco: Grisly Wing.', stats:{baseAccuracy:12, baseDamage:15, baseDodge:8, baseArmor:7, baseHealth:8}},
+      {name:'Myotismon', stage:'Ultimate', desc:'Vampiro Digimon elegante e crudele. Attacco: Grisly Wing.', stats:{baseAccuracy:12, baseDamage:15, baseDodge:8, baseArmor:7, baseHealth:8}, evolvesToNames:['Beelzemon','VenomMyotismon','MaloMyotismon']},
       {name:'Beelzemon', stage:'Mega', desc:'Signore dei Demoni su una moto infernale. Attacco: Corona Blaster.', stats:{baseAccuracy:15, baseDamage:19, baseDodge:11, baseArmor:9, baseHealth:11}},
+      {name:'VenomMyotismon', stage:'Mega', desc:'Forma mostruosa e corrotta di Myotismon, un colosso di tentacoli e veleno. Attacco: Venom Infusion.', stats:{baseAccuracy:13, baseDamage:20, baseDodge:9, baseArmor:11, baseHealth:12}, evolvesFromNames:['Myotismon']},
+      {name:'MaloMyotismon', stage:'Mega', desc:'Fusione dei poteri oscuri di Myotismon con quelli di altri Digimon malvagi, quasi invincibile. Attacco: Grizzly Wing (Ultra).', stats:{baseAccuracy:16, baseDamage:18, baseDodge:12, baseArmor:10, baseHealth:9}, evolvesFromNames:['Myotismon']},
     ]},
     { line:'Keramon', attribute:'Virus', family:'Unknown', chain:[
       {name:'Kuramon', stage:'Baby', desc:'Sciame di uova digitali vaganti. Attacco: Bubble Blow.', stats:{baseAccuracy:3, baseDamage:2, baseDodge:2, baseArmor:1, baseHealth:2}},
@@ -594,6 +603,64 @@ Devimon: https://..."></textarea>
     ]},
   ];
 
+  const SPECIES_SEED_2 = [
+    { line:'Renamon', attribute:'Data', family:'Nature Spirits', chain:[
+      {name:'Viximon', stage:'Baby', desc:'Piccola volpe digitale agile e curiosa. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}},
+      {name:'Renamon', stage:'Rookie', desc:'Volpe elegante e solitaria, combatte con precisione chirurgica. Attacco: Diamond Storm.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}},
+      {name:'Kyubimon', stage:'Champion', desc:'Volpe a nove code avvolta da fiamme blu. Attacco: Fox Tail Inferno.', stats:{baseAccuracy:6, baseDamage:7, baseDodge:10, baseArmor:5, baseHealth:7}},
+      {name:'Taomon', stage:'Ultimate', desc:'Sacerdotessa volpe, maestra di sigilli magici. Attacco: Talisman of Light.', stats:{baseAccuracy:9, baseDamage:10, baseDodge:14, baseArmor:7, baseHealth:10}},
+      {name:'Sakuyamon', stage:'Mega', desc:'Sciamana suprema, fusione di spirito umano e digitale. Attacco: Amethyst Wind.', stats:{baseAccuracy:11, baseDamage:13, baseDodge:19, baseArmor:9, baseHealth:13}},
+    ]},
+    { line:'Guilmon', attribute:'Vaccine', family:'Dragon\'s Roar', chain:[
+      {name:'Gigimon', stage:'Baby', desc:'Piccolo rettile giallo dal morso energico. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:3, baseDodge:2, baseArmor:1, baseHealth:2}},
+      {name:'Guilmon', stage:'Rookie', desc:'Rettile rosso leale, nato da un progetto digitale proibito. Attacco: Pyro Sphere.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:3, baseArmor:3, baseHealth:3}},
+      {name:'Growlmon', stage:'Champion', desc:'Drago rosso corazzato dal ruggito assordante. Attacco: Dragon Slash.', stats:{baseAccuracy:8, baseDamage:10, baseDodge:6, baseArmor:5, baseHealth:6}},
+      {name:'WarGrowlmon', stage:'Ultimate', desc:'Guerriero corazzato con doppi cannoni sulle spalle. Attacco: Atomic Blaster.', stats:{baseAccuracy:12, baseDamage:15, baseDodge:8, baseArmor:7, baseHealth:8}},
+      {name:'Gallantmon', stage:'Mega', desc:'Cavaliere sacro con lancia e scudo di luce. Attacco: Judecca Prison.', stats:{baseAccuracy:15, baseDamage:19, baseDodge:11, baseArmor:9, baseHealth:11}},
+    ]},
+    { line:'Terriermon', attribute:'Data', family:'Nature Spirits', chain:[
+      {name:'Kokomon', stage:'Baby', desc:'Piccola creatura verde dal carattere giocoso. Attacco: Bubble Blow.', stats:{baseAccuracy:3, baseDamage:2, baseDodge:2, baseArmor:1, baseHealth:2}},
+      {name:'Terriermon', stage:'Rookie', desc:'Piccolo cane alato energico e chiacchierone. Attacco: Terrier Tornado.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}},
+      {name:'Gargomon', stage:'Champion', desc:'Coniglio armato di doppie mitragliatrici. Attacco: Gargo Laser.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:7, baseArmor:4, baseHealth:6}},
+      {name:'Rapidmon', stage:'Ultimate', desc:'Coniglio missilistico velocissimo. Attacco: Rapid Fire.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:10, baseArmor:6, baseHealth:8}},
+      {name:'MegaGargomon', stage:'Mega', desc:'Colosso corazzato con un arsenale devastante. Attacco: Mega Barrage.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:13, baseArmor:7, baseHealth:11}},
+    ]},
+    { line:'Hawkmon', attribute:'Vaccine', family:'Wind Guardians', chain:[
+      {name:'Poromon', stage:'Baby', desc:'Piccolo uccellino curioso dagli occhi grandi. Attacco: Bubble Blow.', stats:{baseAccuracy:3, baseDamage:2, baseDodge:2, baseArmor:1, baseHealth:2}},
+      {name:'Hawkmon', stage:'Rookie', desc:'Falco leale ed elegante, stratega nato. Attacco: Feather Strike.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}},
+      {name:'Aquilamon', stage:'Champion', desc:'Grande aquila cornuta dagli artigli d\'acciaio. Attacco: Grand Horn.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:7, baseArmor:4, baseHealth:6}},
+      {name:'Silphymon', stage:'Ultimate', desc:'Fusione angelica e felina dai poteri psichici. Attacco: Top Gun.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:10, baseArmor:6, baseHealth:8}},
+      {name:'Valkyrimon', stage:'Mega', desc:'Valchiria alata armata di lancia sacra. Attacco: Rune Saber.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:13, baseArmor:7, baseHealth:11}},
+    ]},
+    { line:'Armadillomon', attribute:'Data', family:'Deep Savers', chain:[
+      {name:'Upamon', stage:'Baby', desc:'Piccola creatura rotonda e paffuta. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:3, baseHealth:2}},
+      {name:'Armadillomon', stage:'Rookie', desc:'Armadillo corazzato dal carattere amichevole. Attacco: Diamond Shell.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}},
+      {name:'Ankylomon', stage:'Champion', desc:'Dinosauro corazzato con una coda a mazza. Attacco: Tail Hammer.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:10, baseHealth:9}},
+      {name:'Digmon', stage:'Ultimate', desc:'Perforatore corazzato con trapani al posto delle mani. Attacco: Gold Rush.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:7, baseArmor:14, baseHealth:13}},
+      {name:'Shurimon', stage:'Mega', desc:'Ninja corazzato armato di shuriken giganti. Attacco: Kunai Wing.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:9, baseArmor:19, baseHealth:17}},
+    ]},
+    { line:'Wormmon', attribute:'Data', family:'Jungle Troopers', chain:[
+      {name:'Leafmon', stage:'Baby', desc:'Piccola creatura a forma di foglia arrotolata. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}},
+      {name:'Wormmon', stage:'Rookie', desc:'Bruco gentile e devoto, sottovalutato dagli altri. Attacco: Silk Thread.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}},
+      {name:'Stingmon', stage:'Champion', desc:'Insetto guerriero con lame affilate sugli avambracci. Attacco: Spiking Strike.', stats:{baseAccuracy:7, baseDamage:6, baseDodge:10, baseArmor:5, baseHealth:7}},
+      {name:'JewelBeemon', stage:'Ultimate', desc:'Cavaliere insettoide armato di una spada laser. Attacco: Ultimate Strike.', stats:{baseAccuracy:10, baseDamage:9, baseDodge:14, baseArmor:7, baseHealth:10}},
+      {name:'Imperialdramon Fighter Mode', stage:'Mega', desc:'Forma da battaglia del drago imperiale. Attacco: Positron Laser.', stats:{baseAccuracy:13, baseDamage:11, baseDodge:19, baseArmor:9, baseHealth:13}},
+    ]},
+    { line:'Lopmon', attribute:'Data', family:'Nature Spirits', chain:[
+      {name:'Kokomon (Lop)', stage:'Baby', desc:'Piccola creatura orecchiuta dal pelo morbido. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}},
+      {name:'Lopmon', stage:'Rookie', desc:'Coniglio con lunghe orecchie, timido ma leale. Attacco: Blazing Ice.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}},
+      {name:'Wendigomon', stage:'Champion', desc:'Bestia arborea corazzata da rami intrecciati. Attacco: Roundhouse Kick.', stats:{baseAccuracy:7, baseDamage:6, baseDodge:10, baseArmor:5, baseHealth:7}},
+      {name:'Antylamon', stage:'Ultimate', desc:'Guerriera coniglio armata di enormi asce gemelle. Attacco: Bunny Blades.', stats:{baseAccuracy:10, baseDamage:9, baseDodge:14, baseArmor:7, baseHealth:10}},
+      {name:'Cherubimon (Good)', stage:'Mega', desc:'Grande Angelo custode della foresta, gentile e potente. Attacco: Heaven\'s Judgement.', stats:{baseAccuracy:13, baseDamage:11, baseDodge:19, baseArmor:9, baseHealth:13}},
+    ]},
+    { line:'Salamon', attribute:'Vaccine', family:'Nature Spirits', chain:[
+      {name:'Salamon', stage:'Baby', desc:'Piccola cagnolina bianca fedele e coraggiosa, forma Baby di Gatomon. Attacco: Puppy Punch.', stats:{baseAccuracy:3, baseDamage:2, baseDodge:2, baseArmor:1, baseHealth:2}},
+      {name:'Gatomon', stage:'Rookie', desc:'Gatta agile con un anello sacro alla coda. Attacco: Lightning Paw.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}},
+      {name:'Angewomon', stage:'Champion', desc:'Angelo guerriero femminile armata di frecce di luce. Attacco: Celestial Arrow.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}},
+      {name:'Magnadramon', stage:'Mega', desc:'Drago sacro dorato, protettrice della luce. Attacco: Sparkling Wide Ray.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:11, baseArmor:9, baseHealth:11}},
+    ]},
+  ];
+
   function openImportModal(seedList, title){
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -604,7 +671,7 @@ Devimon: https://..."></textarea>
           <div class="section-title" style="margin:0;border:none;padding:0;">${escapeHTML(title)}</div>
           <button class="btn ghost small" id="btn-close-modal">✕</button>
         </div>
-        <div class="muted" style="margin-bottom:12px;">8 linee evolutive (40 Digimon), con Pre-Evoluzioni/Evoluzioni già collegate, Attributo/Famiglia e Stat Base precompilate secondo l'archetipo di ciascuna linea (puoi comunque ritoccarle da "Modifica"). Deseleziona chi non ti serve.</div>
+        <div class="muted" style="margin-bottom:12px;">Tutte le linee (Eroi, Cattivi, Altri Famosi). Le voci già presenti sono deselezionate e non verranno duplicate — ma i loro collegamenti Pre-Evoluzioni/Evoluzioni verranno comunque aggiornati secondo questa lista, quindi se li avevi modificati a mano da "Modifica" potrebbero tornare a questi valori di base.</div>
         <div id="import-lines"></div>
         <div class="divider"></div>
         <div class="row">
@@ -671,11 +738,22 @@ Devimon: https://..."></textarea>
         for(let si=0; si<line.chain.length; si++){
           const sp = line.chain[si];
           const current = byName[sp.name.trim().toLowerCase()];
-          if(!current || !insertedByName[sp.name]) continue;
-          const prev = si>0 ? byName[line.chain[si-1].name.trim().toLowerCase()] : null;
-          const next = si<line.chain.length-1 ? byName[line.chain[si+1].name.trim().toLowerCase()] : null;
-          const evolvesFrom = prev ? [{ id: prev.id, name: prev.name, imageUrl: prev.image_url||'' }] : [];
-          const evolutions = next ? [{ id: next.id, name: next.name, imageUrl: next.image_url||'' }] : [];
+          if(!current) continue;
+          let evolvesFrom, evolutions;
+          if(sp.evolvesFromNames){
+            evolvesFrom = sp.evolvesFromNames.map(n=>byName[n.trim().toLowerCase()]).filter(Boolean)
+              .map(e=>({ id: e.id, name: e.name, imageUrl: e.image_url||'' }));
+          } else {
+            const prev = si>0 ? byName[line.chain[si-1].name.trim().toLowerCase()] : null;
+            evolvesFrom = prev ? [{ id: prev.id, name: prev.name, imageUrl: prev.image_url||'' }] : [];
+          }
+          if(sp.evolvesToNames){
+            evolutions = sp.evolvesToNames.map(n=>byName[n.trim().toLowerCase()]).filter(Boolean)
+              .map(e=>({ id: e.id, name: e.name, imageUrl: e.image_url||'' }));
+          } else {
+            const next = si<line.chain.length-1 ? byName[line.chain[si+1].name.trim().toLowerCase()] : null;
+            evolutions = next ? [{ id: next.id, name: next.name, imageUrl: next.image_url||'' }] : [];
+          }
           await updateDexEntry(session.code, current.id, {
             name: current.name, stage: current.stage, description: current.description, imageUrl: current.image_url,
             baseStats: current.base_stats, categories: current.categories, qualities: current.qualities,
