@@ -126,10 +126,14 @@
   async function apiPut(path, body){
     try{ const r = await fetch(path, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); const data = await r.json(); if(!r.ok) return null; return data; }catch(e){ return null; }
   }
+  async function apiDelete(path){
+    try{ const r = await fetch(path, { method:'DELETE' }); const data = await r.json(); if(!r.ok) return null; return data; }catch(e){ return null; }
+  }
 
   async function getDex(code){ const d = await apiGet('/api/dex?code=' + encodeURIComponent(code)); return d ? (d.entries||[]) : []; }
   async function addDexEntry(code, entry){ return apiPost('/api/dex', { code, ...entry }); }
   async function updateDexEntry(code, id, fields){ return apiPut('/api/dex', { code, id, ...fields }); }
+  async function deleteDexEntry(code, id){ return apiDelete('/api/dex?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
 
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s){ return escapeHTML(s); }
@@ -140,12 +144,16 @@
     if(!evolutions || !evolutions.length) return '';
     return `<div class="muted" style="margin:10px 0 4px;">${label||'Possibili Evoluzioni'}</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;">
-        ${evolutions.map(ev=>`
+        ${evolutions.map(ev=>{
+          const live = ev.id ? cachedDex.find(e=>String(e.id)===String(ev.id)) : null;
+          const img = live ? live.image_url : ev.imageUrl;
+          const name = live ? live.name : ev.name;
+          return `
           <div style="display:flex;flex-direction:column;align-items:center;width:56px;${ev.id?'cursor:pointer;':''}" ${ev.id?`data-nav-evo="${ev.id}"`:''}>
-            ${ev.imageUrl ? `<img src="${escapeAttr(ev.imageUrl)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:1px solid var(--cyan-dim);" onerror="this.style.visibility='hidden'"/>` : `<div style="width:40px;height:40px;border-radius:50%;background:var(--panel-2);border:1px solid var(--cyan-dim);"></div>`}
-            <div class="muted" style="font-size:9px;text-align:center;margin-top:2px;${ev.id?'color:var(--cyan);':''}">${escapeHTML(ev.name)}</div>
+            ${img ? `<img src="${escapeAttr(img)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:1px solid var(--cyan-dim);" onerror="this.style.visibility='hidden'"/>` : `<div style="width:40px;height:40px;border-radius:50%;background:var(--panel-2);border:1px solid var(--cyan-dim);"></div>`}
+            <div class="muted" style="font-size:9px;text-align:center;margin-top:2px;${ev.id?'color:var(--cyan);':''}">${escapeHTML(name)}</div>
           </div>
-        `).join('')}
+        `;}).join('')}
       </div>`;
   }
 
@@ -421,7 +429,7 @@ Devimon: https://..."></textarea>
           <div class="section-title" style="margin:0;border:none;padding:0;">${escapeHTML(entry.name)}</div>
           <button class="btn ghost small" id="btn-close-modal">✕</button>
         </div>
-        ${entry.image_url ? `<img class="portrait-lg" src="${escapeAttr(entry.image_url)}" onerror="this.style.display='none'" />` : ''}
+        ${entry.image_url ? `<img class="portrait-lg" src="${escapeAttr(entry.image_url)}" style="cursor:zoom-in;" onerror="this.style.display='none'" data-zoom-img="${escapeAttr(entry.image_url)}" />` : ''}
         <div style="margin-bottom:8px;">
           <span class="tag">${escapeHTML(entry.stage)}</span>
           ${entry.attribute ? `<span class="tag" style="margin-left:4px;color:var(--cyan);border-color:var(--cyan-dim);">${escapeHTML(entry.attribute)}</span>` : ''}
@@ -445,6 +453,18 @@ Devimon: https://..."></textarea>
     `;
     document.body.appendChild(overlay);
     overlay.onclick = (e)=>{ if(e.target===overlay) closeModal(); };
+    overlay.querySelectorAll('[data-zoom-img]').forEach(img=>{
+      img.onclick = (e)=>{
+        e.stopPropagation();
+        const src = img.getAttribute('data-zoom-img');
+        const lightbox = document.createElement('div');
+        lightbox.className = 'modal-overlay';
+        lightbox.style.zIndex = '200';
+        lightbox.innerHTML = `<img src="${escapeAttr(src)}" style="max-width:95vw;max-height:95vh;object-fit:contain;cursor:zoom-out;" />`;
+        lightbox.onclick = ()=> lightbox.remove();
+        document.body.appendChild(lightbox);
+      };
+    });
     overlay.querySelectorAll('[data-nav-evo]').forEach(el=>{
       el.onclick = ()=>{
         const targetId = el.getAttribute('data-nav-evo');
@@ -754,6 +774,7 @@ Devimon: https://..."></textarea>
         <div class="divider"></div>
         <div class="row">
           <button class="btn ghost" id="btn-cancel-edit">Annulla</button>
+          ${!isNew ? `<button class="btn ghost" id="btn-delete-entry" style="color:var(--danger);border-color:rgba(255,93,93,0.4);">🗑 Elimina</button>` : ''}
           <button class="btn solid" id="btn-save-edit">Salva</button>
         </div>
         <div class="muted" id="ed-status" style="margin-top:6px;"></div>
@@ -763,7 +784,15 @@ Devimon: https://..."></textarea>
     overlay.onclick = (e)=>{ if(e.target===overlay) closeModal(); };
     document.getElementById('btn-close-modal').onclick = closeModal;
     document.getElementById('btn-cancel-edit').onclick = closeModal;
-
+    const deleteBtn = document.getElementById('btn-delete-entry');
+    if(deleteBtn){
+      deleteBtn.onclick = async ()=>{
+        if(!window.confirm(`Eliminare definitivamente "${entry.name}" dal Dex? Non si può annullare.`)) return;
+        await deleteDexEntry(session.code, entry.id);
+        closeModal();
+        renderDexPage();
+      };
+    }
     function renderEvoList(){
       document.getElementById('ed-evolist').innerHTML = draft.evolutions.length===0
         ? '<div class="muted" style="margin-bottom:6px;">Nessuna evoluzione.</div>'

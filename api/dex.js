@@ -63,7 +63,20 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
-    res.setHeader('Allow', 'GET, POST, PUT');
+    if (req.method === 'DELETE') {
+      const code = cleanCode(req.query.code);
+      const id = req.query.id;
+      if (!code || !id) return res.status(400).json({ error: 'missing code or id' });
+      const { error } = await supabase
+        .from('dex_entries')
+        .delete()
+        .eq('campaign_code', code)
+        .eq('id', id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true });
+    }
+
+    res.setHeader('Allow', 'GET, POST, PUT, DELETE');
     return res.status(405).json({ error: 'method not allowed' });
   } catch (e) {
     return res.status(500).json({ error: e.message || String(e) });
