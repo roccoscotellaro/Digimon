@@ -171,6 +171,7 @@
     .btn.small{padding:6px 8px;font-size:10px;}
     #sidebar-content, .hud-frame.card{width:100%;}
     div[style*="display:flex;gap:14px"]{flex-direction:column;}
+    div[style*="display:grid;grid-template-columns:1fr 1fr;gap:14px"]{grid-template-columns:1fr;}
   }
 
   .portrait{width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--cyan-dim);background:#05070a;flex-shrink:0;}
@@ -2737,45 +2738,18 @@
           </div>
           <div class="hud-frame card" id="combat-mgr-card"></div>
           <div class="hud-frame card" id="private-chat-master-card"></div>
-          <div class="hud-frame card" id="progression-card"></div>
-          <div class="hud-frame card" id="encounter-balance-card"></div>
-          <div class="hud-frame card" id="mounting-tn-card"></div>
-          <div class="hud-frame card">
-            <div class="flex-between" style="margin-bottom:6px;">
-              <div class="section-title" style="margin:0;border:none;padding:0;">Digidex — Digimon Incontrati</div>
-              <a href="dex.html" target="_blank" class="btn ghost small" style="text-decoration:none;">📖 Vista Completa</a>
-            </div>
-            <div id="dex-live">${dexListHTML(cachedDex, true)}</div>
-            <div class="divider"></div>
-            <div class="field"><label>Nome</label><input type="text" id="dex-name" placeholder="es. Gabumon" /></div>
-            <div class="row">
-              <div class="field"><label>Stage</label>
-                <select id="dex-stage">${['Baby','Rookie','Champion','Ultimate','Mega'].map(s=>`<option>${s}</option>`).join('')}</select>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+            <div class="hud-frame card" id="progression-card"></div>
+            <div class="hud-frame card" id="encounter-balance-card"></div>
+            <div class="hud-frame card" id="mounting-tn-card"></div>
+            <div class="hud-frame card">
+              <div class="flex-between" style="margin-bottom:6px;">
+                <div class="section-title" style="margin:0;border:none;padding:0;">Digidex</div>
               </div>
-              <div class="field"><label>URL Immagine (opz.)</label><input type="text" id="dex-img" placeholder="https://..." /></div>
+              <div class="muted" style="margin-bottom:10px;">Registra rapidamente un Digimon incontrato dal bottone "+Dex" sugli Incontri della Scena. Per la gestione completa (modifica, Qualities, evoluzioni, Attributo/Famiglia, import) usa la pagina dedicata.</div>
+              <a href="dex.html" target="_blank" class="btn solid" style="display:inline-block;text-decoration:none;padding:10px 18px;">📖 Apri il Digidex Completo →</a>
             </div>
-            <div class="field"><label>Categorie (separate da virgola, es. Deva, Angelo)</label><input type="text" id="dex-categories" placeholder="es. Deva, Angelo, Vaccine" /></div>
-        <div class="field"><label>Descrizione</label><textarea id="dex-desc" rows="2" placeholder="Cosa avete scoperto su questo Digimon..."></textarea></div>
-            <div class="muted" style="margin:8px 0 4px;">Stat Base (Combattimento) — opzionale, puoi completarle anche dopo con "Modifica"</div>
-            <div class="row">
-              <div class="field"><label>Accuracy</label><input type="number" id="dex-acc" value="0" min="0" /></div>
-              <div class="field"><label>Damage</label><input type="number" id="dex-dmg" value="0" min="0" /></div>
-            </div>
-            <div class="row">
-              <div class="field"><label>Dodge</label><input type="number" id="dex-dodge" value="0" min="0" /></div>
-              <div class="field"><label>Armor</label><input type="number" id="dex-arm" value="0" min="0" /></div>
-            </div>
-            <div class="field"><label>Health</label><input type="number" id="dex-hp" value="0" min="0" /></div>
-            <div class="muted" style="margin:8px 0 4px;">Possibili Evoluzioni</div>
-            <div id="dex-add-evolist">${evolutionsEditableHTML(dexAddEvolutions)}</div>
-            <div class="row">
-              <input type="text" id="dex-evo-name" placeholder="Nome evoluzione" style="flex:2;" />
-              <input type="text" id="dex-evo-img" placeholder="URL immagine (opz.)" style="flex:2;" />
-              <button class="btn small" id="btn-dex-evo-add" style="flex:1;">Aggiungi</button>
-            </div>
-            <label style="font-size:11px;display:flex;align-items:center;gap:6px;margin:6px 0;"><input type="checkbox" id="dex-discovered" /> Già scoperto dai giocatori</label>
-            <button class="btn solid" id="btn-dex-add" style="width:100%;margin-top:4px;">Aggiungi al Dex</button>
-            <div class="muted" id="dex-status" style="margin-top:6px;"></div>
+          </div>
           </div>
         </div>
       </div>

@@ -109,6 +109,10 @@
   let session = null;
   let cachedDex = [];
   let activeFilters = [];
+  let activeAttrFilter = '';
+  let activeFamilyFilter = '';
+  const ATTRIBUTES = ['Vaccine','Data','Virus','Free','Variable'];
+  const FAMILIES = ['Dark Empire','Deep Savers',"Dragon's Roar",'Jungle Troopers','Metal Empire','Nature Spirits','Nightmare Soldiers','Unknown','Virus Busters','Wind Guardians'];
   let editEntry = null; // entry being edited/added in modal
 
   function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
@@ -213,7 +217,7 @@
       <div class="hud-frame card">
         <div class="flex-between" style="margin-bottom:10px;">
           <div class="section-title" style="margin:0;border:none;padding:0;">Digimon Registrati (${cachedDex.length})</div>
-          ${isMaster ? `<span><button class="btn ghost small" id="btn-import-seed" style="margin-right:6px;">📥 Importa Digimon Comuni</button><button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button></span>` : ''}
+          ${isMaster ? `<span><button class="btn ghost small" id="btn-import-seed" style="margin-right:6px;">📥 Importa Digimon Comuni</button><button class="btn ghost small" id="btn-import-villains" style="margin-right:6px;color:var(--danger);border-color:rgba(255,93,93,0.4);">😈 Importa Digimon Cattivi</button><button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button></span>` : ''}
         </div>
         <div id="filter-bar" class="filter-bar"></div>
         <div id="dex-grid" class="dex-grid"></div>
@@ -223,7 +227,9 @@
     const newBtn = document.getElementById('btn-new-entry');
     if(newBtn) newBtn.onclick = ()=> openEditModal(null);
     const importBtn = document.getElementById('btn-import-seed');
-    if(importBtn) importBtn.onclick = ()=> openImportModal();
+    if(importBtn) importBtn.onclick = ()=> openImportModal(SPECIES_SEED, 'Importa Digimon Comuni');
+    const importVillainsBtn = document.getElementById('btn-import-villains');
+    if(importVillainsBtn) importVillainsBtn.onclick = ()=> openImportModal(SPECIES_SEED_VILLAINS, 'Importa Digimon Cattivi');
     renderFilterBar();
     renderGrid();
   }
@@ -231,12 +237,45 @@
   function renderFilterBar(){
     const bar = document.getElementById('filter-bar');
     if(!bar) return;
+    const usedAttrs = new Set(cachedDex.map(e=>e.attribute).filter(Boolean));
+    const usedFamilies = new Set(cachedDex.map(e=>e.family).filter(Boolean));
     const allCats = new Set();
     cachedDex.forEach(e=>(e.categories||[]).forEach(c=>allCats.add(c)));
-    if(allCats.size===0){ bar.innerHTML=''; return; }
-    bar.innerHTML = Array.from(allCats).sort().map(c=>`
-      <span class="tag filter-chip ${activeFilters.includes(c)?'active':''}" data-filter="${escapeAttr(c)}">${escapeHTML(c)}</span>
-    `).join('') + (activeFilters.length ? `<span class="tag filter-chip" style="color:var(--danger);border-color:var(--danger);" data-filter="__clear__">× azzera</span>` : '');
+
+    let html = '';
+    if(usedAttrs.size>0){
+      html += `<div class="muted" style="width:100%;margin-bottom:2px;font-size:10px;">Attributo</div>`;
+      html += Array.from(usedAttrs).sort().map(a=>`<span class="tag filter-chip ${activeAttrFilter===a?'active':''}" data-attr-filter="${escapeAttr(a)}">${escapeHTML(a)}</span>`).join('');
+      if(activeAttrFilter) html += `<span class="tag filter-chip" style="color:var(--danger);border-color:var(--danger);" data-attr-filter="__clear__">×</span>`;
+      html += `<div style="width:100%;height:6px;"></div>`;
+    }
+    if(usedFamilies.size>0){
+      html += `<div class="muted" style="width:100%;margin-bottom:2px;font-size:10px;">Famiglia</div>`;
+      html += Array.from(usedFamilies).sort().map(f=>`<span class="tag filter-chip ${activeFamilyFilter===f?'active':''}" data-family-filter="${escapeAttr(f)}">${escapeHTML(f)}</span>`).join('');
+      if(activeFamilyFilter) html += `<span class="tag filter-chip" style="color:var(--danger);border-color:var(--danger);" data-family-filter="__clear__">×</span>`;
+      html += `<div style="width:100%;height:6px;"></div>`;
+    }
+    if(allCats.size>0){
+      html += `<div class="muted" style="width:100%;margin-bottom:2px;font-size:10px;">Categoria</div>`;
+      html += Array.from(allCats).sort().map(c=>`<span class="tag filter-chip ${activeFilters.includes(c)?'active':''}" data-filter="${escapeAttr(c)}">${escapeHTML(c)}</span>`).join('');
+      if(activeFilters.length) html += `<span class="tag filter-chip" style="color:var(--danger);border-color:var(--danger);" data-filter="__clear__">× azzera</span>`;
+    }
+    bar.innerHTML = html;
+
+    bar.querySelectorAll('[data-attr-filter]').forEach(chip=>{
+      chip.onclick = ()=>{
+        const val = chip.getAttribute('data-attr-filter');
+        activeAttrFilter = (val==='__clear__' || activeAttrFilter===val) ? '' : val;
+        renderFilterBar(); renderGrid();
+      };
+    });
+    bar.querySelectorAll('[data-family-filter]').forEach(chip=>{
+      chip.onclick = ()=>{
+        const val = chip.getAttribute('data-family-filter');
+        activeFamilyFilter = (val==='__clear__' || activeFamilyFilter===val) ? '' : val;
+        renderFilterBar(); renderGrid();
+      };
+    });
     bar.querySelectorAll('[data-filter]').forEach(chip=>{
       chip.onclick = ()=>{
         const val = chip.getAttribute('data-filter');
@@ -257,7 +296,10 @@
     const grid = document.getElementById('dex-grid');
     if(!grid) return;
     const isMaster = session.role==='master';
-    const filtered = activeFilters.length===0 ? cachedDex : cachedDex.filter(e=>(e.categories||[]).some(c=>activeFilters.includes(c)));
+    let filtered = cachedDex;
+    if(activeFilters.length>0) filtered = filtered.filter(e=>(e.categories||[]).some(c=>activeFilters.includes(c)));
+    if(activeAttrFilter) filtered = filtered.filter(e=>e.attribute===activeAttrFilter);
+    if(activeFamilyFilter) filtered = filtered.filter(e=>e.family===activeFamilyFilter);
     if(filtered.length===0){ grid.innerHTML = '<div class="muted">Nessun Digimon trovato.</div>'; return; }
 
     function cardHTML(e){
@@ -272,7 +314,7 @@
         <div class="thumb">${e.image_url ? `<img src="${escapeAttr(e.image_url)}" onerror="this.parentNode.innerHTML='<span class=&quot;placeholder&quot;>${escapeHTML((e.name||'?').charAt(0))}</span>'" />` : `<span class="placeholder">${escapeHTML((e.name||'?').charAt(0))}</span>`}</div>
         <div class="info">
           <div class="name">${escapeHTML(e.name)}</div>
-          <div class="muted" style="font-size:10px;">${escapeHTML(e.stage)}${isMaster?(e.discovered?' · scoperto':' · nascosto'):''}</div>
+          <div class="muted" style="font-size:10px;">${escapeHTML(e.stage)}${e.attribute?` · ${escapeHTML(e.attribute)}`:''}${isMaster?(e.discovered?' · scoperto':' · nascosto'):''}</div>
         </div>
       </div>`;
     }
@@ -324,7 +366,11 @@
           <button class="btn ghost small" id="btn-close-modal">✕</button>
         </div>
         ${entry.image_url ? `<img class="portrait-lg" src="${escapeAttr(entry.image_url)}" onerror="this.style.display='none'" />` : ''}
-        <div class="tag" style="margin-bottom:8px;">${escapeHTML(entry.stage)}</div>
+        <div style="margin-bottom:8px;">
+          <span class="tag">${escapeHTML(entry.stage)}</span>
+          ${entry.attribute ? `<span class="tag" style="margin-left:4px;color:var(--cyan);border-color:var(--cyan-dim);">${escapeHTML(entry.attribute)}</span>` : ''}
+          ${entry.family ? `<span class="tag" style="margin-left:4px;color:var(--amber);border-color:var(--amber);">${escapeHTML(entry.family)}</span>` : ''}
+        </div>
         ${entry.categories && entry.categories.length ? `<div style="margin-bottom:8px;">${entry.categories.map(c=>`<span class="tag" style="margin-right:4px;">${escapeHTML(c)}</span>`).join('')}</div>` : ''}
         ${entry.description ? `<div class="muted" style="margin-bottom:10px;">${escapeHTML(entry.description)}</div>` : ''}
         ${hasStats ? `<div class="grid-stats">
@@ -356,56 +402,56 @@
   }
 
   const SPECIES_SEED = [
-    { line:'Agumon', chain:[
+    { line:'Agumon', attribute:'Vaccine', family:"Dragon's Roar", chain:[
       {name:'Koromon', stage:'Baby', desc:'Piccolo e affamato, la forma Baby di Agumon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:3, baseDodge:2, baseArmor:1, baseHealth:2}},
       {name:'Agumon', stage:'Rookie', desc:'Rettile bipede leale e coraggioso, sputa piccole fiamme. Attacco: Pepper Breath.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:3, baseArmor:3, baseHealth:3}},
       {name:'Greymon', stage:'Champion', desc:'Dinosauro corazzato dal morso potente. Attacco: Nova Blast.', stats:{baseAccuracy:8, baseDamage:10, baseDodge:6, baseArmor:5, baseHealth:6}},
       {name:'MetalGreymon', stage:'Ultimate', desc:'Mezzo organico, mezzo cybernetico, con la Giga Distruzione. Attacco: Giga Blaster.', stats:{baseAccuracy:12, baseDamage:15, baseDodge:8, baseArmor:7, baseHealth:8}},
       {name:'WarGreymon', stage:'Mega', desc:'Il guerriero supremo, con la Gaia Force e la Terra Destroyer. Attacco: Terra Force.', stats:{baseAccuracy:15, baseDamage:19, baseDodge:11, baseArmor:9, baseHealth:11}},
     ]},
-    { line:'Gabumon', chain:[
+    { line:'Gabumon', attribute:'Data', family:'Nature Spirits', chain:[
       {name:'Tsunomon', stage:'Baby', desc:'Piccola palla con un corno, forma Baby di Gabumon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}},
       {name:'Gabumon', stage:'Rookie', desc:'Rettile timido che indossa una pelliccia di Garurumon. Attacco: Blue Blaster.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}},
       {name:'Garurumon', stage:'Champion', desc:'Lupo blu velocissimo con l\'Howling Blaster. Attacco: Howling Blaster.', stats:{baseAccuracy:6, baseDamage:7, baseDodge:10, baseArmor:5, baseHealth:7}},
       {name:'WereGarurumon', stage:'Ultimate', desc:'Licantropo agile e feroce. Attacco: Wolf Claw.', stats:{baseAccuracy:9, baseDamage:10, baseDodge:14, baseArmor:7, baseHealth:10}},
       {name:'MetalGarurumon', stage:'Mega', desc:'Lupo cibernetico con i Missili Freezing. Attacco: Freezing Missile.', stats:{baseAccuracy:11, baseDamage:13, baseDodge:19, baseArmor:9, baseHealth:13}},
     ]},
-    { line:'Biyomon', chain:[
+    { line:'Biyomon', attribute:'Vaccine', family:'Wind Guardians', chain:[
       {name:'Yokomon', stage:'Baby', desc:'Piccolo uccellino, forma Baby di Biyomon. Attacco: Sonic Wave.', stats:{baseAccuracy:3, baseDamage:2, baseDodge:2, baseArmor:1, baseHealth:2}},
       {name:'Biyomon', stage:'Rookie', desc:'Uccellino rosa affettuoso e leale. Attacco: Magical Fire.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}},
       {name:'Birdramon', stage:'Champion', desc:'Enorme uccello di fuoco. Attacco: Meteor Wing.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:7, baseArmor:4, baseHealth:6}},
       {name:'Garudamon', stage:'Ultimate', desc:'Guerriera alata con artigli d\'acciaio. Attacco: Wing Blade.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:10, baseArmor:6, baseHealth:8}},
       {name:'Phoenixmon', stage:'Mega', desc:'Fenice leggendaria capace di rinascere dalle fiamme. Attacco: Crimson Flame.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:13, baseArmor:7, baseHealth:11}},
     ]},
-    { line:'Tentomon', chain:[
+    { line:'Tentomon', attribute:'Vaccine', family:'Jungle Troopers', chain:[
       {name:'Motimon', stage:'Baby', desc:'Piccola gelatina rotonda, forma Baby di Tentomon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:3, baseHealth:2}},
       {name:'Tentomon', stage:'Rookie', desc:'Insetto curioso ed erudito. Attacco: Super Shocker.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}},
       {name:'Kabuterimon', stage:'Champion', desc:'Scarabeo gigante con attacchi elettrici. Attacco: Electro Shocker.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:10, baseHealth:9}},
       {name:'MegaKabuterimon', stage:'Ultimate', desc:'Scarabeo corazzato dal Corno Elettrico. Attacco: Horn Buster.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:7, baseArmor:14, baseHealth:13}},
       {name:'HerculesKabuterimon', stage:'Mega', desc:'Colosso corazzato dalla potenza devastante. Attacco: Giga Blaster.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:9, baseArmor:19, baseHealth:17}},
     ]},
-    { line:'Palmon', chain:[
+    { line:'Palmon', attribute:'Data', family:'Jungle Troopers', chain:[
       {name:'Tanemon', stage:'Baby', desc:'Piccolo seme rotondo, forma Baby di Palmon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}},
       {name:'Palmon', stage:'Rookie', desc:'Pianta gentile con foglie a forma di stella. Attacco: Poison Ivy.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}},
       {name:'Togemon', stage:'Champion', desc:'Cactus pugile dai pugni esplosivi. Attacco: Needle Spray.', stats:{baseAccuracy:7, baseDamage:6, baseDodge:10, baseArmor:5, baseHealth:7}},
       {name:'Lillymon', stage:'Ultimate', desc:'Fata dei fiori elegante e agile. Attacco: Flower Cannon.', stats:{baseAccuracy:10, baseDamage:9, baseDodge:14, baseArmor:7, baseHealth:10}},
       {name:'Rosemon', stage:'Mega', desc:'Regina dei fiori con la frusta di spine. Attacco: Forbidden Temptation.', stats:{baseAccuracy:13, baseDamage:11, baseDodge:19, baseArmor:9, baseHealth:13}},
     ]},
-    { line:'Gomamon', chain:[
+    { line:'Gomamon', attribute:'Vaccine', family:'Deep Savers', chain:[
       {name:'Bukamon', stage:'Baby', desc:'Piccola foca marina, forma Baby di Gomamon. Attacco: Bubble Blow.', stats:{baseAccuracy:1, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:3}},
       {name:'Gomamon', stage:'Rookie', desc:'Foca giocherellona e leale amica. Attacco: Marching Fishes.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:5}},
       {name:'Ikkakumon', stage:'Champion', desc:'Trichecho con un corno d\'arpone. Attacco: Harpoon Torpedo.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:6, baseArmor:8, baseHealth:10}},
       {name:'Zudomon', stage:'Ultimate', desc:'Guerriero marino con il martello Vulcan. Attacco: Vulcan\'s Hammer.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:9, baseArmor:11, baseHealth:14}},
       {name:'Vikemon', stage:'Mega', desc:'Vichingo gigante armato di ascia ghiacciata. Attacco: Vikings Cutter.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:11, baseArmor:15, baseHealth:19}},
     ]},
-    { line:'Patamon', chain:[
+    { line:'Patamon', attribute:'Vaccine', family:'Virus Busters', chain:[
       {name:'Tokomon', stage:'Baby', desc:'Piccola creatura con grandi orecchie, forma Baby di Patamon. Attacco: Bubble Blow.', stats:{baseAccuracy:3, baseDamage:2, baseDodge:2, baseArmor:1, baseHealth:2}},
       {name:'Patamon', stage:'Rookie', desc:'Piccolo Digimon volante dal cuore gentile. Attacco: Boom Bubble.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}},
       {name:'Angemon', stage:'Champion', desc:'Angelo guerriero con il bastone sacro. Attacco: Hand of Fate.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}},
       {name:'MagnaAngemon', stage:'Ultimate', desc:'Angelo corazzato capace di aprire portali. Attacco: Gate of Destiny.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:9, baseArmor:7, baseHealth:8}},
       {name:'Seraphimon', stage:'Mega', desc:'Angelo supremo, giudice della luce. Attacco: Testament.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:11, baseArmor:9, baseHealth:11}},
     ]},
-    { line:'Veemon', chain:[
+    { line:'Veemon', attribute:'Vaccine', family:'Nature Spirits', chain:[
       {name:'Chibomon', stage:'Baby', desc:'Piccola creatura blu, forma Baby di Veemon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:2}},
       {name:'Veemon', stage:'Rookie', desc:'Rettile blu energico e testardo. Attacco: Vee Headbutt.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:4}},
       {name:'ExVeemon', stage:'Champion', desc:'Guerriero blu dai pugni potenti. Attacco: Vee Laser.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}},
@@ -413,18 +459,76 @@
       {name:'Imperialdramon', stage:'Mega', desc:'Drago imperiale dal potere immenso. Attacco: Positron Laser.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:13, baseArmor:13, baseHealth:13}},
     ]},
   ];
+  const SPECIES_SEED_VILLAINS = [
+    { line:'Impmon', attribute:'Virus', family:'Nightmare Soldiers', chain:[
+      {name:'Yaamon', stage:'Baby', desc:'Piccolo folletto dispettoso, forma Baby di Impmon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:3, baseDodge:2, baseArmor:1, baseHealth:2}},
+      {name:'Impmon', stage:'Rookie', desc:'Folletto viola orgoglioso, rifiuta di evolvere nel modo tradizionale. Attacco: Infernal Funnel.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:3, baseArmor:3, baseHealth:3}},
+      {name:'Devimon', stage:'Champion', desc:'Signore delle tenebre alato, corruppe il File Island. Attacco: Touch of Evil.', stats:{baseAccuracy:8, baseDamage:10, baseDodge:6, baseArmor:5, baseHealth:6}},
+      {name:'Myotismon', stage:'Ultimate', desc:'Vampiro Digimon elegante e crudele. Attacco: Grisly Wing.', stats:{baseAccuracy:12, baseDamage:15, baseDodge:8, baseArmor:7, baseHealth:8}},
+      {name:'Beelzemon', stage:'Mega', desc:'Signore dei Demoni su una moto infernale. Attacco: Corona Blaster.', stats:{baseAccuracy:15, baseDamage:19, baseDodge:11, baseArmor:9, baseHealth:11}},
+    ]},
+    { line:'Keramon', attribute:'Virus', family:'Unknown', chain:[
+      {name:'Kuramon', stage:'Baby', desc:'Sciame di uova digitali vaganti. Attacco: Bubble Blow.', stats:{baseAccuracy:3, baseDamage:2, baseDodge:2, baseArmor:1, baseHealth:2}},
+      {name:'Keramon', stage:'Rookie', desc:'Piccolo insetto digitale dai bit instabili. Attacco: Bio Photon.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}},
+      {name:'Infermon', stage:'Champion', desc:'Insetto meccanico dalle molte zampe. Attacco: Machine Gun Arms.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:7, baseArmor:4, baseHealth:6}},
+      {name:'Diaboromon', stage:'Ultimate', desc:'Virus digitale capace di autoreplicarsi a velocita impressionante. Attacco: Desolation Blaster.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:10, baseArmor:6, baseHealth:8}},
+      {name:'Armageddemon', stage:'Mega', desc:'Cataclisma digitale su scala planetaria. Attacco: Catastrophe Day.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:13, baseArmor:7, baseHealth:11}},
+    ]},
+    { line:'Gazimon', attribute:'Virus', family:'Metal Empire', chain:[
+      {name:'Pagumon', stage:'Baby', desc:'Piccola creatura orecchiuta, spesso trovata nella Dark Area. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:3, baseHealth:2}},
+      {name:'Gazimon', stage:'Rookie', desc:'Piccolo mostro simile a un gatto, spesso al servizio dei potenti. Attacco: Paralyze Breath.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}},
+      {name:'Puppetmon', stage:'Champion', desc:'Marionetta di legno spietata, uno dei Dark Masters. Attacco: Puppet Pummel.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:10, baseHealth:9}},
+      {name:'MetalSeadramon', stage:'Ultimate', desc:'Serpente marino corazzato, sovrano degli oceani digitali. Attacco: River of Power.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:7, baseArmor:14, baseHealth:13}},
+      {name:'Machinedramon', stage:'Mega', desc:'Colosso meccanico, il piu potente dei Dark Masters. Attacco: Giga Cannon.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:9, baseArmor:19, baseHealth:17}},
+    ]},
+    { line:'Vilemon', attribute:'Virus', family:'Nightmare Soldiers', chain:[
+      {name:'DemiMeramon', stage:'Baby', desc:'Piccola fiamma vivente dal temperamento instabile. Attacco: Bubble Blow.', stats:{baseAccuracy:3, baseDamage:2, baseDodge:2, baseArmor:1, baseHealth:2}},
+      {name:'Vilemon', stage:'Rookie', desc:'Piccolo demone alato, servitore fedele di Signori oscuri. Attacco: Nightmare Claw.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}},
+      {name:'SkullSatamon', stage:'Champion', desc:'Scheletro angelico caduto, brandisce unasta ossea. Attacco: Nail Bone.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}},
+      {name:'Daemon', stage:'Ultimate', desc:'Arcidemone avvolto dalle fiamme viola, maestro dellinganno. Attacco: Evil Inferno.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:9, baseArmor:7, baseHealth:8}},
+      {name:'Lucemon Chaos Mode', stage:'Mega', desc:'Angelo caduto trasformato in un mostro di puro caos. Attacco: Paradise Lost.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:11, baseArmor:9, baseHealth:11}},
+    ]},
+    { line:'Bakemon', attribute:'Virus', family:'Dark Empire', chain:[
+      {name:'Tsumemon', stage:'Baby', desc:'Piccola creatura artigliata dal ghigno inquietante. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}},
+      {name:'Bakemon', stage:'Rookie', desc:'Fantasma sotto un lenzuolo, ama spaventare i viaggiatori. Attacco: Dark Claw.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}},
+      {name:'Ogremon', stage:'Champion', desc:'Orco Digimon rozzo ma astuto, armato di una mazza ossea. Attacco: Bone Boomerang.', stats:{baseAccuracy:7, baseDamage:6, baseDodge:10, baseArmor:5, baseHealth:7}},
+      {name:'LadyDevimon', stage:'Ultimate', desc:'Angelo caduto crudele, un tempo alleata poi traditrice. Attacco: Darkness Wave.', stats:{baseAccuracy:10, baseDamage:9, baseDodge:14, baseArmor:7, baseHealth:10}},
+      {name:'Piedmon', stage:'Mega', desc:'Il clown supremo dei Dark Masters, maestro di spada e inganno. Attacco: Trump Sword.', stats:{baseAccuracy:13, baseDamage:11, baseDodge:19, baseArmor:9, baseHealth:13}},
+    ]},
+    { line:'Dokunemon', attribute:'Virus', family:'Deep Savers', chain:[
+      {name:'Pitchmon', stage:'Baby', desc:'Piccola creatura scivolosa dagli occhi furbi. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}},
+      {name:'Dokunemon', stage:'Rookie', desc:'Millepiedi velenoso che ama tendere imboscate. Attacco: Poison Bubbles.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}},
+      {name:'Gesomon', stage:'Champion', desc:'Calamaro digitale dai tentacoli avvolgenti. Attacco: Coral Crusher.', stats:{baseAccuracy:6, baseDamage:7, baseDodge:10, baseArmor:5, baseHealth:7}},
+      {name:'Arukenimon', stage:'Ultimate', desc:'Stratega tessitrice, crea Digimon artificiali dalle sue ragnatele. Attacco: Spider Thread.', stats:{baseAccuracy:9, baseDamage:10, baseDodge:14, baseArmor:7, baseHealth:10}},
+      {name:'Boltmon', stage:'Mega', desc:'Guerriero corazzato armato di unancora gigante. Attacco: Judge Barrel.', stats:{baseAccuracy:11, baseDamage:13, baseDodge:19, baseArmor:9, baseHealth:13}},
+    ]},
+    { line:'Kotemon', attribute:'Virus', family:'Dragon\'s Roar', chain:[
+      {name:'Zerimon', stage:'Baby', desc:'Piccola creatura corazzata dal temperamento aggressivo. Attacco: Bubble Blow.', stats:{baseAccuracy:1, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:3}},
+      {name:'Kotemon', stage:'Rookie', desc:'Piccolo guerriero armato di una spada di legno. Attacco: Blade Rush.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:5}},
+      {name:'Dark Tyrannomon', stage:'Champion', desc:'Variante corrotta di Tyrannomon, pelle scura e sguardo feroce. Attacco: Fire Blast.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:6, baseArmor:8, baseHealth:10}},
+      {name:'Kimeramon', stage:'Ultimate', desc:'Fusione innaturale di piu Digimon, creata artificialmente. Attacco: Heat Viper.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:9, baseArmor:11, baseHealth:14}},
+      {name:'BlackWarGreymon', stage:'Mega', desc:'Guerriero oscuro nato da dati corrotti, cerca il proprio scopo. Attacco: Terra Destroyer.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:11, baseArmor:15, baseHealth:19}},
+    ]},
+    { line:'Kunemon', attribute:'Variable', family:'Unknown', chain:[
+      {name:'Kapurimon', stage:'Baby', desc:'Piccolo roditore digitale dagli occhi vigili. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:2}},
+      {name:'Kunemon', stage:'Rookie', desc:'Bruco corazzato dal pungiglione velenoso. Attacco: Needle Sting.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:4}},
+      {name:'Deltamon', stage:'Champion', desc:'Digimon a tre teste, imprevedibile e feroce. Attacco: Double Bind Crusher.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}},
+      {name:'Cherubimon (Vice)', stage:'Ultimate', desc:'Un tempo Grande Angelo, ora corrotto dallodio. Attacco: Lightning Spear.', stats:{baseAccuracy:10, baseDamage:10, baseDodge:10, baseArmor:10, baseHealth:10}},
+      {name:'Millenniummon', stage:'Mega', desc:'Entita del tempo e del caos, nemica di ogni epoca. Attacco: Dimension Destroyer.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:13, baseArmor:13, baseHealth:13}},
+    ]},
+  ];
 
-  function openImportModal(){
+  function openImportModal(seedList, title){
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.id = 'modal-overlay';
     overlay.innerHTML = `
       <div class="hud-frame modal-box card">
         <div class="flex-between" style="margin-bottom:10px;">
-          <div class="section-title" style="margin:0;border:none;padding:0;">Importa Digimon Comuni</div>
+          <div class="section-title" style="margin:0;border:none;padding:0;">${escapeHTML(title)}</div>
           <button class="btn ghost small" id="btn-close-modal">✕</button>
         </div>
-        <div class="muted" style="margin-bottom:12px;">8 linee evolutive famose (40 Digimon), con Pre-Evoluzioni/Evoluzioni già collegate e Stat Base precompilate secondo l'archetipo di ciascuna linea (puoi comunque ritoccarle da "Modifica"). Deseleziona chi non ti serve.</div>
+        <div class="muted" style="margin-bottom:12px;">8 linee evolutive (40 Digimon), con Pre-Evoluzioni/Evoluzioni già collegate, Attributo/Famiglia e Stat Base precompilate secondo l'archetipo di ciascuna linea (puoi comunque ritoccarle da "Modifica"). Deseleziona chi non ti serve.</div>
         <div id="import-lines"></div>
         <div class="divider"></div>
         <div class="row">
@@ -440,10 +544,10 @@
     document.getElementById('btn-cancel-import').onclick = closeModal;
 
     const linesEl = document.getElementById('import-lines');
-    linesEl.innerHTML = SPECIES_SEED.map((line,li)=>`
+    linesEl.innerHTML = seedList.map((line,li)=>`
       <div class="roster-item" style="margin-bottom:8px;">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-          <input type="checkbox" data-line-check="${li}" checked /> <b>${escapeHTML(line.line)}</b>
+          <input type="checkbox" data-line-check="${li}" checked /> <b>${escapeHTML(line.line)}</b> <span class="muted">${line.attribute||''} ${line.family?'· '+line.family:''}</span>
         </label>
         <div style="margin-left:20px;margin-top:4px;display:flex;flex-wrap:wrap;gap:8px;">
           ${line.chain.map((sp,si)=>{
@@ -468,10 +572,10 @@
       const statusEl = document.getElementById('import-status');
       statusEl.textContent = 'Importazione in corso...';
       const toImport = [];
-      SPECIES_SEED.forEach((line,li)=>{
+      seedList.forEach((line,li)=>{
         line.chain.forEach((sp,si)=>{
           const cb = linesEl.querySelector(`[data-species-check="${li}-${si}"]`);
-          if(cb && cb.checked && !cb.disabled) toImport.push(sp);
+          if(cb && cb.checked && !cb.disabled) toImport.push({ ...sp, attribute: line.attribute||'', family: line.family||'' });
         });
       });
       if(toImport.length===0){ statusEl.textContent='Nessun Digimon selezionato.'; return; }
@@ -479,14 +583,15 @@
       for(const sp of toImport){
         const result = await addDexEntry(session.code, {
           name: sp.name, stage: sp.stage, description: sp.desc, imageUrl: '',
-          addedBy: session.username, discovered: false, categories: [], baseStats: sp.stats || {}, evolutions: [], evolvesFrom: []
+          addedBy: session.username, discovered: false, categories: [], baseStats: sp.stats || {}, evolutions: [], evolvesFrom: [],
+          attribute: sp.attribute, family: sp.family
         });
         if(result && result.entry) insertedByName[sp.name] = result.entry;
       }
       cachedDex = await getDex(session.code);
       const byName = {};
       cachedDex.forEach(e=>{ byName[e.name.trim().toLowerCase()] = e; });
-      for(const line of SPECIES_SEED){
+      for(const line of seedList){
         for(let si=0; si<line.chain.length; si++){
           const sp = line.chain[si];
           const current = byName[sp.name.trim().toLowerCase()];
@@ -498,7 +603,8 @@
           await updateDexEntry(session.code, current.id, {
             name: current.name, stage: current.stage, description: current.description, imageUrl: current.image_url,
             baseStats: current.base_stats, categories: current.categories, qualities: current.qualities,
-            dpTotal: current.dp_total, discovered: current.discovered, evolutions, evolvesFrom
+            dpTotal: current.dp_total, discovered: current.discovered, evolutions, evolvesFrom,
+            attribute: current.attribute, family: current.family
           });
         }
       }
@@ -536,7 +642,15 @@
           <div class="field"><label>URL Immagine</label><input type="text" id="ed-img" value="${escapeAttr(draft.image_url)}" /></div>
         </div>
         <div class="field"><label>Descrizione</label><textarea id="ed-desc" rows="2">${escapeHTML(draft.description)}</textarea></div>
-        <div class="field"><label>Categorie (separate da virgola)</label><input type="text" id="ed-categories" value="${escapeAttr((draft.categories||[]).join(', '))}" /></div>
+        <div class="row">
+          <div class="field"><label>Attributo</label>
+            <select id="ed-attribute"><option value="">— nessuno —</option>${ATTRIBUTES.map(a=>`<option ${draft.attribute===a?'selected':''}>${a}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label>Famiglia</label>
+            <select id="ed-family"><option value="">— nessuna —</option>${FAMILIES.map(f=>`<option ${draft.family===f?'selected':''}>${f}</option>`).join('')}</select>
+          </div>
+        </div>
+        <div class="field"><label>Type/Group (separati da virgola — es. Dinosaur, Royal Knights)</label><input type="text" id="ed-categories" value="${escapeAttr((draft.categories||[]).join(', '))}" /></div>
         <label style="font-size:11px;display:flex;align-items:center;gap:6px;margin:6px 0;"><input type="checkbox" id="ed-discovered" ${draft.discovered?'checked':''} /> Scoperto dai giocatori</label>
         <div class="divider"></div>
         <div class="muted" style="margin-bottom:6px;">Stat Base (Combattimento)</div>
@@ -660,6 +774,8 @@
         description: document.getElementById('ed-desc').value.trim(),
         imageUrl: document.getElementById('ed-img').value.trim(),
         categories: document.getElementById('ed-categories').value.split(',').map(s=>s.trim()).filter(Boolean),
+        attribute: document.getElementById('ed-attribute').value,
+        family: document.getElementById('ed-family').value,
         discovered: document.getElementById('ed-discovered').checked,
         baseStats: {
           baseAccuracy: Number(document.getElementById('ed-acc').value)||0,
