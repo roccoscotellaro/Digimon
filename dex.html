@@ -387,18 +387,21 @@ Devimon: https://..."></textarea>
         </div>
         <div class="info">
           <div class="name">${escapeHTML(e.name)}</div>
-          <div class="muted" style="font-size:10px;">${escapeHTML(e.stage)}${e.attribute?` · ${escapeHTML(e.attribute)}`:''}${isMaster?(e.discovered?' · scoperto':' · nascosto'):''}</div>
+          <div class="muted" style="font-size:10px;">${e.origin_type==='armor'?'Armor':(e.origin_type==='jogress'?'Jogress/Fusione':escapeHTML(e.stage))}${e.attribute?` · ${escapeHTML(e.attribute)}`:''}${isMaster?(e.discovered?' · scoperto':' · nascosto'):''}</div>
         </div>
       </div>`;
     }
 
     const groups = {};
     filtered.forEach(e=>{
-      const st = STAGE_ORDER.includes(e.stage) ? e.stage : 'Altro';
+      let st;
+      if(e.origin_type==='armor') st = '🛡️ Armor';
+      else if(e.origin_type==='jogress') st = '🤝 Jogress/Fusione';
+      else st = STAGE_ORDER.includes(e.stage) ? e.stage : 'Altro';
       if(!groups[st]) groups[st] = [];
       groups[st].push(e);
     });
-    const stagesToShow = STAGE_ORDER.filter(s=>groups[s]).concat(groups['Altro'] ? ['Altro'] : []);
+    const stagesToShow = STAGE_ORDER.filter(s=>groups[s]).concat(groups['🛡️ Armor'] ? ['🛡️ Armor'] : []).concat(groups['🤝 Jogress/Fusione'] ? ['🤝 Jogress/Fusione'] : []).concat(groups['Altro'] ? ['Altro'] : []);
 
     grid.innerHTML = stagesToShow.map(stage=>{
       const entries = groups[stage].slice().sort((a,b)=>a.name.localeCompare(b.name, 'it', {sensitivity:'base'}));
@@ -440,12 +443,11 @@ Devimon: https://..."></textarea>
         </div>
         ${entry.image_url ? `<img class="portrait-lg" src="${escapeAttr(entry.image_url)}" style="cursor:zoom-in;" onerror="this.style.display='none'" data-zoom-img="${escapeAttr(entry.image_url)}" />` : ''}
         <div style="margin-bottom:8px;">
-          <span class="tag">${escapeHTML(entry.stage)}</span>
+          <span class="tag">${entry.origin_type==='armor'?'🛡️ Armor':(entry.origin_type==='jogress'?'🤝 Jogress/Fusione':escapeHTML(entry.stage))}</span>
           ${entry.attribute ? `<span class="tag" style="margin-left:4px;color:var(--cyan);border-color:var(--cyan-dim);">${escapeHTML(entry.attribute)}</span>` : ''}
           ${entry.family ? `<span class="tag" style="margin-left:4px;color:var(--amber);border-color:var(--amber);">${escapeHTML(entry.family)}</span>` : ''}
-          ${entry.origin_type==='armor' ? `<span class="tag" style="margin-left:4px;">🛡️ Armor</span>` : ''}
-          ${entry.origin_type==='jogress' ? `<span class="tag" style="margin-left:4px;">🤝 Jogress/Fusione</span>` : ''}
         </div>
+        ${entry.origin_type ? `<div class="muted" style="margin-bottom:8px;font-size:10px;">Livello di riferimento: ${escapeHTML(entry.stage)}</div>` : ''}
         ${entry.categories && entry.categories.length ? `<div style="margin-bottom:8px;">${entry.categories.map(c=>`<span class="tag" style="margin-right:4px;">${escapeHTML(c)}</span>`).join('')}</div>` : ''}
         ${entry.description ? `<div class="muted" style="margin-bottom:10px;">${escapeHTML(entry.description)}</div>` : ''}
         ${hasStats ? `<div class="grid-stats">
@@ -568,7 +570,7 @@ Devimon: https://..."></textarea>
       {name:'Raidramon', stage:'Champion', desc:'Evoluzione Armor di Veemon (Digimental dell\'Amicizia): lupo corazzato velocissimo, cavalcabile. Attacco: Blue Thunder.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}, evolvesFromNames:['Veemon'], evolvesToNames:[], originType:'armor'},
       {name:'Gargoylemon', stage:'Champion', desc:'Evoluzione Armor di Veemon (Digimental della Luce): demone alato imbrigliato, messaggero degli Angeli. Attacco: Statue Bomber.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}, evolvesFromNames:['Veemon'], evolvesToNames:[], originType:'armor'},
       {name:'Sagittarimon', stage:'Champion', desc:'Evoluzione Armor di Veemon (Digimental della Speranza): centauro arciere dalla mira infallibile. Attacco: Aim Shooting.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}, evolvesFromNames:['Veemon'], evolvesToNames:[], originType:'armor'},
-      {name:'Magnamon', stage:'Champion', desc:'Evoluzione Armor di Veemon (Digimental dei Miracoli): cavaliere dorato dal potere straordinario, insolitamente forte per il suo livello. Attacco: Magna Blast.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}, evolvesFromNames:['Veemon'], evolvesToNames:[], originType:'armor'},
+      {name:'Magnamon', stage:'Champion', desc:'Evoluzione Armor di Veemon (Digimental dei Miracoli): cavaliere dorato dal potere straordinario, insolitamente forte per il suo livello. Attacco: Magna Blast.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}, evolvesFromNames:['Veemon'], evolvesToNames:[], originType:'armor', categories:['Royal Knights']},
       {name:'GoldVeedramon', stage:'Champion', desc:'Evoluzione Armor dorata di Veemon (Digimental del Destino): drago dorato dalla potenza fuori scala per il proprio livello. Attacco: Golden Noble Star.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}, evolvesFromNames:['Veemon'], evolvesToNames:[], originType:'armor'},
       {name:'Paildramon', stage:'Ultimate', desc:'Drago cibernetico frutto di un DNA Digivolve. Attacco: Desperado Blaster.', stats:{baseAccuracy:10, baseDamage:10, baseDodge:10, baseArmor:10, baseHealth:10}, evolvesFromNames:['ExVeemon'], originType:'jogress'},
       {name:'Imperialdramon', stage:'Mega', desc:'Drago imperiale dal potere immenso. Attacco: Positron Laser.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:13, baseArmor:13, baseHealth:13}},
@@ -792,7 +794,7 @@ Devimon: https://..."></textarea>
       seedList.forEach((line,li)=>{
         line.chain.forEach((sp,si)=>{
           const cb = linesEl.querySelector(`[data-species-check="${li}-${si}"]`);
-          if(cb && cb.checked && !cb.disabled) toImport.push({ ...sp, attribute: line.attribute||'', family: line.family||'' });
+          if(cb && cb.checked && !cb.disabled) toImport.push({ ...sp, attribute: sp.attribute || line.attribute || '', family: sp.family || line.family || '', categories: sp.categories || line.categories || [] });
         });
       });
       if(toImport.length===0){ statusEl.textContent='Nessun Digimon selezionato.'; return; }
@@ -800,7 +802,7 @@ Devimon: https://..."></textarea>
       for(const sp of toImport){
         const result = await addDexEntry(session.code, {
           name: sp.name, stage: sp.stage, description: sp.desc, imageUrl: '',
-          addedBy: session.username, discovered: false, categories: [], baseStats: sp.stats || {}, evolutions: [], evolvesFrom: [],
+          addedBy: session.username, discovered: false, categories: sp.categories || [], baseStats: sp.stats || {}, evolutions: [], evolvesFrom: [],
           attribute: sp.attribute, family: sp.family, originType: sp.originType || ''
         });
         if(result && result.entry) insertedByName[sp.name] = result.entry;
@@ -830,9 +832,9 @@ Devimon: https://..."></textarea>
           }
           await updateDexEntry(session.code, current.id, {
             name: current.name, stage: current.stage, description: current.description, imageUrl: current.image_url,
-            baseStats: current.base_stats, categories: current.categories, qualities: current.qualities,
+            baseStats: current.base_stats, categories: (sp.categories || line.categories || current.categories), qualities: current.qualities,
             dpTotal: current.dp_total, discovered: current.discovered, evolutions, evolvesFrom,
-            attribute: current.attribute, family: current.family, originType: sp.originType || current.origin_type || ''
+            attribute: sp.attribute || current.attribute, family: sp.family || current.family, originType: sp.originType || current.origin_type || ''
           });
         }
       }
