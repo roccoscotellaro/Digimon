@@ -217,7 +217,7 @@
       <div class="hud-frame card">
         <div class="flex-between" style="margin-bottom:10px;">
           <div class="section-title" style="margin:0;border:none;padding:0;">Digimon Registrati (${cachedDex.length})</div>
-          ${isMaster ? `<span><button class="btn ghost small" id="btn-import-seed" style="margin-right:6px;">📥 Importa Digimon Comuni</button><button class="btn ghost small" id="btn-import-villains" style="margin-right:6px;color:var(--danger);border-color:rgba(255,93,93,0.4);">😈 Importa Digimon Cattivi</button><button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button></span>` : ''}
+          ${isMaster ? `<span><button class="btn ghost small" id="btn-import-seed" style="margin-right:6px;">📥 Importa Digimon Comuni</button><button class="btn ghost small" id="btn-import-villains" style="margin-right:6px;color:var(--danger);border-color:rgba(255,93,93,0.4);">😈 Importa Digimon Cattivi</button><button class="btn ghost small" id="btn-bulk-images" style="margin-right:6px;">🖼️ Incolla Immagini</button><button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button></span>` : ''}
         </div>
         <div id="filter-bar" class="filter-bar"></div>
         <div id="dex-grid" class="dex-grid"></div>
@@ -230,8 +230,64 @@
     if(importBtn) importBtn.onclick = ()=> openImportModal(SPECIES_SEED, 'Importa Digimon Comuni');
     const importVillainsBtn = document.getElementById('btn-import-villains');
     if(importVillainsBtn) importVillainsBtn.onclick = ()=> openImportModal(SPECIES_SEED_VILLAINS, 'Importa Digimon Cattivi');
+    const bulkImagesBtn = document.getElementById('btn-bulk-images');
+    if(bulkImagesBtn) bulkImagesBtn.onclick = ()=> openBulkImageModal();
     renderFilterBar();
     renderGrid();
+  }
+
+  function openBulkImageModal(){
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="hud-frame modal-box card">
+        <div class="flex-between" style="margin-bottom:10px;">
+          <div class="section-title" style="margin:0;border:none;padding:0;">🖼️ Incolla Immagini in Blocco</div>
+          <button class="btn ghost small" id="btn-close-modal">✕</button>
+        </div>
+        <div class="muted" style="margin-bottom:10px;">Incolla una riga per Digimon, nel formato <code>Nome: URL</code>. Il nome deve corrispondere (senza distinguere maiuscole) a una voce già presente nel Dex.</div>
+        <textarea id="bulk-image-text" rows="12" style="width:100%;font-family:monospace;font-size:12px;" placeholder="Agumon: https://...
+Greymon: https://...
+Devimon: https://..."></textarea>
+        <button class="btn solid" id="btn-bulk-images-apply" style="width:100%;margin-top:10px;">Applica</button>
+        <div class="muted" id="bulk-image-status" style="margin-top:8px;max-height:150px;overflow-y:auto;"></div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.onclick = (e)=>{ if(e.target===overlay) closeModal(); };
+    document.getElementById('btn-close-modal').onclick = closeModal;
+    document.getElementById('btn-bulk-images-apply').onclick = async ()=>{
+      const statusEl = document.getElementById('bulk-image-status');
+      const raw = document.getElementById('bulk-image-text').value;
+      const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
+      const byNameLower = {};
+      cachedDex.forEach(e=>{ byNameLower[e.name.trim().toLowerCase()] = e; });
+      let updated = 0, notFound = [], malformed = [];
+      statusEl.innerHTML = 'Applicazione in corso...';
+      for(const line of lines){
+        const idx = line.indexOf(':');
+        if(idx<0){ malformed.push(line); continue; }
+        const name = line.slice(0, idx).trim();
+        const url = line.slice(idx+1).trim();
+        if(!name || !url){ malformed.push(line); continue; }
+        const entry = byNameLower[name.toLowerCase()];
+        if(!entry){ notFound.push(name); continue; }
+        await updateDexEntry(session.code, entry.id, {
+          name: entry.name, stage: entry.stage, description: entry.description, imageUrl: url,
+          baseStats: entry.base_stats, categories: entry.categories, qualities: entry.qualities,
+          dpTotal: entry.dp_total, discovered: entry.discovered, evolutions: entry.evolutions,
+          evolvesFrom: entry.evolvesFrom || entry.evolves_from, attribute: entry.attribute, family: entry.family
+        });
+        entry.image_url = url;
+        updated++;
+      }
+      let msg = `<b style="color:var(--cyan);">${updated} immagini aggiornate.</b>`;
+      if(notFound.length) msg += `<br/>Non trovati nel Dex: ${notFound.map(escapeHTML).join(', ')}`;
+      if(malformed.length) msg += `<br/>Righe non valide (manca ":"): ${malformed.map(escapeHTML).join(' | ')}`;
+      statusEl.innerHTML = msg;
+      renderGrid();
+    };
   }
 
   function renderFilterBar(){
