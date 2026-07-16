@@ -312,7 +312,11 @@
     combat.order = buildInitiativeOrder(combat.participants);
     combat.currentIndex = 0;
     combat.round = 1;
-    combat.participants.forEach(p=>{ p.actions = 2; p.attackedThisRound = false; });
+    combat.participants.forEach(p=>{
+      const pMember = p.isPC ? cachedRoster.find(m=>m.username===p.username) : null;
+      p.actions = (pMember && pMember.digimon.hybridMode) ? 3 : 2;
+      p.attackedThisRound = false;
+    });
   }
 
   function combatSelfActionHTML(combat, username){
@@ -645,6 +649,8 @@
       size:'Medium', stance:'Neutral', chatColor:'#c896ff',
       resolveCurrent:0, resolveMax:4,
       stageStats:{},
+      armorForms:[],
+      hybridMode:false,
       attacks:[
         { name:'Colpo Base', shape:'Melee', type:'Damage', effectKey:'', extraTags:'', desc:'Un attacco fisico semplice.', signature:false, reach:0, areaAttack:false },
         { name:'Raggio a Distanza', shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc:'Un colpo dalla distanza.', signature:false, reach:1, areaAttack:false }
@@ -1430,6 +1436,7 @@
   }
 
   const STAGE_CREATION = {
+    Fresh:    { dp:2,  startStat:1 },
     Baby:     { dp:5,  startStat:1 },
     Rookie:   { dp:10, startStat:2 },
     Champion: { dp:20, startStat:3 },
@@ -2020,7 +2027,7 @@
     `).join('');
   }
 
-  const STAGES = ['Baby','Rookie','Champion','Ultimate','Mega'];
+  const STAGES = ['Fresh','Baby','Rookie','Champion','Ultimate','Mega'];
   function stageIndex(s){ const i = STAGES.indexOf(s); return i<0?0:i; }
   function batteryCap(stage){ return stageIndex(stage)+1; }
   function evolutionCost(d, targetStage){
@@ -2195,13 +2202,26 @@
         <div class="muted" style="font-size:10px;">Risorsa da alcune Qualities (es. Combat Monster) — Max impostabile in "Modifica".</div>
         <div class="divider"></div>
         <div class="muted" style="margin-bottom:4px;">Evoluzione</div>
-        <div class="sub" style="margin-bottom:6px;">Il tuo Digimon riposa normalmente a <b>${escapeHTML(d.defaultStage)}</b> e può salire fino a <b>${STAGES[Math.min(4, stageIndex(d.defaultStage)+Number(d.defaultRange||0))]}</b> senza spendere Evolution Points (Default Range: ${d.defaultRange}). Evolution Points disponibili: ${d.evolutionPoints||0}${d.forcedEvoRoundsLeft>0?` · <span style="color:var(--danger);">Evoluzione Forzata: ${d.forcedEvoRoundsLeft} round rimasti</span>`:''}</div>
+        <div class="sub" style="margin-bottom:6px;">Il tuo Digimon riposa normalmente a <b>${escapeHTML(d.defaultStage)}</b> e può salire fino a <b>${STAGES[Math.min(5, stageIndex(d.defaultStage)+Number(d.defaultRange||0))]}</b> senza spendere Evolution Points (Default Range: ${d.defaultRange}). Evolution Points disponibili: ${d.evolutionPoints||0}${d.forcedEvoRoundsLeft>0?` · <span style="color:var(--danger);">Evoluzione Forzata: ${d.forcedEvoRoundsLeft} round rimasti</span>`:''}</div>
+        ${d.hybridMode ? `<div class="muted" style="margin-bottom:6px;color:var(--cyan);">🔀 Hybrid/Bio-Merge attiva: 3 Azioni in combattimento invece di 2 (ancora 1 Attacco a round). Il Tamer non può Dirigere se stesso.</div>` : ''}
         <div class="row">
           <select id="evo-target-${containerId}" style="flex:2;">${STAGES.map(s=>`<option ${s===d.stage?'selected':''}>${s}</option>`).join('')}</select>
           <button class="btn small" id="btn-evolve-${containerId}" style="flex:1;">🧬 Evolvi</button>
           <button class="btn ghost small" id="btn-force-evolve-${containerId}" style="flex:1;">⚡ Forza</button>
         </div>
         <div class="muted" id="evo-status-${containerId}" style="margin-top:4px;"></div>
+        <div class="divider"></div>
+        <div class="flex-between" style="margin-bottom:6px;"><span class="muted">🛡️ Armor Forms (Digimental, 0 EP, 1 volta a Riposo)</span></div>
+        ${(d.armorForms||[]).length===0 ? '<div class="muted" style="margin-bottom:6px;">Nessuna Armor Form registrata.</div>' : d.armorForms.map((af,ai)=>`
+          <div class="roster-item" style="padding:6px 8px;margin-bottom:4px;">
+            <div class="flex-between"><b>${escapeHTML(af.name)}</b><span class="muted">${escapeHTML(af.digimentalName)} · ${af.stage}</span></div>
+            ${af.qualities && af.qualities.length ? `<div class="sub" style="margin-top:2px;">${af.qualities.map(q=>escapeHTML(q.name)).join(', ')}</div>` : ''}
+            <div class="row" style="margin-top:4px;">
+              <button class="btn small" data-armor-use="${ai}" style="flex:1;" ${af.usedThisRest?'disabled':''}>${af.usedThisRest?'Già usata (Rest)':'🛡️ Usa'}</button>
+              <button class="btn ghost small" data-armor-revert="${ai}" style="flex:1;">↩️ Torna al Default</button>
+            </div>
+          </div>
+        `).join('')}
         <div class="divider"></div>
         <div class="flex-between" style="margin-bottom:6px;">
           <span class="muted">Qualities</span>
@@ -2280,6 +2300,36 @@
           refreshLiveParts();
         };
       }
+      document.querySelectorAll(`[data-armor-use]`).forEach(btn=>{
+        btn.onclick = async ()=>{
+          const idx = Number(btn.getAttribute('data-armor-use'));
+          const af = me.digimon.armorForms[idx];
+          if(!af || af.usedThisRest) return;
+          applyStageChange(me.digimon, me.digimon.stage, af.stage);
+          if(!me.digimon.qualities) me.digimon.qualities = [];
+          (af.qualities||[]).forEach(q=>{
+            me.digimon.qualities.push({ ...q, armorSource: af.name });
+          });
+          af.usedThisRest = true;
+          await saveMember(session.code, me);
+          await pushLog(session.code, { who: session.username, role:'player', text: `${me.digimon.name||'Il Digimon'} usa il Digimental "${af.digimentalName}" per Armor Evolvere in ${af.name} (${af.stage}, 0 Evolution Points).` });
+          renderDigimonCard(me, containerId);
+          refreshLiveParts();
+        };
+      });
+      document.querySelectorAll(`[data-armor-revert]`).forEach(btn=>{
+        btn.onclick = async ()=>{
+          const idx = Number(btn.getAttribute('data-armor-revert'));
+          const af = me.digimon.armorForms[idx];
+          if(!af) return;
+          applyStageChange(me.digimon, me.digimon.stage, me.digimon.defaultStage);
+          me.digimon.qualities = (me.digimon.qualities||[]).filter(q=>q.armorSource!==af.name);
+          await saveMember(session.code, me);
+          await pushLog(session.code, { who: session.username, role:'player', text: `${me.digimon.name||'Il Digimon'} torna al Default Stage (${me.digimon.defaultStage}), lasciando la forma ${af.name}.` });
+          renderDigimonCard(me, containerId);
+          refreshLiveParts();
+        };
+      });
       cardEl.querySelectorAll('[data-pool]').forEach(btn=>{
         btn.onclick = async ()=>{
           const statKey = btn.getAttribute('data-pool');
@@ -2305,6 +2355,7 @@
           <div class="field"><label>MP Massimi</label><input type="number" id="e-d-maxmp-${containerId}" value="${d.maxMp}" /></div>
         </div>
         <div class="field"><label>Personalità (usata dal Master per le battute)</label><textarea id="e-d-personality-${containerId}" rows="3">${escapeHTML(d.personality)}</textarea></div>
+        <label style="font-size:11px;display:flex;align-items:center;gap:6px;margin:6px 0;"><input type="checkbox" id="e-d-hybrid-${containerId}" ${d.hybridMode?'checked':''} /> 🔀 Hybrid/Bio-Merge Mode (3 Azioni in combattimento, Tamer e Digimon sono un'unica entità)</label>
         <div class="row">
           <div class="field"><label>Size</label>
             <select id="e-d-size-${containerId}">${allowedSizes(d.stage).map(s=>`<option ${d.size===s?'selected':''}>${s}</option>`).join('')}</select>
@@ -2360,6 +2411,23 @@
           <div class="field"><label>Default Range</label><input type="number" id="e-d-defrange-${containerId}" value="${d.defaultRange||1}" min="0" /></div>
           <div class="field"><label>Evolution Points</label><input type="number" id="e-d-evopts-${containerId}" value="${d.evolutionPoints||0}" min="0" /></div>
         </div>
+        <div class="divider"></div>
+        <div class="muted" style="margin-bottom:6px;">🛡️ Armor Forms</div>
+        <div id="armor-list-${containerId}"></div>
+        <div class="row">
+          <input type="text" id="armor-name-${containerId}" placeholder="Nome Armor Form" style="flex:2;" />
+          <input type="text" id="armor-digimental-${containerId}" placeholder="Nome Digimental" style="flex:2;" />
+          <select id="armor-stage-${containerId}" style="flex:1;">${STAGES.map(s=>`<option>${s}</option>`).join('')}</select>
+        </div>
+        <div class="row" style="margin-top:6px;">
+          <select id="armor-qual-catalog-${containerId}" style="flex:2;">
+            <option value="">— nessuna Quality da aggiungere —</option>
+            ${QUALITY_CATALOG.map((q,qi)=>`<option value="${qi}">${escapeHTML(q.name)} (${q.dpPerRank} DP)</option>`).join('')}
+          </select>
+          <button class="btn small" id="btn-armor-qual-add-${containerId}" style="flex:1;">+ Quality</button>
+          <button class="btn amber small" id="btn-armor-add-${containerId}" style="flex:1;">Salva Armor Form</button>
+        </div>
+        <div class="muted" id="armor-qual-draft-${containerId}" style="margin-top:4px;"></div>
         <div class="divider"></div>
         <div class="field"><label>DP Totali</label><input type="number" id="e-d-dptotal-${containerId}" value="${d.dpTotal||0}" min="0" /></div>
         <div class="field"><label>Resolve Massimo</label><input type="number" id="e-d-resmax-${containerId}" value="${d.resolveMax||4}" min="0" /></div>
@@ -2421,6 +2489,46 @@
         document.getElementById('atk-area-'+containerId).checked=false;
         renderAtkList();
       };
+      let armorDraftQualities = [];
+      const renderArmorList = ()=>{
+        const listEl = document.getElementById('armor-list-'+containerId);
+        listEl.innerHTML = (d.armorForms||[]).length===0 ? '<div class="muted" style="margin-bottom:6px;">Nessuna Armor Form.</div>' : d.armorForms.map((af,i)=>`
+          <div class="flex-between" style="margin-bottom:6px;">
+            <span><b>${escapeHTML(af.name)}</b> <span class="muted">(${escapeHTML(af.digimentalName)}, ${af.stage}${af.qualities&&af.qualities.length?`, ${af.qualities.map(q=>q.name).join('+')}`:''})</span></span>
+            <button class="btn ghost small" data-rmarmor="${i}">Rimuovi</button>
+          </div>
+        `).join('');
+        listEl.querySelectorAll('[data-rmarmor]').forEach(b=>{
+          b.onclick = ()=>{ d.armorForms.splice(Number(b.getAttribute('data-rmarmor')),1); renderArmorList(); };
+        });
+      };
+      renderArmorList();
+      const drawArmorQualDraft = ()=>{
+        document.getElementById('armor-qual-draft-'+containerId).textContent = armorDraftQualities.length
+          ? 'Qualities pronte da salvare: ' + armorDraftQualities.map(q=>q.name).join(', ')
+          : '';
+      };
+      document.getElementById('btn-armor-qual-add-'+containerId).onclick = ()=>{
+        const sel = document.getElementById('armor-qual-catalog-'+containerId);
+        if(sel.value==='') return;
+        const q = QUALITY_CATALOG[Number(sel.value)];
+        armorDraftQualities.push({ name:q.name, cost:q.dpPerRank, category:q.category, description:q.desc, mechanic:q.mechanic, rank:1 });
+        sel.value='';
+        drawArmorQualDraft();
+      };
+      document.getElementById('btn-armor-add-'+containerId).onclick = ()=>{
+        const name = document.getElementById('armor-name-'+containerId).value.trim();
+        const digimentalName = document.getElementById('armor-digimental-'+containerId).value.trim();
+        const stage = document.getElementById('armor-stage-'+containerId).value;
+        if(!name || !digimentalName) return;
+        if(!d.armorForms) d.armorForms = [];
+        d.armorForms.push({ name, digimentalName, stage, qualities: armorDraftQualities, usedThisRest:false });
+        armorDraftQualities = [];
+        document.getElementById('armor-name-'+containerId).value='';
+        document.getElementById('armor-digimental-'+containerId).value='';
+        drawArmorQualDraft();
+        renderArmorList();
+      };
       const bindQualRemove = ()=>{
         document.querySelectorAll(`#qual-list-${containerId} [data-rmquality]`).forEach(b=>{
           b.onclick = ()=>{
@@ -2471,6 +2579,7 @@
         me.digimon.maxWounds = Number(document.getElementById('e-d-maxw-'+containerId).value)||1;
         me.digimon.maxMp = Number(document.getElementById('e-d-maxmp-'+containerId).value)||0;
         me.digimon.personality = document.getElementById('e-d-personality-'+containerId).value;
+        me.digimon.hybridMode = document.getElementById('e-d-hybrid-'+containerId).checked;
         me.digimon.size = document.getElementById('e-d-size-'+containerId).value;
         me.digimon.stance = document.getElementById('e-d-stance-'+containerId).value;
         me.digimon.chatColor = document.getElementById('e-d-color-'+containerId).value;
@@ -3231,6 +3340,7 @@
         (p.tamer.torments||[]).forEach(t=>{ t.usedThisRest = false; });
         if(!p.tamer.specialOrdersUsed) p.tamer.specialOrdersUsed = {};
         TALENT_DEFS.filter(t=>t.once==='rest').forEach(t=>{ p.tamer.specialOrdersUsed[t.order] = false; });
+        (p.digimon.armorForms||[]).forEach(af=>{ af.usedThisRest = false; });
         await saveMember(code, p);
       }
       await pushLog(code, { who:'Sistema', role:'gm', text: `😴 Il party fa un Rest: Ferite ed Evolution Points recuperati del tutto, penalità Torment rimosse, Torment Check di nuovo disponibili.` });
@@ -3385,6 +3495,13 @@
       </div>
       <div id="combat-clash-result" style="margin-top:8px;"></div>
       <div id="combat-clash-actions" style="margin-top:8px;"></div>
+      <div class="divider"></div>
+      <div class="section-title" style="font-size:11px;">🤝 Jogress (usa Attaccante/Bersaglio sopra, entrambi giocatori)</div>
+      <div class="row">
+        <button class="btn small" id="btn-jogress-attempt" style="flex:1;">🤝 Tenta Jogress (2 Az. ciascuno, TN 15)</button>
+        <button class="btn ghost small" id="btn-jogress-end" style="flex:1;">↩️ Termina Jogress</button>
+      </div>
+      <div id="jogress-result" style="margin-top:8px;"></div>
       <div class="divider"></div>
       <div class="row">
         <select id="combat-add-player" style="flex:2;">
@@ -3869,6 +3986,80 @@
       };
     }
 
+    const jogressAttemptBtn = document.getElementById('btn-jogress-attempt');
+    if(jogressAttemptBtn){
+      jogressAttemptBtn.onclick = async ()=>{
+        const aId = document.getElementById('combat-attacker').value;
+        const bId = document.getElementById('combat-target').value;
+        const a = combat.participants.find(p=>p.id===aId);
+        const b = combat.participants.find(p=>p.id===bId);
+        const resEl = document.getElementById('jogress-result');
+        if(!a || !b || a.id===b.id || !a.isPC || !b.isPC){
+          if(resEl) resEl.innerHTML = '<div class="err">Scegli due partecipanti giocatori diversi in Attaccante/Bersaglio.</div>';
+          return;
+        }
+        const aMember = cachedRoster.find(m=>m.username===a.username);
+        const bMember = cachedRoster.find(m=>m.username===b.username);
+        if(!aMember || !bMember) return;
+        if(stageIndex(aMember.digimon.stage) !== stageIndex(bMember.digimon.stage)){
+          if(resEl) resEl.innerHTML = `<div class="err">Jogress richiede due Digimon dello stesso Stage (${aMember.digimon.stage} vs ${bMember.digimon.stage}).</div>`;
+          return;
+        }
+        a.actions = Math.max(0,(a.actions||0)-2); b.actions = Math.max(0,(b.actions||0)-2);
+        const aRoll = rollSkillCheck(aMember.tamer.willpower, 0);
+        const bRoll = rollSkillCheck(bMember.tamer.willpower, 0);
+        const aOk = aRoll.total >= 15, bOk = bRoll.total >= 15;
+        let logText = `🤝 Jogress Check: ${a.name} (Willpower ${aMember.tamer.willpower}) 3d6[${aRoll.dice.join(',')}]=${aRoll.total} vs TN 15 (${aOk?'Successo':'Fallito'}) · ${b.name} (Willpower ${bMember.tamer.willpower}) 3d6[${bRoll.dice.join(',')}]=${bRoll.total} vs TN 15 (${bOk?'Successo':'Fallito'})`;
+        if(!aOk || !bOk){
+          logText += ' → Jogress NON riuscito.';
+          if(resEl) resEl.innerHTML = `<div class="err">Jogress fallito.</div>`;
+          await pushLog(code, { who:'Master', role:'roll', text: logText, meta:{dice:aRoll.dice.concat(bRoll.dice)} });
+          await persistAndRefresh();
+          return;
+        }
+        const fusionName = window.prompt('Nome del Digimon fuso:', `${aMember.digimon.name}+${bMember.digimon.name}`) || `${aMember.digimon.name}+${bMember.digimon.name}`;
+        const newStageIdx = Math.min(5, Math.max(stageIndex(aMember.digimon.stage), stageIndex(bMember.digimon.stage))+1);
+        const newStage = STAGES[newStageIdx];
+        const fused = {
+          id: 'p'+Date.now()+Math.random().toString(36).slice(2,6),
+          name: fusionName, side: a.side, isPC:false,
+          accuracy: Number(aMember.digimon.baseAccuracy)+Number(bMember.digimon.baseAccuracy),
+          damage: Number(aMember.digimon.baseDamage)+Number(bMember.digimon.baseDamage),
+          dodge: Number(aMember.digimon.baseDodge)+Number(bMember.digimon.baseDodge),
+          armor: Number(aMember.digimon.baseArmor)+Number(bMember.digimon.baseArmor),
+          maxWounds: Number(aMember.digimon.maxWounds)+Number(bMember.digimon.maxWounds),
+          currentWounds: Number(aMember.digimon.currentWounds)+Number(bMember.digimon.currentWounds),
+          ram: Number(aMember.digimon.baseDodge)+Number(bMember.digimon.baseDodge),
+          initiative: Math.min(a.initiative||0, b.initiative||0),
+          actions: 2, attackedThisRound:false, effects:[], zone: a.zone||'Medio',
+          jogressOf: [a.username, b.username], jogressStage: newStage
+        };
+        combat.participants = combat.participants.filter(p=>p.id!==a.id && p.id!==b.id);
+        combat.participants.push(fused);
+        logText += ` → Successo! ${aMember.digimon.name} e ${bMember.digimon.name} si fondono in ${fusionName} (${newStage}).`;
+        await pushLog(code, { who:'Master', role:'roll', text: logText, meta:{dice:aRoll.dice.concat(bRoll.dice)} });
+        if(resEl) resEl.innerHTML = `<div class="muted">Fusione riuscita: <b style="color:var(--cyan);">${escapeHTML(fusionName)}</b></div>`;
+        await persistAndRefresh();
+      };
+    }
+    const jogressEndBtn = document.getElementById('btn-jogress-end');
+    if(jogressEndBtn){
+      jogressEndBtn.onclick = async ()=>{
+        const targetId = document.getElementById('combat-target').value;
+        const fused = combat.participants.find(p=>p.id===targetId && p.jogressOf);
+        if(!fused){
+          const resEl = document.getElementById('jogress-result');
+          if(resEl) resEl.innerHTML = '<div class="err">Seleziona nel menu Bersaglio il Digimon fuso da sciogliere.</div>';
+          return;
+        }
+        combat.participants = combat.participants.filter(p=>p.id!==fused.id);
+        await pushLog(code, { who:'Master', role:'gm', text: `↩️ La fusione ${fused.name} si scioglie. Riaggiungi ${fused.jogressOf.join(' e ')} manualmente dal menu "Aggiungi giocatore".` });
+        const resEl = document.getElementById('jogress-result');
+        if(resEl) resEl.innerHTML = '';
+        await persistAndRefresh();
+      };
+    }
+
     cardEl.querySelectorAll('[data-part-init]').forEach(inp=>{
       inp.onchange = async ()=>{
         const id = inp.getAttribute('data-part-init');
@@ -3905,7 +4096,11 @@
       btn.onclick = async ()=>{
         const id = btn.getAttribute('data-action-reset');
         const p = combat.participants.find(x=>x.id===id);
-        if(p){ p.actions = 2; p.attackedThisRound = false; }
+        if(p){
+          const pMember = p.isPC ? cachedRoster.find(m=>m.username===p.username) : null;
+          p.actions = (pMember && pMember.digimon.hybridMode) ? 3 : 2;
+          p.attackedThisRound = false;
+        }
         await persistAndRefresh();
       };
     });
@@ -4059,7 +4254,8 @@
       if(combat.participants.some(p=>p.username===username)) return;
       const member = cachedRoster.find(m=>m.username===username);
       const ram = member ? computeDerivedStats(member.digimon).ram : 0;
-      combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:username, side:'ally', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], zone:'Medio', clashPinned:false, clashComebackBonus:0, isPC:true, username });
+      const startActions = (member && member.digimon.hybridMode) ? 3 : 2;
+      combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:username, side:'ally', ram, initiative:0, actions:startActions, attackedThisRound:false, effects:[], zone:'Medio', clashPinned:false, clashComebackBonus:0, isPC:true, username });
       await persistAndRefresh();
     };
     const dexFillSelect = document.getElementById('combat-enemy-fromdex');
@@ -4108,7 +4304,8 @@
       if(!combat.order || combat.order.length===0) return;
       const finishing = combat.participants.find(p=>p.id===combat.order[combat.currentIndex]);
       if(finishing){
-        finishing.actions = 2;
+        const fMemberEarly = finishing.isPC ? cachedRoster.find(m=>m.username===finishing.username) : null;
+        finishing.actions = (fMemberEarly && fMemberEarly.digimon.hybridMode) ? 3 : 2;
         finishing.attackedThisRound = false;
         if(finishing.isPC){
           const fMember = cachedRoster.find(m=>m.username===finishing.username);
