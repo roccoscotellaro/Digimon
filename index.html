@@ -227,7 +227,11 @@
   let cachedCombat = null;
   let cachedProgression = null;
 
-  async function getProgression(code){ const d = await apiGet('/api/progression?code=' + encodeURIComponent(code)); return d ? d.progression : { milestone:0, xp:0, inspiration:0 }; }
+  async function getProgression(code){
+    const d = await apiGet('/api/progression?code=' + encodeURIComponent(code));
+    const p = d ? d.progression : { milestone:0, xp:0, inspiration:0, campaign_level:'Standard' };
+    return { milestone: p.milestone||0, xp: p.xp||0, inspiration: p.inspiration||0, campaignLevel: p.campaign_level || 'Standard' };
+  }
   async function saveProgression(code, data){ return apiPost('/api/progression', { code, ...data }); }
 
   async function getCombat(code){ const d = await apiGet('/api/combat?code=' + encodeURIComponent(code)); return d ? d.combat : null; }
@@ -345,6 +349,47 @@
       await pushLog(code, { who: p.name, role:'player', text: `${p.name} usa ${result.def.label} (${result.def.cost} Azione/i) — restano ${p.actions}/2 Azioni.` });
       refreshLiveParts();
     };
+  }
+
+  let mountingTNState = { modifier: 0, step: 0, log: [] };
+
+  function renderMountingTN(){
+    const cardEl = document.getElementById('mounting-tn-card');
+    if(!cardEl) return;
+    const st = mountingTNState;
+    cardEl.innerHTML = `
+      <div class="section-title">🪜 Mounting TN</div>
+      <div class="muted" style="margin-bottom:8px;">Per sequenze di Check concatenati (8.03c). Ogni TN sale di uno scaglione rispetto alla precedente — decidilo tu passo per passo. Il modificatore qui sotto si somma al PROSSIMO tiro del giocatore.</div>
+      <div class="flex-between" style="margin-bottom:8px;">
+        <span class="muted">Passo attuale</span><span class="mono">${st.step}</span>
+      </div>
+      <div class="flex-between" style="margin-bottom:10px;">
+        <span class="muted">Modificatore per il prossimo tiro</span>
+        <span class="mono" style="font-size:18px;color:${st.modifier>=0?'var(--cyan)':'var(--danger)'};">${st.modifier>=0?'+':''}${st.modifier}</span>
+      </div>
+      <div class="muted" style="margin-bottom:6px;">Registra l'esito del tiro appena fatto:</div>
+      <div class="row">
+        <button class="btn small" id="mtn-crit-success" style="flex:1;">Succ. Critico (+5)</button>
+        <button class="btn small" id="mtn-success" style="flex:1;">Successo (+1)</button>
+      </div>
+      <div class="row" style="margin-top:6px;">
+        <button class="btn ghost small" id="mtn-fail" style="flex:1;">Fallimento (-1)</button>
+        <button class="btn ghost small" id="mtn-crit-fail" style="flex:1;">Fall. Critico (-5)</button>
+      </div>
+      <button class="btn ghost" id="mtn-reset" style="width:100%;margin-top:8px;">↺ Nuova Sequenza</button>
+      <div class="muted" style="margin-top:8px;max-height:80px;overflow-y:auto;">${st.log.map(l=>`<div>${l}</div>`).join('')}</div>
+    `;
+    const record = (label, delta)=>{
+      st.step += 1;
+      st.log.push(`Passo ${st.step}: ${label} → modificatore prossimo tiro: ${st.modifier+delta>=0?'+':''}${st.modifier+delta}`);
+      st.modifier += delta;
+      renderMountingTN();
+    };
+    document.getElementById('mtn-crit-success').onclick = ()=>record('Successo Critico', 5);
+    document.getElementById('mtn-success').onclick = ()=>record('Successo', 1);
+    document.getElementById('mtn-fail').onclick = ()=>record('Fallimento', -1);
+    document.getElementById('mtn-crit-fail').onclick = ()=>record('Fallimento Critico', -5);
+    document.getElementById('mtn-reset').onclick = ()=>{ mountingTNState = { modifier:0, step:0, log:[] }; renderMountingTN(); };
   }
 
   function renderEncounterBalance(){
@@ -488,11 +533,14 @@
 
   function rollD6(){ return 1 + Math.floor(Math.random()*6); }
 
-  function rollSkillCheck(attrVal, skillVal){
-    const dice = [rollD6(), rollD6(), rollD6()];
+  function rollSkillCheck(attrVal, skillVal, extraDice){
+    const n = 3 + Math.max(0, Number(extraDice)||0);
+    const allDice = [];
+    for(let i=0;i<n;i++) allDice.push(rollD6());
+    const dice = allDice.slice().sort((a,b)=>b-a).slice(0,3);
     const sum = dice.reduce((a,b)=>a+b,0);
     const total = sum + Number(attrVal||0) + Number(skillVal||0);
-    return { dice, total };
+    return { dice, total, allDice };
   }
 
   function rollAttributeOnly(attrVal){
@@ -510,9 +558,20 @@
     return { dice, successes };
   }
 
+  const CAMPAIGN_LEVELS = {
+    Standard: { ap:10, sp:25, cap:5, thresholds:[3,5,6,7], tnShift:0, startTorment:8 },
+    Classic:  { ap:5,  sp:20, cap:3, thresholds:[2,3,4,5], tnShift:-2, startTorment:5 },
+    Extreme:  { ap:15, sp:30, cap:7, thresholds:[4,6,8,10], tnShift:2, startTorment:10 }
+  };
+  function campaignConfig(){
+    const level = (cachedProgression && cachedProgression.campaignLevel) || 'Standard';
+    return CAMPAIGN_LEVELS[level] || CAMPAIGN_LEVELS.Standard;
+  }
+
   function evaluateVsTN(total, tn){
     if(tn===null || tn===undefined || tn==='') return null;
-    const diff = total - Number(tn);
+    const shift = campaignConfig().tnShift;
+    const diff = total - (Number(tn) - shift);
     if(diff>=5) return { label:'Successo Critico', cls:'crit-success' };
     if(diff>=0) return { label:'Successo', cls:'success' };
     if(diff<=-5) return { label:'Fallimento Critico', cls:'crit-fail' };
@@ -570,7 +629,8 @@
       torments: [],
       majorAspect: { text:'', usesLeft:1 },
       minorAspect: { text:'', usesLeft:2 },
-      specialOrdersUsed: {}
+      specialOrdersUsed: {},
+      teamworkBonus: 0
     };
   }
   function defaultDigimon(){
@@ -1359,7 +1419,13 @@
   ];
 
   function computeUnlockedTalents(tamer){
-    return TALENT_DEFS.filter(t => Number(tamer[t.attr]||0) >= t.threshold);
+    const cfg = campaignConfig();
+    const stdIdx = { 3:0, 5:1, 6:2, 7:3 };
+    return TALENT_DEFS.filter(t => {
+      const idx = stdIdx[t.threshold];
+      const effectiveThreshold = idx!==undefined ? cfg.thresholds[idx] : t.threshold;
+      return Number(tamer[t.attr]||0) >= effectiveThreshold;
+    });
   }
 
   const STAGE_CREATION = {
@@ -1410,29 +1476,31 @@
 
   function renderWizardTamerStep(content, me){
     const draft = creationDraft.tamer;
+    const cfg = campaignConfig();
+    const cap = cfg.cap;
     const attrs = ['agility','body','charisma','intelligence','willpower'];
     const apSpent = attrs.reduce((s,a)=>s+(draft[a]-1),0);
-    const apRemaining = 10 - apSpent;
+    const apRemaining = cfg.ap - apSpent;
     const spSpent = SKILL_DEFS.reduce((s,def)=>s+Number(draft.skills[def.key]||0),0);
-    const spRemaining = 25 - spSpent;
-    const attrAt5 = attrs.filter(a=>draft[a]===5).length;
-    const skillsAt5 = SKILL_DEFS.filter(def=>Number(draft.skills[def.key]||0)===5).length;
+    const spRemaining = cfg.sp - spSpent;
+    const attrAtCap = attrs.filter(a=>draft[a]===cap).length;
+    const skillsAtCap = SKILL_DEFS.filter(def=>Number(draft.skills[def.key]||0)===cap).length;
     const errors = [];
     if(apRemaining!==0) errors.push(`Punti Attributo da spendere: ${apRemaining} (devono arrivare esattamente a 0)`);
     if(spRemaining!==0) errors.push(`Punti Skill da spendere: ${spRemaining} (devono arrivare esattamente a 0)`);
-    if(attrAt5>1) errors.push('Solo un Attributo può arrivare a 5 in creazione.');
-    if(skillsAt5>1) errors.push('Solo una Skill può arrivare a 5 in creazione.');
+    if(attrAtCap>1) errors.push(`Solo un Attributo può arrivare al tetto di ${cap} in creazione.`);
+    if(skillsAtCap>1) errors.push(`Solo una Skill può arrivare al tetto di ${cap} in creazione.`);
 
     content.innerHTML = `
       <div class="hud-frame card">
         <div class="section-title">🧙 Creazione Guidata — Passo 1: Tamer</div>
-        <div class="muted" style="margin-bottom:8px;">10 Punti Attributo (partono da 1) · 25 Punti Skill · solo un Attributo e una Skill possono arrivare a 5.</div>
+        <div class="muted" style="margin-bottom:8px;">Campaign Level: <b>${(cachedProgression&&cachedProgression.campaignLevel)||'Standard'}</b> — ${cfg.ap} Punti Attributo (partono da 1) · ${cfg.sp} Punti Skill · solo un Attributo e una Skill possono arrivare al tetto di ${cap}.</div>
         <div class="flex-between" style="margin-bottom:6px;"><span class="muted">Punti Attributo rimasti</span><span class="mono" style="color:${apRemaining===0?'var(--cyan)':'var(--amber)'};">${apRemaining}</span></div>
         <div class="grid-stats">
           ${attrs.map(a=>`
             <div class="stat-box">
               <div class="l">${ATTR_ABBR[a]}</div>
-              <input type="number" data-wiz-attr="${a}" min="1" max="5" value="${draft[a]}" />
+              <input type="number" data-wiz-attr="${a}" min="1" max="${cap}" value="${draft[a]}" />
             </div>
           `).join('')}
         </div>
@@ -1440,7 +1508,7 @@
         <div class="flex-between" style="margin-bottom:6px;"><span class="muted">Punti Skill rimasti</span><span class="mono" style="color:${spRemaining===0?'var(--cyan)':'var(--amber)'};">${spRemaining}</span></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
           ${SKILL_DEFS.map(def=>{
-            const max = Math.min(5, skillMax(draft, def));
+            const max = Math.min(cap, skillMax(draft, def));
             return `<div class="stat-box" style="text-align:left;padding:6px 8px;">
               <div class="l">${escapeHTML(def.label)} <span class="muted" style="font-size:9px;">(max ${max})</span></div>
               <input type="number" data-wiz-skill="${def.key}" min="0" max="${max}" value="${draft.skills[def.key]||0}" />
@@ -1457,7 +1525,7 @@
     `;
     content.querySelectorAll('[data-wiz-attr]').forEach(inp=>{
       inp.onchange = ()=>{
-        draft[inp.getAttribute('data-wiz-attr')] = Math.max(1, Math.min(5, Number(inp.value)||1));
+        draft[inp.getAttribute('data-wiz-attr')] = Math.max(1, Math.min(cap, Number(inp.value)||1));
         renderWizardTamerStep(content, me);
       };
     });
@@ -1465,7 +1533,7 @@
       inp.onchange = ()=>{
         const key = inp.getAttribute('data-wiz-skill');
         const def = SKILL_DEFS.find(d=>d.key===key);
-        const max = Math.min(5, skillMax(draft, def));
+        const max = Math.min(cap, skillMax(draft, def));
         draft.skills[key] = Math.max(0, Math.min(max, Number(inp.value)||0));
         renderWizardTamerStep(content, me);
       };
@@ -2046,7 +2114,13 @@
     { name:'Armor Piercing', category:'Attack', dpPerRank:2, maxRank:2, mechanic:'', desc:'L\'Attacco infligge Danno Unalterable extra (ignora Armor) pari ai Successi in eccesso, fino ai Ranks.' },
     { name:'Second Wind', category:'Static', dpPerRank:2, maxRank:1, mechanic:'', desc:'Una volta a combattimento, recupera Caselle Ferita quando scendi a 0.' },
     { name:'Resistance', category:'Static', dpPerRank:2, maxRank:3, mechanic:'resistance', desc:'Riduce la Potenza degli Effetti negativi subiti pari ai Ranks (min. 1).' },
-    { name:'Data Specialization: Wrestlemania', category:'Clash', dpPerRank:2, maxRank:1, mechanic:'wrestlemania', desc:'In Clash, sblocca l\'Azione Finisher: dopo un Attacco riuscito, tira CPU o BIT (TN 10+Stage) per danno bonus, poi il Clash finisce.' }
+    { name:'Data Specialization: Wrestlemania', category:'Clash', dpPerRank:2, maxRank:1, mechanic:'wrestlemania', desc:'In Clash, sblocca l\'Azione Finisher: dopo un Attacco riuscito, tira CPU o BIT (TN 10+Stage) per danno bonus, poi il Clash finisce.' },
+    { name:'[BOSS] Adaptive Intelligence', category:'Boss', dpPerRank:1, maxRank:1, mechanic:'', desc:'+2 Dodge (stackabile) contro un Attacco già visto, per ogni volta vista dall\'inizio del combattimento. Riservata al Master per i Boss.' },
+    { name:'[BOSS] Finesse', category:'Boss', dpPerRank:1, maxRank:99, mechanic:'', desc:'Per Rank: +1 Armor e 1 Danno Unalterable extra sugli Attacchi [DAMAGE]. Ranks massimi = Stage. Riservata al Master.' },
+    { name:'[BOSS] True Immunity', category:'Boss', dpPerRank:1, maxRank:99, mechanic:'', desc:'Per Rank, scegli un Effetto: quell\'Effetto non ha mai Durata o Potenza su questo Digimon. Riservata al Master.' },
+    { name:'[BOSS] Multigrappler', category:'Boss', dpPerRank:3, maxRank:1, mechanic:'', desc:'Può Clashare con più nemici insieme, fino al proprio Stage. Riservata al Master.' },
+    { name:'[BOSS] Spatial Distortion', category:'Boss', dpPerRank:2, maxRank:1, mechanic:'', desc:'1 Azione extra per ignorare la distanza dell\'Attacco (Range senza penalità, Melee a qualsiasi distanza). Riservata al Master.' },
+    { name:'[BOSS] Suppression', category:'Boss', dpPerRank:3, maxRank:1, mechanic:'', desc:'Blocca un tipo di Quality (Static/Trigger/Attack) per i nemici vicini, salvo un Check DOS (TN 10+DOS) con 2 Azioni per ignorarla. Riservata al Master.' }
   ];
   function computeQualityMechanics(qualities){
     const m = { certainStrike:0, weapon:0, ammoRank:0, combatMonster:0, monsterStrength:false, wrestlemania:false, resistance:0 };
@@ -2432,6 +2506,7 @@
     const minorLeft = me.tamer.minorAspect ? (me.tamer.minorAspect.usesLeft||0) : 0;
     const hasMiracle = computeUnlockedTalents(me.tamer).some(t=>t.order==='miracle');
     const ipAvailable = Number(me.tamer.inspirationPoints||0);
+    const teamworkBonus = Number(me.tamer.teamworkBonus||0);
     const draw = ()=>{
       panel.innerHTML = `
         <div class="hud-frame" style="padding:10px;">
@@ -2442,6 +2517,12 @@
             </div>
           ` : ''}
           <div class="field"><label>TN (opzionale, la decide il Master)</label><input type="number" id="roll-tn-${containerId}" placeholder="es. 15" /></div>
+          <div class="muted" style="margin-bottom:6px;">Stunt (bonus del Master per un'azione descritta con stile)</div>
+          <div class="row" style="margin-bottom:8px;">
+            <div class="field" style="margin-bottom:0;"><label>Bonus (+0/+3)</label><input type="number" id="roll-stunt-bonus-${containerId}" value="0" min="0" max="3" /></div>
+            <div class="field" style="margin-bottom:0;"><label>Dadi Extra (0-5)</label><input type="number" id="roll-stunt-dice-${containerId}" value="0" min="0" max="5" /></div>
+          </div>
+          ${teamworkBonus!==0 ? `<div class="muted" style="margin-bottom:8px;color:var(--cyan);">🤝 Bonus Teamwork attivo: ${teamworkBonus>0?'+':''}${teamworkBonus} (si applica automaticamente e si consuma con questo tiro)</div>` : ''}
           ${majorLeft>0 || minorLeft>0 ? `
             <div class="muted" style="margin-bottom:6px;">Aspects (applica bonus al tiro)</div>
             <div class="row" style="margin-bottom:8px;">
@@ -2465,9 +2546,18 @@
         const tnVal = document.getElementById('roll-tn-'+containerId).value;
         const attrVal = me.tamer[chosenAttr];
         const skillVal = me.tamer.skills[skillKey];
-        const { dice, total: baseTotal } = rollSkillCheck(attrVal, skillVal);
-        let total = baseTotal;
+        const stuntBonus = Math.max(0, Math.min(3, Number(document.getElementById('roll-stunt-bonus-'+containerId).value)||0));
+        const stuntDice = Math.max(0, Math.min(5, Number(document.getElementById('roll-stunt-dice-'+containerId).value)||0));
+        const { dice, total: baseTotal } = rollSkillCheck(attrVal, skillVal, stuntDice);
+        let total = baseTotal + stuntBonus;
         let aspectNote = '';
+        if(stuntDice>0) aspectNote += ` +Stunt (${stuntDice} dadi extra, tenuti i 3 migliori)`;
+        if(stuntBonus>0) aspectNote += ` +${stuntBonus} Stunt`;
+        if(teamworkBonus!==0){
+          total += teamworkBonus;
+          aspectNote += ` ${teamworkBonus>0?'+':''}${teamworkBonus} Teamwork`;
+          me.tamer.teamworkBonus = 0;
+        }
         const majorBox = document.getElementById('roll-aspect-major-'+containerId);
         const minorBox = document.getElementById('roll-aspect-minor-'+containerId);
         const miracleBox = document.getElementById('roll-miracle-'+containerId);
@@ -2487,7 +2577,7 @@
           me.tamer.inspirationPoints -= 7;
           aspectNote += ` +${bonus} Miracle (-7 IP)`;
         }
-        if(aspectNote) await saveMember(session.code, me);
+        await saveMember(session.code, me);
         const verdict = evaluateVsTN(total, tnVal);
         const resEl = document.getElementById('roll-result-'+containerId);
         resEl.innerHTML = `${diceRowHTML(dice)}<span class="roll-total">${total}</span>${verdict?`<span class="roll-verdict ${verdict.cls}">${verdict.label}</span>`:''}`;
@@ -2649,6 +2739,7 @@
           <div class="hud-frame card" id="private-chat-master-card"></div>
           <div class="hud-frame card" id="progression-card"></div>
           <div class="hud-frame card" id="encounter-balance-card"></div>
+          <div class="hud-frame card" id="mounting-tn-card"></div>
           <div class="hud-frame card">
             <div class="flex-between" style="margin-bottom:6px;">
               <div class="section-title" style="margin:0;border:none;padding:0;">Digidex — Digimon Incontrati</div>
@@ -2699,6 +2790,7 @@
     renderPrivateChatMaster(code, players);
     renderProgressionMaster(code);
     renderEncounterBalance();
+    renderMountingTN();
     attachLogModeration(document.getElementById('log-live'), code);
     document.getElementById('btn-logout').onclick = logout;
     document.getElementById('btn-save-scene').onclick = async ()=>{
@@ -3062,9 +3154,16 @@
   async function renderProgressionMaster(code){
     const cardEl = document.getElementById('progression-card');
     if(!cardEl) return;
-    const prog = cachedProgression || { milestone:0, xp:0, inspiration:0 };
+    const prog = cachedProgression || { milestone:0, xp:0, inspiration:0, campaignLevel:'Standard' };
     cardEl.innerHTML = `
       <div class="section-title">Progressione Party</div>
+      <div class="field"><label>Campaign Level</label>
+        <select id="campaign-level-select">
+          <option value="Standard" ${prog.campaignLevel==='Standard'?'selected':''}>Standard</option>
+          <option value="Classic" ${prog.campaignLevel==='Classic'?'selected':''}>Classic (più corta, TN -2)</option>
+          <option value="Extreme" ${prog.campaignLevel==='Extreme'?'selected':''}>Extreme (più lunga, TN +2)</option>
+        </select>
+      </div>
       <div class="grid-stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:10px;">
         <div class="stat-box"><div class="v">${prog.milestone}</div><div class="l">Milestone</div></div>
         <div class="stat-box"><div class="v">${prog.xp}/7</div><div class="l">XP</div></div>
@@ -3118,6 +3217,13 @@
     cardEl.querySelectorAll('[data-xp-add]').forEach(btn=>{
       btn.onclick = ()=> applyXp(Number(btn.getAttribute('data-xp-add')), btn.getAttribute('data-xp-label'));
     });
+    document.getElementById('campaign-level-select').onchange = async (e)=>{
+      prog.campaignLevel = e.target.value;
+      await saveProgression(code, prog);
+      cachedProgression = prog;
+      await pushLog(code, { who:'Sistema', role:'gm', text: `⚙ Campaign Level impostato su ${prog.campaignLevel}.` });
+      renderProgressionMaster(code);
+    };
     document.getElementById('btn-milestone-narrative').onclick = async ()=>{
       prog.milestone += 1;
       prog.inspiration = Number(prog.inspiration||0) + 1;
