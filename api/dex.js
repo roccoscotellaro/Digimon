@@ -15,7 +15,7 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'POST') {
-      const { code, name, stage, description, imageUrl, addedBy, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered, attribute, family } = req.body || {};
+      const { code, name, stage, description, imageUrl, addedBy, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered, attribute, family, originType } = req.body || {};
       const campaignCode = cleanCode(code);
       if (!campaignCode || !name) return res.status(400).json({ error: 'missing code or name' });
       await supabase.from('campaigns').upsert({ code: campaignCode }, { onConflict: 'code' });
@@ -34,14 +34,15 @@ module.exports = async (req, res) => {
         dp_total: Number(dpTotal)||0,
         discovered: !!discovered,
         attribute: attribute || '',
-        family: family || ''
+        family: family || '',
+        origin_type: originType || ''
       }).select().single();
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ entry: data });
     }
 
     if (req.method === 'PUT') {
-      const { code, id, name, stage, description, imageUrl, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered, attribute, family } = req.body || {};
+      const { code, id, name, stage, description, imageUrl, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered, attribute, family, originType } = req.body || {};
       const campaignCode = cleanCode(code);
       if (!campaignCode || !id) return res.status(400).json({ error: 'missing code or id' });
       const { error } = await supabase.from('dex_entries').update({
@@ -57,7 +58,8 @@ module.exports = async (req, res) => {
         dp_total: Number(dpTotal)||0,
         discovered: !!discovered,
         attribute: attribute || '',
-        family: family || ''
+        family: family || '',
+        origin_type: originType || ''
       }).eq('campaign_code', campaignCode).eq('id', id);
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true });
