@@ -226,7 +226,7 @@
       <div class="hud-frame card">
         <div class="flex-between" style="margin-bottom:10px;">
           <div class="section-title" style="margin:0;border:none;padding:0;">Digimon Registrati (${cachedDex.length})</div>
-          ${isMaster ? `<span><button class="btn ghost small" id="btn-import-seed2" style="margin-right:6px;color:var(--cyan);">🎴 Importa/Correggi Famosi</button><button class="btn ghost small" id="btn-bulk-images" style="margin-right:6px;">🖼️ Incolla Immagini</button><button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button></span>` : ''}
+          ${isMaster ? `<span><button class="btn ghost small" id="btn-bulk-images" style="margin-right:6px;">🖼️ Incolla Immagini</button><button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button></span>` : ''}
         </div>
         <input type="text" id="dex-search" placeholder="🔍 Cerca per nome..." style="margin-bottom:14px;" />
         <div id="filter-bar" class="filter-bar"></div>
@@ -238,8 +238,6 @@
     if(newBtn) newBtn.onclick = ()=> openEditModal(null);
     const bulkImagesBtn = document.getElementById('btn-bulk-images');
     if(bulkImagesBtn) bulkImagesBtn.onclick = ()=> openBulkImageModal();
-    const importSeed2Btn = document.getElementById('btn-import-seed2');
-    if(importSeed2Btn) importSeed2Btn.onclick = ()=> openImportModal(SPECIES_SEED.concat(SPECIES_SEED_VILLAINS, SPECIES_SEED_2, SPECIES_SEED_3), 'Importa/Correggi Digimon Famosi');
     const searchInput = document.getElementById('dex-search');
     if(searchInput){
       searchInput.value = searchQuery;
@@ -384,10 +382,11 @@ Devimon: https://..."></textarea>
         <div class="thumb">${e.image_url ? `<img src="${escapeAttr(e.image_url)}" onerror="this.parentNode.innerHTML='<span class=&quot;placeholder&quot;>${escapeHTML((e.name||'?').charAt(0))}</span>'" />` : `<span class="placeholder">${escapeHTML((e.name||'?').charAt(0))}</span>`}
           ${e.origin_type==='armor' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Armor">🛡️</span>` : ''}
           ${e.origin_type==='jogress' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Jogress/Fusione">🤝</span>` : ''}
+          ${e.origin_type==='slide' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Slide Evolution">🔄</span>` : ''}
         </div>
         <div class="info">
           <div class="name">${escapeHTML(e.name)}</div>
-          <div class="muted" style="font-size:10px;">${e.origin_type==='armor'?'Armor':(e.origin_type==='jogress'?'Jogress/Fusione':escapeHTML(e.stage))}${e.attribute?` · ${escapeHTML(e.attribute)}`:''}${isMaster?(e.discovered?' · scoperto':' · nascosto'):''}</div>
+          <div class="muted" style="font-size:10px;">${e.origin_type==='armor'?'Armor':(e.origin_type==='jogress'?'Jogress/Fusione':(e.origin_type==='slide'?'Slide Evolution':escapeHTML(e.stage)))}${e.attribute?` · ${escapeHTML(e.attribute)}`:''}${isMaster?(e.discovered?' · scoperto':' · nascosto'):''}</div>
         </div>
       </div>`;
     }
@@ -397,6 +396,7 @@ Devimon: https://..."></textarea>
       let st;
       if(e.origin_type==='armor') st = '🛡️ Armor';
       else if(e.origin_type==='jogress') st = '🤝 Jogress/Fusione';
+      else if(e.origin_type==='slide') st = '🔄 Slide Evolution';
       else st = STAGE_ORDER.includes(e.stage) ? e.stage : 'Altro';
       if(!groups[st]) groups[st] = [];
       groups[st].push(e);
@@ -443,7 +443,7 @@ Devimon: https://..."></textarea>
         </div>
         ${entry.image_url ? `<img class="portrait-lg" src="${escapeAttr(entry.image_url)}" style="cursor:zoom-in;" onerror="this.style.display='none'" data-zoom-img="${escapeAttr(entry.image_url)}" />` : ''}
         <div style="margin-bottom:8px;">
-          <span class="tag">${entry.origin_type==='armor'?'🛡️ Armor':(entry.origin_type==='jogress'?'🤝 Jogress/Fusione':escapeHTML(entry.stage))}</span>
+          <span class="tag">${entry.origin_type==='armor'?'🛡️ Armor':(entry.origin_type==='jogress'?'🤝 Jogress/Fusione':(entry.origin_type==='slide'?'🔄 Slide Evolution':escapeHTML(entry.stage)))}</span>
           ${entry.attribute ? `<span class="tag" style="margin-left:4px;color:var(--cyan);border-color:var(--cyan-dim);">${escapeHTML(entry.attribute)}</span>` : ''}
           ${entry.family ? `<span class="tag" style="margin-left:4px;color:var(--amber);border-color:var(--amber);">${escapeHTML(entry.family)}</span>` : ''}
         </div>
@@ -503,19 +503,19 @@ Devimon: https://..."></textarea>
     { line:'Agumon', attribute:'Vaccine', family:"Dragon's Roar", chain:[
       {name:'Botamon', stage:'Fresh', desc:'Palla di gelatina nera, la primissima forma di Agumon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:1, baseHealth:1}},
       {name:'Koromon', stage:'Baby', desc:'Piccolo e affamato, la forma Baby di Agumon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:3, baseDodge:2, baseArmor:1, baseHealth:2}, evolvesToNames:['Agumon','ToyAgumon']},
-      {name:'Agumon', stage:'Rookie', desc:'Rettile bipede leale e coraggioso, sputa piccole fiamme. Attacco: Pepper Breath.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:3, baseArmor:3, baseHealth:3}, evolvesToNames:['Greymon','Meramon','Tyrannomon']},
+      {name:'Agumon', stage:'Rookie', desc:'Rettile bipede leale e coraggioso, sputa piccole fiamme. Attacco: Pepper Breath.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:3, baseArmor:3, baseHealth:3}, evolvesToNames:['Greymon','Meramon','Tyrannomon','Tuskmon']},
       {name:'Greymon', stage:'Champion', desc:'Dinosauro corazzato dal morso potente. Attacco: Nova Blast.', stats:{baseAccuracy:8, baseDamage:10, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesToNames:['MetalGreymon','SkullGreymon']},
-      {name:'MetalGreymon', stage:'Ultimate', desc:'Mezzo organico, mezzo cybernetico, con la Giga Distruzione. Attacco: Giga Blaster.', stats:{baseAccuracy:12, baseDamage:15, baseDodge:8, baseArmor:7, baseHealth:8}},
+      {name:'MetalGreymon', stage:'Ultimate', desc:'Mezzo organico, mezzo cybernetico, con la Giga Distruzione. Attacco: Giga Blaster.', stats:{baseAccuracy:12, baseDamage:15, baseDodge:8, baseArmor:7, baseHealth:8}, evolvesToNames:['WarGreymon','BlitzGreymon']},
       {name:'WarGreymon', stage:'Mega', desc:'Il guerriero supremo, con la Gaia Force e la Terra Destroyer. Attacco: Terra Force.', stats:{baseAccuracy:15, baseDamage:19, baseDodge:11, baseArmor:9, baseHealth:11}, evolvesToNames:['Omnimon']},
     ]},
     { line:'Gabumon', attribute:'Data', family:'Nature Spirits', chain:[
       {name:'Punimon', stage:'Fresh', desc:'Piccola gelatina rosa, la primissima forma di Gabumon. Attacco: Bubble Blow.', stats:{baseAccuracy:1, baseDamage:2, baseDodge:2, baseArmor:1, baseHealth:1}},
       {name:'Tsunomon', stage:'Baby', desc:'Piccola palla con un corno, forma Baby di Gabumon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}, evolvesToNames:['Gabumon','Elecmon','Psychemon']},
-      {name:'Gabumon', stage:'Rookie', desc:'Rettile timido che indossa una pelliccia di Garurumon. Attacco: Blue Blaster.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}, evolvesToNames:['Garurumon','Centarumon','Mojyamon','Devidramon']},
+      {name:'Gabumon', stage:'Rookie', desc:'Rettile timido che indossa una pelliccia di Garurumon. Attacco: Blue Blaster.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}, evolvesToNames:['Garurumon','Centarumon','Mojyamon']},
       {name:'Garurumon', stage:'Champion', desc:'Lupo blu velocissimo con l\'Howling Blaster. Attacco: Howling Blaster.', stats:{baseAccuracy:6, baseDamage:7, baseDodge:10, baseArmor:5, baseHealth:7}},
-      {name:'WereGarurumon', stage:'Ultimate', desc:'Licantropo agile e feroce. Attacco: Wolf Claw.', stats:{baseAccuracy:9, baseDamage:10, baseDodge:14, baseArmor:7, baseHealth:10}, evolvesToNames:['MetalGarurumon','Merukimon']},
+      {name:'WereGarurumon', stage:'Ultimate', desc:'Licantropo agile e feroce. Attacco: Wolf Claw.', stats:{baseAccuracy:9, baseDamage:10, baseDodge:14, baseArmor:7, baseHealth:10}, evolvesToNames:['MetalGarurumon','Merukimon','CresGarurumon']},
       {name:'MetalGarurumon', stage:'Mega', desc:'Lupo cibernetico con i Missili Freezing. Attacco: Freezing Missile.', stats:{baseAccuracy:11, baseDamage:13, baseDodge:19, baseArmor:9, baseHealth:13}, evolvesToNames:['Omnimon']},
-      {name:'Omnimon', stage:'Mega', desc:'Fusione Jogress di WarGreymon e MetalGarurumon: cavaliere supremo con Grey Sword e Garuru Cannon. Attacco: Transcendent Sword / Garuru Cannon.', stats:{baseAccuracy:19, baseDamage:20, baseDodge:16, baseArmor:13, baseHealth:15}, evolvesFromNames:['WarGreymon','MetalGarurumon'], evolvesToNames:['Imperialdramon Paladin Mode'], categories:['Royal Knights']},
+      {name:'Omnimon', stage:'Mega', desc:'Fusione Jogress di WarGreymon e MetalGarurumon: cavaliere supremo con Grey Sword e Garuru Cannon. Attacco: Transcendent Sword / Garuru Cannon.', stats:{baseAccuracy:19, baseDamage:20, baseDodge:16, baseArmor:13, baseHealth:15}, evolvesFromNames:['WarGreymon','MetalGarurumon'], evolvesToNames:['Imperialdramon Paladin Mode'], originType:'jogress', categories:['Royal Knights']},
     ]},
     { line:'Biyomon', attribute:'Vaccine', family:'Wind Guardians', chain:[
       {name:'Poyomon', stage:'Fresh', desc:'Palla soffice rosa, la primissima forma di Biyomon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:1, baseHealth:1}},
@@ -528,14 +528,14 @@ Devimon: https://..."></textarea>
     { line:'Tentomon', attribute:'Vaccine', family:'Jungle Troopers', chain:[
       {name:'Nyokimon', stage:'Fresh', desc:'Piccola gelatina gialla, la primissima forma di Tentomon. Attacco: Bubble Blow.', stats:{baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:2, baseHealth:2}},
       {name:'Motimon', stage:'Baby', desc:'Piccola gelatina rotonda, forma Baby di Tentomon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:3, baseHealth:2}},
-      {name:'Tentomon', stage:'Rookie', desc:'Insetto curioso ed erudito. Attacco: Super Shocker.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}, evolvesToNames:['Kabuterimon','Kuwagamon','Datamon']},
+      {name:'Tentomon', stage:'Rookie', desc:'Insetto curioso ed erudito. Attacco: Super Shocker.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}, evolvesToNames:['Kabuterimon','Kuwagamon','Datamon','Snimon']},
       {name:'Kabuterimon', stage:'Champion', desc:'Scarabeo gigante con attacchi elettrici. Attacco: Electro Shocker.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:10, baseHealth:9}},
       {name:'MegaKabuterimon', stage:'Ultimate', desc:'Scarabeo corazzato dal Corno Elettrico. Attacco: Horn Buster.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:7, baseArmor:14, baseHealth:13}},
       {name:'HerculesKabuterimon', stage:'Mega', desc:'Colosso corazzato dalla potenza devastante. Attacco: Giga Blaster.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:9, baseArmor:19, baseHealth:17}},
     ]},
     { line:'Palmon', attribute:'Data', family:'Jungle Troopers', chain:[
       {name:'Yuramon', stage:'Fresh', desc:'Palla di gelatina verde, la primissima forma di Palmon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:1, baseDodge:2, baseArmor:1, baseHealth:1}},
-      {name:'Tanemon', stage:'Baby', desc:'Piccolo seme rotondo, forma Baby di Palmon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}},
+      {name:'Tanemon', stage:'Baby', desc:'Piccolo seme rotondo, forma Baby di Palmon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}, evolvesToNames:['Palmon','Floramon','Mushroomon']},
       {name:'Palmon', stage:'Rookie', desc:'Pianta gentile con foglie a forma di stella. Attacco: Poison Ivy.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}, evolvesToNames:['Togemon','Frigimon','Vegiemon']},
       {name:'Togemon', stage:'Champion', desc:'Cactus pugile dai pugni esplosivi. Attacco: Needle Spray.', stats:{baseAccuracy:7, baseDamage:6, baseDodge:10, baseArmor:5, baseHealth:7}},
       {name:'Lillymon', stage:'Ultimate', desc:'Fata dei fiori elegante e agile. Attacco: Flower Cannon.', stats:{baseAccuracy:10, baseDamage:9, baseDodge:14, baseArmor:7, baseHealth:10}},
@@ -543,10 +543,10 @@ Devimon: https://..."></textarea>
     ]},
     { line:'Gomamon', attribute:'Vaccine', family:'Deep Savers', chain:[
       {name:'Pukamon', stage:'Fresh', desc:'Palla di gelatina blu galleggiante, la primissima forma di Gomamon. Attacco: Bubble Blow.', stats:{baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:2, baseHealth:2}},
-      {name:'Bukamon', stage:'Baby', desc:'Piccola foca marina, forma Baby di Gomamon. Attacco: Bubble Blow.', stats:{baseAccuracy:1, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:3}, evolvesToNames:['Gomamon','MarineAngemon']},
-      {name:'Gomamon', stage:'Rookie', desc:'Foca giocherellona e leale amica. Attacco: Marching Fishes.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:5}, evolvesToNames:['Ikkakumon','Whamon']},
+      {name:'Bukamon', stage:'Baby', desc:'Piccola foca marina, forma Baby di Gomamon. Attacco: Bubble Blow.', stats:{baseAccuracy:1, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:3}, evolvesToNames:['Gomamon','MarineAngemon','Gizamon']},
+      {name:'Gomamon', stage:'Rookie', desc:'Foca giocherellona e leale amica. Attacco: Marching Fishes.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:5}, evolvesToNames:['Ikkakumon','Whamon','Ebidramon']},
       {name:'Ikkakumon', stage:'Champion', desc:'Trichecho con un corno d\'arpone. Attacco: Harpoon Torpedo.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:6, baseArmor:8, baseHealth:10}},
-      {name:'Zudomon', stage:'Ultimate', desc:'Guerriero marino con il martello Vulcan. Attacco: Vulcan\'s Hammer.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:9, baseArmor:11, baseHealth:14}},
+      {name:'Zudomon', stage:'Ultimate', desc:'Guerriero marino con il martello Vulcan. Attacco: Vulcan\'s Hammer.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:9, baseArmor:11, baseHealth:14}, evolvesToNames:['Vikemon','Plesiomon']},
       {name:'Vikemon', stage:'Mega', desc:'Vichingo gigante armato di ascia ghiacciata. Attacco: Vikings Cutter.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:11, baseArmor:15, baseHealth:19}},
     ]},
     { line:'Patamon', attribute:'Vaccine', family:'Virus Busters', chain:[
@@ -564,14 +564,14 @@ Devimon: https://..."></textarea>
       {name:'Mothmon', stage:'Champion', desc:'Evoluzione Armor di Patamon (Digimental della Conoscenza): falena corazzata dalle polveri soporifere. Attacco: Sleep Powder.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesFromNames:['Patamon'], evolvesToNames:[], originType:'armor'},
       {name:'Mantaraymon', stage:'Champion', desc:'Evoluzione Armor di Patamon (Digimental della Sincerita): manta corazzata, esperta di manovre furtive negli abissi. Attacco: Poison Bubble.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesFromNames:['Patamon'], evolvesToNames:[], originType:'armor'},
       {name:'Prairiemon', stage:'Champion', desc:'Evoluzione Armor di Patamon (Digimental della Gentilezza): roditore corazzato dalle grandi orecchie. Attacco: Rolling Peace.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesFromNames:['Patamon'], evolvesToNames:[], originType:'armor'},
-      {name:'MagnaAngemon', stage:'Ultimate', desc:'Angelo corazzato capace di aprire portali. Attacco: Gate of Destiny.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:9, baseArmor:7, baseHealth:8}},
+      {name:'MagnaAngemon', stage:'Ultimate', desc:'Angelo corazzato capace di aprire portali. Attacco: Gate of Destiny.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:9, baseArmor:7, baseHealth:8}, evolvesToNames:['Seraphimon','Goldramon']},
       {name:'Seraphimon', stage:'Mega', desc:'Angelo supremo, giudice della luce. Attacco: Testament.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:11, baseArmor:9, baseHealth:11}},
     ]},
     { line:'Veemon', attribute:'Free', family:"Dragon's Roar", chain:[
       {name:'Pokomon', stage:'Fresh', desc:'Palla di gelatina blu scuro, la primissima forma di Veemon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:1, baseHealth:1}},
       {name:'Chibomon', stage:'Baby', desc:'Piccola creatura blu, forma Baby di Veemon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:2}},
       {name:'Veemon', stage:'Rookie', desc:'Rettile blu energico e testardo. Attacco: Vee Headbutt.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:4}, evolvesToNames:['ExVeemon','Flamedramon','Raidramon','Sethmon','Honeybeemon','Depthmon','Yasyamon','Gargoylemon','Sagittarimon','Magnamon','GoldVeedramon','Kangarumon','Veedramon']},
-      {name:'ExVeemon', stage:'Champion', desc:'Guerriero blu dai pugni potenti. Attacco: Vee Laser.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}, evolvesToNames:['Paildramon']},
+      {name:'ExVeemon', stage:'Champion', desc:'Guerriero blu dai pugni potenti. Attacco: Vee Laser.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}, evolvesToNames:['Paildramon','DinoBeemon']},
       {name:'Flamedramon', stage:'Champion', desc:'Evoluzione Armor di Veemon (Digimental del Coraggio): guerriero corazzato avvolto dalle fiamme. Attacco: Fire Rocket.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}, evolvesFromNames:['Veemon'], evolvesToNames:[], originType:'armor'},
       {name:'Raidramon', stage:'Champion', desc:'Evoluzione Armor di Veemon (Digimental dell\'Amicizia): lupo corazzato velocissimo, cavalcabile. Attacco: Blue Thunder.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}, evolvesFromNames:['Veemon'], evolvesToNames:[], originType:'armor'},
       {name:'Sethmon', stage:'Champion', desc:'Evoluzione Armor di Veemon (Digimental dell\'Amore): sciacallo corazzato dal fiuto infallibile. Attacco: Desert Wind.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}, evolvesFromNames:['Veemon'], evolvesToNames:[], originType:'armor'},
@@ -612,35 +612,36 @@ Devimon: https://..."></textarea>
     { line:'Gazimon', attribute:'Virus', family:'Nightmare Soldiers', chain:[
       {name:'Zurumon', stage:'Fresh', desc:'Piccola larva orecchiuta, la primissima forma di Gazimon. Attacco: Bubble Blow.', stats:{baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:2, baseHealth:2}},
       {name:'Pagumon', stage:'Baby', desc:'Piccola creatura orecchiuta, spesso trovata nella Dark Area. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:3, baseHealth:2}, evolvesToNames:['Gazimon','DemiDevimon']},
-      {name:'Gazimon', stage:'Rookie', desc:'Piccolo mostro simile a un gatto, spesso al servizio dei potenti. Attacco: Paralyze Breath.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}, evolvesToNames:['Nanimon']},
+      {name:'Gazimon', stage:'Rookie', desc:'Piccolo mostro simile a un gatto, spesso al servizio dei potenti. Attacco: Paralyze Breath.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}, evolvesToNames:['Nanimon','BomberNanimon']},
     ]},
     { line:'Nanimon', attribute:'Virus', family:'Unknown', chain:[
-      {name:'Nanimon', stage:'Champion', desc:'Digimon dall\'aspetto di un piccolo demone rosa, si atteggia a maestro ma è codardo e privo di talento reale. Attacco: Info Chains.', stats:{baseAccuracy:6, baseDamage:6, baseDodge:6, baseArmor:6, baseHealth:6}, evolvesFromNames:['Gazimon'], evolvesToNames:[]},
+      {name:'BomberNanimon', stage:'Champion', desc:'Variante di Nanimon dal corpo a forma di bomba innescata, colore nero e temperamento esplosivo. Attacco: Free Throw Bomb.', stats:{baseAccuracy:6, baseDamage:8, baseDodge:5, baseArmor:5, baseHealth:6}, evolvesFromNames:['Gazimon'], evolvesToNames:[]},
+      {name:'Nanimon', stage:'Champion', desc:'Digimon dall\'aspetto di un piccolo demone rosa, si atteggia a maestro ma è codardo e privo di talento reale. Attacco: Info Chains.', stats:{baseAccuracy:6, baseDamage:6, baseDodge:6, baseArmor:6, baseHealth:6}, evolvesFromNames:['Gazimon'], evolvesToNames:['Garbagemon']},
     ]},
     { line:'Apemon', attribute:'Vaccine', family:'Unknown', chain:[
       {name:'Shamamon', stage:'Rookie', desc:'Piccolo sciamano scimmiesco che agita un sonaglio rituale. Attacco: Charm Dance.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:5, baseArmor:3, baseHealth:4}, evolvesToNames:['Apemon']},
       {name:'Apemon', stage:'Champion', desc:'Scimmione dal pelo dorato, leggendario e schivo, viaggia in sella a una nuvola di dati. Attacco: Angry Spike.', stats:{baseAccuracy:8, baseDamage:10, baseDodge:6, baseArmor:6, baseHealth:7}, evolvesFromNames:['Shamamon'], evolvesToNames:[]},
     ]},
     { line:'MetalSeadramon', attribute:'Virus', family:'Deep Savers', chain:[
-      {name:'Betamon', stage:'Rookie', desc:'Piccolo rettile acquatico dallo sguardo vigile. Attacco: Electric Shock.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}, evolvesToNames:['Seadramon','Shellmon']},
+      {name:'Betamon', stage:'Rookie', desc:'Piccolo rettile acquatico dallo sguardo vigile. Attacco: Electric Shock.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}, evolvesToNames:['Seadramon']},
       {name:'Seadramon', stage:'Champion', desc:'Serpente marino agile, temuto nei mari digitali. Attacco: Ice Blast.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:10, baseHealth:9}},
       {name:'MegaSeadramon', stage:'Ultimate', desc:'Serpente marino corazzato dal morso elettrico. Attacco: Lightning Javelin.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:7, baseArmor:14, baseHealth:13}, evolvesToNames:['MetalSeadramon','Leviamon']},
       {name:'MetalSeadramon', stage:'Mega', desc:'Serpente marino totalmente corazzato, sovrano degli oceani digitali, uno dei Dark Masters. Attacco: River of Power.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:9, baseArmor:19, baseHealth:17}},
     ]},
     { line:'Guardromon', attribute:'Virus', family:'Metal Empire', chain:[
-      {name:'Hagurumon', stage:'Rookie', desc:'Piccolo ingranaggio digitale vivente. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:3, baseHealth:2}},
+      {name:'Hagurumon', stage:'Rookie', desc:'Piccolo ingranaggio digitale vivente. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:3, baseHealth:2}, evolvesToNames:['Guardromon','Numemon']},
       {name:'Guardromon', stage:'Champion', desc:'Robot corazzato dal cuore leale, spesso sottovalutato. Attacco: Guardian Barrage.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}},
       {name:'Andromon', stage:'Ultimate', desc:'Cyborg dalla forza e precisione sovrumane. Attacco: Lightning Blade.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:10, baseHealth:9}},
       {name:'Machinedramon', stage:'Mega', desc:'Colosso meccanico, il piu potente dei Dark Masters, costruito dai pezzi di innumerevoli Cyborg Digimon. Attacco: Giga Cannon.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:9, baseArmor:19, baseHealth:17}},
     ]},
     { line:'Puppetmon', attribute:'Virus', family:'Jungle Troopers', chain:[
-      {name:'Cherrymon', stage:'Ultimate', desc:'Antico albero senziente e ingannatore, corrotto nel profondo. Attacco: Ageless Words.', stats:{baseAccuracy:11, baseDamage:13, baseDodge:8, baseArmor:9, baseHealth:14}},
-      {name:'Puppetmon', stage:'Mega', desc:'Marionetta di legno spietata, uno dei Dark Masters, costruita dal corpo di un Cherrymon maledetto. Attacco: Puppet Pummel.', stats:{baseAccuracy:16, baseDamage:19, baseDodge:12, baseArmor:11, baseHealth:12}},
+      {name:'Cherrymon', stage:'Ultimate', desc:'Antico albero senziente e ingannatore, corrotto nel profondo. Attacco: Ageless Words.', stats:{baseAccuracy:11, baseDamage:13, baseDodge:8, baseArmor:9, baseHealth:14}, evolvesFromNames:['Woodmon'], evolvesToNames:['Puppetmon']},
+      {name:'Puppetmon', stage:'Mega', desc:'Marionetta di legno spietata, uno dei Dark Masters, costruita dal corpo di un Cherrymon maledetto. Attacco: Puppet Pummel.', stats:{baseAccuracy:16, baseDamage:19, baseDodge:12, baseArmor:11, baseHealth:12}, evolvesFromNames:['Cherrymon']},
     ]},
     { line:'Vilemon', attribute:'Virus', family:'Nightmare Soldiers', chain:[
       {name:'Pyocomon', stage:'Fresh', desc:'Scintilla di fiamma vivente, la primissima forma di Vilemon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:1, baseHealth:1}},
       {name:'DemiMeramon', stage:'Baby', desc:'Piccola fiamma vivente dal temperamento instabile. Attacco: Bubble Blow.', stats:{baseAccuracy:3, baseDamage:2, baseDodge:2, baseArmor:1, baseHealth:2}},
-      {name:'DemiDevimon', stage:'Rookie', desc:'Pipistrellino bugiardo e manipolatore, fedele servitore di demoni più potenti. Attacco: Demi Dart.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:2, baseHealth:3}, evolvesFromNames:['DemiMeramon','Pagumon'], evolvesToNames:['Vilemon','Devimon','Bakemon','Soulmon']},
+      {name:'DemiDevimon', stage:'Rookie', desc:'Pipistrellino bugiardo e manipolatore, fedele servitore di demoni più potenti. Attacco: Demi Dart.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:2, baseHealth:3}, evolvesFromNames:['DemiMeramon','Pagumon'], evolvesToNames:['Vilemon','Devimon','Bakemon','Soulmon','Devidramon']},
       {name:'Soulmon', stage:'Champion', desc:'Fantasma incappucciato che ha assorbito dati di maghi delle fiabe, potenziando le proprie arti oscure. Attacco: Necro Magic.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:3, baseHealth:4}, evolvesFromNames:['DemiDevimon'], evolvesToNames:['Phantomon']},
       {name:'Vilemon', stage:'Champion', desc:'Piccolo demone alato, servitore fedele di Signori oscuri. Attacco: Nightmare Claw.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}},
       {name:'SkullSatamon', stage:'Ultimate', desc:'Scheletro angelico caduto, brandisce unasta ossea. Attacco: Nail Bone.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}},
@@ -654,7 +655,7 @@ Devimon: https://..."></textarea>
       {name:'Tsumemon', stage:'Baby', desc:'Piccola creatura artigliata dal ghigno inquietante. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}},
       {name:'Tsukaimon', stage:'Rookie', desc:'Pipistrello dispettoso dalle grandi orecchie, ama fare da servitore ai Digimon oscuri. Attacco: Purple Fog.', stats:{baseAccuracy:3, baseDamage:3, baseDodge:4, baseArmor:2, baseHealth:3}},
       {name:'Bakemon', stage:'Champion', desc:'Fantasma sotto un lenzuolo, ama spaventare i viaggiatori. Attacco: Dark Claw.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}, evolvesFromNames:['Tsukaimon','DemiDevimon'], evolvesToNames:['Phantomon']},
-      {name:'Ogremon', stage:'Champion', desc:'Orco Digimon rozzo ma astuto, armato di una mazza ossea. Attacco: Bone Boomerang.', stats:{baseAccuracy:7, baseDamage:6, baseDodge:10, baseArmor:5, baseHealth:7}, evolvesFromNames:['Gotsumon']},
+      {name:'Ogremon', stage:'Champion', desc:'Orco Digimon rozzo ma astuto, armato di una mazza ossea. Attacco: Bone Boomerang.', stats:{baseAccuracy:7, baseDamage:6, baseDodge:10, baseArmor:5, baseHealth:7}, evolvesFromNames:['Gotsumon','Goblimon']},
       {name:'Phantomon', stage:'Ultimate', desc:'Spettro simile alla Morte, armato di falce e catena. Attacco: Soul Chopper.', stats:{baseAccuracy:11, baseDamage:12, baseDodge:9, baseArmor:8, baseHealth:9}, evolvesFromNames:['Bakemon','Soulmon','Wizardmon'], evolvesToNames:['Piedmon']},
     ]},
     { line:'LadyDevimon', attribute:'Virus', family:'Nightmare Soldiers', chain:[
@@ -672,14 +673,14 @@ Devimon: https://..."></textarea>
       {name:'Girimon', stage:'Fresh', desc:'Piccolo nucleo corazzato, la primissima forma di Kotemon. Attacco: Bubble Blow.', stats:{baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:2, baseHealth:2}},
       {name:'Kicchimon', stage:'Baby', desc:'Piccola creatura corazzata dal temperamento aggressivo. Attacco: Bubble Blow.', stats:{baseAccuracy:1, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:3}},
       {name:'Kotemon', stage:'Rookie', desc:'Piccolo guerriero armato di una spada di legno. Attacco: Blade Rush.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:5}},
-      {name:'Dark Tyrannomon', stage:'Champion', desc:'Variante corrotta di Tyrannomon, pelle scura e sguardo feroce. Attacco: Fire Blast.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:6, baseArmor:8, baseHealth:10}},
+      {name:'DarkTyrannomon', stage:'Champion', desc:'Variante corrotta di Tyrannomon, pelle scura e sguardo feroce. Attacco: Fire Blast.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:6, baseArmor:8, baseHealth:10}},
       {name:'Kimeramon', stage:'Ultimate', desc:'Fusione innaturale di piu Digimon, creata artificialmente. Attacco: Heat Viper.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:9, baseArmor:11, baseHealth:14}, evolvesFromNames:['Deltamon'], evolvesToNames:['Millenniummon']},
       {name:'BlackWarGreymon', stage:'Mega', desc:'Guerriero oscuro nato da dati corrotti, cerca il proprio scopo. Attacco: Terra Destroyer.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:11, baseArmor:15, baseHealth:19}, evolvesFromNames:['Kimeramon','MetalGreymon (Virus)'], evolvesToNames:['Omnimon Zwart']},
     ]},
     { line:'Kunemon', attribute:'Virus', family:'Unknown', chain:[
       {name:'Wanyamon', stage:'Fresh', desc:'Piccolo roditore digitale, la primissima forma di Kunemon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:1, baseHealth:1}},
       {name:'Kapurimon', stage:'Baby', desc:'Piccolo roditore digitale dagli occhi vigili. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:2}},
-      {name:'Kunemon', stage:'Rookie', desc:'Bruco corazzato dal pungiglione velenoso. Attacco: Needle Sting.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:4}},
+      {name:'Kunemon', stage:'Rookie', desc:'Bruco corazzato dal pungiglione velenoso. Attacco: Needle Sting.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:4}, evolvesToNames:['Flymon']},
       {name:'Deltamon', stage:'Champion', desc:'Digimon a tre teste, imprevedibile e feroce. Attacco: Double Bind Crusher.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}, evolvesToNames:['Kimeramon']},
       {name:'Cherubimon (Vice)', stage:'Mega', desc:'Un tempo Grande Angelo, ora corrotto dallodio. Attacco: Lightning Spear.', stats:{baseAccuracy:10, baseDamage:10, baseDodge:10, baseArmor:10, baseHealth:10}},
       {name:'Millenniummon', stage:'Mega', desc:'Entita del tempo e del caos, nemica di ogni epoca. Attacco: Dimension Destroyer.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:13, baseArmor:13, baseHealth:13}, evolvesFromNames:['Kimeramon'], evolvesToNames:['ZeedMillenniummon']},
@@ -735,7 +736,7 @@ Devimon: https://..."></textarea>
       {name:'Upamon', stage:'Baby', desc:'Piccola creatura rotonda e paffuta. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:3, baseHealth:2}},
       {name:'Armadillomon', stage:'Rookie', desc:'Armadillo corazzato dal carattere amichevole. Attacco: Diamond Shell.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}, evolvesToNames:['Ankylomon','Digmon','Submarimon','Seahomon','Chameleonmon','Boarmon','Sepikmon','Pteramon','Frogmon','Sheepmon','Elephantmon']},
       {name:'Ankylomon', stage:'Champion', desc:'Dinosauro corazzato con una coda a mazza. Attacco: Tail Hammer.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:10, baseHealth:9}, evolvesToNames:['Shakkoumon']},
-      {name:'Shakkoumon', stage:'Ultimate', desc:'Fusione Jogress di Angemon e Ankylomon: totem corazzato dal volto sacro. Attacco: Rasenkyoumon Ha.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:9, baseArmor:11, baseHealth:12}, evolvesFromNames:['Angemon','Ankylomon']},
+      {name:'Shakkoumon', stage:'Ultimate', desc:'Fusione Jogress di Angemon e Ankylomon: totem corazzato dal volto sacro. Attacco: Rasenkyoumon Ha.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:9, baseArmor:11, baseHealth:12}, evolvesFromNames:['Angemon','Ankylomon'], originType:'jogress'},
       {name:'Digmon', stage:'Champion', desc:'Evoluzione Armor di Armadillomon (Digimental della Conoscenza): perforatore corazzato con trapani al posto delle mani. Attacco: Gold Rush.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:10, baseHealth:9}, evolvesFromNames:['Armadillomon'], evolvesToNames:[], originType:'armor'},
       {name:'Submarimon', stage:'Champion', desc:'Evoluzione Armor di Armadillomon (Digimental dell\'Affidabilita): sommergibile corazzato per il combattimento subacqueo. Attacco: Torpedo Attack.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:10, baseHealth:9}, evolvesFromNames:['Armadillomon'], evolvesToNames:[], originType:'armor'},
       {name:'Seahomon', stage:'Champion', desc:'Evoluzione Armor di Armadillomon (Digimental della Luce): sfinge corazzata acquatica. Attacco: Beam Rocket.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:10, baseHealth:9}, evolvesFromNames:['Armadillomon'], evolvesToNames:[], originType:'armor'},
@@ -751,7 +752,7 @@ Devimon: https://..."></textarea>
       {name:'Minomon', stage:'Fresh', desc:'Foglia appena germogliata e senziente, la primissima forma di Wormmon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:1, baseDodge:2, baseArmor:1, baseHealth:1}},
       {name:'Leafmon', stage:'Baby', desc:'Piccola creatura a forma di foglia arrotolata. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:3, baseArmor:1, baseHealth:2}},
       {name:'Wormmon', stage:'Rookie', desc:'Bruco gentile e devoto, sottovalutato dagli altri. Attacco: Silk Thread.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}, evolvesToNames:['Stingmon','Archelomon','Aurumon','Bullmon','Kongoumon','Shadramon','Togemogumon','Searchmon','Nohemon','Quetzalmon','Pucchiemon']},
-      {name:'Stingmon', stage:'Champion', desc:'Insetto guerriero con lame affilate sugli avambracci. Attacco: Spiking Strike.', stats:{baseAccuracy:7, baseDamage:6, baseDodge:10, baseArmor:5, baseHealth:7}, evolvesToNames:['JewelBeemon','Paildramon']},
+      {name:'Stingmon', stage:'Champion', desc:'Insetto guerriero con lame affilate sugli avambracci. Attacco: Spiking Strike.', stats:{baseAccuracy:7, baseDamage:6, baseDodge:10, baseArmor:5, baseHealth:7}, evolvesToNames:['JewelBeemon','Paildramon','DinoBeemon']},
       {name:'Archelomon', stage:'Champion', desc:'Evoluzione Armor di Wormmon (Digimental dell\'Affidabilità): tartaruga corazzata che nuota placida nell\'Oceano di Rete. Attacco: Shell Crush.', stats:{baseAccuracy:7, baseDamage:6, baseDodge:10, baseArmor:5, baseHealth:7}, evolvesFromNames:['Wormmon'], evolvesToNames:[], originType:'armor'},
       {name:'Aurumon', stage:'Champion', desc:'Evoluzione Armor di Wormmon (Digimental dell\'Amore): esploratore notturno con occhi a infrarossi. Attacco: Midnight Sniper.', stats:{baseAccuracy:7, baseDamage:6, baseDodge:10, baseArmor:5, baseHealth:7}, evolvesFromNames:['Wormmon'], evolvesToNames:[], originType:'armor'},
       {name:'Bullmon', stage:'Champion', desc:'Evoluzione Armor di Wormmon (Digimental della Speranza): toro corazzato dalla carica inarrestabile. Attacco: Charge Horn.', stats:{baseAccuracy:7, baseDamage:6, baseDodge:10, baseArmor:5, baseHealth:7}, evolvesFromNames:['Wormmon'], evolvesToNames:[], originType:'armor'},
@@ -764,7 +765,7 @@ Devimon: https://..."></textarea>
       {name:'Pucchiemon', stage:'Champion', desc:'Evoluzione Armor di Wormmon (Digimental della Gentilezza): folletto corazzato dal carattere giocoso. Attacco: Pucchi Punch.', stats:{baseAccuracy:7, baseDamage:6, baseDodge:10, baseArmor:5, baseHealth:7}, evolvesFromNames:['Wormmon'], evolvesToNames:[], originType:'armor'},
       {name:'JewelBeemon', stage:'Ultimate', desc:'Cavaliere insettoide armato di una spada laser. Attacco: Ultimate Strike.', stats:{baseAccuracy:10, baseDamage:9, baseDodge:14, baseArmor:7, baseHealth:10}},
       {name:'Imperialdramon Fighter Mode', stage:'Mega', desc:'Forma da battaglia del drago imperiale. Attacco: Positron Laser.', stats:{baseAccuracy:13, baseDamage:11, baseDodge:19, baseArmor:9, baseHealth:13}, evolvesToNames:['Imperialdramon Paladin Mode']},
-      {name:'Imperialdramon Paladin Mode', stage:'Mega', desc:'Fusione Jogress di Imperialdramon Fighter Mode con la potenza donata da Omnimon: cavaliere drago supremo armato dell\'Omni Sword. Attacco: Omega Blaster.', stats:{baseAccuracy:20, baseDamage:19, baseDodge:20, baseArmor:14, baseHealth:16}, evolvesFromNames:['Imperialdramon Fighter Mode','Omnimon']},
+      {name:'Imperialdramon Paladin Mode', stage:'Mega', desc:'Fusione Jogress di Imperialdramon Fighter Mode con la potenza donata da Omnimon: cavaliere drago supremo armato dell\'Omni Sword. Attacco: Omega Blaster.', stats:{baseAccuracy:20, baseDamage:19, baseDodge:20, baseArmor:14, baseHealth:16}, evolvesFromNames:['Imperialdramon Fighter Mode','Omnimon'], originType:'jogress'},
     ]},
     { line:'Lopmon', attribute:'Data', family:'Nature Spirits', chain:[
       {name:'Cocomon', stage:'Fresh', desc:'Piccola creatura orecchiuta ancora acerba, la primissima forma di Lopmon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:1, baseDodge:2, baseArmor:1, baseHealth:1}},
@@ -778,7 +779,7 @@ Devimon: https://..."></textarea>
       {name:'Nyaromon', stage:'Fresh', desc:'Piccola creatura felina dagli occhi vispi, la primissima forma prima di Salamon. Attacco: Bubble Blow.', stats:{baseAccuracy:3, baseDamage:3, baseDodge:2, baseArmor:1, baseHealth:2}},
       {name:'Salamon', stage:'Rookie', desc:'Piccola cagnolina bianca fedele e coraggiosa. Attacco: Puppy Punch.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}},
       {name:'Gatomon', stage:'Champion', desc:'Gatta agile con un anello sacro alla coda. Attacco: Lightning Paw.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesToNames:['Angewomon','Nefertimon','Butterflymon','Silphymon','Lynxmon','Rabbitmon','Swanmon','Tylomon','Kabukimon','Oryxmon','Opossumon','Maildramon']},
-      {name:'Angewomon', stage:'Ultimate', desc:'Angelo guerriero femminile armata di frecce di luce. Attacco: Celestial Arrow.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:9, baseArmor:7, baseHealth:8}, evolvesToNames:['Junomon']},
+      {name:'Angewomon', stage:'Ultimate', desc:'Angelo guerriero femminile armata di frecce di luce. Attacco: Celestial Arrow.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:9, baseArmor:7, baseHealth:8}, evolvesToNames:['Junomon','Ophanimon','Magnadramon']},
       {name:'Nefertimon', stage:'Champion', desc:'Evoluzione Armor di Gatomon (Digimental della Luce): sfinge alata corazzata dai poteri mistici. Attacco: Rosetta Stone.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesFromNames:['Gatomon'], evolvesToNames:[], originType:'armor'},
       {name:'Butterflymon', stage:'Champion', desc:'Evoluzione Armor di Gatomon (Digimental della Conoscenza): farfalla corazzata dalle ali fulminee. Attacco: Scales of the Shining Bolts.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesFromNames:['Gatomon'], evolvesToNames:[], originType:'armor'},
       {name:'Lynxmon', stage:'Champion', desc:'Evoluzione Armor di Gatomon (Digimental del Coraggio): felino corazzato dagli artigli scattanti. Attacco: Lynx Claw.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesFromNames:['Gatomon'], evolvesToNames:[], originType:'armor'},
@@ -789,7 +790,7 @@ Devimon: https://..."></textarea>
       {name:'Oryxmon', stage:'Champion', desc:'Evoluzione Armor di Gatomon (Digimental della Speranza): antilope corazzata dalle lunghe corna appuntite. Attacco: Horn Break.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesFromNames:['Gatomon'], evolvesToNames:[], originType:'armor'},
       {name:'Opossumon', stage:'Champion', desc:'Evoluzione Armor di Gatomon (Digimental della Gentilezza): marsupiale corazzato esperto di inganni e agguati. Attacco: Trick Bite.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesFromNames:['Gatomon'], evolvesToNames:[], originType:'armor'},
       {name:'Maildramon', stage:'Champion', desc:'Evoluzione Armor di Gatomon (Digimental dei Miracoli): drago corazzato dalla corazza impenetrabile. Attacco: Mail Blaster.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesFromNames:['Gatomon'], evolvesToNames:[], originType:'armor'},
-      {name:'Magnadramon', stage:'Mega', desc:'Drago sacro dorato, protettrice della luce. Attacco: Sparkling Wide Ray.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:11, baseArmor:9, baseHealth:11}},
+      {name:'Magnadramon', stage:'Mega', desc:'Drago sacro dorato, protettrice della luce. Attacco: Sparkling Wide Ray.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:11, baseArmor:9, baseHealth:11}, evolvesFromNames:['Angewomon']},
     ]},
   ];
 
@@ -800,52 +801,152 @@ Devimon: https://..."></textarea>
   const SPECIES_SEED_3 = [
     { line:'Agunimon', attribute:'Variable', family:'Unknown', chain:[
       {name:'Flamemon', stage:'Rookie', desc:'Piccolo spirito di fuoco dalla fiamma instabile, forma base prima della Spirit Evolution di Takuya. Attacco: Baby Salamander.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:4, baseArmor:3, baseHealth:4}, evolvesToNames:['Agunimon']},
-      {name:'Agunimon', stage:'Champion', desc:'Spirito Umano del Fuoco: guerriero marziale avvolto da fiamme sacre, forma di Takuya Kanbara. Attacco: Pyro Punch.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesFromNames:['Flamemon'], evolvesToNames:['Aldamon']},
-      {name:'BurningGreymon', stage:'Ultimate', desc:'Spirito Bestia del Fuoco: drago alato avvolto da fiamme devastanti. Attacco: Wildfire Tsunami.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:9, baseArmor:7, baseHealth:8}, evolvesFromNames:['Agunimon'], evolvesToNames:['Aldamon']},
+      {name:'Agunimon', stage:'Champion', desc:'Spirito Umano del Fuoco: guerriero marziale avvolto da fiamme sacre, forma di Takuya Kanbara. Attacco: Pyro Punch.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesFromNames:['Flamemon'], evolvesToNames:['Aldamon','BurningGreymon'], originType:'slide'},
+      {name:'BurningGreymon', stage:'Champion', desc:'Spirito Bestia del Fuoco: drago alato avvolto da fiamme devastanti. Attacco: Wildfire Tsunami.', stats:{baseAccuracy:9, baseDamage:10, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesFromNames:['Flamemon','Agunimon'], evolvesToNames:['Aldamon'], originType:'slide'},
       {name:'Aldamon', stage:'Mega', desc:'Fusione degli Spiriti Umano e Bestia del Fuoco: guerriero corazzato dal potere immenso. Attacco: Atomic Inferno.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:11, baseArmor:9, baseHealth:11}, evolvesFromNames:['Agunimon','BurningGreymon'], evolvesToNames:['EmperorGreymon']},
       {name:'EmperorGreymon', stage:'Mega', desc:'Evoluzione Spirito Unificato di Takuya: imperatore drago che fonde gli Spiriti di Fuoco, Legno e Terra. Attacco: Pyro Barrage.', stats:{baseAccuracy:19, baseDamage:20, baseDodge:12, baseArmor:11, baseHealth:13}, evolvesFromNames:['Aldamon'], evolvesToNames:['Susanoomon']},
     ]},
     { line:'Lobomon', attribute:'Variable', family:'Unknown', chain:[
       {name:'Strabimon', stage:'Rookie', desc:'Piccolo lupo ninja agile e silenzioso, forma base prima della Spirit Evolution di Koji. Attacco: Ninja Blade.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:6, baseArmor:3, baseHealth:3}, evolvesToNames:['Lobomon']},
-      {name:'Lobomon', stage:'Champion', desc:'Spirito Umano della Luce: guerriero lupo armato di doppie sciabole laser, forma di Koji Minamoto. Attacco: Howling Laser.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesFromNames:['Strabimon'], evolvesToNames:['BeoWolfmon']},
-      {name:'KendoGarurumon', stage:'Ultimate', desc:'Spirito Bestia della Luce: lupo corazzato velocissimo su ruote di luce. Attacco: Lupine Laser.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:9, baseArmor:7, baseHealth:8}, evolvesFromNames:['Lobomon'], evolvesToNames:['BeoWolfmon']},
+      {name:'Lobomon', stage:'Champion', desc:'Spirito Umano della Luce: guerriero lupo armato di doppie sciabole laser, forma di Koji Minamoto. Attacco: Howling Laser.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesFromNames:['Strabimon'], evolvesToNames:['BeoWolfmon','KendoGarurumon'], originType:'slide'},
+      {name:'KendoGarurumon', stage:'Champion', desc:'Spirito Bestia della Luce: lupo corazzato velocissimo su ruote di luce. Attacco: Lupine Laser.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesFromNames:['Strabimon','Lobomon'], evolvesToNames:['BeoWolfmon'], originType:'slide'},
       {name:'BeoWolfmon', stage:'Mega', desc:'Fusione degli Spiriti Umano e Bestia della Luce: cavaliere lupo dalla spada runica. Attacco: Fenrir Sword.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:11, baseArmor:9, baseHealth:11}, evolvesFromNames:['Lobomon','KendoGarurumon'], evolvesToNames:['MagnaGarurumon (Frontier)']},
       {name:'MagnaGarurumon (Frontier)', stage:'Mega', desc:'Evoluzione Spirito Unificato di Koji: lupo cibernetico che fonde gli Spiriti di Luce, Acqua e Acciaio. Attacco: Freeze Blaster.', stats:{baseAccuracy:17, baseDamage:19, baseDodge:14, baseArmor:11, baseHealth:13}, evolvesFromNames:['BeoWolfmon'], evolvesToNames:['Susanoomon']},
     ]},
     { line:'Kazemon', attribute:'Variable', family:'Unknown', chain:[
-      {name:'Kazemon', stage:'Champion', desc:'Spirito Umano del Vento: fata acrobatica velocissima, forma di Zoe Orimoto. Attacco: Hurricane Wave.', stats:{baseAccuracy:9, baseDamage:8, baseDodge:8, baseArmor:4, baseHealth:5}, evolvesToNames:['Zephyrmon']},
-      {name:'Zephyrmon', stage:'Ultimate', desc:'Spirito Bestia del Vento: arpia corazzata dagli artigli fulminei. Attacco: Typhoon Wave.', stats:{baseAccuracy:13, baseDamage:12, baseDodge:12, baseArmor:6, baseHealth:7}, evolvesFromNames:['Kazemon']},
+      {name:'Tinkermon', stage:'Rookie', desc:'Piccola fata meccanica dalle ali di libellula, forma base che ha ereditato il potere di uno dei Dieci Guerrieri Leggendari. Attacco: Tinker Blade.', stats:{baseAccuracy:5, baseDamage:4, baseDodge:6, baseArmor:2, baseHealth:3}, evolvesToNames:['Kazemon']},
+      {name:'Kazemon', stage:'Champion', desc:'Spirito Umano del Vento: fata acrobatica velocissima, forma di Zoe Orimoto. Attacco: Hurricane Wave.', stats:{baseAccuracy:9, baseDamage:8, baseDodge:8, baseArmor:4, baseHealth:5}, evolvesFromNames:['Tinkermon'], evolvesToNames:['Zephyrmon'], originType:'slide'},
+      {name:'Zephyrmon', stage:'Champion', desc:'Spirito Bestia del Vento: arpia corazzata dagli artigli fulminei. Attacco: Typhoon Wave.', stats:{baseAccuracy:9, baseDamage:8, baseDodge:8, baseArmor:4, baseHealth:5}, evolvesFromNames:['Kazemon'], evolvesToNames:['JetSilphymon'], originType:'slide'},
+      {name:'JetSilphymon', stage:'Mega', desc:'Spirito del Vento evoluto oltre la leggenda, erede di tutto il potere dei Dieci Guerrieri con abilità sconosciute. Attacco: Blast Rings.', stats:{baseAccuracy:17, baseDamage:15, baseDodge:19, baseArmor:9, baseHealth:11}, evolvesFromNames:['Kazemon','Zephyrmon']},
     ]},
     { line:'Beetlemon', attribute:'Variable', family:'Unknown', chain:[
-      {name:'Beetlemon', stage:'Champion', desc:'Spirito Umano del Tuono: guerriero scarabeo elettrico, forma di J.P. Shibayama. Attacco: Thunder Fist.', stats:{baseAccuracy:8, baseDamage:10, baseDodge:5, baseArmor:6, baseHealth:7}, evolvesToNames:['MetalKabuterimon (Beast)']},
-      {name:'MetalKabuterimon (Beast)', stage:'Ultimate', desc:'Spirito Bestia del Tuono: colosso corazzato armato di cannoni elettrici. Attacco: Bolo Thunder.', stats:{baseAccuracy:12, baseDamage:14, baseDodge:8, baseArmor:9, baseHealth:9}, evolvesFromNames:['Beetlemon']},
+      {name:'KoKabuterimon', stage:'Rookie', desc:'Piccolo scarabeo elettrico, forma base che ha ereditato il potere di uno dei Dieci Guerrieri Leggendari. Attacco: Electro Shock.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:4, baseHealth:5}, evolvesToNames:['Beetlemon']},
+      {name:'Beetlemon', stage:'Champion', desc:'Spirito Umano del Tuono: guerriero scarabeo elettrico, forma di J.P. Shibayama. Attacco: Thunder Fist.', stats:{baseAccuracy:8, baseDamage:10, baseDodge:5, baseArmor:6, baseHealth:7}, evolvesFromNames:['KoKabuterimon'], evolvesToNames:['MetalKabuterimon (Beast)'], originType:'slide'},
+      {name:'MetalKabuterimon (Beast)', stage:'Champion', desc:'Spirito Bestia del Tuono: colosso corazzato armato di cannoni elettrici. Attacco: Bolo Thunder.', stats:{baseAccuracy:8, baseDamage:10, baseDodge:5, baseArmor:6, baseHealth:7}, evolvesFromNames:['Beetlemon'], evolvesToNames:['RhinoKabuterimon'], originType:'slide'},
+      {name:'RhinoKabuterimon', stage:'Mega', desc:'Spirito del Tuono evoluto oltre la leggenda: colosso corazzato con un possente corno-cannone frontale. Attacco: Thunder Crash.', stats:{baseAccuracy:15, baseDamage:19, baseDodge:11, baseArmor:14, baseHealth:14}, evolvesFromNames:['Beetlemon','MetalKabuterimon (Beast)']},
     ]},
     { line:'Kumamon', attribute:'Variable', family:'Unknown', chain:[
-      {name:'Kumamon', stage:'Champion', desc:'Spirito Umano del Ghiaccio: orsetto combattente amichevole, forma di Tommy Himi. Attacco: Blizzard Blaster.', stats:{baseAccuracy:8, baseDamage:8, baseDodge:6, baseArmor:6, baseHealth:7}, evolvesToNames:['Korikakumon']},
-      {name:'Korikakumon', stage:'Ultimate', desc:'Spirito Bestia del Ghiaccio: gigante di ghiaccio dalla forza brutale. Attacco: Avalanche Charge.', stats:{baseAccuracy:11, baseDamage:13, baseDodge:8, baseArmor:10, baseHealth:10}, evolvesFromNames:['Kumamon']},
+      {name:'Kumamon', stage:'Champion', desc:'Spirito Umano del Ghiaccio: orsetto combattente amichevole, forma di Tommy Himi. Attacco: Blizzard Blaster.', stats:{baseAccuracy:8, baseDamage:8, baseDodge:6, baseArmor:6, baseHealth:7}, evolvesToNames:['Korikakumon'], originType:'slide'},
+      {name:'Korikakumon', stage:'Champion', desc:'Spirito Bestia del Ghiaccio: gigante di ghiaccio dalla forza brutale. Attacco: Avalanche Charge.', stats:{baseAccuracy:8, baseDamage:8, baseDodge:6, baseArmor:6, baseHealth:7}, evolvesFromNames:['Kumamon'], evolvesToNames:['Daipenmon'], originType:'slide'},
+      {name:'Daipenmon', stage:'Mega', desc:'Spirito del Ghiaccio evoluto oltre la leggenda: enorme pinguino corazzato armato di cannoni glaciali. Attacco: Emperor Penguin Blizzard.', stats:{baseAccuracy:14, baseDamage:16, baseDodge:9, baseArmor:16, baseHealth:15}, evolvesFromNames:['Kumamon','Korikakumon']},
     ]},
     { line:'Loweemon', attribute:'Variable', family:'Unknown', chain:[
-      {name:'Loweemon', stage:'Champion', desc:'Spirito Umano dell\'Oscurita: cavaliere silenzioso armato di falce, forma di Koichi Kimura. Attacco: Shadow Meteor.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:7, baseArmor:5, baseHealth:6}, evolvesToNames:['JagerLoweemon']},
-      {name:'JagerLoweemon', stage:'Ultimate', desc:'Spirito Bestia dell\'Oscurita: belva corazzata dalle molte lame. Attacco: Shadow Reaper.', stats:{baseAccuracy:13, baseDamage:13, baseDodge:10, baseArmor:7, baseHealth:8}, evolvesFromNames:['Loweemon']},
+      {name:'Loweemon', stage:'Champion', desc:'Spirito Umano dell\'Oscurita: cavaliere silenzioso armato di falce, forma di Koichi Kimura. Attacco: Shadow Meteor.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:7, baseArmor:5, baseHealth:6}, evolvesToNames:['JagerLoweemon'], originType:'slide'},
+      {name:'JagerLoweemon', stage:'Champion', desc:'Spirito Bestia dell\'Oscurita: belva corazzata dalle molte lame. Attacco: Shadow Reaper.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:7, baseArmor:5, baseHealth:6}, evolvesFromNames:['Loweemon'], evolvesToNames:['Rhihimon'], originType:'slide'},
+      {name:'Rhihimon', stage:'Mega', desc:'Spirito dell\'Oscurita evoluto oltre la leggenda, erede del potere di AncientSphinxmon: cavaliere spettrale avvolto da lame oscure. Attacco: Shadow Sovereign.', stats:{baseAccuracy:15, baseDamage:16, baseDodge:13, baseArmor:11, baseHealth:13}, evolvesFromNames:['Loweemon','JagerLoweemon']},
+    ]},
+    // --- I Dieci Guerrieri Antichi (esistiti molto prima dei moderni Guerrieri Leggendari; il legame è un'eredità di spirito, non una Digievoluzione formale) ---
+    { line:'AncientGreymon', attribute:'Variable', family:'Unknown', chain:[
+      {name:'AncientGreymon', stage:'Mega', desc:'Guerriero Antico del Fuoco: il suo potere vive oggi in Takuya Kanbara e nello Spirito di Agunimon/BurningGreymon. Attacco: Sharpness Claymore.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:13, baseArmor:13, baseHealth:14}},
+    ]},
+    { line:'AncientGarurumon', attribute:'Variable', family:'Unknown', chain:[
+      {name:'AncientGarurumon', stage:'Mega', desc:'Guerriero Antico della Luce: il suo potere vive oggi in Koji Minamoto e nello Spirito di Lobomon/KendoGarurumon. Attacco: Absolute Zero.', stats:{baseAccuracy:17, baseDamage:17, baseDodge:13, baseArmor:13, baseHealth:14}},
+    ]},
+    { line:'AncientBeetlemon', attribute:'Variable', family:'Unknown', chain:[
+      {name:'AncientBeetlemon', stage:'Mega', desc:'Guerriero Antico del Tuono: il suo potere vive oggi in J.P. Shibayama e nello Spirito di Beetlemon/MetalKabuterimon. Attacco: Calamity Thunder.', stats:{baseAccuracy:15, baseDamage:18, baseDodge:11, baseArmor:14, baseHealth:14}},
+    ]},
+    { line:'AncientKazemon', attribute:'Variable', family:'Unknown', chain:[
+      {name:'AncientKazemon', stage:'Mega', desc:'Guerriero Antico del Vento: il suo potere vive oggi in Zoe Orimoto e nello Spirito di Kazemon/Zephyrmon. Attacco: Whirlwind Guillotine.', stats:{baseAccuracy:18, baseDamage:14, baseDodge:17, baseArmor:11, baseHealth:12}},
+    ]},
+    { line:'AncientMegatheriummon', attribute:'Variable', family:'Unknown', chain:[
+      {name:'AncientMegatheriummon', stage:'Mega', desc:'Guerriero Antico del Ghiaccio: il suo potere vive oggi in Tommy Himi e nello Spirito di Kumamon/Korikakumon. Attacco: Ancient Glacier.', stats:{baseAccuracy:13, baseDamage:15, baseDodge:9, baseArmor:17, baseHealth:16}},
+    ]},
+    { line:'AncientSphinxmon', attribute:'Variable', family:'Unknown', chain:[
+      {name:'AncientSphinxmon', stage:'Mega', desc:'Guerriero Antico dell\'Oscurita: il suo potere vive oggi in Koichi Kimura e nello Spirito di Loweemon/JagerLoweemon. Attacco: Riddle Enigma.', stats:{baseAccuracy:16, baseDamage:16, baseDodge:14, baseArmor:12, baseHealth:13}},
+    ]},
+    { line:'AncientVolcamon', attribute:'Virus', family:'Unknown', chain:[
+      {name:'AncientVolcamon', stage:'Mega', desc:'Guerriero Antico della Terra: il suo potere vive oggi in Grumblemon e nello Spirito di Gigasmon. Attacco: Volcanic Bomber.', stats:{baseAccuracy:14, baseDamage:19, baseDodge:8, baseArmor:16, baseHealth:15}},
+    ]},
+    { line:'AncientMermaimon', attribute:'Data', family:'Unknown', chain:[
+      {name:'AncientMermaimon', stage:'Mega', desc:'Guerriera Antica dell\'Acqua: il suo potere vive oggi in Ranamon e nello Spirito di Calmaramon. Attacco: Tidal Requiem.', stats:{baseAccuracy:15, baseDamage:14, baseDodge:15, baseArmor:12, baseHealth:14}},
+    ]},
+    { line:'AncientTroiamon', attribute:'Variable', family:'Unknown', chain:[
+      {name:'AncientTroiamon', stage:'Mega', desc:'Guerriero Antico del Legno: il suo potere vive oggi in Arbormon e nello Spirito di Petaldramon. Attacco: Wood Lance Rain.', stats:{baseAccuracy:14, baseDamage:16, baseDodge:10, baseArmor:15, baseHealth:16}},
+    ]},
+    { line:'AncientWisemon', attribute:'Variable', family:'Unknown', chain:[
+      {name:'AncientWisemon', stage:'Mega', desc:'Guerriero Antico dell\'Acciaio: il suo potere vive oggi in Mercurymon e nello Spirito di Sakkakumon. Custode degli Archivi Akashici, primo saggio del Digital World. Attacco: Sage\'s Wisdom.', stats:{baseAccuracy:16, baseDamage:14, baseDodge:12, baseArmor:16, baseHealth:15}},
+    ]},
+    { line:'Garbagemon', attribute:'Virus', family:'Unknown', chain:[
+      {name:'Garbagemon', stage:'Champion', desc:'Cumulo ambulante di rifiuti digitali, puzzolente e sorprendentemente resistente. Attacco: Trash Bomber.', stats:{baseAccuracy:6, baseDamage:8, baseDodge:5, baseArmor:9, baseHealth:9}, evolvesFromNames:['Nanimon'], evolvesToNames:[]},
+    ]},
+    { line:'Snimon', attribute:'Vaccine', family:'Unknown', chain:[
+      {name:'Snimon', stage:'Champion', desc:'Insetto simile a una mantide religiosa gigante, armato di falci taglienti come lame. Attacco: Twin Sickles.', stats:{baseAccuracy:9, baseDamage:10, baseDodge:8, baseArmor:6, baseHealth:7}, evolvesFromNames:['Tentomon'], evolvesToNames:['Scorpiomon']},
+    ]},
+    { line:'Ebidramon', attribute:'Data', family:'Deep Savers', chain:[
+      {name:'Ebidramon', stage:'Champion', desc:'Crostaceo digitale simile a un gambero corazzato, dalle chele possenti. Attacco: Twin Sickle Crusher.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:6, baseArmor:8, baseHealth:8}, evolvesFromNames:['Gomamon'], evolvesToNames:[]},
+    ]},
+    { line:'Coelamon', attribute:'Data', family:'Deep Savers', chain:[
+      {name:'Crabmon', stage:'Rookie', desc:'Piccolo granchio digitale dalle chele robuste, si muove rapido lungo i fondali. Attacco: Crab Claw.', stats:{baseAccuracy:4, baseDamage:5, baseDodge:4, baseArmor:6, baseHealth:5}, evolvesToNames:['Coelamon']},
+      {name:'Coelamon', stage:'Champion', desc:'Pesce corazzato preistorico dalle pinne taglienti, abita le acque più profonde del Digital World. Attacco: Ancient Blade.', stats:{baseAccuracy:7, baseDamage:8, baseDodge:6, baseArmor:8, baseHealth:8}, evolvesFromNames:['Crabmon'], evolvesToNames:['Scorpiomon']},
+    ]},
+    { line:'Scorpiomon', attribute:'Data', family:'Deep Savers', chain:[
+      {name:'Scorpiomon', stage:'Ultimate', desc:'Scorpione marino preistorico corazzato, nato dall\'assimilazione di Digimon di tipo Virus nel suo territorio. Attacco: Stinger Surprise.', stats:{baseAccuracy:12, baseDamage:14, baseDodge:9, baseArmor:12, baseHealth:12}, evolvesFromNames:['Kuwagamon','Shellmon','Coelamon','Snimon'], evolvesToNames:[]},
+    ]},
+    { line:'Gekomon', attribute:'Virus', family:'Unknown', chain:[
+      {name:'Otamamon', stage:'Rookie', desc:'Piccolo girino digitale con un grande naso, allegro cantante dei villaggi acquatici. Attacco: Backfire Pressure.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:5}, evolvesToNames:['Gekomon']},
+      {name:'Gekomon', stage:'Champion', desc:'Rana digitale canterina, vive spesso in grandi villaggi comunitari. Attacco: Symphony Crusher.', stats:{baseAccuracy:6, baseDamage:6, baseDodge:6, baseArmor:8, baseHealth:9}, evolvesFromNames:['Otamamon'], evolvesToNames:['ShogunGekomon','Divermon']},
+      {name:'ShogunGekomon', stage:'Ultimate', desc:'Enorme rana samurai, capo carismatico e imponente dei villaggi di Gekomon. Attacco: Ultra Cannon Missile.', stats:{baseAccuracy:9, baseDamage:13, baseDodge:6, baseArmor:14, baseHealth:15}, evolvesFromNames:['Gekomon'], evolvesToNames:[]},
+      {name:'Divermon', stage:'Champion', desc:'Rana subacquea corazzata da uno scafandro d\'ottone, esploratore instancabile dei fondali digitali. Attacco: Harpoon Torpedo.', stats:{baseAccuracy:7, baseDamage:8, baseDodge:6, baseArmor:9, baseHealth:9}, evolvesFromNames:['Gekomon'], evolvesToNames:[]},
+    ]},
+    { line:'Plesiomon', attribute:'Vaccine', family:'Deep Savers', chain:[
+      {name:'Plesiomon', stage:'Mega', desc:'Mega alternativo di Gomamon: rettile marino preistorico dal lungo collo e due paia di ali, colorazione che ricorda ancora Gomamon. Attacco: Sorrow Blue.', stats:{baseAccuracy:14, baseDamage:15, baseDodge:14, baseArmor:12, baseHealth:15}, evolvesFromNames:['Zudomon']},
+    ]},
+    { line:'DinoBeemon', attribute:'Free', family:'Unknown', chain:[
+      {name:'DinoBeemon', stage:'Ultimate', desc:'Fusione Jogress alternativa a Paildramon (ExVeemon + Stingmon): guerriero insettoide corazzato dalle fauci draconiane. Attacco: Beemon Blade.', stats:{baseAccuracy:12, baseDamage:13, baseDodge:11, baseArmor:9, baseHealth:10}, evolvesFromNames:['ExVeemon','Stingmon'], evolvesToNames:['GranKuwagamon'], originType:'jogress'},
+      {name:'GranKuwagamon', stage:'Mega', desc:'Evoluzione di DinoBeemon: scarabeo cervo colossale dalle chele capaci di tranciare qualsiasi corazza. Attacco: Great Scissor Claw.', stats:{baseAccuracy:16, baseDamage:19, baseDodge:12, baseArmor:14, baseHealth:14}, evolvesFromNames:['DinoBeemon'], evolvesToNames:['GrandisKuwagamon']},
+      {name:'GrandisKuwagamon', stage:'Mega', desc:'Forma suprema oltre GranKuwagamon: corazza ancora più massiccia e chele capaci di perforare qualunque difesa. Attacco: Grandis Scissor Claw.', stats:{baseAccuracy:18, baseDamage:20, baseDodge:13, baseArmor:16, baseHealth:16}, evolvesFromNames:['GranKuwagamon']},
+    ]},
+    { line:'BlitzGreymon', attribute:'Vaccine', family:"Dragon's Roar", chain:[
+      {name:'BlitzGreymon', stage:'Mega', desc:'Mega alternativo di Agumon (canone Adventure 2020): guerriero cibernetico armato di armi a propulsione elettrica, nato dal contatto di MetalGreymon con un pilastro di energia. Attacco: Trident Revolver (Blitz).', stats:{baseAccuracy:17, baseDamage:18, baseDodge:13, baseArmor:12, baseHealth:14}, evolvesFromNames:['MetalGreymon']},
+    ]},
+    { line:'CresGarurumon', attribute:'Data', family:'Nature Spirits', chain:[
+      {name:'CresGarurumon', stage:'Mega', desc:'Mega alternativo di Gabumon (canone Adventure 2020): licantropo dall\'armatura dorata, samurai lupo nato dallo scontro con lo spirito di Zanbamon. Attacco: Crescent Fang.', stats:{baseAccuracy:15, baseDamage:16, baseDodge:16, baseArmor:12, baseHealth:14}, evolvesFromNames:['WereGarurumon']},
+    ]},
+    { line:'Gizamon', attribute:'Virus', family:'Deep Savers', chain:[
+      {name:'Gizamon', stage:'Rookie', desc:'Piccolo mammifero acquatico dalle pinne palmate, timido a terra ma feroce in acqua. Attacco: Spiral Edge.', stats:{baseAccuracy:4, baseDamage:5, baseDodge:5, baseArmor:4, baseHealth:5}, evolvesFromNames:['Bukamon'], evolvesToNames:['Shellmon']},
+    ]},
+    { line:'Devitamamon', attribute:'Virus', family:'Unknown', chain:[
+      {name:'Devitamamon', stage:'Mega', desc:'Forma oscura e corrotta di Digitamamon: uovo bipede alato dai nove occhi, incarnazione di ogni male. Attacco: Black Death Cloud.', stats:{baseAccuracy:15, baseDamage:16, baseDodge:11, baseArmor:14, baseHealth:15}, evolvesFromNames:['Digitamamon']},
+    ]},
+    { line:'Tuskmon', attribute:'Data', family:'Unknown', chain:[
+      {name:'Tuskmon', stage:'Champion', desc:'Dinosauro corazzato dalle enormi zanne ricurve, carica gli avversari a testa bassa. Attacco: Twin Tusk Crash.', stats:{baseAccuracy:7, baseDamage:10, baseDodge:5, baseArmor:9, baseHealth:9}, evolvesFromNames:['Agumon'], evolvesToNames:[]},
+    ]},
+    { line:'Monochromon', attribute:'Data', family:'Unknown', chain:[
+      {name:'Monochromon', stage:'Champion', desc:'Dinosauro corazzato dalla pelle grigia, dal temperamento territoriale e aggressivo. Attacco: Volcanic Strike.', stats:{baseAccuracy:6, baseDamage:9, baseDodge:4, baseArmor:11, baseHealth:10}, evolvesFromNames:['Gotsumon'], evolvesToNames:[]},
+    ]},
+    { line:'Flymon', attribute:'Virus', family:'Unknown', chain:[
+      {name:'Flymon', stage:'Champion', desc:'Enorme falena corazzata dal pungiglione velenoso, vola rapidissima seminando polvere tossica. Attacco: Poison Powder.', stats:{baseAccuracy:8, baseDamage:8, baseDodge:9, baseArmor:6, baseHealth:7}, evolvesFromNames:['Kunemon'], evolvesToNames:[]},
+    ]},
+    { line:'Syakomon', attribute:'Data', family:'Deep Savers', chain:[
+      {name:'Syakomon', stage:'Rookie', desc:'Piccola vongola digitale corazzata da una conchiglia bivalve. Attacco: Shell Attack.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:4, baseArmor:6, baseHealth:6}, evolvesToNames:['Shellmon']},
+    ]},
+    { line:'Sangomon', attribute:'Data', family:'Deep Savers', chain:[
+      {name:'Sangomon', stage:'Rookie', desc:'Piccolo polipo digitale ricoperto di corallo, si muove lento ma è ben protetto. Attacco: Coral Spike.', stats:{baseAccuracy:4, baseDamage:5, baseDodge:3, baseArmor:7, baseHealth:6}, evolvesToNames:['Shellmon']},
+    ]},
+    { line:'Goblimon', attribute:'Virus', family:'Nightmare Soldiers', chain:[
+      {name:'Goblimon', stage:'Rookie', desc:'Piccolo demone verde armato di una clava di legno, vive in bande nei boschi digitali. Attacco: Goblin Strike.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:4, baseArmor:5, baseHealth:5}, evolvesToNames:['Ogremon']},
+    ]},
+    { line:'Goldramon', attribute:'Vaccine', family:'Virus Busters', chain:[
+      {name:'Goldramon', stage:'Mega', desc:'Mega alternativo di Patamon (canone Adventure 2020): drago dorato dai poteri sacri, apparso insieme a Magnadramon durante la battaglia contro Millenniummon. Attacco: Golden Noble Nova.', stats:{baseAccuracy:16, baseDamage:17, baseDodge:12, baseArmor:14, baseHealth:15}, evolvesFromNames:['MagnaAngemon']},
     ]},
     { line:'Grumblemon', attribute:'Variable', family:'Unknown', chain:[
-      {name:'Grumblemon', stage:'Champion', desc:'Spirito Umano della Terra: guerriero nano armato di un enorme martello di roccia. Attacco: Sepulchral Blow.', stats:{baseAccuracy:8, baseDamage:11, baseDodge:4, baseArmor:8, baseHealth:8}, evolvesToNames:['Gigasmon']},
-      {name:'Gigasmon', stage:'Ultimate', desc:'Spirito Bestia della Terra: golem gigante dalla forza schiacciante. Attacco: Rock Fist.', stats:{baseAccuracy:11, baseDamage:15, baseDodge:6, baseArmor:12, baseHealth:11}, evolvesFromNames:['Grumblemon']},
+      {name:'Grumblemon', stage:'Champion', desc:'Spirito Umano della Terra: guerriero nano armato di un enorme martello di roccia. Attacco: Sepulchral Blow.', stats:{baseAccuracy:8, baseDamage:11, baseDodge:4, baseArmor:8, baseHealth:8}, evolvesToNames:['Gigasmon'], originType:'slide'},
+      {name:'Gigasmon', stage:'Champion', desc:'Spirito Bestia della Terra: golem gigante dalla forza schiacciante. Attacco: Rock Fist.', stats:{baseAccuracy:8, baseDamage:11, baseDodge:4, baseArmor:8, baseHealth:8}, evolvesFromNames:['Grumblemon'], originType:'slide'},
     ]},
     { line:'Arbormon', attribute:'Variable', family:'Unknown', chain:[
-      {name:'Arbormon', stage:'Champion', desc:'Spirito Umano del Legno: guerriero robusto dal corpo simile alla corteccia. Attacco: Wood Peckin\'.', stats:{baseAccuracy:8, baseDamage:10, baseDodge:5, baseArmor:8, baseHealth:9}, evolvesToNames:['Petaldramon']},
-      {name:'Petaldramon', stage:'Ultimate', desc:'Spirito Bestia del Legno: enorme drago vegetale che scaglia petali velenosi. Attacco: Deadly Nightshade.', stats:{baseAccuracy:11, baseDamage:14, baseDodge:7, baseArmor:11, baseHealth:12}, evolvesFromNames:['Arbormon']},
+      {name:'Arbormon', stage:'Champion', desc:'Spirito Umano del Legno: guerriero robusto dal corpo simile alla corteccia. Attacco: Wood Peckin\'.', stats:{baseAccuracy:8, baseDamage:10, baseDodge:5, baseArmor:8, baseHealth:9}, evolvesToNames:['Petaldramon'], originType:'slide'},
+      {name:'Petaldramon', stage:'Champion', desc:'Spirito Bestia del Legno: enorme drago vegetale che scaglia petali velenosi. Attacco: Deadly Nightshade.', stats:{baseAccuracy:8, baseDamage:10, baseDodge:5, baseArmor:8, baseHealth:9}, evolvesFromNames:['Arbormon'], originType:'slide'},
     ]},
     { line:'Ranamon', attribute:'Variable', family:'Unknown', chain:[
-      {name:'Ranamon', stage:'Champion', desc:'Spirito Umano dell\'Acqua: guerriera elegante che controlla la pioggia e le maree. Attacco: Draining Rain.', stats:{baseAccuracy:9, baseDamage:8, baseDodge:9, baseArmor:5, baseHealth:7}, evolvesToNames:['Calmaramon']},
-      {name:'Calmaramon', stage:'Ultimate', desc:'Spirito Bestia dell\'Acqua: sirena corazzata dai tentacoli avvolgenti. Attacco: Sunlight Slicer.', stats:{baseAccuracy:13, baseDamage:11, baseDodge:13, baseArmor:7, baseHealth:9}, evolvesFromNames:['Ranamon']},
+      {name:'Ranamon', stage:'Champion', desc:'Spirito Umano dell\'Acqua: guerriera elegante che controlla la pioggia e le maree. Attacco: Draining Rain.', stats:{baseAccuracy:9, baseDamage:8, baseDodge:9, baseArmor:5, baseHealth:7}, evolvesToNames:['Calmaramon'], originType:'slide'},
+      {name:'Calmaramon', stage:'Champion', desc:'Spirito Bestia dell\'Acqua: sirena corazzata dai tentacoli avvolgenti. Attacco: Sunlight Slicer.', stats:{baseAccuracy:9, baseDamage:8, baseDodge:9, baseArmor:5, baseHealth:7}, evolvesFromNames:['Ranamon'], originType:'slide'},
     ]},
     { line:'Mercurymon', attribute:'Variable', family:'Unknown', chain:[
-      {name:'Mercurymon', stage:'Champion', desc:'Spirito Umano dell\'Acciaio: guerriero degli specchi, riflette gli attacchi nemici. Attacco: Mirage Blade.', stats:{baseAccuracy:8, baseDamage:9, baseDodge:6, baseArmor:11, baseHealth:8}, evolvesToNames:['Sakkakumon']},
-      {name:'Sakkakumon', stage:'Ultimate', desc:'Spirito Bestia dell\'Acciaio: fortezza mobile a forma di lumaca corazzata di specchi. Attacco: Mirage Gate.', stats:{baseAccuracy:11, baseDamage:12, baseDodge:8, baseArmor:15, baseHealth:11}, evolvesFromNames:['Mercurymon']},
+      {name:'Mercurymon', stage:'Champion', desc:'Spirito Umano dell\'Acciaio: guerriero degli specchi, riflette gli attacchi nemici. Attacco: Mirage Blade.', stats:{baseAccuracy:8, baseDamage:9, baseDodge:6, baseArmor:11, baseHealth:8}, evolvesToNames:['Sakkakumon'], originType:'slide'},
+      {name:'Sakkakumon', stage:'Champion', desc:'Spirito Bestia dell\'Acciaio: fortezza mobile a forma di lumaca corazzata di specchi. Attacco: Mirage Gate.', stats:{baseAccuracy:8, baseDamage:9, baseDodge:6, baseArmor:11, baseHealth:8}, evolvesFromNames:['Mercurymon'], originType:'slide'},
     ]},
     { line:'Susanoomon', attribute:'Variable', family:'Unknown', chain:[
-      {name:'Susanoomon', stage:'Mega', desc:'Fusione Spirito Ancestrale di tutti e venti gli Spiriti dei Dieci Guerrieri Leggendari: essere immortale armato dello ZERO-ARMS Orochi.', stats:{baseAccuracy:20, baseDamage:20, baseDodge:16, baseArmor:14, baseHealth:16}, evolvesFromNames:['EmperorGreymon','MagnaGarurumon (Frontier)']},
+      {name:'Susanoomon', stage:'Mega', desc:'Fusione Spirito Ancestrale di tutti e venti gli Spiriti dei Dieci Guerrieri Leggendari: essere immortale armato dello ZERO-ARMS Orochi.', stats:{baseAccuracy:20, baseDamage:20, baseDodge:16, baseArmor:14, baseHealth:16}, evolvesFromNames:['EmperorGreymon','MagnaGarurumon (Frontier)'], originType:'jogress'},
     ]},
     // --- Digimon Savers / Data Squad ---
     // Nota: per evitare conflitti di nome con Agumon classico, la linea usa 'Agumon (Savers)'.
@@ -899,7 +1000,7 @@ Devimon: https://..."></textarea>
     ]},
     // --- Digimon iconici standalone ---
     { line:'Gotsumon', attribute:'Data', family:'Nature Spirits', chain:[
-      {name:'Gotsumon', stage:'Rookie', desc:'Piccolo Digimon di roccia dal carattere vivace e un po\' egoista, capobranco di Digimon di livello inferiore. Attacco: Rock Fist.', stats:{baseAccuracy:4, baseDamage:5, baseDodge:2, baseArmor:7, baseHealth:6}, evolvesToNames:['Ogremon']},
+      {name:'Gotsumon', stage:'Rookie', desc:'Piccolo Digimon di roccia dal carattere vivace e un po\' egoista, capobranco di Digimon di livello inferiore. Attacco: Rock Fist.', stats:{baseAccuracy:4, baseDamage:5, baseDodge:2, baseArmor:7, baseHealth:6}, evolvesToNames:['Ogremon','Monochromon']},
     ]},
     { line:'Wizardmon', attribute:'Data', family:'Nightmare Soldiers', chain:[
       {name:'Candlemon', stage:'Rookie', desc:'Piccolo Digimon a forma di candela dal cuore gentile: se la sua fiamma si spegne, muore. Attacco: Flame Bomber.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:4, baseArmor:3, baseHealth:4}, evolvesToNames:['Wizardmon']},
@@ -908,7 +1009,7 @@ Devimon: https://..."></textarea>
     { line:'Leomon', attribute:'Vaccine', family:'Nature Spirits', chain:[
       {name:'Elecmon', stage:'Rookie', desc:'Piccolo custode del Villaggio dei Nuovi Inizi, protettivo verso i Digimon più giovani. Attacco: Thunder Ball.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:5}, evolvesFromNames:['Tsunomon'], evolvesToNames:['Leomon','Aegiomon']},
       {name:'Leomon', stage:'Champion', desc:'Guerriero leone dal forte senso dell\'onore, spesso mentore o alleato dei più deboli. Attacco: Fist of the Beast King.', stats:{baseAccuracy:9, baseDamage:10, baseDodge:6, baseArmor:6, baseHealth:7}, evolvesFromNames:['Elecmon'], evolvesToNames:['GrapLeomon','SaberLeomon']},
-      {name:'GrapLeomon', stage:'Ultimate', desc:'Guerriero leone dai pugni fasciati, maestro di arti marziali dalla forza esplosiva. Attacco: Beast Punch.', stats:{baseAccuracy:12, baseDamage:14, baseDodge:9, baseArmor:8, baseHealth:10}, evolvesFromNames:['Leomon'], evolvesToNames:['SaberLeomon']},
+      {name:'GrapLeomon', stage:'Ultimate', desc:'Guerriero leone dai pugni fasciati, maestro di arti marziali dalla forza esplosiva. Attacco: Beast Punch.', stats:{baseAccuracy:12, baseDamage:14, baseDodge:9, baseArmor:8, baseHealth:10}, evolvesFromNames:['Leomon'], evolvesToNames:['SaberLeomon','Marsmon']},
       {name:'SaberLeomon', stage:'Mega', desc:'Evoluzione Warp diretta di Leomon (salta l\'Ultimate): leone da guerra corazzato con artigli a lama. Attacco: Nail Crusher.', stats:{baseAccuracy:16, baseDamage:17, baseDodge:11, baseArmor:10, baseHealth:12}, evolvesFromNames:['Leomon','GrapLeomon']},
     ]},
     { line:'Etemon', attribute:'Virus', family:'Unknown', chain:[
@@ -922,10 +1023,10 @@ Devimon: https://..."></textarea>
       {name:'Pumpkinmon', stage:'Champion', desc:'Bambola con testa a zucca intagliata e un\'ascia infilzata, dal carattere imperscrutabile. Attacco: Trick or Treat.', stats:{baseAccuracy:8, baseDamage:9, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesToNames:[]},
     ]},
     { line:'Kuwagamon', attribute:'Virus', family:'Unknown', chain:[
-      {name:'Kuwagamon', stage:'Champion', desc:'Enorme scarabeo cervo volante, dalle chele fortissime capaci di stritolare qualsiasi cosa afferrino. Attacco: Scissor Claw.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:6, baseArmor:8, baseHealth:8}, evolvesFromNames:['Tentomon'], evolvesToNames:[]},
+      {name:'Kuwagamon', stage:'Champion', desc:'Enorme scarabeo cervo volante, dalle chele fortissime capaci di stritolare qualsiasi cosa afferrino. Attacco: Scissor Claw.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:6, baseArmor:8, baseHealth:8}, evolvesFromNames:['Tentomon'], evolvesToNames:['Scorpiomon']},
     ]},
     { line:'Shellmon', attribute:'Data', family:'Deep Savers', chain:[
-      {name:'Shellmon', stage:'Champion', desc:'Mostro marino con un guscio a chiocciola e un lungo collo tentacolare. Attacco: Aqua Blaster.', stats:{baseAccuracy:8, baseDamage:9, baseDodge:5, baseArmor:9, baseHealth:8}, evolvesFromNames:['Betamon'], evolvesToNames:[]},
+      {name:'Shellmon', stage:'Champion', desc:'Mostro marino con un guscio a chiocciola e un lungo collo tentacolare. Attacco: Aqua Blaster.', stats:{baseAccuracy:8, baseDamage:9, baseDodge:5, baseArmor:9, baseHealth:8}, evolvesFromNames:['Gizamon','Syakomon','Sangomon'], evolvesToNames:['Scorpiomon']},
     ]},
     { line:'Unimon', attribute:'Data', family:'Nature Spirits', chain:[
       {name:'Unimon', stage:'Champion', desc:'Cavallo alato bianco dal cuore nobile, veloce come il vento. Attacco: Holy Hoof.', stats:{baseAccuracy:9, baseDamage:8, baseDodge:9, baseArmor:5, baseHealth:7}, evolvesFromNames:['Biyomon'], evolvesToNames:['Piximon']},
@@ -952,7 +1053,7 @@ Devimon: https://..."></textarea>
       {name:'Mojyamon', stage:'Champion', desc:'Yeti peloso delle terre ghiacciate, armato di una clava d\'osso. Attacco: Ice Cloud.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:5, baseArmor:8, baseHealth:8}, evolvesFromNames:['Gabumon'], evolvesToNames:[]},
     ]},
     { line:'Vademon', attribute:'Virus', family:'Unknown', chain:[
-      {name:'Vademon', stage:'Champion', desc:'Essere alieno dalla grande testa, capace di risucchiare la mente delle sue vittime. Attacco: Spiral Cannon.', stats:{baseAccuracy:9, baseDamage:7, baseDodge:8, baseArmor:5, baseHealth:6}, evolvesFromNames:['Patamon'], evolvesToNames:[]},
+      {name:'Vademon', stage:'Ultimate', desc:'Essere alieno dalla grande testa, capace di risucchiare la mente delle sue vittime. Attacco: Spiral Cannon.', stats:{baseAccuracy:12, baseDamage:10, baseDodge:11, baseArmor:8, baseHealth:9}, evolvesFromNames:['Patamon'], evolvesToNames:[]},
     ]},
     { line:'Datamon', attribute:'Virus', family:'Unknown', chain:[
       {name:'Datamon', stage:'Champion', desc:'Cervello meccanico racchiuso in un contenitore, genio del male ossessionato dai dati. Attacco: Sadist Cage.', stats:{baseAccuracy:8, baseDamage:7, baseDodge:6, baseArmor:8, baseHealth:7}, evolvesFromNames:['Tentomon'], evolvesToNames:[]},
@@ -961,19 +1062,28 @@ Devimon: https://..."></textarea>
       {name:'Whamon', stage:'Ultimate', desc:'Enorme balena digitale, gentile traghettatrice attraverso gli oceani del Digital World. Attacco: Jet Arrow.', stats:{baseAccuracy:10, baseDamage:12, baseDodge:5, baseArmor:11, baseHealth:13}, evolvesFromNames:['Gomamon'], evolvesToNames:['Neptunemon']},
     ]},
     { line:'Devidramon', attribute:'Virus', family:'Nightmare Soldiers', chain:[
-      {name:'Devidramon', stage:'Champion', desc:'Drago oscuro dai quattro occhi rossi, servitore spietato del male. Attacco: Crimson Claw.', stats:{baseAccuracy:9, baseDamage:10, baseDodge:7, baseArmor:6, baseHealth:7}, evolvesFromNames:['Gabumon'], evolvesToNames:[]},
+      {name:'Devidramon', stage:'Champion', desc:'Drago oscuro dai quattro occhi rossi, servitore spietato del male. Attacco: Crimson Claw.', stats:{baseAccuracy:9, baseDamage:10, baseDodge:7, baseArmor:6, baseHealth:7}, evolvesFromNames:['DemiDevimon'], evolvesToNames:[]},
     ]},
     { line:'Monzaemon', attribute:'Vaccine', family:'Unknown', chain:[
-      {name:'Monzaemon', stage:'Champion', desc:'Grande orsacchiotto di pezza, custode gentile del Villaggio dei Giocattoli, ma pericoloso se corrotto. Attacco: Heart Attack.', stats:{baseAccuracy:6, baseDamage:8, baseDodge:5, baseArmor:9, baseHealth:9}, evolvesFromNames:['Patamon'], evolvesToNames:[]},
+      {name:'Numemon', stage:'Champion', desc:'Lumaca digitale rosa e viscida, tanto disgustoso quanto innocuo, spesso vittima di scherzi altrui. Attacco: Slime Shooter.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:6, baseHealth:8}, evolvesFromNames:['Hagurumon'], evolvesToNames:['Monzaemon']},
+      {name:'Monzaemon', stage:'Champion', desc:'Grande orsacchiotto di pezza, custode gentile del Villaggio dei Giocattoli, ma pericoloso se corrotto. Attacco: Heart Attack.', stats:{baseAccuracy:6, baseDamage:8, baseDodge:5, baseArmor:9, baseHealth:9}, evolvesFromNames:['Patamon','Numemon'], evolvesToNames:['Babamon']},
+      {name:'Babamon', stage:'Mega', desc:'Anziana strega dal fascino ruvido, un tempo si dice fosse una Rosemon vittima di un incantesimo. Moglie (litigiosa) di Jijimon. Attacco: Empress Haze.', stats:{baseAccuracy:14, baseDamage:13, baseDodge:12, baseArmor:11, baseHealth:14}, evolvesFromNames:['Monzaemon']},
+      {name:'Jijimon', stage:'Mega', desc:'Anziano saggio dal pelo che gli copre il volto, tra i Digimon più antichi in assoluto. Marito (litigioso) di Babamon. Attacco: Dark Noose.', stats:{baseAccuracy:13, baseDamage:14, baseDodge:11, baseArmor:12, baseHealth:14}, evolvesFromNames:['Piximon']},
     ]},
     { line:'Digitamamon', attribute:'Data', family:'Unknown', chain:[
-      {name:'Digitamamon', stage:'Ultimate', desc:'Digimon dal corpo a forma d\'uovo con la testa fuori dal guscio, gestisce un ristorante nel deserto. Attacco: Whip Tongue.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:11, baseHealth:10}, evolvesToNames:['Belphemon Sleep Mode','Bacchusmon']},
+      {name:'Digitamamon', stage:'Ultimate', desc:'Digimon dal corpo a forma d\'uovo con la testa fuori dal guscio, gestisce un ristorante nel deserto. Attacco: Whip Tongue.', stats:{baseAccuracy:9, baseDamage:9, baseDodge:6, baseArmor:11, baseHealth:10}, evolvesToNames:['Belphemon Sleep Mode','Bacchusmon','Devitamamon']},
     ]},
     { line:'IceDevimon', attribute:'Virus', family:'Nightmare Soldiers', chain:[
       {name:'IceDevimon', stage:'Champion', desc:'Demone alato di ghiaccio, freddo e calcolatore, capace di congelare la propria coda a mo\' di arma. Attacco: Frozen Claw.', stats:{baseAccuracy:9, baseDamage:8, baseDodge:8, baseArmor:6, baseHealth:6}, evolvesFromNames:['Poromon'], evolvesToNames:[]},
     ]},
     { line:'Culumon', attribute:'Free', family:'Unknown', chain:[
-      {name:'Culumon', stage:'Baby', desc:'Piccola creatura curiosa e giocosa dal grande potenziale nascosto: la sua "fortuna" può alterare le Digievoluzioni altrui. Attacco: Puni Punch.', stats:{baseAccuracy:2, baseDamage:1, baseDodge:5, baseArmor:1, baseHealth:3}, evolvesToNames:[]},
+      {name:'Calumon', stage:'Baby', desc:'Piccola creatura curiosa e giocosa dal grande potenziale nascosto: la sua "fortuna" può alterare le Digievoluzioni altrui. Attacco: Puni Punch.', stats:{baseAccuracy:2, baseDamage:1, baseDodge:5, baseArmor:1, baseHealth:3}, evolvesToNames:[]},
+    ]},
+    { line:'Bokomon', attribute:'Free', family:'Unknown', chain:[
+      {name:'Bokomon', stage:'Rookie', desc:'Piccolo saggio avvolto in una fascia, custodisce un libro con le leggende del Digital World. Non ha alcuna capacità di combattimento e non evolve mai. Attacco: nessuno.', stats:{baseAccuracy:1, baseDamage:0, baseDodge:2, baseArmor:1, baseHealth:2}, evolvesToNames:[]},
+    ]},
+    { line:'Neemon', attribute:'Free', family:'Unknown', chain:[
+      {name:'Neemon', stage:'Rookie', desc:'Compagno inseparabile di Bokomon, ingenuo ma a modo suo perspicace. Non ha alcuna capacità di combattimento e non evolve mai. Attacco: nessuno.', stats:{baseAccuracy:1, baseDamage:0, baseDodge:2, baseArmor:1, baseHealth:2}, evolvesToNames:[]},
     ]},
     { line:'Cyberdramon', attribute:'Virus', family:'Unknown', chain:[
       {name:'Monodramon', stage:'Rookie', desc:'Piccolo drago blu solitario, dal fiuto acuto e dalla forza sorprendente. Attacco: Twister Claw.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:5, baseArmor:3, baseHealth:4}, evolvesToNames:['Cyberdramon']},
@@ -1003,7 +1113,7 @@ Devimon: https://..."></textarea>
       {name:'Xuanwumon', stage:'Mega', desc:'Uno dei Quattro Dei Sacri: tartaruga corazzata guardiana del Nord, fusa con un serpente. Attacco: Black Storm.', stats:{baseAccuracy:16, baseDamage:16, baseDodge:12, baseArmor:19, baseHealth:19}, evolvesToNames:['Fanglongmon'], categories:['Digimon Sovereigns']},
     ]},
     { line:'Fanglongmon', attribute:'Data', family:'Unknown', chain:[
-      {name:'Fanglongmon', stage:'Mega', desc:'Fusione Jogress delle Quattro Bestie Sacre: antico drago imperiale, un tempo sovrano dell\'intero Digital World. Attacco: Ancient Genesis (Supremo).', stats:{baseAccuracy:20, baseDamage:20, baseDodge:16, baseArmor:18, baseHealth:19}, evolvesFromNames:['Qinglongmon','Zhuqiaomon','Baihumon','Xuanwumon'], categories:['Digimon Sovereigns']},
+      {name:'Fanglongmon', stage:'Mega', desc:'Fusione Jogress delle Quattro Bestie Sacre: antico drago imperiale, un tempo sovrano dell\'intero Digital World. Attacco: Ancient Genesis (Supremo).', stats:{baseAccuracy:20, baseDamage:20, baseDodge:16, baseArmor:18, baseHealth:19}, evolvesFromNames:['Qinglongmon','Zhuqiaomon','Baihumon','Xuanwumon'], originType:'jogress', categories:['Digimon Sovereigns']},
     ]},
     { line:'BlackAgumon', attribute:'Virus', family:'Unknown', chain:[
       {name:'BlackAgumon', stage:'Rookie', desc:'Versione oscura di Agumon: rettile bipede dagli artigli affilati e dal carattere feroce, presagio di una Digievoluzione immensa. Attacco: Dark Pepper Breath.', stats:{baseAccuracy:5, baseDamage:7, baseDodge:3, baseArmor:4, baseHealth:3}, evolvesToNames:['BlackGreymon']},
@@ -1017,10 +1127,10 @@ Devimon: https://..."></textarea>
     ]},
     { line:'Omnimon Zwart', attribute:'Virus', family:'Unknown', chain:[
       {name:'BlackMetalGarurumon', stage:'Mega', desc:'Lupo cibernetico nero, versione oscura e corrotta di MetalGarurumon. Attacco: Dark Freezing Missile.', stats:{baseAccuracy:11, baseDamage:14, baseDodge:20, baseArmor:11, baseHealth:14}, evolvesFromNames:['BlackWereGarurumon'], evolvesToNames:['Omnimon Zwart']},
-      {name:'Omnimon Zwart', stage:'Mega', desc:'Fusione Jogress oscura di BlackWarGreymon e BlackMetalGarurumon: versione corrotta e infetta da Virus di Omnimon, cavaliere nero dagli occhi rossi. Attacco: Termination Sword / Dark Garuru Cannon.', stats:{baseAccuracy:19, baseDamage:20, baseDodge:17, baseArmor:14, baseHealth:16}, evolvesFromNames:['BlackWarGreymon','BlackMetalGarurumon']},
+      {name:'Omnimon Zwart', stage:'Mega', desc:'Fusione Jogress oscura di BlackWarGreymon e BlackMetalGarurumon: versione corrotta e infetta da Virus di Omnimon, cavaliere nero dagli occhi rossi. Attacco: Termination Sword / Dark Garuru Cannon.', stats:{baseAccuracy:19, baseDamage:20, baseDodge:17, baseArmor:14, baseHealth:16}, evolvesFromNames:['BlackWarGreymon','BlackMetalGarurumon'], originType:'jogress'},
     ]},
     { line:'Piximon', attribute:'Data', family:'Unknown', chain:[
-      {name:'Piximon', stage:'Ultimate', desc:'Folletto magico minuto ma potentissimo, allena i Digimon più giovani con la sua lancia Fairy Tale. Attacco: Pit Bomb.', stats:{baseAccuracy:13, baseDamage:11, baseDodge:14, baseArmor:8, baseHealth:9}, evolvesFromNames:['Unimon'], evolvesToNames:['Venusmon']},
+      {name:'Piximon', stage:'Ultimate', desc:'Folletto magico minuto ma potentissimo, allena i Digimon più giovani con la sua lancia Fairy Tale. Attacco: Pit Bomb.', stats:{baseAccuracy:13, baseDamage:11, baseDodge:14, baseArmor:8, baseHealth:9}, evolvesFromNames:['Unimon'], evolvesToNames:['Venusmon','Jijimon']},
     ]},
     { line:'Mummymon', attribute:'Virus', family:'Nightmare Soldiers', chain:[
       {name:'Mummymon', stage:'Ultimate', desc:'Creatura ibrida bendata dall\'unico occhio dorato, creata artificialmente da dati e DNA umano, fedele compagno di Arukenimon. Attacco: Grave Scream.', stats:{baseAccuracy:10, baseDamage:12, baseDodge:9, baseArmor:9, baseHealth:11}, evolvesFromNames:['Wizardmon'], evolvesToNames:[]},
@@ -1029,7 +1139,7 @@ Devimon: https://..."></textarea>
       {name:'ToyAgumon', stage:'Rookie', desc:'Digimon giocattolo fatto di mattoncini colorati che imita l\'aspetto di Agumon, timido ma dal cuore giusto. Attacco: Toy Flame.', stats:{baseAccuracy:4, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:4}, evolvesFromNames:['Koromon'], evolvesToNames:[]},
     ]},
     { line:'Ophanimon', attribute:'Vaccine', family:'Virus Busters', chain:[
-      {name:'Ophanimon', stage:'Mega', desc:'Uno dei Tre Grandi Angeli: arcangelo corazzato armato della lancia Spear of Light, guardiana della Speranza. Attacco: Eden\'s Javelin.', stats:{baseAccuracy:18, baseDamage:17, baseDodge:16, baseArmor:13, baseHealth:15}},
+      {name:'Ophanimon', stage:'Mega', desc:'Uno dei Tre Grandi Angeli: arcangelo corazzato armato della lancia Spear of Light, guardiana della Speranza. Attacco: Eden\'s Javelin.', stats:{baseAccuracy:18, baseDamage:17, baseDodge:16, baseArmor:13, baseHealth:15}, evolvesFromNames:['Angewomon']},
     ]},
     { line:'BanchoLeomon', attribute:'Vaccine', family:'Nature Spirits', chain:[
       {name:'BanchoLeomon', stage:'Mega', desc:'Il più potente dei Leomon, un tempo custode della barriera fra il Mondo Digitale e quello Umano. Attacco: King of Fist.', stats:{baseAccuracy:17, baseDamage:19, baseDodge:13, baseArmor:14, baseHealth:16}, categories:['Royal Knights (alleato)']},
@@ -1141,8 +1251,9 @@ Devimon: https://..."></textarea>
       {name:'Jupitermon', stage:'Mega', desc:'Uno degli Olympos XII: sovrano del fulmine, il più potente e autoritario del pantheon. Attacco: Wrath Thunder.', stats:{baseAccuracy:18, baseDamage:19, baseDodge:13, baseArmor:14, baseHealth:15}, evolvesFromNames:['Aegiochusmon'], categories:['Olympos XII']},
     ]},
     { line:'Marsmon', attribute:'Vaccine', family:'Unknown', chain:[
-      {name:'Bearmon', stage:'Rookie', desc:'Piccolo orsetto combattivo dal pugno pesante. Attacco: Baby Bang.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:4, baseArmor:5, baseHealth:5}, evolvesToNames:['Marsmon']},
-      {name:'Marsmon', stage:'Mega', desc:'Uno degli Olympos XII: dio della guerra avvolto dalle fiamme, armato di lancia infuocata. Attacco: Meteor Impaler.', stats:{baseAccuracy:17, baseDamage:19, baseDodge:12, baseArmor:13, baseHealth:14}, evolvesFromNames:['Bearmon'], categories:['Olympos XII']},
+      {name:'Bearmon', stage:'Rookie', desc:'Piccolo orsetto combattivo dal pugno pesante. Attacco: Baby Bang.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:4, baseArmor:5, baseHealth:5}, evolvesToNames:['Grizzlymon']},
+      {name:'Grizzlymon', stage:'Champion', desc:'Orso corazzato dalle zampe possenti, evoluzione naturale di Bearmon. Attacco: Grizzly Bomber.', stats:{baseAccuracy:8, baseDamage:11, baseDodge:5, baseArmor:8, baseHealth:9}, evolvesFromNames:['Bearmon'], evolvesToNames:['GrapLeomon']},
+      {name:'Marsmon', stage:'Mega', desc:'Uno degli Olympos XII: dio della guerra avvolto dalle fiamme, armato di lancia infuocata. Attacco: Meteor Impaler.', stats:{baseAccuracy:17, baseDamage:19, baseDodge:12, baseArmor:13, baseHealth:14}, evolvesFromNames:['GrapLeomon'], categories:['Olympos XII']},
     ]},
     { line:'Neptunemon', attribute:'Vaccine', family:'Unknown', chain:[
       {name:'Neptunemon', stage:'Mega', desc:'Uno degli Olympos XII: sovrano degli abissi, controlla le maree con il suo tridente. Attacco: Zeus Thunder.', stats:{baseAccuracy:16, baseDamage:17, baseDodge:13, baseArmor:14, baseHealth:16}, evolvesFromNames:['Whamon'], categories:['Olympos XII']},
@@ -1151,7 +1262,8 @@ Devimon: https://..."></textarea>
       {name:'Merukimon', stage:'Mega', desc:'Uno degli Olympos XII: guerriero silenzioso avvolto dal vento, il più neutrale e distaccato del pantheon. Attacco: Meraki Slash.', stats:{baseAccuracy:16, baseDamage:17, baseDodge:16, baseArmor:14, baseHealth:15}, evolvesFromNames:['WereGarurumon'], categories:['Olympos XII']},
     ]},
     { line:'Vulcanusmon', attribute:'Vaccine', family:'Unknown', chain:[
-      {name:'Dragomon', stage:'Ultimate', desc:'Demone marino dai lunghi tentacoli, cela nei fondali del Digital World. Attacco: Dark Talon.', stats:{baseAccuracy:12, baseDamage:15, baseDodge:9, baseArmor:13, baseHealth:14}, evolvesToNames:['Vulcanusmon']},
+      {name:'Octomon', stage:'Champion', desc:'Polpo digitale dagli otto tentacoli agili, capace di sferrare colpi multipli in combattimento. Attacco: Octo Flame.', stats:{baseAccuracy:8, baseDamage:9, baseDodge:8, baseArmor:7, baseHealth:8}, evolvesToNames:['Dragomon']},
+      {name:'Dragomon', stage:'Ultimate', desc:'Demone marino dai lunghi tentacoli, cela nei fondali del Digital World. Attacco: Dark Talon.', stats:{baseAccuracy:12, baseDamage:15, baseDodge:9, baseArmor:13, baseHealth:14}, evolvesFromNames:['Octomon'], evolvesToNames:['Vulcanusmon']},
       {name:'Vulcanusmon', stage:'Mega', desc:'Uno degli Olympos XII: fabbro divino corazzato d\'acciaio, crea armi per tutto il pantheon. Attacco: Volcano Strike.', stats:{baseAccuracy:15, baseDamage:18, baseDodge:10, baseArmor:17, baseHealth:16}, evolvesFromNames:['Dragomon'], categories:['Olympos XII']},
     ]},
     { line:'Junomon', attribute:'Vaccine', family:'Unknown', chain:[
@@ -1161,8 +1273,14 @@ Devimon: https://..."></textarea>
       {name:'Venusmon', stage:'Mega', desc:'Una degli Olympos XII: dea della bellezza e pacifista convinta, dedita alla guarigione. Attacco: Venus Blade.', stats:{baseAccuracy:14, baseDamage:12, baseDodge:16, baseArmor:12, baseHealth:15}, evolvesFromNames:['Piximon'], categories:['Olympos XII']},
     ]},
     { line:'Ceresmon', attribute:'Vaccine', family:'Unknown', chain:[
-      {name:'Sirenmon', stage:'Ultimate', desc:'Sirena incantatrice dal canto ipnotico, precursore di Ceresmon. Attacco: Siren\'s Serenade.', stats:{baseAccuracy:12, baseDamage:11, baseDodge:14, baseArmor:9, baseHealth:11}, evolvesToNames:['Ceresmon']},
+      {name:'Floramon', stage:'Rookie', desc:'Fiore antropomorfo dal petalo a forma di elmo, rivale gelosa di Palmon. Attacco: Rain of Pollen.', stats:{baseAccuracy:5, baseDamage:4, baseDodge:5, baseArmor:4, baseHealth:5}, evolvesFromNames:['Tanemon'], evolvesToNames:['Kiwimon']},
+      {name:'Kiwimon', stage:'Champion', desc:'Uccello kiwi corazzato da una maschera ossea, precursore di Sirenmon. Attacco: Bird Call.', stats:{baseAccuracy:8, baseDamage:8, baseDodge:8, baseArmor:7, baseHealth:8}, evolvesFromNames:['Floramon'], evolvesToNames:['Sirenmon']},
+      {name:'Sirenmon', stage:'Ultimate', desc:'Sirena incantatrice dal canto ipnotico, precursore di Ceresmon. Attacco: Siren\'s Serenade.', stats:{baseAccuracy:12, baseDamage:11, baseDodge:14, baseArmor:9, baseHealth:11}, evolvesFromNames:['Kiwimon'], evolvesToNames:['Ceresmon']},
       {name:'Ceresmon', stage:'Mega', desc:'Una degli Olympos XII: dea della terra e dei raccolti, dal potere rigenerativo. Attacco: Fruits of Mother Earth.', stats:{baseAccuracy:15, baseDamage:14, baseDodge:14, baseArmor:14, baseHealth:17}, evolvesFromNames:['Sirenmon'], categories:['Olympos XII']},
+    ]},
+    { line:'Mushroomon', attribute:'Data', family:'Unknown', chain:[
+      {name:'Mushroomon', stage:'Rookie', desc:'Fungo antropomorfo velenoso, lancia piccoli funghi tossici dotati di zampe proprie. Attacco: Mushroom Spore.', stats:{baseAccuracy:4, baseDamage:5, baseDodge:4, baseArmor:4, baseHealth:5}, evolvesFromNames:['Tanemon'], evolvesToNames:['Woodmon']},
+      {name:'Woodmon', stage:'Champion', desc:'Vecchio albero antropomorfo dal tronco nodoso, lento ma resistentissimo. Attacco: Wood Stick.', stats:{baseAccuracy:6, baseDamage:8, baseDodge:4, baseArmor:11, baseHealth:11}, evolvesFromNames:['Mushroomon'], evolvesToNames:['Cherrymon']},
     ]},
     { line:'Dianamon', attribute:'Vaccine', family:'Unknown', chain:[
       {name:'Lunamon', stage:'Rookie', desc:'Piccolo coniglio lunare dagli occhi dolci. Attacco: Lunatic Charm.', stats:{baseAccuracy:5, baseDamage:4, baseDodge:6, baseArmor:3, baseHealth:4}, evolvesToNames:['Lekismon']},

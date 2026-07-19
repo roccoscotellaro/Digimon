@@ -9,6 +9,21 @@
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
 
 <style>
+  @font-face {
+    font-family: 'Digicode';
+    src: url('https://www.wfonts.com/download/data/2016/10/03/digicode/digicode.woff') format('woff'),
+         url('https://fonts2u.com/fonts/d/digimon_digicode_font_by_mooshimon.ttf') format('truetype');
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'Pixel Digivolve';
+    src: url('https://db.onlinewebfonts.com/t/e7a35327535403014c02a38c285b82cf.woff2') format('woff2'),
+         url('https://db.onlinewebfonts.com/t/e7a35327535403014c02a38c285b82cf.woff') format('woff'),
+         url('https://db.onlinewebfonts.com/t/e7a35327535403014c02a38c285b82cf.ttf') format('truetype');
+    font-display: swap;
+  }
+  .digimoji-text{ font-family:'Digicode','Share Tech Mono',monospace; letter-spacing:0.05em; font-size:15px; cursor:help; }
+  .pixel-title{ font-family:'Pixel Digivolve','Share Tech Mono',monospace; letter-spacing:0.03em; }
   :root{
     --bg: #080b10;
     --panel: #0e141b;
@@ -41,7 +56,7 @@
   .brand{display:flex;align-items:center;gap:10px;}
   .brand-dot{width:9px;height:9px;background:var(--cyan);box-shadow:0 0 8px var(--cyan);border-radius:50%;animation:pulse 2s infinite;}
   @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
-  .brand-title{font-size:13px;text-transform:uppercase;color:var(--cyan);}
+  .brand-title{font-family:'Pixel Digivolve','Share Tech Mono',monospace;font-size:15px;text-transform:uppercase;color:var(--cyan);letter-spacing:0.05em;}
   .brand-sub{font-size:11px;color:var(--text-mute);}
   .conn-ticker{font-size:11px;color:var(--text-mute);}
   .conn-ticker b{color:var(--cyan);}
@@ -67,6 +82,7 @@
   .row{display:flex;gap:12px;}
   .row > *{flex:1;}
   .section-title{font-size:12px;text-transform:uppercase;color:var(--cyan);letter-spacing:0.08em;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);}
+  .section-title::before{ font-family:'Digicode',monospace; content:'ABC '; opacity:0.35; margin-right:4px; font-size:13px; letter-spacing:0.1em; }
   .card{padding:16px;margin-bottom:16px;}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
   .grid-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;}
@@ -78,7 +94,7 @@
   .scene-box{position:relative; height:220px; border:1px solid var(--line); overflow:hidden; background:#05070a; margin-bottom:10px;}
   .scene-box img.bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.55;}
   .scene-box .overlay{position:absolute;inset:0;background:linear-gradient(180deg, rgba(8,11,16,0) 40%, rgba(8,11,16,0.9) 100%);}
-  .scene-box .title{position:absolute;bottom:10px;left:14px;font-family:'Share Tech Mono',monospace;color:var(--cyan);font-size:16px;text-shadow:0 0 12px rgba(53,232,201,0.6);}
+  .scene-box .title{position:absolute;bottom:10px;left:14px;font-family:'Pixel Digivolve','Share Tech Mono',monospace;color:var(--cyan);font-size:22px;letter-spacing:0.04em;text-shadow:0 0 12px rgba(53,232,201,0.6);}
   .scene-box .portraits{position:absolute;bottom:10px;right:14px;display:flex;gap:6px;}
   .scene-box .portraits img{width:44px;height:44px;object-fit:cover;border:1px solid var(--cyan-dim);border-radius:50%;background:#000;}
   .scene-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-mute);font-size:12px;}
@@ -122,7 +138,7 @@
   .move-btn .desc{font-size:11px;color:var(--text-mute);margin-top:3px;}
 
   .login-wrap{max-width:420px;margin:60px auto;}
-  .login-wrap h1{font-family:'Share Tech Mono',monospace;color:var(--cyan);font-size:22px;text-align:center;text-shadow:0 0 16px rgba(53,232,201,0.5);margin-bottom:4px;}
+  .login-wrap h1{font-family:'Pixel Digivolve','Share Tech Mono',monospace;color:var(--cyan);font-size:28px;letter-spacing:0.03em;text-align:center;text-shadow:0 0 16px rgba(53,232,201,0.5);margin-bottom:4px;}
   .login-wrap .sub{text-align:center;color:var(--text-mute);font-size:12px;margin-bottom:28px;}
   .role-pick{display:flex;gap:10px;margin-bottom:16px;}
   .role-pick .btn{flex:1;}
@@ -231,7 +247,7 @@
   async function getProgression(code){
     const d = await apiGet('/api/progression?code=' + encodeURIComponent(code));
     const p = d ? d.progression : { milestone:0, xp:0, inspiration:0, campaign_level:'Standard' };
-    return { milestone: p.milestone||0, xp: p.xp||0, inspiration: p.inspiration||0, campaignLevel: p.campaign_level || 'Standard' };
+    return { milestone: p.milestone||0, xp: p.xp||0, inspiration: p.inspiration||0, campaignLevel: p.campaign_level || 'Standard', attributeAdvantage: p.attributeAdvantage || p.attribute_advantage || '', naturalCriticalResults: !!(p.naturalCriticalResults || p.natural_critical_results), blastEvolutionEnabled: !!(p.blastEvolutionEnabled || p.blast_evolution_enabled), slideEvolutionEnabled: !!(p.slideEvolutionEnabled || p.slide_evolution_enabled), darkEvolutionEnabled: !!(p.darkEvolutionEnabled || p.dark_evolution_enabled) };
   }
   async function saveProgression(code, data){ return apiPost('/api/progression', { code, ...data }); }
 
@@ -397,6 +413,45 @@
     document.getElementById('mtn-reset').onclick = ()=>{ mountingTNState = { modifier:0, step:0, log:[] }; renderMountingTN(); };
   }
 
+  function renderGMReference(){
+    const el = document.getElementById('gm-reference-card');
+    if(!el) return;
+    el.innerHTML = `
+      <div class="section-title">📚 Compendio Master (Cap. 1.04-1.06)</div>
+      <details style="margin-bottom:8px;">
+        <summary style="cursor:pointer;color:var(--cyan);">🔧 Digivice Design (1.04)</summary>
+        <div class="muted" style="margin-top:6px;">Spunti per personalizzare i Digivice del party (non esaustivo, inventane pure altri):</div>
+        <ul class="muted" style="margin:6px 0 0 18px;padding:0;">
+          <li><b>Reader (Booster/Card)</b>: legge Card/Chip che danno bonus temporanei.</li>
+          <li><b>Data Scanner</b>: scansiona e archivia dati sui Digimon incontrati.</li>
+          <li><b>Mappa Digitale</b>: mostra una mappa dell'area (raggio da definire).</li>
+          <li><b>Comunicatore</b>: voce o video tra Digivice (distanza da definire).</li>
+          <li><b>Evolution Pause</b>: blocca temporaneamente l'Evoluzione di un Digimon, facendolo regredire di uno Stage per una Durata a scelta del Master.</li>
+          <li><b>Digi-Gate</b>: apre un varco tra Mondo Reale e Digitale.</li>
+        </ul>
+      </details>
+      <details style="margin-bottom:8px;">
+        <summary style="cursor:pointer;color:var(--cyan);">⚖️ Opposed Rolls (1.06)</summary>
+        <div class="muted" style="margin-top:6px;">Quando due personaggi si contrappongono fuori dal Combattimento standard, scegli una coppia "Attaccante" e una "Difensore" in base alla scena — chi tira più alto vince. Esempi guida:</div>
+        <ul class="muted" style="margin:6px 0 0 18px;padding:0;">
+          <li><b>Confronto di forza pura</b> (sollevare, afferrare): stessa Skill per entrambi (es. Feats of Strength, o CPU per i Digimon).</li>
+          <li><b>Furtività vs Percezione</b>: Agilità+Stealth (RAM) contro Volontà+Awareness (BIT).</li>
+          <li><b>Distrarre e intrufolarsi</b>: 2 tiri — Carisma+Perform (RAM) vs Volontà+Decipher Intent (BIT), poi Agilità+Stealth (RAM) vs Volontà+Awareness (BIT).</li>
+          <li><b>Persuadere onestamente</b>: Carisma+Persuasion (BIT) vs Volontà pura (BIT).</li>
+          <li><b>Manipolare/ingannare</b>: Carisma+Manipulate (BIT) vs Volontà+Decipher Intent (BIT).</li>
+        </ul>
+        <div class="muted" style="margin-top:6px;">Non esistono coppie fisse per ogni caso: valuta sempre la scena. In generale c'è un lato "Attaccante" e uno "Difensore".</div>
+      </details>
+      <details>
+        <summary style="cursor:pointer;color:var(--cyan);">🏷️ Families, Attributes, Types (1.05)</summary>
+        <div class="muted" style="margin-top:6px;"><b>Attributi</b>: Vaccine, Data, Virus, Free, Variable (usati da Attribute Advantage, Variant 2.05c — vedi sotto).</div>
+        <div class="muted" style="margin-top:4px;"><b>Famiglie</b> (field): Nature Spirits, Deep Savers, Wind Guardians, Metal Empire, Virus Busters, Nightmare Soldiers, Dragon's Roar, Jungle Troopers, Dark Area, Unknown.</div>
+        <div class="muted" style="margin-top:4px;"><b>Tipi</b>: categorie narrative libere (Drago, Bestia, Demone, Angelo, Insetto, Rettile, ecc.) usate soprattutto da Slayer e Naturewalk per il flavor.</div>
+        <div class="muted" style="margin-top:4px;">Puoi taggare queste categorie su ogni Digimon nel Digidex, campo "Categorie" (es. "Deva, Angelo, Vaccine").</div>
+      </details>
+    `;
+  }
+
   function renderEncounterBalance(){
     const cardEl = document.getElementById('encounter-balance-card');
     if(!cardEl) return;
@@ -427,7 +482,40 @@
         <div class="field"><label>Stage sopra Default Range (ognuno)</label><input type="number" id="eb-stagesabove" value="0" min="0" /></div>
       </div>
       <div class="muted" id="eb-result" style="margin-top:6px;"></div>
+      <div class="divider"></div>
+      <div class="section-title" style="font-size:13px;">Tipo di Boss (GM Index 3.03)</div>
+      <div class="field"><label>Struttura</label>
+        <select id="eb-bosstype">
+          <option value="">Incontro normale (nessuna struttura Boss)</option>
+          <option value="pool">Opzione 1: Big Scary DP Pool</option>
+          <option value="template">Opzione 2: Boss Template</option>
+          <option value="tagteam">Opzione 3: Tag Team Boss</option>
+          <option value="raid">Opzione 4: Raid Boss</option>
+          <option value="multistage">Opzione 5: Multi-Stage Boss</option>
+        </select>
+      </div>
+      <div class="muted" id="eb-bosstype-desc" style="margin-top:6px;"></div>
+      <div class="divider"></div>
+      <div class="section-title" style="font-size:13px;">⚠️ Qualities da usare con cautela sui Nemici (GM Index 3.02)</div>
+      <div class="muted" style="margin-top:4px;">
+        <b>Second Wind</b>: non darlo a Nemici con tanti Wound Boxes (li trasforma in mini-Boss "a fasi"); meglio su Digimon con Health basso.<br/>
+        <b>Brave Heart</b>: solo su UN Nemico alla volta, e solo se il suo Armor di base è basso (mai come Stat più alta).<br/>
+        <b>Combat Monster</b>: tieni il Damage del Nemico basso/dumpato (mai come Stat più alta), specie con i Wound Boxes più alti tipici dei Nemici.<br/>
+        <b>Resistant</b>: solo se il Nemico è in inferiorità numerica; evitalo su ruoli da tank/protettore.<br/>
+        <b>Huge Power</b>: solo se l'Accuracy non è la Stat più alta; evita di sommarci Weapon.<br/>
+        <b>Zoner: Bombardment</b>: SOLO se il Nemico ha Alleati in combattimento, altrimenti è Danno gratuito senza rischio.
+      </div>
     `;
+    const bossDescs = {
+      '': '',
+      pool: 'Nemico molto resistente con DP Pool tra il 10% e il 100% in più della media dei giocatori, investito soprattutto in Wound Boxes/Armor. Colpisce piano ma dura a lungo. Attenzione a non esagerare: un singolo nemico verrà comunque sopraffatto dal numero di Azioni del gruppo.',
+      template: 'Un solo Nemico ma con un Turno e un Pool di Ferite separato per ogni giocatore (es. Giocatore 1 ↔ Pool 1): ogni giocatore lo affronta "per conto suo" finché il suo Pool non è esaurito. Il lato debole è che il Boss può occupare un solo spazio alla volta e deve scegliere se restare Ranged, concentrarsi su un bersaglio, o spendere Azioni per spostarsi.',
+      tagteam: 'Crea un numero di Digimon nemici pari ai giocatori, tutti considerati "Boss": qualsiasi giocatore può attaccare chiunque di loro (diversamente dal Boss Template). Più lungo da preparare, ma molto efficace per rallentare o fermare l\'intero gruppo.',
+      raid: 'Mix dei tre precedenti: +50% DP rispetto alla media giocatori, investito soprattutto in Health; dagli Resistenza (non Immunità) a molti Effetti negativi. Ha una Raid Action a inizio Iniziativa che impiega un round intero per attivarsi: i giocatori possono fare un Check Decipher Intent (Azione Interrupt, TN 10+Stage Boss+Milestone Party) per capirne gli effetti e adattarsi prima che scatti.',
+      multistage: 'Il Boss attraversa più Fasi (di solito via Evoluzione o Mode Change), ognuna trattata come un nuovo Combattimento: Recovery Check rapido a ogni cambio fase, si azzerano gli usi "per Combattimento" ma NON si ottengono i benefici di un Riposo. Rendi le prime Fasi più facili delle successive.'
+    };
+    const bossSel = document.getElementById('eb-bosstype');
+    bossSel.addEventListener('change', ()=>{ document.getElementById('eb-bosstype-desc').textContent = bossDescs[bossSel.value] || ''; });
     const recalc = ()=>{
       const baseDp = Number(document.getElementById('eb-basedp').value)||0;
       const diff = Number(document.getElementById('eb-difficulty').value)||0;
@@ -517,10 +605,27 @@
   async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]) : []; }
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
   async function deleteMember(code, username){ return apiDelete('/api/roster?code=' + encodeURIComponent(code) + '&username=' + encodeURIComponent(username)); }
-  async function getScene(code){ const d = await apiGet('/api/scene?code=' + encodeURIComponent(code)); const s = d ? d.scene : { title:'', background:'', music:'', encounters:[] }; if(!Array.isArray(s.encounters)) s.encounters = []; return s; }
+  async function getScene(code){
+    const d = await apiGet('/api/scene?code=' + encodeURIComponent(code));
+    const s = d ? d.scene : { title:'', background:'', music:'', encounters:[] };
+    if(!Array.isArray(s.encounters)) s.encounters = [];
+    if(!s.id) s.id = 'scene'+Date.now()+Math.random().toString(36).slice(2,6);
+    if(!Array.isArray(s.macroScenes)){
+      // Migra la vecchia struttura piatta "sectors" in una Macroscena di default, se presente
+      const legacySectors = Array.isArray(s.sectors) ? s.sectors.map(sec=>({ ...sec, luoghi: sec.luoghi||[] })) : [];
+      s.macroScenes = legacySectors.length>0 ? [{ id:'ms'+Date.now(), name:'Macroscena Principale', description:'', sectors: legacySectors }] : [];
+      s.currentMacroSceneId = s.macroScenes.length>0 ? s.macroScenes[0].id : null;
+      delete s.sectors;
+    }
+    if(s.currentMacroSceneId===undefined) s.currentMacroSceneId = null;
+    if(s.currentSectorId===undefined) s.currentSectorId = null;
+    if(s.currentLuogoId===undefined) s.currentLuogoId = null;
+    return s;
+  }
+  function sceneLog(){ const sid = cachedScene && cachedScene.id; return (cachedLog||[]).filter(l=> !sid || !l.sceneId || l.sceneId===sid); }
   async function saveScene(code, scene){ const d = await apiPost('/api/scene', { code, ...scene }); return !!(d && d.ok); }
   async function getLog(code){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code)); return d ? (d.log||[]) : []; }
-  async function pushLog(code, entry){ return apiPost('/api/log', { code, ...entry }); }
+  async function pushLog(code, entry){ return apiPost('/api/log', { code, ...entry, sceneId: entry.sceneId || (cachedScene && cachedScene.id) || null }); }
   async function editLogEntry(code, id, text){ return apiPut('/api/log', { code, id, text }); }
   async function deleteLogEntry(code, id){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
   async function heartbeat(code, username){ return apiPost('/api/heartbeat', { code, username }); }
@@ -573,8 +678,12 @@
     return CAMPAIGN_LEVELS[level] || CAMPAIGN_LEVELS.Standard;
   }
 
-  function evaluateVsTN(total, tn){
+  function evaluateVsTN(total, tn, dice){
     if(tn===null || tn===undefined || tn==='') return null;
+    if(cachedProgression && cachedProgression.naturalCriticalResults && Array.isArray(dice) && dice.length===3){
+      if(dice.every(d=>d===6)) return { label:'Successo Critico', cls:'crit-success' };
+      if(dice.every(d=>d===1)) return { label:'Fallimento Critico', cls:'crit-fail' };
+    }
     const shift = campaignConfig().tnShift;
     const diff = total - (Number(tn) - shift);
     if(diff>=5) return { label:'Successo Critico', cls:'crit-success' };
@@ -589,7 +698,9 @@
     const tn = 8 + Number(boxes||0);
     const diff = total - tn;
     let outcome;
-    if(diff>=5) outcome = 'crit-success';
+    if(cachedProgression && cachedProgression.naturalCriticalResults && dice.every(d=>d===6)) outcome = 'crit-success';
+    else if(cachedProgression && cachedProgression.naturalCriticalResults && dice.every(d=>d===1)) outcome = 'crit-fail';
+    else if(diff>=5) outcome = 'crit-success';
     else if(diff>=0) outcome = 'success';
     else if(diff<=-10) outcome = 'deep-crit-fail';
     else if(diff<=-5) outcome = 'crit-fail';
@@ -775,7 +886,7 @@
       const plog = await getPrivateLog(code, session.username);
       logLive.innerHTML = logHTML(plog, false);
     } else {
-      logLive.innerHTML = logHTML(cachedLog, false);
+      logLive.innerHTML = logHTML(sceneLog(), false);
     }
     logLive.scrollTop = logLive.scrollHeight;
   }
@@ -809,7 +920,7 @@
         if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
       } else {
         const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
-        logLive.innerHTML = logHTML(cachedLog, session && session.role==='master');
+        logLive.innerHTML = logHTML(sceneLog(), session && session.role==='master');
         if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
       }
     }
@@ -1186,7 +1297,7 @@
                 <button class="btn small" id="chatmode-private">Privata (Master)</button>
               </div>
             </div>
-            <div class="log" id="log-live" style="height:220px;">${logHTML(cachedLog, session.role==='master')}</div>
+            <div class="log" id="log-live" style="height:220px;">${logHTML(sceneLog(), session.role==='master')}</div>
             <textarea id="action-text" rows="3" placeholder="Scrivi cosa fa il tuo Tamer o il tuo Digimon..." style="margin-top:10px;"></textarea>
             <div class="muted" id="action-hint" style="margin-top:4px;">Scorciatoia: scrivi <code>/tira NomeSkill [TN] [major|minor]</code> (es. <code>/tira awareness 15 major</code>) per tirare in chat, opzionalmente usando un Aspect.</div>
             <div id="action-roll-result" style="margin-top:8px;"></div>
@@ -1466,8 +1577,8 @@
     if(!window.confirm('La Creazione Guidata azzera Attributi, Skill e Stat Base del Digimon per ricostruirli da zero rispettando i vincoli del manuale. Continuare?')) return;
     creationDraft = {
       hostId: hostId || 'sidebar-content',
-      tamer: { agility:1, body:1, charisma:1, intelligence:1, willpower:1, skills: defaultSkills() },
-      digimon: { stage:'Rookie', size:'Medium', name: me.digimon.name||'', imageUrl: me.digimon.imageUrl||'', personality: me.digimon.personality||'',
+      tamer: { agility:1, body:1, charisma:1, intelligence:1, willpower:1, skills: defaultSkills(), digiviceImageUrl: me.tamer.digiviceImageUrl||'' },
+      digimon: { stage:'Rookie', size:'Medium', name: me.digimon.name||'', imageUrl: me.digimon.imageUrl||'', personality: me.digimon.personality||'', attribute: me.digimon.attribute||'Free',
         baseAccuracy: STAGE_CREATION.Rookie.startStat, baseDamage: STAGE_CREATION.Rookie.startStat, baseDodge: STAGE_CREATION.Rookie.startStat, baseArmor: STAGE_CREATION.Rookie.startStat, baseHealth: STAGE_CREATION.Rookie.startStat },
       step: 1
     };
@@ -1524,6 +1635,7 @@
           }).join('')}
         </div>
         <div class="divider"></div>
+        <div class="field"><label>URL Immagine Digivice (opzionale)</label><input type="text" id="wiz-t-digivice-img" value="${escapeAttr(draft.digiviceImageUrl)}" placeholder="https://..." /></div>
         ${errors.length ? `<div class="err">${errors.map(e=>escapeHTML(e)).join('<br/>')}</div>` : '<div class="muted" style="color:var(--cyan);">Tutto valido, puoi proseguire.</div>'}
         <div class="row" style="margin-top:10px;">
           <button class="btn ghost" id="btn-wiz-cancel">Annulla</button>
@@ -1546,6 +1658,8 @@
         renderWizardTamerStep(content, me);
       };
     });
+    const digiviceImgInp = document.getElementById('wiz-t-digivice-img');
+    if(digiviceImgInp) digiviceImgInp.onchange = (e)=>{ draft.digiviceImageUrl = e.target.value; };
     document.getElementById('btn-wiz-cancel').onclick = ()=>{
       const wasPlayerHost = creationDraft.hostId==='sidebar-content';
       creationDraft=null;
@@ -1591,6 +1705,11 @@
         <div class="muted" style="margin-top:6px;">DP non spesi in Stat verranno riservati come budget Qualities (${Math.max(0,dpRemaining)} DP).</div>
         <div class="field" style="margin-top:8px;"><label>Personalità</label><textarea id="wiz-d-personality" rows="2">${escapeHTML(draft.personality)}</textarea></div>
         <div class="field"><label>URL Immagine (opz.)</label><input type="text" id="wiz-d-img" value="${escapeAttr(draft.imageUrl)}" /></div>
+        <div class="field"><label>Attributo (Variant Rule 2.05c)</label>
+          <select id="wiz-d-attribute">
+            ${['Vaccine','Data','Virus','Free','Variable'].map(a=>`<option ${draft.attribute===a?'selected':''}>${a}</option>`).join('')}
+          </select>
+        </div>
         <div class="divider"></div>
         ${errors.length ? `<div class="err">${errors.map(e=>escapeHTML(e)).join('<br/>')}</div>` : '<div class="muted" style="color:var(--cyan);">Tutto valido.</div>'}
         <div class="row" style="margin-top:10px;">
@@ -1603,6 +1722,7 @@
     document.getElementById('wiz-d-name').onchange = (e)=>{ draft.name = e.target.value; };
     document.getElementById('wiz-d-personality').onchange = (e)=>{ draft.personality = e.target.value; };
     document.getElementById('wiz-d-img').onchange = (e)=>{ draft.imageUrl = e.target.value; };
+    document.getElementById('wiz-d-attribute').onchange = (e)=>{ draft.attribute = e.target.value; };
     document.getElementById('wiz-d-stage').onchange = (e)=>{
       draft.stage = e.target.value;
       const newCfg = STAGE_CREATION[draft.stage];
@@ -1626,6 +1746,7 @@
         me.tamer.skills = t.skills;
         me.tamer.unspentGrowthPoints = 0;
         me.tamer.currentWounds = 3 + Number(t.skills.endurance||0);
+        me.tamer.digiviceImageUrl = t.digiviceImageUrl || '';
 
         me.digimon.name = draft.name;
         me.digimon.stage = draft.stage;
@@ -1633,6 +1754,7 @@
         me.digimon.size = draft.size;
         me.digimon.personality = draft.personality;
         me.digimon.imageUrl = draft.imageUrl;
+        me.digimon.attribute = draft.attribute || 'Free';
         statKeys.forEach(k=>{ me.digimon[k] = draft[k]; });
         me.digimon.maxWounds = stageIndex(draft.stage) + Number(draft.baseHealth)*2;
         me.digimon.currentWounds = me.digimon.maxWounds;
@@ -1671,6 +1793,12 @@
         <div class="sheet-head" style="margin-top:12px;">
           ${portraitHTML(t.imageUrl, session.username)}
           <div class="info"><div class="nm">${escapeHTML(session.username)}</div><div class="tg">AGI ${t.agility} · BODY ${t.body} · CAR ${t.charisma} · INT ${t.intelligence} · WILL ${t.willpower}</div></div>
+          <div style="margin-left:auto;text-align:center;">
+            ${t.digiviceImageUrl
+              ? `<img src="${escapeAttr(t.digiviceImageUrl)}" onerror="this.style.visibility='hidden'" style="width:44px;height:44px;object-fit:contain;border:1px solid var(--cyan-dim);border-radius:var(--radius);background:var(--panel-2);padding:3px;" />`
+              : `<div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:var(--radius);color:var(--text-mute);font-size:18px;">📟</div>`}
+            <div class="muted" style="font-size:9px;margin-top:2px;">Digivice</div>
+          </div>
         </div>
         ${barHTML('Caselle Ferita', t.currentWounds, maxW, 'hp', 'tamer-w-minus', 'tamer-w-plus')}
         <div class="divider"></div>
@@ -1819,6 +1947,7 @@
       cardEl.innerHTML = `
         <div class="section-title">Scheda Tamer — Modifica</div>
         <div class="field"><label>URL Immagine (opzionale)</label><input type="text" id="e-t-img" value="${escapeAttr(t.imageUrl)}" placeholder="https://..." /></div>
+        <div class="field"><label>URL Immagine Digivice (opzionale)</label><input type="text" id="e-t-digivice-img" value="${escapeAttr(t.digiviceImageUrl)}" placeholder="https://..." /></div>
         <div class="grid-stats">
           ${statBox('AGI','e-t-agility',t.agility)}
           ${statBox('BODY','e-t-body',t.body)}
@@ -1843,6 +1972,7 @@
           if(el) me.tamer[k] = Number(el.value)||0;
         });
         me.tamer.imageUrl = document.getElementById('e-t-img').value.trim();
+        me.tamer.digiviceImageUrl = document.getElementById('e-t-digivice-img').value.trim();
         me.tamer.majorAspect.text = document.getElementById('e-t-aspect-major').value.trim();
         me.tamer.minorAspect.text = document.getElementById('e-t-aspect-minor').value.trim();
         SKILL_DEFS.forEach(def=>{
@@ -1987,9 +2117,11 @@
 
   function stanceModifiers(d){
     const sv = stageIndex(d.stage);
-    if(d.stance==='Offensive') return { accuracy: sv, dodge: -sv };
-    if(d.stance==='Defensive') return { accuracy: -sv, dodge: sv };
-    return { accuracy:0, dodge:0 };
+    if(d.stance==='Offensive') return { accuracy: sv, dodge: -sv, damage:0, armor:0 };
+    if(d.stance==='Defensive') return { accuracy: -sv, dodge: sv, damage:0, armor:0 };
+    if(d.stance==='Fierce') return { accuracy:0, dodge:0, damage: sv, armor:0 };
+    if(d.stance==='Brave') return { accuracy:0, dodge:0, damage:0, armor: sv };
+    return { accuracy:0, dodge:0, damage:0, armor:0 };
   }
 
   function computeDerivedStats(d){
@@ -2108,7 +2240,41 @@
 
   const QUALITY_CATALOG = [
     { name:'Certain Strike', category:'Attack', dpPerRank:2, maxRank:3, mechanic:'certainStrike', desc:'Aggiunge Successi automatici garantiti alla Pool Accuracy pari ai Ranks, su un Attacco [DAMAGE].' },
-    { name:'Weapon', category:'Attack', dpPerRank:1, maxRank:5, mechanic:'weapon', desc:'Aggiunge +1 Damage per Rank a un Attacco.' },
+    { name:'Weapon', category:'Attack', dpPerRank:1, maxRank:3, mechanic:'weapon', desc:'FONDAMENTA — Rank max = Stage (1/2/3, sempre 3 da Ultimate in su). Bonus automatico ad Accuracy e Danno pari ai Ranks (semplificazione: nel manuale si applica solo ad Attacchi con Tag [WEAPON]; qui è generico su tutti gli Attacchi). Su [RANGE] il manuale darebbe anche +Range/Limite Effettivo pari ai Ranks (gestione zone a discrezione del Master). Su [MELEE], un numero di 4 pari ai Ranks conta come Successo (applicare a mano sui tiri Accuracy). Incompatibile con Instinct.' },
+    { name:'Instinct', category:'Static', dpPerRank:1, maxRank:3, mechanic:'instinct', desc:'FONDAMENTA — Rank max = Stage (1/2/3, sempre 3 da Ultimate in su). Bonus automatico a Dodge pari ai Ranks. Applica anche manualmente lo stesso bonus a Ferite Massime (Health) e a Movimento (non gestito dal sito). Incompatibile con Weapon.' },
+    { name:'Data Optimization: Close Combat', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'FONDAMENTA (una sola Data Optimization a scelta). +1 Accuracy su Attacchi [MELEE], +3 invece di +1 se il Bersaglio ha già subito un Attacco dalla fine del suo ultimo turno (applicare a mano).' },
+    { name:'Data Optimization: Ranged Striker', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'FONDAMENTA (una sola Data Optimization a scelta). +1 Accuracy su Attacchi [RANGE]. +1 a Range e Limite Effettivo (gestione zone a discrezione del Master).' },
+    { name:'Data Optimization: Warden', category:'Static', dpPerRank:1, maxRank:1, mechanic:'dataOptWarden', desc:'FONDAMENTA (una sola Data Optimization a scelta). +1 Armor (automatico). Una volta a combattimento, Azione Interrupt senza spendere Azioni (Azione Libera) — applicare a mano.' },
+    { name:'Data Optimization: Brawler', category:'Clash', dpPerRank:1, maxRank:1, mechanic:'dataOptBrawler', desc:'FONDAMENTA (una sola Data Optimization a scelta). +1 automatico ai Check per avviare o durante un Clash. +1 Danno quando attacca un avversario con cui è in Clash (applicare a mano).' },
+    { name:'Data Optimization: Speedster', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'FONDAMENTA (una sola Data Optimization a scelta). +1 Movimento (non gestito dal sito). Ignora la prima penalità a Dodge per essere stato attaccato dopo il proprio turno (applicare a mano).' },
+    { name:'Data Optimization: Effect Warrior', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'FONDAMENTA (una sola Data Optimization a scelta). +1 Potenza a tutti i Tag di Effetto d\'Attacco che usano una Stat Derivata del lanciatore (applicare a mano alla Potenza quando registri l\'Effetto).' },
+    { name:'Data Optimization: Variable', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'FONDAMENTA (una sola Data Optimization a scelta). Una volta a round, può ritirare un Check o Pool Check già effettuato in Combattimento e deve tenere il nuovo risultato (si resetta a fine turno).' },
+    { name:'Naturewalk: Fuoco', category:'Static', dpPerRank:1, maxRank:1, mechanic:'naturewalk', desc:'FONDAMENTA — +1 alla Stat scelta qui sotto (max 2 Ranks totali su elementi diversi). Consigliato Dragon\'s Roar/Unknown (Deserti, Vulcani, Dune). Riduce di 1 la Durata di [BURN] su di sé e ignora le penalità da calore estremo. Nessuna penalità da Terreno Difficile di Fuoco. Resistente ad Attacchi Elemental Force: Fuoco.' },
+    { name:'Naturewalk: Acqua', category:'Static', dpPerRank:1, maxRank:1, mechanic:'naturewalk', desc:'FONDAMENTA — +1 alla Stat scelta qui sotto (max 2 Ranks totali su elementi diversi). Consigliato Deep Savers (Oceani, Fiumi, Laghi). Riduce di 1 la Durata di [FRAIL] su di sé e respira sott\'acqua. Nessuna penalità da Terreno Difficile d\'Acqua. Resistente ad Attacchi Elemental Force: Acqua.' },
+    { name:'Naturewalk: Vento', category:'Static', dpPerRank:1, maxRank:1, mechanic:'naturewalk', desc:'FONDAMENTA — +1 alla Stat scelta qui sotto (max 2 Ranks totali su elementi diversi). Consigliato Wind Guardians (Montagne, cieli aperti, Altipiani). Dimezza la Potenza di [PULL] subito come Effetto negativo e riduce di 1 il Danno da Caduta. Resistente ad Attacchi Elemental Force: Vento.' },
+    { name:'Naturewalk: Terra', category:'Static', dpPerRank:1, maxRank:1, mechanic:'naturewalk', desc:'FONDAMENTA — +1 alla Stat scelta qui sotto (max 2 Ranks totali su elementi diversi). Consigliato Nature Spirits/Jungle Troopers (Caverne, Deserti, Canyon). Dimezza la Potenza di [PUSH] subito come Effetto negativo e riduce di 1 il Danno da fattori ambientali. Resistente ad Attacchi Elemental Force: Terra.' },
+    { name:'Naturewalk: Ghiaccio', category:'Static', dpPerRank:1, maxRank:1, mechanic:'naturewalk', desc:'FONDAMENTA — +1 alla Stat scelta qui sotto (max 2 Ranks totali su elementi diversi). Consigliato Deep Savers/Nightmare Soldiers (Montagne Innevate, Ghiacciai, Tundra). Riduce di 1 la Durata di [FREEZE] su di sé e ignora le penalità da freddo estremo. Resistente ad Attacchi Elemental Force: Ghiaccio.' },
+    { name:'Naturewalk: Legno', category:'Static', dpPerRank:1, maxRank:1, mechanic:'naturewalk', desc:'FONDAMENTA — +1 alla Stat scelta qui sotto (max 2 Ranks totali su elementi diversi). Consigliato Nature Spirits/Jungle Troopers (Foreste, Giungle, Paludi). Riduce di 1 la Durata di [POISON] su di sé e può scoprire 1 informazione sull\'area circostante una volta al giorno. Resistente ad Attacchi Elemental Force: Legno.' },
+    { name:'Naturewalk: Acciaio', category:'Static', dpPerRank:1, maxRank:1, mechanic:'naturewalk', desc:'FONDAMENTA — +1 alla Stat scelta qui sotto (max 2 Ranks totali su elementi diversi). Consigliato Metal Empire/Unknown (Civiltà, Fabbriche). Riduce di 1 la Durata di [HEAVY] su di sé e comprende lo scopo di un oggetto artificiale al tocco, una volta al giorno. Resistente ad Attacchi Elemental Force: Acciaio.' },
+    { name:'Naturewalk: Fulmine', category:'Static', dpPerRank:1, maxRank:1, mechanic:'naturewalk', desc:'FONDAMENTA — +1 alla Stat scelta qui sotto (max 2 Ranks totali su elementi diversi). Consigliato Virus Busters/Metal Empire (aree elettriche, temporalesche). Riduce di 1 la Durata di [DULL] su di sé e può ricaricare un dispositivo elettronico una volta al giorno. Resistente ad Attacchi Elemental Force: Fulmine.' },
+    { name:'Naturewalk: Oscurità', category:'Static', dpPerRank:1, maxRank:1, mechanic:'naturewalk', desc:'FONDAMENTA — +1 alla Stat scelta qui sotto (max 2 Ranks totali su elementi diversi). Consigliato Unknown/Dark Area/Nightmare Soldiers (aree buie o "da Halloween"). Riduce di 1 la Durata di [DOOM] su di sé e vede al buio/scarsa luce senza impedimenti. Resistente ad Attacchi Elemental Force: Oscurità.' },
+    { name:'Naturewalk: Luce', category:'Static', dpPerRank:1, maxRank:1, mechanic:'naturewalk', desc:'FONDAMENTA — +1 alla Stat scelta qui sotto (max 2 Ranks totali su elementi diversi). Consigliato Virus Busters/Wind Guardians (terreni sacri/angelici). Riduce di 1 la Durata di [DISTRACT] su di sé e crea una fonte di luce sul corpo pari al proprio Stage in spazi. Resistente ad Attacchi Elemental Force: Luce.' },
+    { name:'Extra Movement: Flight', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'FONDAMENTA (Movimento non gestito dal sito, applicare a discrezione del Master). -1 Movimento, ma capacità di volare pari al proprio Movimento. Perde questa Extra Movement se scende a metà Ferite Massime o meno.' },
+    { name:'Extra Movement: Digger', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'FONDAMENTA (Movimento non gestito dal sito). Può scavare in terreno morbido (terra, neve, sabbia) pari al proprio Movimento. Non considera creature sottoterra come oscurate se sullo stesso terreno.' },
+    { name:'Extra Movement: Swimmer', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'FONDAMENTA (Movimento non gestito dal sito). Il nuoto usa il Movimento pieno. Non considera oscurato nulla per via della superficie dell\'acqua. Può Trattenere il Respiro un numero illimitato di volte a combattimento.' },
+    { name:'Extra Movement: Wallclimber', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'FONDAMENTA (Movimento non gestito dal sito). Può scalare superfici verticali pari al proprio Movimento (non soffitti).' },
+    { name:'Extra Movement: Jumper', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'FONDAMENTA (Movimento non gestito dal sito). Altezza e lunghezza di Salto pari al Movimento pieno.' },
+    { name:'Accelerate', category:'Static', dpPerRank:1, maxRank:10, mechanic:'', desc:'FONDAMENTA — +1 Movimento per Rank (non gestito dal sito). Ranks massimi = RAM base del Digimon (non imposto dal tool, verificare a mano).' },
+    { name:'Advanced Mobility: Flight', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'FONDAMENTA — Richiede Stage 2+ e 1 Rank di Extra Movement: Flight. Non rallentato dai venti più forti; perde la velocità di volo solo a 1/4 delle Ferite Massime o meno (invece di metà).' },
+    { name:'Advanced Mobility: Digger', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'FONDAMENTA — Richiede Stage 2+ e 1 Rank di Extra Movement: Digger. Scava anche materiali duri (pietra, ghiaccio, metalli morbidi) come Terreno Difficile, lasciando un tunnel; vista tremore a piena Gittata sottoterra.' },
+    { name:'Advanced Mobility: Swimmer', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'FONDAMENTA — Richiede Stage 2+ e 1 Rank di Extra Movement: Swimmer. Nuota senza essere rallentato da correnti forti, anche in liquidi diversi dall\'acqua (lava, metallo liquido) a discrezione del Master. Ignora penalità di vista sott\'acqua.' },
+    { name:'Advanced Mobility: Wallclimber', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'FONDAMENTA — Richiede Stage 2+ e 1 Rank di Extra Movement: Wallclimber. Può camminare sui soffitti, immune a [ROOT].' },
+    { name:'Area Attack', category:'Attack', dpPerRank:1, maxRank:6, mechanic:'', desc:'Per Rank, applica un Tag Area diverso (max 1 per Attacco, Attacco diverso ogni volta): [T:BLAST] (solo RANGE, cerchio Base 1 spazio +metà BIT), [T:BURST] (attorno all\'Attaccante, Base 1 spazio +metà DOS, l\'Attaccante non è bersaglio), [T:CONE] (cono 90°, Base 2 spazi +BIT), [T:LINE] (pilastro adiacente, Base 3 spazi +CPU, può rimbalzare sui muri), [T:PASS] (solo MELEE, carica in linea retta pari a RAM, 2 Azioni salvo [CHARGE]), [T:WAVE] (cubo adiacente, Base 2 spazi +metà DOS). Un Attacco con Tag Area può sempre essere usato anche come Attacco singolo. Se usato come Area: Danno dopo Armor dimezzato (arrotondato su); Durata/Potenza degli Effetti [SUPPORT] ridotta di 1 (min 1 su Nemici, min 0 su Alleati). Non riduce il Danno Unalterable.' },
+    { name:'Zoner: Friendly Fire', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'Richiede 1 Rank di Area Attack (scegli una sola opzione Zoner). Un Attacco Area [SUPPORT] con Effetto solo per Alleati può trattare i Nemici come bersagli [DAMAGE] e gli Alleati come [SUPPORT] nello stesso Attacco (l\'Effetto non tocca i Nemici). Incompatibile con Data Specialization: Status Warlord.' },
+    { name:'Zoner: Bombardment', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'Richiede 1 Rank di Area Attack (scegli una sola opzione Zoner). Su un Attacco Area [DAMAGE] puoi scegliere di colpire tutti (Alleati e Nemici); se lo fai, il Danno non scende sotto la Stat Derivata usata per l\'Area o il Danno Totale dopo Armor (il minore dei due).' },
+    { name:'Absolute Evasion', category:'Static', dpPerRank:2, maxRank:3, mechanic:'absoluteEvasion', desc:'Richiede Dodge base 4/8/12 (Rank max = Stage, fino a 3 a Ultimate+). Successi automatici garantiti sul tiro di Dodge pari ai Ranks (semplificazione: nel manuale si sottraggono dalla Pool base e si "consumano" quando subisci penalità da Dodge consecutivi nello stesso round — qui restano fissi, annotare a mano il consumo). Incompatibile con Data Specialization: Uncatchable Target.' },
+    { name:'Fierce Soul', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'Sblocca Fierce Stance (selezionabile nel menu Stance): +Stage Damage automatico, -Stage a Movimento e Range (narrativo, non gestito dal sito). Se manchi un Attacco in questa Stance, puoi rifarlo subito sullo stesso bersaglio come Azione Libera (1 volta a round; il bersaglio subisce comunque la penalità Dodge dell\'Attacco iniziale; con Signature Move mantiene la Battery).' },
+    { name:'Brave Heart', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'Sblocca Brave Stance (selezionabile nel menu Stance): +Stage Armor automatico, -Stage a Movimento (narrativo, non gestito dal sito). Se Intercedi in questa Stance e sopravvivi, ottieni [SHARPEN] con Potenza pari agli Alleati entro CPU spazi, fino al prossimo Attacco riuscito o fine Combattimento (registralo come Effetto).' },
     { name:'Ammo', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'ammo', desc:'Un Attacco ignora la regola "una volta a round" — utilizzabile più volte per combattimento, fino a un numero di volte pari allo Stage.' },
     { name:'Combat Monster', category:'Static', dpPerRank:2, maxRank:3, mechanic:'combatMonster', desc:'Guadagna Resolve pari al danno subito (max Stage+2). Quando colpisce con un Attacco, tutto il Resolve si aggiunge al Danno e si azzera.' },
     { name:'Charge Attack', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'Un Attacco [MELEE] permette di Muoversi prima o dopo, nella stessa Azione (richiede Movimento non gestito dal sito).' },
@@ -2120,9 +2286,181 @@
     { name:'Monster Strength', category:'Clash', dpPerRank:1, maxRank:1, mechanic:'monsterStrength', desc:'Puoi Lanciare o Muovere in Clash un avversario 2+ Size più grande di te.' },
     { name:'Titan Power', category:'Clash', dpPerRank:1, maxRank:1, mechanic:'', desc:'Puoi Lanciare avversari ancora più grandi rispetto a Monster Strength.' },
     { name:'Armor Piercing', category:'Attack', dpPerRank:2, maxRank:2, mechanic:'', desc:'L\'Attacco infligge Danno Unalterable extra (ignora Armor) pari ai Successi in eccesso, fino ai Ranks.' },
-    { name:'Second Wind', category:'Static', dpPerRank:2, maxRank:1, mechanic:'', desc:'Una volta a combattimento, recupera Caselle Ferita quando scendi a 0.' },
+    { name:'Second Wind', category:'Trigger', dpPerRank:2, maxRank:3, mechanic:'', desc:'Rank max = Stage (fino a 3). Quando si tira l\'Iniziativa, ottieni usi pari ai Ranks. Ogni uso: Recovery Check come 1 Azione (max 1 volta a turno, non puoi Attaccare lo stesso turno). Gli usi non spesi si perdono a fine Combattimento, ma ogni uso non speso dà Caselle Ferita extra al Recovery Check di fine Combattimento. Tracciare gli usi a mano.' },
+    { name:'Pack Master', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'Se il Digimon è bersaglio di un Attacco, un Alleato adiacente può Intercedere come Azione Libera, una volta a round.' },
+    { name:'Vital Energy', category:'Trigger', dpPerRank:1, maxRank:2, mechanic:'', desc:'Richiesta per Illness. Rank 1: una volta a round, ritira gli 1 usciti in un Check di Health. Rank 2: ritira anche i 2 sullo stesso tiro.' },
+    { name:'System Boost', category:'Static', dpPerRank:2, maxRank:4, mechanic:'', desc:'Rank max = Stage (fino a 4). Per Rank, scegli una Stat Derivata diversa (RAM/CPU/BIT/DOS): +1 a quella Stat. Sconto di 1 DP al primo acquisto.' },
+    { name:'Teleport', category:'Static', dpPerRank:3, maxRank:1, mechanic:'', desc:'Richiesta per Transporter. Teletrasporto istantaneo pari a Stage+2 spazi (serve linea di vista; +Ranks di Instinct, +1 con Data Optimization: Speedster — non gestito dal sito). Una volta a combattimento, come Azione Interrupt, può far fallire un Attacco nemico teletrasportandosi via (non attiva Contrattacchi), oppure come Azione di Clash per fuggire automaticamente dal Clash.' },
+    { name:'Glamor', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'Incompatibile con Illusionary Overlay. Come 2 Azioni, applica un\'illusione d\'aspetto a bersagli entro metà BIT spazi con un Check BIT (Performance), penalità pari al numero di bersagli oltre il primo. Chi dubita può opporre un Check BIT pari al risultato per smascherarla. Dura finché non ne crei una nuova, sei portato a 0 Ferite, o perdi la Quality.' },
+    { name:'Illusionary Overlay', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'Come 2 Azioni entro range BIT, Check BIT (Manipulate) TN 8+Nemici in Combattimento, crea uno Shroud illusorio (con Naturewalk associato: chi non ce l\'ha è Accecato dentro, chi è fuori vede Oscurati i bersagli dentro) o Barriere illusorie (bloccano movimento/attacco finché non vengono scoperte). Un bersaglio può opporre un Check DOS (Awareness) TN pari ai Successi per smascherarla. TN sale di 3 a ogni uso successivo nello stesso Combattimento.' },
+    { name:'Technician', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'Richiesta per Firewall, Trojan, Data Scan. +3 ai Check per riparare/decifrare codice o macchinari, capire l\'ambiente digitale (incluso se corrotto), ricostruire strutture/macchinari nel Mondo Digitale.' },
+    { name:'Firewall', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'Richiede Technician. Il bonus di Technician sale a +6 (ulteriori +3) e si applica anche a: scovare intrusi che hackerano un\'area, proteggere/rinforzare codice che stai riparando, mantenere una Domain Control, resistere a effetti che alterano il proprio codice (es. Suppression).' },
+    { name:'Trojan', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'Richiede Technician. Il bonus di Technician sale a +6 (ulteriori +3) e si applica anche a: manipolare il codice per accedere ad aree protette, danneggiare/corrompere codice o macchinari (limiti decisi dal Master).' },
+    { name:'Hide in Plain Sight', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'Richiesta per Shade Cloak, Sneak Attack. Check Stealth come 1 Azione invece di 2 per Nascondersi (anche in vista di chi ti cerca), una volta a turno. Resti Nascosto finché non interagisci con un altro partecipante (es. attacchi).' },
+    { name:'Shade Cloak', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'Richiede Hide in Plain Sight. Quando fai il Check Stealth, con 1 Azione extra estendi lo stesso risultato/beneficio agli Alleati scelti entro RAM spazi, finché restano a quella distanza. Se un Alleato beneficiato interferisce con un altro Digimon, il beneficio finisce per tutti.' },
+    { name:'Sneak Attack', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'Richiede Hide in Plain Sight. Applica il Tag [SNEAK] a un Attacco (su [RANGE] richiede 1 Azione extra). Se attacchi un bersaglio da cui sei Nascosto e non ti ha rilevato, +RAM Accuracy su quell\'Attacco.' },
+    { name:'Simplified Strike', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'Applica il Tag [SIMPLE] a un Attacco: quell\'Attacco costa 1 Azione in meno (minimo 1), incluso per costi extra come Called Shot o [T:DRAIN] potenziato. Non riduce il costo di Azione degli Effetti d\'Attacco.' },
+    { name:'Watchful Hunter', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'Una volta a round, Check DOS (Awareness) come Azione Libera nel proprio turno; ignora le penalità da Oscurato (non da Accecato). Come Azione Libera (o 2 Azioni) puoi mirare un Nemico con Check DOS (Awareness) TN 12+RAM bersaglio: su Successo +2 Accuracy su [MELEE] contro quel bersaglio fino al tuo prossimo turno (trattato come non Oscurato); su Successo Critico il bonus vale anche per [RANGE]; su Fallimento Critico consideri il bersaglio Oscurato fino al tuo prossimo turno.' },
+    { name:'Giant Hijacker', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'Solo contro Nemici di Size maggiore di almeno 1. Come 1 Azione da adiacente, Check CPU (Athletics) TN 10+RAM bersaglio-CPU proprio. Successo: ti aggrappi e ti muovi con lui (non è un Clash, entrambi mantengono le proprie Azioni). Successo Critico: la TN per scrollarti di dosso sale di 3. Fallimento Critico: subisci [SLOW 2] fino al tuo prossimo turno. Il bersaglio usa 1 Azione con Check CPU TN 10+tuo RAM per scrollarti via; tu puoi staccarti in ogni momento come Azione Libera.' },
+    { name:'Horde Duelist', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'Incompatibile con Aggressive Flank. Solo se sei adiacente esclusivamente a Nemici: come 1 Azione, Check BIT (Survival) TN 10+Stage più alto tra i Nemici adiacenti+numero di Nemici adiacenti (i Minion non contano). Successo: +BIT Accuracy sugli Attacchi contro Nemici adiacenti privi di Alleati adiacenti a loro volta, fino al tuo prossimo turno (finisce prima se un Alleato si avvicina). Successo Critico: riottieni l\'Azione spesa. Fallimento Critico: non puoi riusarla fino a fine Combattimento.' },
+    { name:'Exposing Hold', category:'Clash', dpPerRank:2, maxRank:1, mechanic:'', desc:'Quando vinci un Check per controllare un Clash, puoi scegliere di attivare questa Quality fino al tuo prossimo tentativo di controllo: non puoi usare l\'Azione Pin, ma l\'Avversario riduce il Danno subito da Attacchi esterni solo di metà del proprio CPU (non della somma dei CPU) — stessa logica per [SUPPORT] con RAM.' },
+    { name:'Slippery', category:'Clash', dpPerRank:1, maxRank:1, mechanic:'', desc:'Quando un Nemico tenta di iniziare un Clash con te, o tu tenti di Fuggire da un Clash, puoi tirare RAMx2 invece del Check CPU+RAM. Se il tuo risultato supera quello dell\'iniziatore, il tentativo di Clash finisce subito e l\'iniziatore non può ritentare fino al round successivo. Se è inferiore, l\'iniziatore controlla subito il Clash.' },
+    { name:'Fastball', category:'Clash', dpPerRank:1, maxRank:1, mechanic:'', desc:'Come 1 Azione, lancia un Alleato volontario di Size inferiore alla tua (nessun limite di Size con Monster Strength) entro la tua portata di Clash. Se l\'Alleato ha un Attacco [CHARGE] e viene lanciato su un Nemico, può fare quell\'Attacco come Azione Interrupt senza muoversi tu. Con 2 Azioni invece di 1, l\'Alleato riceve 1 Azione extra (l\'Interrupt può diventare gratuito) o puoi usare [T:PASS] per colpire più bersagli nel lancio.' },
+    { name:'Counterattack', category:'Trigger', dpPerRank:1, maxRank:2, mechanic:'', desc:'Richiesta per Counterblow, Cross Counter, Return Fire, Instant Counter. Se un Nemico manca un Attacco contro di te, puoi usare un\'Azione Interrupt per attaccarlo (Attacco da 1 Azione a scelta); il bersaglio subisce una penalità a Dodge pari al tuo Stage. Utilizzabile un numero di volte a Combattimento pari ai Ranks. Non puoi contrattaccare come Area Attack.' },
+    { name:'Aggressive Flank', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'Richiesta per Coordinated Assault. Incompatibile con Horde Duelist. +RAM (o Stage se maggiore) Accuracy quando sei adiacente a un Alleato, o quando tu e un Alleato siete entrambi adiacenti allo stesso Nemico bersaglio.' },
+    { name:'Basic Effect: Fear', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'CAP. 4.08 — Sblocca l\'uso del Tag [FEAR] su un Attacco [SUPPORT]. Senza questa Quality (o senza pagare il suo DP), il Master può vietare la selezione dell\'Effetto sull\'Attacco.' },
+    { name:'Basic Effect: Slow', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'CAP. 4.08 — Sblocca l\'uso del Tag [SLOW] su un Attacco [SUPPORT].' },
+    { name:'Basic Effect: Keen', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'CAP. 4.08 — Sblocca l\'uso del Tag [KEEN] su un Attacco [SUPPORT].' },
+    { name:'Basic Effect: Swift', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'CAP. 4.08 — Sblocca l\'uso del Tag [SWIFT] su un Attacco [SUPPORT].' },
+    { name:'Basic Effect: Cleanse', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'CAP. 4.08 — Sblocca l\'uso del Tag [CLEANSE] su un Attacco [SUPPORT] (riduce la Durata degli Effetti sul bersaglio).' },
+    { name:'Basic Effect: Root', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'CAP. 4.08 — Sblocca l\'uso del Tag [ROOT] su un Attacco [SUPPORT].' },
+    { name:'Basic Effect: Taunt', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'CAP. 4.08 — Sblocca l\'uso del Tag [TAUNT] su un Attacco [SUPPORT].' },
+    { name:'Basic Effect: Push', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'CAP. 4.08 — Sblocca l\'uso del Tag [PUSH] su un Attacco [SUPPORT].' },
+    { name:'Basic Effect: Pull', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'CAP. 4.08 — Sblocca l\'uso del Tag [PULL] su un Attacco [SUPPORT].' },
+    { name:'Advanced Effect: Confuse', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Sblocca l\'uso del Tag [CONFUSE] su un Attacco [SUPPORT].' },
+    { name:'Advanced Effect: Distract', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Sblocca l\'uso del Tag [DISTRACT] su un Attacco [SUPPORT].' },
+    { name:'Advanced Effect: Dull', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Sblocca l\'uso del Tag [DULL] su un Attacco [SUPPORT].' },
+    { name:'Advanced Effect: Frail', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Sblocca l\'uso del Tag [FRAIL] su un Attacco [SUPPORT].' },
+    { name:'Advanced Effect: Sturdy', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Sblocca l\'uso del Tag [STURDY] su un Attacco [SUPPORT].' },
+    { name:'Advanced Effect: Sharpen', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Sblocca l\'uso del Tag [SHARPEN] su un Attacco [SUPPORT].' },
+    { name:'Advanced Effect: Nimble', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Sblocca l\'uso del Tag [NIMBLE] su un Attacco [SUPPORT].' },
+    { name:'Advanced Effect: Exploit', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Sblocca l\'uso del Tag [EXPLOIT] su un Attacco [SUPPORT].' },
+    { name:'Advanced Effect: Burn', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Sblocca l\'uso del Tag [BURN] (Danno) su un Attacco [DAMAGE][SUPPORT].' },
+    { name:'Advanced Effect: Poison', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Sblocca l\'uso del Tag [POISON] (Danno) su un Attacco [DAMAGE][SUPPORT].' },
+    { name:'Advanced Effect: Shield', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Sblocca l\'uso del Tag [SHIELD] su un Attacco [SUPPORT] (garantisce Caselle Ferita Temporanee).' },
+    { name:'Master Effect: Fury', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [FURY] su un Attacco [SUPPORT] (Accuracy e Damage insieme).' },
+    { name:'Master Effect: Pacify', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [PACIFY] su un Attacco [SUPPORT] (Accuracy e Damage insieme).' },
+    { name:'Master Effect: Debilitate', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [DEBILITATE] su un Attacco [SUPPORT] (riduce tutte le Stat tranne Health).' },
+    { name:'Master Effect: Bastion', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [BASTION] su un Attacco [SUPPORT] (le 4 Stat di combattimento insieme; è anche l\'Effetto dato da Battle Cry).' },
+    { name:'Master Effect: Daring', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [DARING] su un Attacco [SUPPORT] (Accuracy e Armor insieme).' },
+    { name:'Huge Power', category:'Trigger', dpPerRank:1, maxRank:2, mechanic:'', desc:'Rank 1: una volta a round, ritira gli 1 usciti in un tiro di Accuracy. Rank 2: ritira anche i 2 sullo stesso tiro. Non si applica ai dadi Bonus da Azioni del Tamer.' },
+    { name:'Combat Awareness', category:'Static', dpPerRank:1, maxRank:3, mechanic:'', desc:'Rank 1: Check Awareness come 1 Azione invece di 2; +Ranks a Iniziativa; +Ranks ad Accuracy e Dodge nel primo Round di Combattimento. Rank 2: +Ranks anche a Movimento nel primo Round (non gestito dal sito). Rank 3 (variante): puoi scambiare la tua Iniziativa con quella di un Alleato consenziente quando viene tirata.' },
+    { name:'Battle Cry', category:'Trigger', dpPerRank:3, maxRank:1, mechanic:'', desc:'Come 1 Azione, Check DOS (Bravery) TN 10+somma degli Stage dei nemici in combattimento (min 1 a nemico, il Master può aumentarla per i Boss). Tu e gli Alleati entro DOS spazi ottenete [BASTION] (bonus ad Accuracy/Damage/Dodge/Armor) per 1 round: Potenza 1 su Fallimento, pari al tuo Stage su Successo. Su Successo Critico riottieni l\'Azione spesa. Ogni uso successivo nello stesso Combattimento alza la TN di 6.' },
     { name:'Resistance', category:'Static', dpPerRank:2, maxRank:3, mechanic:'resistance', desc:'Riduce la Potenza degli Effetti negativi subiti pari ai Ranks (min. 1).' },
-    { name:'Data Specialization: Wrestlemania', category:'Clash', dpPerRank:2, maxRank:1, mechanic:'wrestlemania', desc:'In Clash, sblocca l\'Azione Finisher: dopo un Attacco riuscito, tira CPU o BIT (TN 10+Stage) per danno bonus, poi il Clash finisce.' },
+    { name:'Algorithm', category:'Static', dpPerRank:1, maxRank:2, mechanic:'', desc:'STAGE 2+ — Ignora l\'incompatibilità tra Weapon e Instinct: puoi comprare Ranks in entrambi, limitati dai Ranks di questa Quality (Rank 1 → 1 Rank in ciascuno; Rank 2, solo da Stage 3+ → 2 Ranks in ciascuno). Richiesta per Pure Digizoid Weaponry e Pure Overwrite. Incompatibile con 3 Ranks di Weapon, 3 Ranks di Instinct, altri Digizoid Weaponry o Gain Force.' },
+    { name:'Sprint', category:'Static', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Il Digimon aggiunge il proprio RAM al Movimento (non gestito dal sito, applicare a discrezione del Master).' },
+    { name:'Data Specialization: Fistful of Force', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization: Close Combat. 1 Rank gratuito in Area Attack. Gli Attacchi Area [MELEE] usano la Dimensione Massima e i bersagli nella Dimensione Base di un\'Area [DAMAGE][MELEE] non dimezzano il Danno dopo l\'Armor.' },
+    { name:'Data Specialization: Flurry', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization: Close Combat. Un\'Azione al proprio turno può produrre un ulteriore Attacco [MELEE][DAMAGE], ignorando la regola "un Attacco a round" (senza altri Tag extra).' },
+    { name:'Data Specialization: Mobile Artillery', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization: Ranged Striker. 1 Rank gratuito in Area Attack. I bersagli nella Dimensione Base di un\'Area [RANGE] non dimezzano il Danno dopo l\'Armor (non si applica se ha anche un Tag Effetto). Con 1 Rank di Naturewalk, può spendere 1 Azione extra per rendere l\'area Terreno Difficile dell\'Elemento scelto fino al proprio prossimo turno.' },
+    { name:'Data Specialization: Sniper', category:'Static', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization: Ranged Striker. +3 Range e Limite Effettivo. Può usare l\'Azione Called Shot (opzione Sharpshooter) illimitatamente a combattimento, con penalità ad Accuracy dimezzata. Ignora il bonus di Uncatchable Target avversario (non quello di Data Optimization: Speedster).' },
+    { name:'Data Specialization: Try Something', category:'Static', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization: Warden. 1 Rank gratuito in Counterattack. Un Attacco fuori dal proprio turno con Azione Interrupt (non Hold Action) ignora la regola "un Attacco a round".' },
+    { name:'Data Specialization: True Guardian', category:'Static', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization: Warden. Quando Intercede, guadagna Armor pari alla distanza percorsa per Intercedere. Se l\'Attacco intercettato aveva Tag Area, gli Alleati dietro il Digimon riducono il Danno subito del proprio CPU (min 1) e negano i Tag Effetto. Se ha speso 2 Azioni per Intercedere prima del proprio turno, guadagna 1 Azione quel turno.' },
+    { name:'Data Specialization: Power Throw', category:'Clash', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization: Brawler. Fastball gratuita. Quando lancia un bersaglio (Alleato o Nemico) in Clash, sceglie: distanza raddoppiata, +CPU ad Accuracy se lancia su un Nemico, o +metà CPU a Danno se non lancia su un Nemico. Un Alleato lanciato non subisce Danno dal lancio.' },
+    { name:'Data Specialization: Wrestlemania', category:'Clash', dpPerRank:2, maxRank:1, mechanic:'wrestlemania', desc:'STAGE 4+ — Richiede Data Optimization: Brawler. In Clash, sblocca l\'Azione Finisher: dopo un Attacco riuscito, tira CPU o BIT (TN 10+Stage) per danno bonus, poi il Clash finisce.' },
+    { name:'Data Specialization: Hit and Run', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization: Speedster. Charge Attack o Heavy Recoil gratuita. Con Tag [CHARGE]/[RECOIL] non è vincolato a muoversi in linea retta; muovendosi almeno 2 spazi prima dell\'Attacco, aggiunge RAM al Danno. Non può essere colpito con Punishing Strike mentre lo usa.' },
+    { name:'Data Specialization: Uncatchable Target', category:'Static', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization: Speedster. +3 Dodge, nessuna penalità crescente se attaccato più volte nello stesso round (Coordinated Assault e Sniper avversari ignorano questo bonus). Incompatibile con Absolute Evasion.' },
+    { name:'Data Specialization: Status Warlord', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization: Effect Warrior. Sconto una tantum di 1 DP su un Effetto d\'Attacco. Se fa un Attacco [DAMAGE] senza Tag Effetto nel proprio turno, può fare anche un Attacco [SUPPORT] lo stesso turno ignorando la regola "un Attacco a round" (e viceversa). Incompatibile con Zoner: Friendly Fire, Dark Emblem, Holy Ward.' },
+    { name:'Data Specialization: Code Wizard', category:'Static', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization: Effect Warrior. La Durata massima di tutti gli Effetti creati aumenta di 1. Può usare Called Shot (opzione Focused) illimitatamente a combattimento con penalità dimezzata. Ignora il requisito del Tag [DAMAGE] per alcuni Effetti (es. [BURN]).' },
+    { name:'Data Specialization: Tactical Adaptation', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization: Variable. Guadagna una Stance Quality gratis, oppure 2 Ranks gratuiti di Mode Change. All\'inizio dell\'Iniziativa può fare Change Stance come Azione Libera; sul proprio turno può farlo come Azione Libera (o Mode Change se disponibile).' },
+    { name:'Data Specialization: Supreme Code', category:'Static', dpPerRank:2, maxRank:1, mechanic:'supremeCode', desc:'STAGE 4+ — Richiede Data Optimization: Variable. +1 automatico ad Accuracy, Damage, Dodge e Armor. +1 anche a Health, da applicare manualmente a Ferite Massime.' },
+    { name:'Prodigious Skill', category:'Static', dpPerRank:1, maxRank:4, mechanic:'', desc:'Rank max = Stage (fino a 4). Scegli una Skill del Tamer (es. Feats of Strength, Stealth, Awareness): +1+2×Stat Derivata associata (CPU per Skill di Corpo, RAM per Agilità, BIT per Intelligenza/Carisma, DOS per Volontà) sui Check di quella Skill, invece della sola Stat Derivata.' },
+    { name:'Mighty Blow', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 2+ — Applica [MIGHTY] a un Attacco [MELEE][DAMAGE]. Se infligge almeno 2 Danno dopo Armor (no Unalterable), Check CPU (Feats of Strength) TN 10+CPU bersaglio: Successo → [STUN] al bersaglio; Successo Critico → anche +2 Danno extra; Fallimento Critico → -1 Danno (min 1). La TN sale di 3 a ogni uso successivo (salvo Signature Move). Compatibile con altri Effetti tranne quelli di Danno.' },
+    { name:'Precise Focus', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 2+ — Applica [FOCUS] a un Attacco [RANGE]: ogni punto di Danno toglie 2 Caselle Ferita Temporanee invece di 1. Se usato con 1 Azione extra (Bolster, Called Shot, ecc.), Check RAM (Precision) TN 12+RAM bersaglio: Successo +3 Accuracy, Successo Critico +5 Accuracy, Fallimento Critico nessun bonus. Nessun beneficio su Area Attack.' },
+    { name:'Feint Attack', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Applica [T:FEINT] a un Attacco [MELEE]. Attivabile alla dichiarazione: l\'Attacco subisce una penalità a Danno pari al tuo Stage, poi Check BIT (Manipulate) TN 6+BIT bersaglio; su Successo dimezzi il Dodge (o l\'Armor) del bersaglio per quell\'Attacco. Incompatibile con Counterattack.' },
+    { name:'Counterblow', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 2+ — Richiede 1 Rank di Counterattack. Incompatibile con Cross Counter, Return Fire. Applica [COUNTER] a un Attacco [MELEE], usabile solo con Counterattack. Quando attivi Counterattack, scegli: dimezzare il Dodge del bersaglio, dimezzare il suo Armor, oppure spendere 2 usi di Counterattack per entrambi.' },
+    { name:'Cross Counter', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Richiede 1 Rank di Counterattack. Incompatibile con Counterblow, Combat Monster, Return Fire, Instant Counter. Applica [COUNTER] a un Attacco [MELEE], usabile solo con Counterattack. Puoi attivare Counterattack anche se il Nemico colpisce (non solo se manca), quando subisci almeno Stage+1 Danno dopo Armor da un suo [MELEE]. Se attivato durante un\'Intercede, il bersaglio non dimezza il Dodge.' },
+    { name:'Return Fire', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Richiede 1 Rank di Counterattack. Incompatibile con Counterblow, Cross Counter. Applica [COUNTER] a un Attacco [RANGE], usabile solo con Counterattack. Se Counterattack scatta da un Attacco [RANGE], ignori le penalità per attaccare entro il Limite Effettivo.' },
+    { name:'Instant Counter', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 2+ — Richiede 1 Rank di Counterattack. Incompatibile con Cross Counter. Puoi usare l\'Azione Interrupt di Counterattack come Azione Libera, una volta a Combattimento.' },
+    { name:'Lifesteal', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 2+ — Applica [T:DRAIN] a un Attacco (non su Attacchi con Tag Effetto). Cura Caselle Ferita pari al Danno inflitto, fino a un massimo di DOS (+Stage extra spendendo 1 Azione in più). Su Area Attack usa il Danno complessivo per calcolare la cura.' },
+    { name:'Reload', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 2+ — Richiede Ammo. Come 2 Azioni, Check BIT (Precision) TN 18-RAM per riottenere l\'uso dell\'Attacco [AMMO]: Successo lo riottieni, Successo Critico riottieni anche 1 Azione, Fallimento Critico non puoi più riprovare in questo Combattimento. La TN sale di 3 a ogni uso riuscito successivo.' },
+    { name:'Brace', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Quando subisci Danno da un Attacco, Azione Interrupt per Check CPU (Endurance) TN 10+Danno dopo Armor: Successo dimezza ulteriormente il Danno, Successo Critico porta a 0 se scenderebbe a 1, Fallimento Critico +1 Danno. Non incide sul Danno Unalterable. La TN sale di 3 a ogni uso (e ancora +3 se usato su un Attacco da cui hai Interceduto).' },
+    { name:'Savagery', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 2+ — Richiede Combat Monster. Una volta a round, quando dichiari un Attacco puoi attivarla: Check CPU (Endurance) TN 15-DOS (dettagli su successo/fallimento a discrezione del Master in base al testo completo della Quality).' },
+    { name:'Assured Destruction', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 2+ — Richiede Combat Monster. Quando attacchi un Nemico, puoi convertire qualsiasi quantità di Resolve in dadi extra sulla Pool di Accuracy invece che in Danno bonus, solo per quell\'Attacco.' },
+    { name:'Focused Resistance', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 2+ — Richiesta per Immunity. Quando subiresti un Effetto da un Attacco, Azione Interrupt per raddoppiare la tua Resistenza contro quell\'Effetto in arrivo.' },
+    { name:'Immunity', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Richiede Focused Resistance. La tua Resistenza può ridurre la Potenza di un Effetto in arrivo sotto 2; se scenderebbe a 0, l\'Effetto è negato del tutto. L\'Azione Resist conta come se stessi usando un\'Azione extra.' },
+    { name:'Element Master', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Richiede 1 Rank di Naturewalk. Richiesta per Domain Control, Elemental Myriad, Adaptive/Altered Element. Puoi manipolare liberamente fonti naturali del tuo Elemento e produrre effetti unici non di combattimento (a discrezione del Master, eventuale Check DOS Fortitude per usi difficili). Ignora del tutto gli Attacchi Elemental Force dello stesso Elemento e dimezza il Danno Unalterable da Terreno Pericoloso dello stesso Elemento.' },
+    { name:'Domain Control', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 2+ — Richiede Element Master. Incompatibile con Elemental Myriad. Come 2 Azioni (serve una fonte dell\'Elemento, o Check DOS Fortitude TN 10+2×Stage con Conjurer), crea una Domain con Durata ed effetto raggio pari a Stage+1 che ti segue; applica un effetto legato all\'Elemento scelto (vedi tabella Domini nel manuale) a Nemici o Alleati nell\'area a ogni tuo turno. Un Digimon con lo stesso Naturewalk può ignorare l\'effetto.' },
+    { name:'Inspiring Guidance', category:'Attack', dpPerRank:1, maxRank:3, mechanic:'', desc:'Richiede 1 Rank di Basic/Advanced/Master Effect. Applica [GUIDING] a un Attacco [SUPPORT] con Effetto positivo (Ranks max = DP speso sull\'Effetto collegato). Se l\'Effetto positivo va a segno, Check BIT (Persuasion) TN 10+Stage: su Successo il bersaglio ottiene una riserva di dadi "Guiding" (pari ai Ranks, +1 su Successo Critico) da aggiungere a qualsiasi Pool Check finché durano o finché dura l\'Effetto. Solo un Digimon alla volta può beneficiarne.' },
+    { name:'Overclock', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'Devi anche comprare un Effetto positivo che usa una Stat Derivata del lanciatore (pagandolo normalmente); quell\'Effetto si applica a questa Quality invece che a un Attacco, e non puoi più comprarlo separatamente. Come 1 Azione, Check con la Stat Derivata associata TN 10+Stage: Successo → ti applichi l\'Effetto (con la tua Potenza) fino al tuo prossimo turno; Successo Critico → dura 3 round.' },
+    { name:'Overdrive', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Come Azione Libera una volta a round, Check CPU (Athletics) TN 15-RAM: Successo → [HASTE] per quel turno, ma -2 Dodge per 1 round a fine turno (per la fatica); Successo Critico → nessuna penalità. La TN sale di 6 a ogni uso successivo nello stesso Combattimento.' },
+    { name:'Data Scan', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 2+ — Richiede Technician. Come 1 Azione su un Nemico visibile, Check BIT (Knowledge) TN 10+DOS bersaglio: su Successo scopri una delle seguenti informazioni a scelta (Ferite attuali/max, Stat Core dopo le Qualities, Stat Derivate, Movimento/Range, elenco Core Qualities, o un Attacco con tutti i Tag — puoi ripetere la scelta più volte pagando di nuovo); Successo Critico ne scopri una in più. Fallimento Critico non puoi riprovare fino a fine Combattimento.' },
+    { name:'Adaptive Element', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'Richiede Element Master. Incompatibile con Elemental Myriad, Altered Element. Quando prendi Domain Control, invece di un solo Dominio puoi scegliere entrambi i Domini del tuo Elemento e attivare quello che preferisci ogni volta (solo uno alla volta).' },
+    { name:'Altered Element', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'Richiede Element Master. Incompatibile con Elemental Myriad, Adaptive Element. Quando prendi Domain Control, puoi scegliere qualsiasi opzione di Dominio invece di essere limitato al tuo Elemento di Naturewalk (resta comunque considerato il tuo Elemento).' },
+    { name:'Elemental Myriad', category:'Static', dpPerRank:1, maxRank:4, mechanic:'', desc:'Richiede Element Master. Incompatibile con Domain Control, Adaptive/Altered Element. Rank max per Stage (0-1:0, 2:1, 3:2, 4+:4). Per ogni Rank qui, puoi comprare 2 Ranks extra di Naturewalk (li paghi comunque normalmente), ma il bonus di Naturewalk a una singola Stat non supera +3 in totale.' },
+    { name:'Conjurer', category:'Trigger', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 2+ — Richiesta per Evoker. Incompatibile con Summoner, Combat Monster, Positive Reinforcement. Risorsa "Creation Limit" = BIT+Stage. Con l\'Azione Conjure Objects (2 Azioni) crei oggetti/strutture (1 spazio cubico ciascuno, decisi alla presa della Quality) entro il tuo Range, fino al Creation Limit; non tirano Dodge, vengono distrutti da un Attacco che infligge Danno, e il costo torna disponibile quando distrutti. Non puoi riusare l\'Azione per 1 round dopo averla usata.' },
+    { name:'Summoner', category:'Trigger', dpPerRank:1, maxRank:3, mechanic:'', desc:'STAGE 2+ — Richiesta per Evoker. Incompatibile con Conjurer, Combat Monster, Positive Reinforcement, Showstopper. Risorsa "Mastery" = BIT+2×Ranks (+ Ranks di Conjurer se presente). Scegli un Tipo di Minion (Infantry/Protector/Recon/Volatile, ognuno con costo Mastery, Size e bonus propri — vedi manuale 5.06/6.0x per la tabella completa). Azione Summon (1 o 2 Azioni per metà/piena Mastery) crea Minion con Accuracy/Damage/Movimento basati sul tuo BIT e Ferite pari a DOS×2, senza Armor/Dodge, solo Attacchi [MELEE]. Azione Command Minion (1-2 Azioni) li fa Muovere/Attaccare/Aiutare.' },
+    { name:'Evoker', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'Richiede Conjurer o Summoner. Puoi usare le Azioni Conjure e Summon con le stesse Azioni (Creation Limit/Mastery condivisi tra Oggetti e Minion).' },
+    { name:'Hybrid Drive', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization. Puoi comprare una Data Specialization aggiuntiva a scelta libera, indipendentemente dalla tua Data Optimization.' },
+    { name:'Coordinated Assault', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 3+ — Richiede Aggressive Flank. Come 1 Azione, Check BIT (Precision) TN 10+RAM bersaglio per applicare "Marchiato" a un singolo bersaglio (Successo Critico: anche -1 Dodge immediato). Il bersaglio Marchiato subisce una penalità Dodge pari al tuo Stage (invece di -1) per ogni Attacco oltre il primo che lo colpisce nel round. Un solo bersaglio attivo alla volta; se muore, puoi ri-marchiare come Azione Interrupt gratuita. Incide su Uncatchable Target/Absolute Evasione avversari, non su Speedster.' },
+    { name:'Berserker', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 3+ — Richiede Combat Monster. Richiesta per Boiling Blood. Il tetto massimo di Resolve diventa Stage×2 (invece di Stage+2).' },
+    { name:'Boiling Blood', category:'Static', dpPerRank:1, maxRank:3, mechanic:'', desc:'STAGE 3+ — Richiede Berserker. Inizi il Combattimento con Resolve pari ai Ranks. A ogni tuo turno, se sei sotto le Ferite Massime generi Resolve pari ai Ranks (doppio se sei sotto metà); se raggiungi il tetto di Resolve a inizio turno, Check CPU (Endurance) TN 15-DOS: su Fallimento subisci Danno Unalterable pari al doppio dei Ranks.' },
+    { name:'Sentry Aim', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 3+ — Sblocca Sentry Stance. Attivandola, piazzi una Sentry Zone (come [T:BLAST]); chi entra/esce dalla zona può essere colpito con un Attacco [RANGE][DAMAGE] gratuito (Azione Interrupt, ignora "un Attacco a round", nessun Tag extra — un bersaglio non può essere colpito due volte così nello stesso round). Nessuna penalità Accuracy sui [RANGE] in questa Stance, ma -2 Dodge contro [MELEE] e non puoi bersagliare nemici entro 2 spazi; tratti tutto il terreno come Difficile.' },
+    { name:'Martial Strikes', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 3+ — Richiede 1 Rank di Weapon. Sblocca Martial Stance. Una volta a round come Azione Libera, Check BIT (Decipher Intent) TN 10+DOS bersaglio: su Successo i tuoi 6 su Accuracy contano come 2 Successi contro quel bersaglio fino al tuo prossimo turno con Attacchi [WEAPON] (Successo Critico: raddoppia anche il bonus di Weapon). Penalità a Dodge pari al tuo Stage contro Nemici non bersagliati.' },
+    { name:'Anticipate Assault', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 3+ — Richiede 1 Rank di Instinct. Sblocca Anticipate Stance. Una volta a round come Azione Libera, Check RAM (Evasion) TN 10+DOS bersaglio: su Successo i tuoi 6 su Dodge contro quel bersaglio contano come 2 Successi fino al tuo prossimo turno (Successo Critico: raddoppia il bonus di Instinct e i suoi Attacchi non riducono il tuo Dodge Pool, salvo Sniper/Coordinated Assault). Penalità ad Armor pari al tuo Stage contro Nemici non bersagliati.' },
+    { name:'Transporter', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 3+ — Richiede Teleport. Puoi teletrasportare anche Alleati adiacenti insieme a te (anche in reazione a un Attacco); ognuno perde 1 Azione al turno successivo (come se avesse Interceduto). +1 alla distanza di Teleport.' },
+    { name:'Holy Ward', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 3+/ULTIMATE — Richiede 1 Rank di Basic/Advanced/Master Effect con un Effetto positivo. Incompatibile con Dark Emblem, Status Warlord. Richiesta per Chaotic Balance. Quando colpisci con un Attacco con Effetto positivo (o [HASTE]/[IMMUNE]/[SHIELD]), tira BIT come Pool Check: ogni Successo cura 1 Casella Ferita a un bersaglio dell\'Attacco a scelta. Max 1 volta a round.' },
+    { name:'Dark Emblem', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 3+/ULTIMATE — Richiede 1 Rank di Basic/Advanced/Master Effect con un Effetto negativo. Incompatibile con Holy Ward, Status Warlord. Richiesta per Chaotic Balance. Quando colpisci con un Attacco con Effetto negativo (o [FEAR]/[DOOM]/[STUN]/[BLIND]/[DOT]), tira BIT come Pool Check: ogni Successo infligge 1 Danno Unalterable a un bersaglio dell\'Attacco a scelta. Max 1 volta a round.' },
+    { name:'Chaotic Balance', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'Richiede Holy Ward o Dark Emblem (permette di comprare entrambe). Non puoi attivarle nello stesso round, e se ne usi una non puoi riusarla il turno dopo — ma se ne hai usata una nel round precedente, l\'altra ottiene +1 Successo (cura o Danno Unalterable) quando la usi.' },
+    { name:'Distant Force', category:'Clash', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 3+/ULTIMATE — Come 1 Azione, bersaglia un Digimon entro il tuo Range. Se non consenziente, Check contrapposto (tu BIT+DOS, lui il suo Clash — conta come Check di Clash per Brawler/Slippery). Se vinci (o è consenziente), applichi [PUSH] o [PULL] usando BIT o DOS a scelta per la distanza.' },
+    { name:'Basic Effect: Lag', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'CAP. 4.08 — Sblocca l\'uso del Tag [LAG] su un Attacco [SUPPORT] (riduce la posizione in Iniziativa del bersaglio, gestione manuale dell\'ordine).' },
+    { name:'Basic Effect: Lead', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'CAP. 4.08 — Sblocca l\'uso del Tag [LEAD] su un Attacco [SUPPORT] (aumenta la posizione in Iniziativa del bersaglio, gestione manuale dell\'ordine).' },
+    { name:'Basic Effect: Tailwind', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'CAP. 4.08 — Sblocca l\'uso del Tag [TAILWIND] su un Attacco [SUPPORT] (aumenta il Movimento, non gestito dal sito).' },
+    { name:'Basic Effect: Vague', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'CAP. 4.08 — Sblocca l\'uso del Tag [VAGUE] su un Attacco [SUPPORT] (riduce Accuracy).' },
+    { name:'Advanced Effect: Heavy', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Sblocca l\'uso del Tag [HEAVY] su un Attacco [SUPPORT] (rimuove opzioni di Movimento extra, non gestito dal sito).' },
+    { name:'Advanced Effect: Freeze', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Sblocca l\'uso del Tag [FREEZE] (Danno) su un Attacco [DAMAGE][SUPPORT] (Danno se il bersaglio non si muove).' },
+    { name:'Master Effect: Paralyze', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [PARALYZE] su un Attacco [SUPPORT] (riduce Dodge e mobilità).' },
+    { name:'Master Effect: Rattled', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [RATTLED] su un Attacco [SUPPORT] (Damage e Dodge insieme).' },
+    { name:'Master Effect: Shaken', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [SHAKEN] su un Attacco [SUPPORT] (Accuracy e Armor insieme).' },
+    { name:'Master Effect: Weak', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [WEAK] su un Attacco [SUPPORT] (Damage e Armor insieme).' },
+    { name:'Master Effect: Strength', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [STRENGTH] su un Attacco [SUPPORT] (Damage e Armor insieme, positivo).' },
+    { name:'Master Effect: Vigil', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [VIGIL] su un Attacco [SUPPORT] (Dodge e Armor insieme).' },
+    { name:'Master Effect: Vigor', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [VIGOR] su un Attacco [SUPPORT] (Dodge e Movimento, quest\'ultimo non gestito dal sito).' },
+    { name:'Master Effect: Steady', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [STEADY] su un Attacco [SUPPORT] (Damage e Dodge insieme).' },
+    { name:'Master Effect: Regen', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [REGEN] su un Attacco [SUPPORT] (cura il bersaglio e permette di sopravvivere a un colpo fatale — applicare a mano).' },
+    { name:'Master Effect: Ruin', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [RUIN] su un Attacco [DAMAGE][SUPPORT] (Danno basato sul BIT del lanciatore).' },
+    { name:'Master Effect: Doom', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [DOOM] su un Attacco [SUPPORT] (nega la cura oltre una certa soglia — applicare a mano).' },
+    { name:'Master Effect: Blind', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [BLIND] su un Attacco [SUPPORT] (il bersaglio è accecato per la Durata — applicare a mano).' },
+    { name:'Master Effect: Dot', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [DOT] su un Attacco [DAMAGE][SUPPORT] (trasforma il bersaglio in Sprite: perde i benefici d\'Attacco ma guadagna Dodge — applicare a mano, max 1 volta a Combattimento per bersaglio).' },
+    { name:'Master Effect: Stun', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [STUN] su un Attacco [SUPPORT] (rimuove un\'Azione al bersaglio — applicare a mano).' },
+    { name:'Master Effect: Immune', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [IMMUNE] su un Attacco [SUPPORT] (riduce la Potenza degli Effetti negativi in arrivo sul bersaglio — applicare a mano).' },
+    { name:'Master Effect: Deny', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [DENY] su un Attacco [SUPPORT] (nega il primo Effetto che il bersaglio subirebbe — applicare a mano).' },
+    { name:'Master Effect: Haste', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/ULTIMATE — Sblocca l\'uso del Tag [HASTE] su un Attacco [SUPPORT] (concede un\'Azione extra al bersaglio — applicare a mano).' },
+    { name:'Mode Change', category:'Trigger', dpPerRank:1, maxRank:3, mechanic:'', desc:'STAGE 3+ — Richiesta per Superior Mode. Rank 1: come 1 Azione, scambia Armor↔Damage OPPURE Accuracy↔Dodge (Stat Base). Rank 2: scambia una coppia qualsiasi di Stat Base (tranne Health). Rank 3: scambia liberamente tutte le Stat Base tranne Health. Non tocca le Stat Derivate né i bonus da Qualities/Stance/Direct.' },
+    { name:'Superior Mode', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'Richiede 3 Ranks di Mode Change. Scegli Qualities già possedute per un totale di DP ≤ Stage×3 (ignora sconti; ogni prerequisito collegato va incluso), poi scegli altrettante Qualities diverse (mai già possedute) dello stesso costo totale: sono le tue "Mode Change Qualities". Quando usi Mode Change, puoi anche scambiare il set di Qualities attuale con quello Mode, e cambiare Size (se ne hai scelta una diversa), fino a fine Combattimento o a un nuovo uso di Mode Change per tornare indietro.' },
+    { name:'Chrome Digizoid Armor', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 3+ (Ultimate) — Incompatibile con altri Digizoid Armor. +1 Armor, +1 Health (applicare a mano a Ferite Massime).' },
+    { name:'Cursed Digizoid Armor', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 4+ (Mega) — Incompatibile con altri Digizoid Armor. +1 Health. +2 Armor mentre subisci un Effetto negativo (applicare a mano quando rilevante).' },
+    { name:'Adaptive Digizoid Armor', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ (Mega) — Incompatibile con altri Digizoid Armor. A inizio round, 4 punti da distribuire tra bonus a Dodge e Armor come preferisci (es. +3 Dodge e +1 Armor).' },
+    { name:'Sharp Digizoid Armor', category:'Static', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ (Mega) — Incompatibile con altri Digizoid Armor. +2 Armor, +1 Health. Quando subisci un Attacco [DAMAGE], infliggi 1 Danno Unalterable all\'Attaccante.' },
+    { name:'Heavy Digizoid Armor', category:'Static', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ (Mega) — Incompatibile con altri Digizoid Armor. +4 Armor. -1 Movimento (non gestito dal sito), +1 CPU.' },
+    { name:'Flexible Digizoid Armor', category:'Trigger', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+ (Mega) — Incompatibile con altri Digizoid Armor. +2 Armor, +3 Dodge, +1 RAM. Sei considerato 1 Size più piccolo mentre ti muovi (puoi passare per gli spazi di Digimon più grandi senza fermarti lì).' },
+    { name:'Light Digizoid Armor', category:'Static', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+ (Mega) — Incompatibile con altri Digizoid Armor. +3 Dodge, +1 Health. +1 Movimento (non gestito dal sito) e 1 Successo automatico garantito su ogni tiro di Dodge (si somma ad Absolute Evasion, non riduce la Pool).' },
+    { name:'Shining Digizoid Armor', category:'Trigger', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+ (Mega) — Incompatibile con altri Digizoid Armor. +2 Armor, +3 Health. Riduci di 1 (min 1) la Potenza degli Effetti negativi in arrivo. Contro Danno Unalterable da un Nemico, Pool Check di tanti d6 quanto il Danno: -1 Danno per Successo.' },
+    { name:'Chrome Digizoid Weaponry', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 3+ (Ultimate) — Richiede 1 Rank di Weapon. Incompatibile con Algorithm e altri Digizoid Weaponry. Gli Attacchi [WEAPON] guadagnano +2 Accuracy, +1 Damage, +1 Potenza ai Tag Effetto.' },
+    { name:'Cursed Digizoid Weaponry', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 4+ (Mega) — Richiede 1 Rank di Weapon. Incompatibile con Algorithm e altri Digizoid Weaponry. Gli Attacchi [WEAPON] guadagnano +2 Accuracy, +1 Damage; +2 Damage extra quando sei a metà Ferite Massime o meno.' },
+    { name:'Adaptive Digizoid Weaponry', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ (Mega) — Richiede 1 Rank di Weapon. Incompatibile con Algorithm e altri Digizoid Weaponry. A inizio turno, 4 punti da distribuire tra bonus Accuracy/Damage sugli Attacchi [WEAPON] fino al tuo prossimo turno. Immune a [DISARM].' },
+    { name:'Sharp Digizoid Weaponry', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ (Mega) — Richiede 1 Rank di Weapon. Incompatibile con Algorithm e altri Digizoid Weaponry. Gli Attacchi [WEAPON] guadagnano +4 Accuracy; gli [DAMAGE][WEAPON] infliggono 2 Danno Unalterable extra a segno.' },
+    { name:'Heavy Digizoid Weaponry', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ (Mega) — Richiede 1 Rank di Weapon. Incompatibile con Algorithm e altri Digizoid Weaponry. Gli Attacchi [WEAPON] guadagnano +5 Damage; -1 Movimento (non gestito dal sito), +1 DOS. Gli [DAMAGE][WEAPON] applicano [HEAVY] per 1 round.' },
+    { name:'Flexible Digizoid Weaponry', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+ (Mega) — Richiede 1 Rank di Weapon. Incompatibile con Algorithm e altri Digizoid Weaponry. +1 BIT, +3 Dodge. Gli [RANGE][WEAPON] guadagnano +1 Range; i [MELEE][WEAPON] colpiscono 1 spazio più lontano (come 1 Rank di Reach: Wide Swings, cumulabile con Reach già posseduto). Escape the Clash riesce sempre in automatico.' },
+    { name:'Light Digizoid Weaponry', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+ (Mega) — Richiede 1 Rank di Weapon. Incompatibile con Algorithm e altri Digizoid Weaponry. Gli Attacchi [WEAPON] guadagnano +3 Accuracy, +3 Damage, e 1 Successo automatico garantito su ogni tiro Accuracy (si somma a Certain Strike). +1 Azione extra al turno, usabile solo per Bolster, Muovi o Movimento Difficile.' },
+    { name:'Shining Digizoid Weaponry', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+ (Mega) — Richiede 1 Rank di Weapon. Incompatibile con Algorithm e altri Digizoid Weaponry. Gli Attacchi [WEAPON] guadagnano +5 Accuracy, +1 Damage. Su [MELEE]: Danno minimo di 2 dopo Armor se [DAMAGE], +1 Durata se [SUPPORT] a segno. Su [RANGE]: +3 Range e Limite Effettivo. +1 IP Temporaneo quando tiri l\'Iniziativa (perso se non speso a fine Combattimento).' },
+    { name:'Pure Digizoid Weaponry', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+ (Mega) — Richiede 2 Ranks di Weapon e 2 Ranks di Algorithm. Incompatibile con ogni altro Digizoid Weaponry. Gli Attacchi [WEAPON] guadagnano +2 Accuracy/Damage. Guadagni il Tag [OFFHAND] indipendente dai Tag [WEAPON] già posseduti, trattato come Rank 2 di [WEAPON] (su Signature Move il bonus totale da Weapon+Offhand non supera 4+Battery attuale).' },
+    { name:'Overwrite', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 3+/ULTIMATE — Richiede 1 Rank di Instinct. Solo 1 Gain Force per Digimon; incompatibile con Algorithm e ogni altra Gain Force. Come 1 Azione attivi Overwrite: finché attivo (o fino a fine Combattimento), ogni volta che subiresti un Effetto da fonte esterna, perdi Caselle Ferita pari al doppio del costo DP di quell\'Effetto per negarlo del tutto (es. [DISTRACT] 2DP → 4 Danno Unalterable). Puoi disattivarlo come Azione Libera nel tuo turno. Non nega l\'Effetto se ti porterebbe a 0 Ferite. Il Danno subito conta per Combat Monster. Non è mai sopprimibile.' },
+    { name:'Undying inForce', category:'Static', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+/MEGA — Richiede 1 Rank di Instinct. Unica Gain Force; incompatibile con Algorithm/altre Gain Force. Sotto metà Ferite Massime, ottieni [REGEN] passivo con Potenza pari ai Ranks di Instinct (nullo a 0 Ferite; [CLEANSE] lo sopprime solo per 1 round). Con Second Wind: puoi usarlo nel turno in cui attacchi, e ottieni usi extra pari ai Ranks di Instinct. Una volta a round, ritira gli 1 su un Check Health (con Vital Energy, anche i 2).' },
+    { name:'Temporal inForce', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+/MEGA — Richiede 1 Rank di Instinct. Unica Gain Force; incompatibile con Algorithm/altre Gain Force. Non tiri l\'Iniziativa: dopo che tutti gli altri l\'hanno tirata, scegli la tua posizione nell\'ordine di turno (nessuno può Interrompere durante il tuo turno, salvo Hold Action). Ogni turno alterno puoi aggiustare la tua posizione (non se sei affetto da [LAG]). Con Ranks di Combat Awareness: immune a [LAG] e aggiungi i Ranks di Instinct ai suoi bonus.' },
+    { name:'Omniscient inForce', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+/MEGA — Richiede 1 Rank di Instinct. Unica Gain Force; incompatibile con Algorithm/altre Gain Force. Puoi usare Hold Action su te stesso (anche senza Tamer), gratis una volta a turno (quindi fino a 2 volte, la seconda con 2 Azioni) e ignori il limite "un Attacco a round" quando lo usi per attaccare. Aggiungi i Ranks di Instinct al Pool Check di Hold Action. Una volta a round, ritira gli 1 su un tiro di Dodge (con Avoidance, anche i 2).' },
+    { name:'Digital Hazard', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/MEGA — Richiede 1 Rank di Instinct. Unica Gain Force; incompatibile con Algorithm/altre Gain Force. Applica [HAZARD] a un Attacco (sostituisce [MELEE]/[RANGE]/[DAMAGE]/[SUPPORT]): Danno automatico (niente tiri Accuracy/Dodge) a tutto entro metà Range, ridotto da Armor, +Danno pari ai Ranks di Instinct. Ogni uso oltre il primo a Combattimento (salvo su Signature Move) ti costa Ferite pari al tuo Stage (non conta per Combat Monster). Nessun altro Tag applicabile salvo Effetti (serve min. 4 Danno per applicarli).' },
+    { name:'Zero Unit', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/MEGA — Richiede 1 Rank di Instinct. Unica Gain Force; incompatibile con Algorithm/altre Gain Force. Applica [ZERO] a un Attacco [SUPPORT] (Effetto positivo senza Durata, 1 volta a Combattimento, 2 Azioni, mai come Area): o fa evolvere gratis un Alleato entro Stage spazi che ha già sbloccato lo Stage successivo (Punti Evoluzione extra pari ai Ranks di Instinct), oppure rianima un Alleato sconfitto con Ferite pari al doppio dei Ranks di Instinct (tornando allo Stage in cui è caduto). Su Signature Move il bonus scala anche con la Battery.' },
+    { name:'Pure Overwrite', category:'Static', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+/MEGA — Richiede 2 Ranks di Instinct e 2 Ranks di Algorithm. Unica Gain Force; incompatibile con ogni altra. Immunità a tutti gli Effetti negativi di costo 2 DP o meno (mai sopprimibile). Con Second Wind: puoi attivarlo nel tuo turno senza consumare un uso, spendendo 1 Azione extra, anche senza usi rimasti.' },
+    { name:'Memory Upgrade', category:'Static', dpPerRank:0, maxRank:3, mechanic:'', desc:'CAP. 7.01 (GRATIS) — +1 Attacco nella tua lista di Attacchi per Rank. Puoi comprare 1 Rank ogni 3 Tag da Attacco ottenuti da Qualities (es. [PIERCING 1]+[CERTAIN 1]+[CHARGE] = 1 Rank). Non conta nel limite di Free Qualities del Digimon.' },
+    { name:'Slayer', category:'Attack', dpPerRank:0, maxRank:1, mechanic:'', desc:'CAP. 7.01 (GRATIS) — Scegli una Famiglia, un Tipo (Drago/Demone/Bestia ecc.) o un Elemento di Naturewalk come "nemico preferito" (il Master deve approvarlo). +DOS Accuracy contro quel tipo di bersaglio; se manchi un Attacco che ne beneficerebbe, subisci Danno Unalterable pari al tuo Stage. Non conta nel limite di Free Qualities.' },
+    { name:'Critical Arms', category:'Attack', dpPerRank:0, maxRank:1, mechanic:'', desc:'CAP. 7.01 (GRATIS) — Richiede 1+ Rank di Weapon. Tira 2d6 (Critical Dice) insieme alla Pool Accuracy su ogni Attacco [WEAPON]: 2 → l\'Attacco fallisce automaticamente e subisci [DISARM] fino a fine Combattimento (o 2 Azioni per rimuoverlo); 3-11 → nessun effetto; 12 → effetto positivo extra (vedi manuale per il dettaglio esatto). Non conta nel limite di Free Qualities.' },
+    { name:'Mind Over Matter', category:'Static', dpPerRank:0, maxRank:1, mechanic:'', desc:'CAP. 7.01 (GRATIS) — -1 a tutte le Stat Core. In cambio, scegli 2 Skills dello stesso Attributo (tranne RAM/Agilità pura) e trattale come se avessi Prodigious Skill su entrambe.' },
+    { name:'Justice Is Blind', category:'Trigger', dpPerRank:0, maxRank:1, mechanic:'', desc:'CAP. 7.01 (GRATIS) — Il Digimon è cieco/ipovedente: fallisce automaticamente i Check visivi ma ha Prodigious Skill: Awareness per l\'udito e contro Hide in Plain Sight. In combattimento, i suoi [MELEE] hanno sempre [T:WAVE] e i [RANGE] sempre [T:CONE] gratuiti (non può comprare altri Tag Area); niente Selective Targeting. Un Attacco a bersaglio singolo richiede 1 Azione extra (o il Tamer cede 1 Azione per dirigerlo).' },
+    { name:'Weakened Strike (Fragile Strike)', category:'Attack', dpPerRank:-1, maxRank:3, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Certain Strike (Ranks max = quelli di Certain Strike). Applica [FRAGILE] all\'Attacco con [CERTAIN]: -1 Danno e -1 Potenza/Durata degli Effetti (min 0) per Rank. Non applicabile a un Attacco [SUPPORT].' },
+    { name:'Indiscriminate Targeting', category:'Static', dpPerRank:-1, maxRank:1, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Area Attack. Incompatibile con Zoner. I tuoi Area Attack non distinguono più Alleati da Nemici: colpiscono tutti tranne te.' },
+    { name:'Underwhelming', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Huge Power (max Ranks = quelli di Huge Power). Quando usi Huge Power, riduci i Successi finali di Accuracy di 1 per Rank qui. Huge Power non è più utilizzabile su un Attacco con [CERTAIN].' },
+    { name:'Broadside', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Avoidance (max Ranks = quelli di Avoidance). Quando usi Avoidance, riduci i Successi finali di Dodge di 1 per Rank qui.' },
+    { name:'Illness', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Vital Energy (max Ranks = quelli di Vital Energy). Quando usi Vital Energy, riduci i Successi finali di Health di 1 per Rank qui.' },
+    { name:'System Error', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di System Boost (max Ranks = quelli di System Boost). Per ogni Rank qui, riduci di 1 una Stat Derivata NON già toccata da System Boost.' },
+    { name:'Natural Weakness', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Naturewalk. Incompatibile con Elemental Myriad. Per ogni Rank, scegli 2 Elementi che NON hai da Naturewalk: subisci il doppio del bonus Danno di Elemental Force da quegli Elementi (max Ranks = quelli di Naturewalk).' },
+    { name:'Exploitable Program', category:'Static', dpPerRank:-1, maxRank:1, mechanic:'', desc:'NEGATIVA — La TN di ogni Nemico che richiede una tua Stat Derivata (es. Mighty Blow, Substitute subiti) è ridotta di 3.' },
+    { name:'Accuracy Converter [Nemico]', category:'Static', dpPerRank:0, maxRank:99, mechanic:'', desc:'CAP. 3.01 GM INDEX (solo Nemici, gratis, non conta nel limite Free) — Per Rank: -1 Accuracy, +1 BIT. Non puoi scendere sotto l\'Accuracy di partenza né superare il doppio del BIT senza questa Quality. Usare con moderazione: serve solo ad abbassare Stat totali "esagerate" mantenendo la Stat Derivata.' },
+    { name:'Damage Converter [Nemico]', category:'Static', dpPerRank:0, maxRank:99, mechanic:'', desc:'CAP. 3.01 GM INDEX (solo Nemici, gratis, non conta nel limite Free) — Per Rank: -1 Damage, +1 DOS. Non puoi scendere sotto il Damage di partenza né superare il doppio del DOS senza questa Quality.' },
+    { name:'Dodge Converter [Nemico]', category:'Static', dpPerRank:0, maxRank:99, mechanic:'', desc:'CAP. 3.01 GM INDEX (solo Nemici, gratis, non conta nel limite Free) — Per Rank: -1 Dodge, +1 RAM. Non puoi scendere sotto il Dodge di partenza né superare il doppio del RAM senza questa Quality.' },
+    { name:'Armor Converter [Nemico]', category:'Static', dpPerRank:0, maxRank:99, mechanic:'', desc:'CAP. 3.01 GM INDEX (solo Nemici, gratis, non conta nel limite Free) — Per Rank: -1 Armor, +1 CPU. Non puoi scendere sotto l\'Armor di partenza né superare il doppio del CPU senza questa Quality.' },
+    { name:'Punishing Strike', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 2+ — Richiede 1 Rank di Combat Awareness. Richiesta per There Is No Escape. Applica [PUNISH] a un Attacco [MELEE]: se un Nemico si allontana volontariamente dalla tua portata melee (non teleport, non spostamento da Effetto), puoi attaccarlo fuori dal tuo turno come Azione Interrupt (niente Area Attack). Utilizzabile un numero di volte a Combattimento pari ai tuoi Ranks di Combat Awareness. Se un Alleato Intercede contro questo Attacco, il suo Armor è dimezzato contro il Danno.' },
+    { name:'There Is No Escape', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'Richiede Punishing Strike. Quando infliggi 2+ Danno con un Attacco [PUNISH], dimezzi il Movimento del bersaglio fino a fine turno (o lo azzeri se l\'Attacco ha anche [ROOT]). Il Danno Unalterable non conta per attivarla. Utilizzabile anche se il bersaglio tenta di Teletrasportarsi via.' },
+    { name:'Boiling Point', category:'Static', dpPerRank:-2, maxRank:1, mechanic:'', desc:'NEGATIVA — Richiede Combat Monster. Quando inizi il turno con Resolve al massimo, Check CPU (Endurance) TN 15-DOS: Fallimento Critico → perdi Ferite pari al Resolve attuale; Fallimento → perdi metà Resolve attuale in Ferite e azzeri il Resolve; Successo → la TN sale del tuo Resolve massimo fino a fine Combattimento; Successo Critico → sale solo di metà.' },
     { name:'[BOSS] Adaptive Intelligence', category:'Boss', dpPerRank:1, maxRank:1, mechanic:'', desc:'+2 Dodge (stackabile) contro un Attacco già visto, per ogni volta vista dall\'inizio del combattimento. Riservata al Master per i Boss.' },
     { name:'[BOSS] Finesse', category:'Boss', dpPerRank:1, maxRank:99, mechanic:'', desc:'Per Rank: +1 Armor e 1 Danno Unalterable extra sugli Attacchi [DAMAGE]. Ranks massimi = Stage. Riservata al Master.' },
     { name:'[BOSS] True Immunity', category:'Boss', dpPerRank:1, maxRank:99, mechanic:'', desc:'Per Rank, scegli un Effetto: quell\'Effetto non ha mai Durata o Potenza su questo Digimon. Riservata al Master.' },
@@ -2131,7 +2469,8 @@
     { name:'[BOSS] Suppression', category:'Boss', dpPerRank:3, maxRank:1, mechanic:'', desc:'Blocca un tipo di Quality (Static/Trigger/Attack) per i nemici vicini, salvo un Check DOS (TN 10+DOS) con 2 Azioni per ignorarla. Riservata al Master.' }
   ];
   function computeQualityMechanics(qualities){
-    const m = { certainStrike:0, weapon:0, ammoRank:0, combatMonster:0, monsterStrength:false, wrestlemania:false, resistance:0 };
+    const m = { certainStrike:0, weapon:0, ammoRank:0, combatMonster:0, monsterStrength:false, wrestlemania:false, resistance:0,
+      instinctDodge:0, wardenArmor:0, brawlerClash:0, supremeCode:0, absoluteEvasion:0, naturewalk:{ accuracy:0, damage:0, dodge:0, armor:0, health:0 } };
     (qualities||[]).forEach(q=>{
       if(q.mechanic==='certainStrike') m.certainStrike += Number(q.rank||1);
       if(q.mechanic==='weapon') m.weapon += Number(q.rank||1);
@@ -2140,6 +2479,15 @@
       if(q.mechanic==='monsterStrength') m.monsterStrength = true;
       if(q.mechanic==='wrestlemania') m.wrestlemania = true;
       if(q.mechanic==='resistance') m.resistance += Number(q.rank||1);
+      if(q.mechanic==='instinct') m.instinctDodge += Number(q.rank||1);
+      if(q.mechanic==='dataOptWarden') m.wardenArmor += Number(q.rank||1);
+      if(q.mechanic==='dataOptBrawler') m.brawlerClash += Number(q.rank||1);
+      if(q.mechanic==='supremeCode') m.supremeCode += Number(q.rank||1);
+      if(q.mechanic==='absoluteEvasion') m.absoluteEvasion += Number(q.rank||1);
+      if(q.mechanic==='naturewalk'){
+        const target = q.statTarget || 'accuracy';
+        m.naturewalk[target] = (m.naturewalk[target]||0) + Number(q.rank||1);
+      }
     });
     return m;
   }
@@ -2193,7 +2541,16 @@
           <div class="stat-box"><div class="l">SIZE</div><div class="v" style="font-size:14px;">${escapeHTML(d.size)}</div></div>
           <div class="stat-box"><div class="l">STANCE</div><div class="v" style="font-size:14px;">${escapeHTML(d.stance)}</div></div>
         </div>
-        <div class="muted" style="margin-top:4px;">Stance: ${d.stance==='Neutral'?'nessun bonus/penalità':(d.stance==='Offensive'?`+${stageIndex(d.stage)} Accuracy, −${stageIndex(d.stage)} Dodge`:`+${stageIndex(d.stage)} Dodge, −${stageIndex(d.stage)} Accuracy`)} (modificabile da "Modifica")</div>
+        <div class="muted" style="margin-top:4px;">Stance: ${
+          d.stance==='Neutral' ? 'nessun bonus/penalità' :
+          d.stance==='Offensive' ? `+${stageIndex(d.stage)} Accuracy, −${stageIndex(d.stage)} Dodge` :
+          d.stance==='Defensive' ? `+${stageIndex(d.stage)} Dodge, −${stageIndex(d.stage)} Accuracy` :
+          d.stance==='Fierce' ? `+${stageIndex(d.stage)} Damage, −${stageIndex(d.stage)} Movimento/Range (richiede Fierce Soul)` :
+          d.stance==='Brave' ? `+${stageIndex(d.stage)} Armor, −${stageIndex(d.stage)} Movimento (richiede Brave Heart)` :
+          d.stance==='Sentry' ? 'Sentry Zone + Attacco Interrupt gratuito su chi entra/esce (richiede Sentry Aim; nessuna penalità Range, -2 Dodge vs Melee, Terreno sempre Difficile — gestione manuale)' :
+          d.stance==='Martial' ? '6 su Accuracy contano doppio con [WEAPON] contro un bersaglio marcato (richiede Martial Strikes — gestione manuale)' :
+          d.stance==='Anticipate' ? '6 su Dodge contano doppio contro un bersaglio marcato (richiede Anticipate Assault — gestione manuale)' : ''
+        } (modificabile da "Modifica")</div>
         <div class="divider"></div>
         ${barHTML('Battery', d.battery, batteryCap(d.stage), 'mp', 'dig-batt-minus-'+containerId, 'dig-batt-plus-'+containerId)}
         <button class="btn amber" id="btn-sig-move-${containerId}" style="width:100%;margin-top:4px;" ${(d.battery||0)<1?'disabled':''}>⚡ Usa Signature Move (Battery ${d.battery||0})</button>
@@ -2210,6 +2567,39 @@
           <button class="btn ghost small" id="btn-force-evolve-${containerId}" style="flex:1;">⚡ Forza</button>
         </div>
         <div class="muted" id="evo-status-${containerId}" style="margin-top:4px;"></div>
+        ${(cachedProgression && cachedProgression.blastEvolutionEnabled) ? `
+        <div class="divider"></div>
+        <div class="muted" style="margin-bottom:4px;">💥 Blast Evolution — Usi rimasti in campagna: <b>${d.blastEvolutionUses!=null?d.blastEvolutionUses:1}</b> (si rigenera 1 uso a Milestone 3 e 6). Richiede Battery al massimo e un Stage superiore al tuo Default Range.</div>
+        <div class="row">
+          <select id="blast-target-${containerId}" style="flex:2;">${STAGES.map(s=>`<option ${s===d.stage?'selected':''}>${s}</option>`).join('')}</select>
+          <button class="btn ghost small" id="btn-blast-evolve-${containerId}" style="flex:1;" ${(d.battery||0)<batteryCap(d.stage) || (d.blastEvolutionUses!=null?d.blastEvolutionUses:1)<=0 ? 'disabled':''}>💥 Blast</button>
+        </div>
+        <div class="muted" id="blast-status-${containerId}" style="margin-top:4px;"></div>
+        ` : ''}
+        ${(cachedProgression && cachedProgression.slideEvolutionEnabled) ? `
+        <div class="divider"></div>
+        <div class="muted" style="margin-bottom:4px;">🔀 Slide Evolution (Variant 2.02a) — passa a una forma alternativa dello stesso Stage, 1 Evolution Point.</div>
+        <div class="row">
+          <input type="text" id="slide-name-${containerId}" placeholder="Nome forma alternativa" style="flex:2;" />
+          <input type="number" id="slide-wounddiff-${containerId}" placeholder="Δ Ferite Max (+/-)" value="0" style="flex:1;" />
+          <button class="btn ghost small" id="btn-slide-evolve-${containerId}" style="flex:1;">🔀 Slide</button>
+        </div>
+        <div class="muted" id="slide-status-${containerId}" style="margin-top:4px;"></div>
+        ` : ''}
+        ${((cachedProgression && cachedProgression.darkEvolutionEnabled) || d.darkEvolutionActive) ? `
+        <div class="divider"></div>
+        ${d.darkEvolutionActive ? `
+          <div class="muted" style="margin-bottom:4px;color:var(--danger);">🌑 Dark Evolution ATTIVA — il Digimon è controllato dal Master, attacca tutto ciò che si muove. Termina quando: sconfigge tutti, viene sconfitto, passano ${d.stage} turni, o il Tamer supera un Check Willpower TN 20.</div>
+          <button class="btn ghost small" id="btn-dark-evolve-end-${containerId}" style="width:100%;">↩️ Termina Dark Evolution (torna al Default Stage)</button>
+        ` : `
+          <div class="muted" style="margin-bottom:4px;">🌑 Dark Evolution (Variant 2.02a) — evoluzione forzata da emozioni negative del Tamer. Il Master controlla il Digimon finché non rientra.</div>
+          <div class="row">
+            <select id="dark-target-${containerId}" style="flex:2;">${STAGES.map(s=>`<option ${s===d.stage?'selected':''}>${s}</option>`).join('')}</select>
+            <button class="btn ghost small" id="btn-dark-evolve-start-${containerId}" style="flex:1;">🌑 Attiva</button>
+          </div>
+        `}
+        <div class="muted" id="dark-status-${containerId}" style="margin-top:4px;"></div>
+        ` : ''}
         <div class="divider"></div>
         <div class="flex-between" style="margin-bottom:6px;"><span class="muted">🛡️ Armor Forms (Digimental, 0 EP, 1 volta a Riposo)</span></div>
         ${(d.armorForms||[]).length===0 ? '<div class="muted" style="margin-bottom:6px;">Nessuna Armor Form registrata.</div>' : d.armorForms.map((af,ai)=>`
@@ -2280,7 +2670,7 @@
           const tn = 18 + cost;
           const willVal = me.tamer.willpower;
           const { dice, total } = rollSkillCheck(willVal, 0);
-          const verdict = evaluateVsTN(total, tn);
+          const verdict = evaluateVsTN(total, tn, dice);
           let outcomeText;
           if(verdict.cls==='crit-success'){
             applyStageChange(me.digimon, me.digimon.stage, me.digimon.defaultStage);
@@ -2297,6 +2687,100 @@
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = outcomeText;
           renderDigimonCard(me, containerId);
           renderTamerCard(me);
+          refreshLiveParts();
+        };
+      }
+      const blastBtn = document.getElementById('btn-blast-evolve-'+containerId);
+      if(blastBtn){
+        blastBtn.onclick = async ()=>{
+          const target = document.getElementById('blast-target-'+containerId).value;
+          const statusEl = document.getElementById('blast-status-'+containerId);
+          const usesLeft = me.digimon.blastEvolutionUses!=null ? me.digimon.blastEvolutionUses : 1;
+          const maxAccessible = STAGES[Math.min(5, stageIndex(me.digimon.defaultStage)+Number(me.digimon.defaultRange||0))];
+          if(usesLeft<=0){ statusEl.textContent = 'Nessun uso di Blast Evolution rimasto in questa campagna.'; return; }
+          if((me.digimon.battery||0) < batteryCap(me.digimon.stage)){ statusEl.textContent = 'Serve la Battery al massimo per Blast Evolvere.'; return; }
+          if(stageIndex(target) <= stageIndex(maxAccessible)){ statusEl.textContent = `Blast Evolution richiede uno Stage oltre il tuo Default Range (già accessibile fino a ${maxAccessible}).`; return; }
+          const preBlastStage = me.digimon.stage;
+          me.digimon.battery = 0;
+          me.digimon.blastEvolutionUses = usesLeft - 1;
+          applyStageChange(me.digimon, me.digimon.stage, target);
+          me.digimon.currentWounds = me.digimon.maxWounds;
+          const tn = 12 + stageIndex(target);
+          const willVal = me.tamer.willpower;
+          const { dice, total } = rollSkillCheck(willVal, 0);
+          const verdict = evaluateVsTN(total, tn, dice);
+          let outcomeText;
+          if(verdict.cls==='crit-success'){
+            applyStageChange(me.digimon, me.digimon.stage, preBlastStage);
+            outcomeText = `Successo Critico! Torna allo Stage precedente al Blast (${preBlastStage}) — Stat aggiornate.`;
+          } else if(verdict.cls==='success'){
+            applyStageChange(me.digimon, me.digimon.stage, me.digimon.defaultStage);
+            outcomeText = `Successo! Torna al Default Stage (${me.digimon.defaultStage}) — Stat aggiornate.`;
+          } else if(verdict.cls==='crit-fail'){
+            outcomeText = `Fallimento Critico! Il Digimon regredisce a Digitama come se fosse stato sconfitto (gestire a mano).`;
+          } else {
+            const revertIdx = Math.max(0, stageIndex(me.digimon.defaultStage)-1);
+            applyStageChange(me.digimon, me.digimon.stage, STAGES[revertIdx]);
+            outcomeText = `Fallimento. Scende a ${STAGES[revertIdx]} (sotto il Default Stage) e non può Evolvere per il resto del Combattimento.`;
+          }
+          await saveMember(session.code, me);
+          await pushLog(session.code, { who: session.username, role:'roll', text: `💥 Blast Evolution a ${target} — Willpower Check (TN ${tn}): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText} (Usi rimasti: ${me.digimon.blastEvolutionUses})`, meta:{ dice } });
+          statusEl.style.color='var(--text-mute)'; statusEl.textContent = outcomeText;
+          renderDigimonCard(me, containerId);
+          renderTamerCard(me);
+          refreshLiveParts();
+        };
+      }
+      const slideBtn = document.getElementById('btn-slide-evolve-'+containerId);
+      if(slideBtn){
+        slideBtn.onclick = async ()=>{
+          const newName = document.getElementById('slide-name-'+containerId).value.trim();
+          const woundDiff = Number(document.getElementById('slide-wounddiff-'+containerId).value)||0;
+          const statusEl = document.getElementById('slide-status-'+containerId);
+          if(!newName){ statusEl.textContent = 'Inserisci il nome della forma alternativa.'; return; }
+          if(Number(me.digimon.evolutionPoints||0) < 1){ statusEl.textContent = 'Serve almeno 1 Evolution Point.'; return; }
+          me.digimon.evolutionPoints = Number(me.digimon.evolutionPoints||0) - 1;
+          me.digimon.name = newName;
+          if(woundDiff !== 0){
+            me.digimon.maxWounds = Math.max(1, Number(me.digimon.maxWounds||1) + woundDiff);
+            me.digimon.currentWounds = Math.max(0, Math.min(me.digimon.maxWounds, Number(me.digimon.currentWounds||0) + woundDiff));
+          }
+          await saveMember(session.code, me);
+          await pushLog(session.code, { who: session.username, role:'player', text: `🔀 ${me.digimon.name} usa Slide Evolution (stesso Stage, 1 Evolution Point speso)${woundDiff!==0?`, Ferite Massime ${woundDiff>0?'+':''}${woundDiff}`:''}.` });
+          statusEl.style.color='var(--text-mute)'; statusEl.textContent = `Slide Evolution completata: ora sei ${newName}.`;
+          renderDigimonCard(me, containerId);
+          refreshLiveParts();
+        };
+      }
+      const darkStartBtn = document.getElementById('btn-dark-evolve-start-'+containerId);
+      if(darkStartBtn){
+        darkStartBtn.onclick = async ()=>{
+          const target = document.getElementById('dark-target-'+containerId).value;
+          const statusEl = document.getElementById('dark-status-'+containerId);
+          applyStageChange(me.digimon, me.digimon.stage, target);
+          me.digimon.darkEvolutionActive = true;
+          if(!me.digimon.qualities) me.digimon.qualities = [];
+          if(!me.digimon.qualities.some(q=>q.mechanic==='combatMonster')){
+            me.digimon.qualities.push({ name:'Combat Monster (Dark Evolution, gratis)', cost:0, category:'Static', description:'Ottenuta gratis con Dark Evolution, già al massimo del Resolve.', mechanic:'combatMonster', rank:3 });
+          }
+          me.digimon.resolveCurrent = me.digimon.resolveMax || 4;
+          await saveMember(session.code, me);
+          await pushLog(session.code, { who:'Sistema', role:'gm', text: `🌑 ${me.digimon.name} subisce Dark Evolution! Il Master ne prende il controllo: attacca chiunque si muova finché non sconfigge tutti, viene sconfitto, passano ${target} turni, o il Tamer supera un Check Willpower TN 20. Il Tamer guadagna 1 nuovo Torment (Marked pari allo Stage).` });
+          statusEl.style.color='var(--danger)'; statusEl.textContent = 'Dark Evolution attiva.';
+          renderDigimonCard(me, containerId);
+          refreshLiveParts();
+        };
+      }
+      const darkEndBtn = document.getElementById('btn-dark-evolve-end-'+containerId);
+      if(darkEndBtn){
+        darkEndBtn.onclick = async ()=>{
+          const statusEl = document.getElementById('dark-status-'+containerId);
+          applyStageChange(me.digimon, me.digimon.stage, me.digimon.defaultStage);
+          me.digimon.darkEvolutionActive = false;
+          await saveMember(session.code, me);
+          await pushLog(session.code, { who:'Sistema', role:'gm', text: `${me.digimon.name} rientra dalla Dark Evolution, tornando a ${me.digimon.defaultStage}.` });
+          statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Dark Evolution terminata.';
+          renderDigimonCard(me, containerId);
           refreshLiveParts();
         };
       }
@@ -2365,6 +2849,11 @@
               <option ${d.stance==='Neutral'?'selected':''}>Neutral</option>
               <option ${d.stance==='Offensive'?'selected':''}>Offensive</option>
               <option ${d.stance==='Defensive'?'selected':''}>Defensive</option>
+              <option ${d.stance==='Fierce'?'selected':''}>Fierce</option>
+              <option ${d.stance==='Brave'?'selected':''}>Brave</option>
+              <option ${d.stance==='Sentry'?'selected':''}>Sentry</option>
+              <option ${d.stance==='Martial'?'selected':''}>Martial</option>
+              <option ${d.stance==='Anticipate'?'selected':''}>Anticipate</option>
             </select>
           </div>
           <div class="field" style="max-width:70px;"><label>Colore Chat</label><input type="color" id="e-d-color-${containerId}" value="${d.chatColor||'#c896ff'}" style="padding:2px;height:38px;" /></div>
@@ -2402,6 +2891,7 @@
           <label style="display:flex;align-items:center;gap:4px;font-size:11px;flex:1;"><input type="checkbox" id="atk-area-${containerId}" /> Area Attack</label>
           <button class="btn small" id="btn-atk-add-${containerId}" style="flex:1;">Aggiungi</button>
         </div>
+        <div class="err" id="atk-add-err-${containerId}" style="margin-top:4px;"></div>
         <div class="divider"></div>
         <div class="muted" style="margin-bottom:6px;">Evoluzione</div>
         <div class="row">
@@ -2410,6 +2900,13 @@
           </div>
           <div class="field"><label>Default Range</label><input type="number" id="e-d-defrange-${containerId}" value="${d.defaultRange||1}" min="0" /></div>
           <div class="field"><label>Evolution Points</label><input type="number" id="e-d-evopts-${containerId}" value="${d.evolutionPoints||0}" min="0" /></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Attributo (Variant Rule 2.05c)</label>
+            <select id="e-d-attribute-${containerId}">
+              ${['Vaccine','Data','Virus','Free','Variable'].map(a=>`<option ${d.attribute===a?'selected':''}>${a}</option>`).join('')}
+            </select>
+          </div>
         </div>
         <div class="divider"></div>
         <div class="muted" style="margin-bottom:6px;">🛡️ Armor Forms</div>
@@ -2439,6 +2936,13 @@
             ${QUALITY_CATALOG.map((q,qi)=>`<option value="${qi}">${escapeHTML(q.name)} (${q.category}, ${q.dpPerRank} DP/Rank)</option>`).join('')}
           </select>
           <input type="number" id="e-d-qual-rank-${containerId}" value="1" min="1" placeholder="Rank" style="flex:1;" />
+          <select id="e-d-qual-stat-${containerId}" style="flex:1;" title="Solo per Naturewalk: a quale Stat va il +1?">
+            <option value="accuracy">+1 Accuracy</option>
+            <option value="damage">+1 Damage</option>
+            <option value="dodge">+1 Dodge</option>
+            <option value="armor">+1 Armor</option>
+            <option value="health">+1 Health (manuale)</option>
+          </select>
         </div>
         <div class="row" style="margin-top:6px;">
           <input type="text" id="e-d-qual-name-${containerId}" placeholder="Nome (se personalizzata)" style="flex:2;" />
@@ -2469,11 +2973,19 @@
       };
       renderAtkList();
       document.getElementById('btn-atk-add-'+containerId).onclick = ()=>{
+        const errEl = document.getElementById('atk-add-err-'+containerId);
+        if(errEl) errEl.textContent = '';
         const name = document.getElementById('atk-name-'+containerId).value.trim();
         if(!name) return;
         const shape = document.getElementById('atk-shape-'+containerId).value;
         const type = document.getElementById('atk-type-'+containerId).value;
         const effectKey = type==='Support' ? document.getElementById('atk-effect-'+containerId).value : '';
+        if(effectKey && !hasEffectQuality(d, effectKey)){
+          const def = EFFECT_DEFS.find(e=>e.key===effectKey);
+          const reqName = EFFECT_QUALITY_MAP[effectKey];
+          if(errEl) errEl.textContent = `Manca la Quality "${reqName}": acquistala prima di poter usare [${def?def.label.toUpperCase():effectKey}] su un Attacco.`;
+          return;
+        }
         const extraTags = document.getElementById('atk-extra-'+containerId).value.trim();
         const desc = document.getElementById('atk-desc-'+containerId).value.trim();
         const signature = document.getElementById('atk-sig-'+containerId).checked;
@@ -2547,13 +3059,17 @@
           const q = QUALITY_CATALOG[Number(catalogIdx)];
           if(!q) return;
           const clampedRank = Math.min(q.maxRank, rank);
-          name = `${q.name}${q.maxRank>1?` (Rank ${clampedRank})`:''}`;
+          const statTarget = document.getElementById('e-d-qual-stat-'+containerId).value;
+          const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health (manuale)' };
+          name = `${q.name}${q.maxRank>1?` (Rank ${clampedRank})`:''}${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}`;
           cost = q.dpPerRank * clampedRank;
           category = q.category;
           description = q.desc;
           mechanic = q.mechanic;
           if(!d.qualities) d.qualities = [];
-          d.qualities.push({ name, cost, category, description, mechanic, rank: clampedRank });
+          const qualityEntry = { name, cost, category, description, mechanic, rank: clampedRank };
+          if(q.mechanic==='naturewalk') qualityEntry.statTarget = statTarget;
+          d.qualities.push(qualityEntry);
         } else {
           name = document.getElementById('e-d-qual-name-'+containerId).value.trim();
           if(!name) return;
@@ -2590,6 +3106,7 @@
         me.digimon.baseHealth = Number(document.getElementById('e-d-hp-'+containerId).value)||0;
         me.digimon.defaultStage = document.getElementById('e-d-defstage-'+containerId).value;
         me.digimon.defaultRange = Number(document.getElementById('e-d-defrange-'+containerId).value)||0;
+        me.digimon.attribute = document.getElementById('e-d-attribute-'+containerId).value;
         me.digimon.evolutionPoints = Number(document.getElementById('e-d-evopts-'+containerId).value)||0;
         me.digimon.dpTotal = Number(document.getElementById('e-d-dptotal-'+containerId).value)||0;
         me.digimon.resolveMax = Number(document.getElementById('e-d-resmax-'+containerId).value)||0;
@@ -2688,7 +3205,7 @@
           aspectNote += ` +${bonus} Miracle (-7 IP)`;
         }
         await saveMember(session.code, me);
-        const verdict = evaluateVsTN(total, tnVal);
+        const verdict = evaluateVsTN(total, tnVal, dice);
         const resEl = document.getElementById('roll-result-'+containerId);
         resEl.innerHTML = `${diceRowHTML(dice)}<span class="roll-total">${total}</span>${verdict?`<span class="roll-verdict ${verdict.cls}">${verdict.label}</span>`:''}`;
         const logText = `tira ${def.label} (${ATTR_ABBR[chosenAttr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict ? ` vs TN ${tnVal} → ${verdict.label}` : '');
@@ -2748,7 +3265,7 @@
       } else if(aspectWanted){
         aspectNote = ` (nessun uso di Aspect ${aspectWanted} disponibile, ignorato)`;
       }
-      const verdict = evaluateVsTN(total, tn);
+      const verdict = evaluateVsTN(total, tn, dice);
       return {
         dice, isPool:false, resultLabel: String(total), verdict,
         text: `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict ? ` vs TN ${tn} → ${verdict.label}` : '')
@@ -2790,14 +3307,20 @@
               <button class="btn small" id="btn-add-encounter" style="flex:1;">Aggiungi</button>
             </div>
             <div class="divider"></div>
-            <button class="btn solid" id="btn-save-scene" style="width:100%;">Aggiorna Scena</button>
+            <div class="row">
+              <button class="btn solid" id="btn-save-scene" style="flex:2;">Aggiorna Scena</button>
+              <button class="btn ghost" id="btn-new-scene" style="flex:1;">🆕 Nuova Scena (chat pulita)</button>
+            </div>
+            <div class="muted" style="margin-top:4px;font-size:11px;">"Nuova Scena" azzera Titolo/Sfondo/Musica/Incontri/Settori e apre una chat vuota per questa Scena — la chat delle Scene precedenti resta salvata ma non più visibile qui.</div>
             <div class="muted" id="scene-status" style="margin-top:6px;"></div>
             ${cachedScene.music ? `<audio controls src="${escapeAttr(cachedScene.music)}" style="width:100%;margin-top:10px;"></audio>` : ''}
           </div>
 
+          <div class="hud-frame card" id="sector-map-card"></div>
+
           <div class="hud-frame card">
             <div class="section-title">Registro Narrativo</div>
-            <div class="log" id="log-live">${logHTML(cachedLog, session.role==='master')}</div>
+            <div class="log" id="log-live">${logHTML(sceneLog(), session.role==='master')}</div>
             <div class="field" style="margin-top:10px;"><label>Parla come</label>
               <select id="speak-as">
                 <option value="master">Master (narrazione)</option>
@@ -2815,6 +3338,9 @@
               <input type="color" id="speak-color" value="#ff8a3d" style="flex:1;padding:2px;height:34px;" />
             </div>
             <textarea id="gm-text" rows="2" placeholder="Narrazione del Master..."></textarea>
+            <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--text-mute);">
+              <input type="checkbox" id="gm-digimoji-toggle" /> ✍️ Scrivi in Digimoji (font decorativo)
+            </label>
             <button class="btn amber" id="btn-gm-post" style="width:100%;margin-top:8px;">Pubblica</button>
           </div>
 
@@ -2851,6 +3377,7 @@
             <div class="hud-frame card" id="progression-card"></div>
             <div class="hud-frame card" id="encounter-balance-card"></div>
             <div class="hud-frame card" id="mounting-tn-card"></div>
+            <div class="hud-frame card" id="gm-reference-card"></div>
             <div class="hud-frame card">
               <div class="flex-between" style="margin-bottom:6px;">
                 <div class="section-title" style="margin:0;border:none;padding:0;">Digidex</div>
@@ -2873,20 +3400,43 @@
     renderPrivateChatMaster(code, players);
     renderProgressionMaster(code);
     renderEncounterBalance();
+    renderGMReference();
+    renderSectorMap(code);
     renderMountingTN();
     attachLogModeration(document.getElementById('log-live'), code);
     document.getElementById('btn-logout').onclick = logout;
     document.getElementById('btn-save-scene').onclick = async ()=>{
       const newScene = {
+        id: cachedScene.id,
         title: document.getElementById('scene-title').value,
         background: document.getElementById('scene-bg').value,
         music: document.getElementById('scene-music').value,
-        encounters: cachedScene.encounters || []
+        encounters: cachedScene.encounters || [],
+        macroScenes: cachedScene.macroScenes || [],
+        currentMacroSceneId: cachedScene.currentMacroSceneId || null,
+        currentSectorId: cachedScene.currentSectorId || null,
+        currentLuogoId: cachedScene.currentLuogoId || null
       };
       const ok = await saveScene(code, newScene);
+      cachedScene = newScene;
       const statusEl = document.getElementById('scene-status');
       statusEl.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
       statusEl.textContent = ok ? 'Scena aggiornata per tutti i giocatori.' : ('Errore: ' + (lastApiError||''));
+      if(ok) refreshLiveParts();
+    };
+    document.getElementById('btn-new-scene').onclick = async ()=>{
+      if(!window.confirm('Aprire una Nuova Scena? Titolo, sfondo, musica e incontri verranno azzerati (le Macroscene/Settori/Luoghi restano disponibili per essere riselezionati), e si aprirà una chat pulita per questa Scena (la chat precedente resta salvata ma non più visibile qui).')) return;
+      const newScene = {
+        id: 'scene'+Date.now()+Math.random().toString(36).slice(2,6),
+        title: '', background: '', music: '', encounters: [],
+        macroScenes: cachedScene.macroScenes || [], currentMacroSceneId: null, currentSectorId: null, currentLuogoId: null
+      };
+      const ok = await saveScene(code, newScene);
+      cachedScene = newScene;
+      await pushLog(code, { who:'Sistema', role:'gm', text: '🆕 Il Master apre una Nuova Scena.' });
+      const statusEl = document.getElementById('scene-status');
+      statusEl.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
+      statusEl.textContent = ok ? 'Nuova Scena aperta, con chat pulita.' : ('Errore: ' + (lastApiError||''));
       if(ok) refreshLiveParts();
     };
     const speakAsSel = document.getElementById('speak-as');
@@ -2937,8 +3487,11 @@
       if(avatar) meta.avatar = avatar;
       const chosenColor = colorInput ? colorInput.value : color;
       if(chosenColor) meta.color = chosenColor;
+      const gmDigimojiChk = document.getElementById('gm-digimoji-toggle');
+      if(gmDigimojiChk && gmDigimojiChk.checked) meta.digimoji = true;
       await pushLog(code, { who, role, text, meta: Object.keys(meta).length ? meta : null });
       ta.value='';
+      if(gmDigimojiChk) gmDigimojiChk.checked = false;
       refreshLiveParts();
     };
     const reqBtn = document.getElementById('btn-request-roll');
@@ -3012,10 +3565,15 @@
   function getParticipantClashStats(p){
     if(p.isPC){
       const member = cachedRoster.find(m=>m.username===p.username);
-      if(member) return computeDerivedStats(member.digimon);
-      return { cpu:0, ram:0 };
+      if(member){
+        const stats = computeDerivedStats(member.digimon);
+        const qMech = computeQualityMechanics(member.digimon.qualities);
+        stats.clashBonus = qMech.brawlerClash || 0;
+        return stats;
+      }
+      return { cpu:0, ram:0, clashBonus:0 };
     }
-    return { cpu: Math.max(0, Math.floor(Number(p.armor||0)/3)), ram: Number(p.ram||0) };
+    return { cpu: Math.max(0, Math.floor(Number(p.armor||0)/3)), ram: Number(p.ram||0), clashBonus:0 };
   }
 
   function getParticipantWounds(p){
@@ -3051,8 +3609,64 @@
     { key:'pull', label:'Pull', type:'negative', mods:{}, instant:'pull' },
     { key:'push', label:'Push', type:'negative', mods:{}, instant:'push' },
     { key:'cleanse', label:'Cleanse', type:'positive', mods:{}, instant:'cleanse' },
-    { key:'shield', label:'Shield', type:'positive', mods:{}, instant:'shield' }
+    { key:'shield', label:'Shield', type:'positive', mods:{}, instant:'shield' },
+    { key:'lag', label:'Lag', type:'negative', mods:{} },
+    { key:'lead', label:'Lead', type:'positive', mods:{} },
+    { key:'tailwind', label:'Tailwind', type:'positive', mods:{} },
+    { key:'vague', label:'Vague', type:'negative', mods:{ accuracy:-1 } },
+    { key:'heavy', label:'Heavy', type:'negative', mods:{} },
+    { key:'freeze', label:'Freeze', type:'negative', mods:{}, tick:true },
+    { key:'paralyze', label:'Paralyze', type:'negative', mods:{ dodge:-1 } },
+    { key:'rattled', label:'Rattled', type:'negative', mods:{ damage:-1, dodge:-1 } },
+    { key:'shaken', label:'Shaken', type:'negative', mods:{ accuracy:-1, armor:-1 } },
+    { key:'weak', label:'Weak', type:'negative', mods:{ damage:-1, armor:-1 } },
+    { key:'strength', label:'Strength', type:'positive', mods:{ damage:1, armor:1 } },
+    { key:'vigil', label:'Vigil', type:'positive', mods:{ dodge:1, armor:1 } },
+    { key:'vigor', label:'Vigor', type:'positive', mods:{ dodge:1 } },
+    { key:'steady', label:'Steady', type:'positive', mods:{ damage:1, dodge:1 } },
+    { key:'regen', label:'Regen', type:'positive', mods:{} },
+    { key:'ruin', label:'Ruin', type:'negative', mods:{}, tick:true },
+    { key:'doom', label:'Doom', type:'negative', mods:{} },
+    { key:'blind', label:'Blind', type:'negative', mods:{} },
+    { key:'dot', label:'Dot', type:'negative', mods:{} },
+    { key:'stun', label:'Stun', type:'negative', mods:{} },
+    { key:'immune', label:'Immune', type:'positive', mods:{} },
+    { key:'deny', label:'Deny', type:'positive', mods:{} },
+    { key:'haste', label:'Haste', type:'positive', mods:{} }
   ];
+
+  const EFFECT_QUALITY_MAP = {
+    fear:'Basic Effect: Fear', slow:'Basic Effect: Slow', keen:'Basic Effect: Keen', swift:'Basic Effect: Swift',
+    cleanse:'Basic Effect: Cleanse', root:'Basic Effect: Root', taunt:'Basic Effect: Taunt', push:'Basic Effect: Push', pull:'Basic Effect: Pull',
+    lag:'Basic Effect: Lag', lead:'Basic Effect: Lead', tailwind:'Basic Effect: Tailwind', vague:'Basic Effect: Vague',
+    confuse:'Advanced Effect: Confuse', distract:'Advanced Effect: Distract', dull:'Advanced Effect: Dull', frail:'Advanced Effect: Frail',
+    sturdy:'Advanced Effect: Sturdy', sharpen:'Advanced Effect: Sharpen', nimble:'Advanced Effect: Nimble', exploit:'Advanced Effect: Exploit',
+    burn:'Advanced Effect: Burn', poison:'Advanced Effect: Poison', shield:'Advanced Effect: Shield',
+    heavy:'Advanced Effect: Heavy', freeze:'Advanced Effect: Freeze',
+    fury:'Master Effect: Fury', pacify:'Master Effect: Pacify', debilitate:'Master Effect: Debilitate', bastion:'Master Effect: Bastion', daring:'Master Effect: Daring',
+    paralyze:'Master Effect: Paralyze', rattled:'Master Effect: Rattled', shaken:'Master Effect: Shaken', weak:'Master Effect: Weak',
+    strength:'Master Effect: Strength', vigil:'Master Effect: Vigil', vigor:'Master Effect: Vigor', steady:'Master Effect: Steady',
+    regen:'Master Effect: Regen', ruin:'Master Effect: Ruin', doom:'Master Effect: Doom', blind:'Master Effect: Blind',
+    dot:'Master Effect: Dot', stun:'Master Effect: Stun', immune:'Master Effect: Immune', deny:'Master Effect: Deny', haste:'Master Effect: Haste'
+  };
+  function hasAttributeAdvantage(atkAttr, defAttr){
+    if(!atkAttr || !defAttr) return false;
+    if(atkAttr==='Free' || defAttr==='Free' || atkAttr==='Variable' || defAttr==='Variable') return false;
+    const table = { Vaccine:'Virus', Virus:'Data', Data:'Vaccine' };
+    return table[atkAttr] === defAttr;
+  }
+  function getParticipantAttribute(p){
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      return member ? (member.digimon.attribute||'Free') : 'Free';
+    }
+    return p.attribute || 'Free';
+  }
+  function hasEffectQuality(d, effectKey){
+    const required = EFFECT_QUALITY_MAP[effectKey];
+    if(!required) return true; // no known requirement (e.g. custom/unlisted effect) — allow
+    return (d.qualities||[]).some(q=>q.name===required);
+  }
 
   async function applyInstantEffect(code, target, key, potency){
     const def = EFFECT_DEFS.find(d=>d.key===key);
@@ -3154,7 +3768,7 @@
 
   function getParticipantCombatStats(p){
     let base;
-    let stanceMod = { accuracy:0, dodge:0 };
+    let stanceMod = { accuracy:0, dodge:0, damage:0, armor:0 };
     let qMech = { certainStrike:0, weapon:0, ammoRank:0, combatMonster:0, monsterStrength:false };
     if(p.isPC){
       const member = cachedRoster.find(m=>m.username===p.username);
@@ -3164,14 +3778,17 @@
       base = { accuracy: p.accuracy||0, damage: p.damage||0, dodge: p.dodge||0, armor: p.armor||0 };
     }
     const mod = computeEffectModifiers(p);
+    const nw = qMech.naturewalk || { accuracy:0, damage:0, dodge:0, armor:0 };
+    const sc = qMech.supremeCode || 0;
     return {
-      accuracy: Math.max(0, base.accuracy + mod.accuracy + stanceMod.accuracy),
-      damage: Math.max(0, base.damage + mod.damage + qMech.weapon),
-      dodge: Math.max(0, base.dodge + mod.dodge + stanceMod.dodge),
-      armor: Math.max(0, base.armor + mod.armor),
+      accuracy: Math.max(0, base.accuracy + mod.accuracy + stanceMod.accuracy + qMech.weapon + nw.accuracy + sc),
+      damage: Math.max(0, base.damage + mod.damage + stanceMod.damage + qMech.weapon + nw.damage + sc),
+      dodge: Math.max(0, base.dodge + mod.dodge + stanceMod.dodge + (qMech.instinctDodge||0) + nw.dodge + sc),
+      armor: Math.max(0, base.armor + mod.armor + stanceMod.armor + (qMech.wardenArmor||0) + nw.armor + sc),
       certainStrike: qMech.certainStrike,
       combatMonsterRank: qMech.combatMonster,
-      monsterStrength: qMech.monsterStrength
+      monsterStrength: qMech.monsterStrength,
+      absoluteEvasion: qMech.absoluteEvasion||0
     };
   }
 
@@ -3247,6 +3864,32 @@
           <option value="Extreme" ${prog.campaignLevel==='Extreme'?'selected':''}>Extreme (più lunga, TN +2)</option>
         </select>
       </div>
+      <div class="field"><label>Variant Rule 2.05c — Attribute Advantage</label>
+        <select id="attr-advantage-select">
+          <option value="" ${!prog.attributeAdvantage?'selected':''}>Disattivata</option>
+          <option value="minor" ${prog.attributeAdvantage==='minor'?'selected':''}>Minor Advantage (+1d6 Accuracy)</option>
+          <option value="major" ${prog.attributeAdvantage==='major'?'selected':''}>Major Advantage (+1 Successo automatico)</option>
+        </select>
+      </div>
+      <div class="muted" style="margin-bottom:8px;">Vaccine batte Virus, Virus batte Data, Data batte Vaccine. Free non partecipa. Variable sceglie l'Attributo all'Iniziativa (impostalo nella scheda Digimon).</div>
+      <label style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+        <input type="checkbox" id="natcrit-toggle" ${prog.naturalCriticalResults?'checked':''} />
+        <span class="muted">Variant Rule 2.06d — Natural Critical Results (3d6 tutti 6 = Successo Critico automatico, tutti 1 = Fallimento Critico automatico, su Check e Torment Check)</span>
+      </label>
+      <div class="divider"></div>
+      <div class="muted" style="margin-bottom:6px;">Variant Rules 2.02a — visibili ai giocatori solo se attivate qui:</div>
+      <label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+        <input type="checkbox" id="blastevo-toggle" ${prog.blastEvolutionEnabled?'checked':''} />
+        <span class="muted">💥 Blast Evolution</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+        <input type="checkbox" id="slideevo-toggle" ${prog.slideEvolutionEnabled?'checked':''} />
+        <span class="muted">🔀 Slide Evolution</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+        <input type="checkbox" id="darkevo-toggle" ${prog.darkEvolutionEnabled?'checked':''} />
+        <span class="muted">🌑 Dark Evolution</span>
+      </label>
       <div class="grid-stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:10px;">
         <div class="stat-box"><div class="v">${prog.milestone}</div><div class="l">Milestone</div></div>
         <div class="stat-box"><div class="v">${prog.xp}/7</div><div class="l">XP</div></div>
@@ -3306,6 +3949,45 @@
       cachedProgression = prog;
       await pushLog(code, { who:'Sistema', role:'gm', text: `⚙ Campaign Level impostato su ${prog.campaignLevel}.` });
       renderProgressionMaster(code);
+    };
+    document.getElementById('attr-advantage-select').onchange = async (e)=>{
+      prog.attributeAdvantage = e.target.value;
+      await saveProgression(code, prog);
+      cachedProgression = prog;
+      const label = e.target.value==='minor' ? 'Minor Advantage' : (e.target.value==='major' ? 'Major Advantage' : 'Disattivata');
+      await pushLog(code, { who:'Sistema', role:'gm', text: `⚙ Variant Rule Attribute Advantage: ${label}.` });
+      renderProgressionMaster(code);
+    };
+    document.getElementById('natcrit-toggle').onchange = async (e)=>{
+      prog.naturalCriticalResults = e.target.checked;
+      await saveProgression(code, prog);
+      cachedProgression = prog;
+      await pushLog(code, { who:'Sistema', role:'gm', text: `⚙ Variant Rule Natural Critical Results: ${prog.naturalCriticalResults?'Attiva':'Disattivata'}.` });
+      renderProgressionMaster(code);
+    };
+    document.getElementById('blastevo-toggle').onchange = async (e)=>{
+      prog.blastEvolutionEnabled = e.target.checked;
+      await saveProgression(code, prog);
+      cachedProgression = prog;
+      await pushLog(code, { who:'Sistema', role:'gm', text: `⚙ Blast Evolution ${prog.blastEvolutionEnabled?'resa disponibile ai giocatori':'nascosta ai giocatori'}.` });
+      renderProgressionMaster(code);
+      refreshLiveParts();
+    };
+    document.getElementById('slideevo-toggle').onchange = async (e)=>{
+      prog.slideEvolutionEnabled = e.target.checked;
+      await saveProgression(code, prog);
+      cachedProgression = prog;
+      await pushLog(code, { who:'Sistema', role:'gm', text: `⚙ Slide Evolution ${prog.slideEvolutionEnabled?'resa disponibile ai giocatori':'nascosta ai giocatori'}.` });
+      renderProgressionMaster(code);
+      refreshLiveParts();
+    };
+    document.getElementById('darkevo-toggle').onchange = async (e)=>{
+      prog.darkEvolutionEnabled = e.target.checked;
+      await saveProgression(code, prog);
+      cachedProgression = prog;
+      await pushLog(code, { who:'Sistema', role:'gm', text: `⚙ Dark Evolution ${prog.darkEvolutionEnabled?'resa disponibile':'nascosta'}.` });
+      renderProgressionMaster(code);
+      refreshLiveParts();
     };
     document.getElementById('btn-milestone-narrative').onclick = async ()=>{
       prog.milestone += 1;
@@ -3529,6 +4211,11 @@
         <input type="number" id="combat-enemy-arm" placeholder="Armor" value="0" style="flex:1;" />
         <input type="number" id="combat-enemy-hp" placeholder="Health" value="1" style="flex:1;" />
       </div>
+      <div class="row" style="margin-top:6px;">
+        <select id="combat-enemy-attribute" style="flex:1;">
+          ${['Free','Vaccine','Data','Virus','Variable'].map(a=>`<option>${a}</option>`).join('')}
+        </select>
+      </div>
       <button class="btn small" id="btn-combat-add-enemy" style="width:100%;margin-top:6px;">+ Aggiungi Nemico</button>
       <div class="divider"></div>
       <button class="btn" id="btn-combat-roll-all" style="width:100%;margin-bottom:8px;">🎲 Tira Iniziativa per Tutti</button>
@@ -3635,7 +4322,7 @@
             const tn = 10+stageNum;
             const finVal = Math.max(cStats.cpu, cStats.bit||0);
             const { dice, total } = rollSkillCheck(finVal, 0);
-            const verdict = evaluateVsTN(total, tn);
+            const verdict = evaluateVsTN(total, tn, dice);
             let bonus = 0, bonusNote='';
             if(verdict && (verdict.cls==='success'||verdict.cls==='crit-success')){
               bonus = stageNum;
@@ -3786,9 +4473,23 @@
         const accRoll = rollPool(effAccuracy, overpowerUsed);
         if(overpowerUsed) attacker.overpowerActive = false;
         if(aStats.certainStrike>0) accRoll.successes += aStats.certainStrike;
+        let attrAdvNote = '';
+        const attrRule = cachedProgression && cachedProgression.attributeAdvantage;
+        if(attrRule && hasAttributeAdvantage(getParticipantAttribute(attacker), getParticipantAttribute(target))){
+          if(attrRule==='minor'){
+            const bonusDie = rollD6();
+            accRoll.dice.push(bonusDie);
+            if(bonusDie>=4) accRoll.successes += 1;
+            attrAdvNote = ` [Attribute Advantage (Minor): +1d6(${bonusDie})]`;
+          } else if(attrRule==='major'){
+            accRoll.successes += 1;
+            attrAdvNote = ' [Attribute Advantage (Major): +1 Successo automatico]';
+          }
+        }
         const dodgeRoll = rollPool(tStats.dodge);
+        if(tStats.absoluteEvasion>0) dodgeRoll.successes += tStats.absoluteEvasion;
         const zoneNote = (zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza: ${attacker.zone||'Medio'}→${target.zone||'Medio'})` : '') + (overpowerUsed ? ' [Overpower: 4 conta come Successo]' : '');
-        const certainNote = aStats.certainStrike>0 ? ` +${aStats.certainStrike} [CERTAIN]` : '';
+        const certainNote = (aStats.certainStrike>0 ? ` +${aStats.certainStrike} [CERTAIN]` : '') + attrAdvNote;
         const atkLabel = atk ? `${atk.name} ${attackTagsPlain(atk)}` : 'Attacco generico';
         let logText, dealt = 0;
 
@@ -3880,6 +4581,7 @@
         for(const v of victims){
           const vStats = getParticipantCombatStats(v);
           const dodgeRoll = rollPool(vStats.dodge);
+          if(vStats.absoluteEvasion>0) dodgeRoll.successes += vStats.absoluteEvasion;
           if(accRoll.successes <= dodgeRoll.successes){
             lines.push(`— ${v.name}: MANCATO (Dodge ${vStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ.)`);
             continue;
@@ -3947,8 +4649,8 @@
           winner = aPinned ? b : a; loser = aPinned ? a : b;
           autoWin = true;
         } else {
-          const aBonus = a.clashComebackBonus||0;
-          const bBonus = b.clashComebackBonus||0;
+          const aBonus = (a.clashComebackBonus||0) + (aStats.clashBonus||0);
+          const bBonus = (b.clashComebackBonus||0) + (bStats.clashBonus||0);
           aRoll = rollSkillCheck(aStats.cpu, aStats.ram); aRoll.total += aBonus;
           bRoll = rollSkillCheck(bStats.cpu, bStats.ram); bRoll.total += bBonus;
           if(aRoll.total > bRoll.total){ winner=a; loser=b; }
@@ -4282,9 +4984,10 @@
       const dodge = Number(document.getElementById('combat-enemy-dodge').value)||0;
       const armor = Number(document.getElementById('combat-enemy-arm').value)||0;
       const maxWounds = Number(document.getElementById('combat-enemy-hp').value)||1;
+      const attribute = document.getElementById('combat-enemy-attribute').value;
       combat.participants.push({
         id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name, side:'enemy', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], zone:'Medio', clashPinned:false, clashComebackBonus:0, isPC:false,
-        accuracy, damage, dodge, armor, maxWounds, currentWounds: maxWounds
+        accuracy, damage, dodge, armor, maxWounds, currentWounds: maxWounds, attribute
       });
       await persistAndRefresh();
     };
@@ -4385,9 +5088,272 @@
     `;
   }
 
+  function renderSectorMap(code){
+    const el = document.getElementById('sector-map-card');
+    if(!el) return;
+    const macroScenes = cachedScene.macroScenes || [];
+    const activeMacro = macroScenes.find(m=>m.id===cachedScene.currentMacroSceneId) || null;
+    const sectors = activeMacro ? (activeMacro.sectors||[]) : [];
+    const terrainBadge = (t)=> t==='Dangerous' ? '<span class="tag" style="color:var(--danger);border-color:var(--danger);">☠ Pericoloso</span>' : (t==='Difficult' ? '<span class="tag" style="color:var(--amber);border-color:var(--amber);">⚠ Difficile</span>' : '<span class="tag">Normale</span>');
+    const usedPositions = sectors.map(s=>s.gridPos).filter(p=>p!=null);
+    el.innerHTML = `
+      <div class="section-title">🗺️ Mappa: Macroscene → Settori → Luoghi</div>
+      <div class="muted" style="margin-bottom:8px;">Una Macroscena rappresenta una regione/location ampia (es. "Foresta di File"); si divide in Settori collegati tra loro (es. "Radura Nord"), che a loro volta contengono Luoghi specifici (es. "Vecchia Quercia"). Non sostituisce le zone Corto/Medio/Lungo del Combattimento. Assegna un'immagine e una posizione (1-9) a ogni Settore per vederli nella griglia 3×3 di <b>map.html</b>.</div>
+      <div class="field"><label>Macroscena attiva</label>
+        <select id="macro-select">
+          <option value="">— nessuna —</option>
+          ${macroScenes.map(m=>`<option value="${m.id}" ${cachedScene.currentMacroSceneId===m.id?'selected':''}>${escapeHTML(m.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="row">
+        <input type="text" id="macro-name" placeholder="Nome nuova Macroscena" style="flex:2;" />
+        <button class="btn small" id="btn-add-macro" style="flex:1;">+ Macroscena</button>
+      </div>
+      ${activeMacro ? `
+        <div class="muted" style="margin:8px 0 4px;">${escapeHTML(activeMacro.description||'')}</div>
+        <div class="row" style="margin-bottom:8px;">
+          <button class="btn ghost small" id="btn-remove-macro" style="width:100%;">🗑️ Elimina Macroscena "${escapeHTML(activeMacro.name)}"</button>
+        </div>
+        <div class="divider"></div>
+        <div class="muted" style="margin-bottom:6px;">Settori di "${escapeHTML(activeMacro.name)}"</div>
+        ${sectors.length===0 ? '<div class="muted" style="margin-bottom:8px;">Nessun settore ancora creato in questa Macroscena.</div>' : sectors.map(s=>`
+          <div class="roster-item" style="padding:6px 8px;margin-bottom:6px;${cachedScene.currentSectorId===s.id?'border-color:var(--cyan);':''}">
+            <div class="flex-between">
+              <span style="display:flex;align-items:center;gap:6px;">
+                ${s.image ? `<img src="${escapeAttr(s.image)}" onerror="this.style.display='none'" style="width:28px;height:28px;object-fit:cover;border-radius:4px;" />` : ''}
+                <b>${escapeHTML(s.name)}</b> ${terrainBadge(s.terrain)} <span class="tag">#${s.gridPos!=null?(Number(s.gridPos)+1):'—'}</span> ${cachedScene.currentSectorId===s.id && !cachedScene.currentLuogoId ?'<span class="tag" style="color:var(--cyan);border-color:var(--cyan);">📍 Attuale</span>':''}
+              </span>
+            </div>
+            ${s.description ? `<div class="sub" style="margin-top:2px;">${escapeHTML(s.description)}</div>` : ''}
+            <div class="muted" style="margin-top:2px;font-size:11px;">Collegato a: ${(s.connections||[]).map(cid=>{ const c = sectors.find(x=>x.id===cid); return c?escapeHTML(c.name):''; }).filter(Boolean).join(', ') || 'nessuno'}</div>
+            <div class="row" style="margin-top:4px;">
+              <button class="btn small" data-sector-activate="${s.id}" style="flex:1;">📍 Rendi Attuale</button>
+              <button class="btn ghost small" data-sector-image="${s.id}" style="flex:1;">🖼️ Immagine</button>
+              <select data-sector-gridpos="${s.id}" style="flex:1;">
+                ${[0,1,2,3,4,5,6,7,8].map(p=>`<option value="${p}" ${s.gridPos===p?'selected':''}>Casella ${p+1}${usedPositions.includes(p) && s.gridPos!==p?' (occupata)':''}</option>`).join('')}
+              </select>
+              <button class="btn ghost small" data-sector-remove="${s.id}" style="flex:1;">🗑️</button>
+            </div>
+            <div class="muted" style="margin-top:6px;font-size:11px;">Luoghi in questo Settore:</div>
+            ${(s.luoghi||[]).length===0 ? '<div class="muted" style="font-size:11px;">Nessun luogo ancora.</div>' : (s.luoghi||[]).map(lg=>`
+              <div class="flex-between" style="margin-top:3px;padding:3px 6px;background:rgba(255,255,255,0.03);border-radius:6px;">
+                <span style="font-size:12px;display:flex;align-items:center;gap:5px;">${lg.image?`<img src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" style="width:18px;height:18px;object-fit:cover;border-radius:3px;" />`:''}${escapeHTML(lg.name)} ${cachedScene.currentLuogoId===lg.id?'<span class="tag" style="color:var(--cyan);border-color:var(--cyan);font-size:9px;">📍</span>':''}${lg.description?`<span class="muted" style="font-size:10px;"> — ${escapeHTML(lg.description)}</span>`:''}</span>
+                <span>
+                  <button class="btn small" data-luogo-activate="${s.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">📍</button>
+                  <button class="btn ghost small" data-luogo-image="${s.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">🖼️</button>
+                  <button class="btn ghost small" data-luogo-remove="${s.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">🗑️</button>
+                </span>
+              </div>
+            `).join('')}
+            <div class="row" style="margin-top:6px;">
+              <input type="text" class="luogo-name-input" data-for-sector="${s.id}" placeholder="Nuovo Luogo (es. Vecchia Quercia)" style="flex:2;font-size:11px;" />
+              <button class="btn small" data-luogo-add="${s.id}" style="flex:1;font-size:11px;">+ Luogo</button>
+            </div>
+          </div>
+        `).join('')}
+        <div class="divider"></div>
+        <div class="muted" style="margin-bottom:4px;">Nuovo Settore in "${escapeHTML(activeMacro.name)}"</div>
+        <div class="row">
+          <input type="text" id="sector-name" placeholder="es. Villaggio - Piazza" style="flex:2;" />
+          <select id="sector-terrain" style="flex:1;">
+            <option value="Basic">Terreno Normale</option>
+            <option value="Difficult">Terreno Difficile</option>
+            <option value="Dangerous">Terreno Pericoloso</option>
+          </select>
+        </div>
+        <input type="text" id="sector-desc" placeholder="Breve descrizione (opzionale)" style="width:100%;margin-top:6px;" />
+        <input type="text" id="sector-image" placeholder="URL Immagine (opzionale)" style="width:100%;margin-top:6px;" />
+        <div class="field" style="margin-top:6px;"><label>Posizione in griglia (1-9)</label>
+          <select id="sector-gridpos">
+            ${[0,1,2,3,4,5,6,7,8].map(p=>`<option value="${p}" ${usedPositions.includes(p)?'disabled':''}>Casella ${p+1}${usedPositions.includes(p)?' (occupata)':''}</option>`).join('')}
+          </select>
+        </div>
+        ${sectors.length>0 ? `
+          <div class="muted" style="margin:6px 0 2px;">Collega a:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">
+            ${sectors.map(s=>`<label style="display:flex;align-items:center;gap:4px;font-size:11px;"><input type="checkbox" class="sector-connect-chk" value="${s.id}" /> ${escapeHTML(s.name)}</label>`).join('')}
+          </div>
+        ` : ''}
+        <button class="btn small" id="btn-add-sector" style="width:100%;margin-top:4px;">+ Aggiungi Settore</button>
+      ` : '<div class="muted" style="margin-top:8px;">Seleziona o crea una Macroscena per gestirne i Settori.</div>'}
+      <div class="muted" id="sector-status" style="margin-top:6px;"></div>
+    `;
+    const macroSel = document.getElementById('macro-select');
+    if(macroSel) macroSel.onchange = async ()=>{
+      cachedScene.currentMacroSceneId = macroSel.value || null;
+      cachedScene.currentSectorId = null;
+      cachedScene.currentLuogoId = null;
+      await saveScene(code, cachedScene);
+      renderSectorMap(code);
+      refreshLiveParts();
+    };
+    const addMacroBtn = document.getElementById('btn-add-macro');
+    if(addMacroBtn) addMacroBtn.onclick = async ()=>{
+      const name = document.getElementById('macro-name').value.trim();
+      const statusEl = document.getElementById('sector-status');
+      if(!name){ statusEl.textContent = 'Inserisci un nome per la Macroscena.'; return; }
+      const id = 'ms'+Date.now()+Math.random().toString(36).slice(2,6);
+      if(!cachedScene.macroScenes) cachedScene.macroScenes = [];
+      cachedScene.macroScenes.push({ id, name, description:'', sectors:[] });
+      cachedScene.currentMacroSceneId = id;
+      cachedScene.currentSectorId = null;
+      cachedScene.currentLuogoId = null;
+      await saveScene(code, cachedScene);
+      renderSectorMap(code);
+      refreshLiveParts();
+    };
+    const removeMacroBtn = document.getElementById('btn-remove-macro');
+    if(removeMacroBtn) removeMacroBtn.onclick = async ()=>{
+      const id = activeMacro.id;
+      cachedScene.macroScenes = (cachedScene.macroScenes||[]).filter(m=>m.id!==id);
+      if(cachedScene.currentMacroSceneId===id){ cachedScene.currentMacroSceneId=null; cachedScene.currentSectorId=null; cachedScene.currentLuogoId=null; }
+      await saveScene(code, cachedScene);
+      renderSectorMap(code);
+      refreshLiveParts();
+    };
+    el.querySelectorAll('[data-sector-activate]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        cachedScene.currentSectorId = btn.getAttribute('data-sector-activate');
+        cachedScene.currentLuogoId = null;
+        await saveScene(code, cachedScene);
+        const s = (activeMacro.sectors||[]).find(x=>x.id===cachedScene.currentSectorId);
+        await pushLog(code, { who:'Sistema', role:'gm', text: `📍 Il gruppo si sposta a "${s?s.name:''}".` });
+        renderSectorMap(code);
+        refreshLiveParts();
+      };
+    });
+    el.querySelectorAll('[data-sector-remove]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-sector-remove');
+        activeMacro.sectors = (activeMacro.sectors||[]).filter(s=>s.id!==id);
+        activeMacro.sectors.forEach(s=>{ s.connections = (s.connections||[]).filter(cid=>cid!==id); });
+        if(cachedScene.currentSectorId===id){ cachedScene.currentSectorId = null; cachedScene.currentLuogoId = null; }
+        await saveScene(code, cachedScene);
+        renderSectorMap(code);
+        refreshLiveParts();
+      };
+    });
+    el.querySelectorAll('[data-sector-image]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-sector-image');
+        const s = (activeMacro.sectors||[]).find(x=>x.id===id);
+        if(!s) return;
+        const url = window.prompt('URL immagine per "'+s.name+'":', s.image||'');
+        if(url===null) return;
+        s.image = url.trim();
+        await saveScene(code, cachedScene);
+        renderSectorMap(code);
+        refreshLiveParts();
+      };
+    });
+    el.querySelectorAll('[data-sector-gridpos]').forEach(sel=>{
+      sel.onchange = async ()=>{
+        const id = sel.getAttribute('data-sector-gridpos');
+        const s = (activeMacro.sectors||[]).find(x=>x.id===id);
+        if(!s) return;
+        s.gridPos = Number(sel.value);
+        await saveScene(code, cachedScene);
+        renderSectorMap(code);
+        refreshLiveParts();
+      };
+    });
+    el.querySelectorAll('[data-luogo-activate]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const [sectorId, luogoId] = btn.getAttribute('data-luogo-activate').split(':');
+        cachedScene.currentSectorId = sectorId;
+        cachedScene.currentLuogoId = luogoId;
+        await saveScene(code, cachedScene);
+        const s = (activeMacro.sectors||[]).find(x=>x.id===sectorId);
+        const lg = s ? (s.luoghi||[]).find(x=>x.id===luogoId) : null;
+        await pushLog(code, { who:'Sistema', role:'gm', text: `📍 Il gruppo arriva a "${lg?lg.name:''}" (${s?s.name:''}).` });
+        renderSectorMap(code);
+        refreshLiveParts();
+      };
+    });
+    el.querySelectorAll('[data-luogo-remove]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const [sectorId, luogoId] = btn.getAttribute('data-luogo-remove').split(':');
+        const s = (activeMacro.sectors||[]).find(x=>x.id===sectorId);
+        if(s) s.luoghi = (s.luoghi||[]).filter(l=>l.id!==luogoId);
+        if(cachedScene.currentLuogoId===luogoId) cachedScene.currentLuogoId = null;
+        await saveScene(code, cachedScene);
+        renderSectorMap(code);
+        refreshLiveParts();
+      };
+    });
+    el.querySelectorAll('[data-luogo-image]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const [sectorId, luogoId] = btn.getAttribute('data-luogo-image').split(':');
+        const s = (activeMacro.sectors||[]).find(x=>x.id===sectorId);
+        const lg = s ? (s.luoghi||[]).find(l=>l.id===luogoId) : null;
+        if(!lg) return;
+        const url = window.prompt('URL immagine per "'+lg.name+'":', lg.image||'');
+        if(url===null) return;
+        lg.image = url.trim();
+        await saveScene(code, cachedScene);
+        renderSectorMap(code);
+        refreshLiveParts();
+      };
+    });
+    el.querySelectorAll('[data-luogo-add]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const sectorId = btn.getAttribute('data-luogo-add');
+        const input = el.querySelector(`.luogo-name-input[data-for-sector="${sectorId}"]`);
+        const name = input ? input.value.trim() : '';
+        if(!name) return;
+        const s = (activeMacro.sectors||[]).find(x=>x.id===sectorId);
+        if(!s) return;
+        if(!s.luoghi) s.luoghi = [];
+        s.luoghi.push({ id:'l'+Date.now()+Math.random().toString(36).slice(2,6), name, description:'' });
+        await saveScene(code, cachedScene);
+        renderSectorMap(code);
+        refreshLiveParts();
+      };
+    });
+    const addBtn = document.getElementById('btn-add-sector');
+    if(addBtn){
+      addBtn.onclick = async ()=>{
+        const name = document.getElementById('sector-name').value.trim();
+        const statusEl = document.getElementById('sector-status');
+        if(!name){ statusEl.textContent = 'Inserisci un nome per il settore.'; return; }
+        const terrain = document.getElementById('sector-terrain').value;
+        const description = document.getElementById('sector-desc').value.trim();
+        const image = document.getElementById('sector-image').value.trim();
+        const gridPosSel = document.getElementById('sector-gridpos').value;
+        const gridPos = gridPosSel!=='' ? Number(gridPosSel) : null;
+        const connections = Array.from(el.querySelectorAll('.sector-connect-chk:checked')).map(c=>c.value);
+        const id = 's'+Date.now()+Math.random().toString(36).slice(2,6);
+        if(!activeMacro.sectors) activeMacro.sectors = [];
+        activeMacro.sectors.push({ id, name, description, terrain, connections, luoghi: [], image, gridPos });
+        connections.forEach(cid=>{
+          const other = activeMacro.sectors.find(s=>s.id===cid);
+          if(other){ if(!other.connections) other.connections=[]; if(!other.connections.includes(id)) other.connections.push(id); }
+        });
+        await saveScene(code, cachedScene);
+        renderSectorMap(code);
+        refreshLiveParts();
+      };
+    }
+  }
+
   function sceneHTML(scene){
+    const macroScenes = (scene && Array.isArray(scene.macroScenes)) ? scene.macroScenes : [];
+    const activeMacro = scene && scene.currentMacroSceneId ? macroScenes.find(m=>m.id===scene.currentMacroSceneId) : null;
+    const sectors = activeMacro ? (activeMacro.sectors||[]) : [];
+    const current = scene && scene.currentSectorId ? sectors.find(s=>s.id===scene.currentSectorId) : null;
+    const currentLuogo = current && scene.currentLuogoId ? (current.luoghi||[]).find(l=>l.id===scene.currentLuogoId) : null;
+    const sectorBadge = current ? `<span class="tag">${current.terrain==='Dangerous'?'☠':(current.terrain==='Difficult'?'⚠':'')} ${escapeHTML(current.terrain)}</span>` : '';
+    const breadcrumb = [activeMacro?activeMacro.name:null, current?current.name:null, currentLuogo?currentLuogo.name:null].filter(Boolean).map(escapeHTML).join(' → ');
+    const sectorHTML = current ? `
+      <div class="hud-frame card" style="margin-top:8px;padding:8px 10px;">
+        <div class="flex-between"><span class="mono" style="color:var(--cyan);">📍 ${breadcrumb}</span>${sectorBadge}</div>
+        ${currentLuogo && currentLuogo.description ? `<div class="sub" style="margin-top:4px;">${escapeHTML(currentLuogo.description)}</div>` : (current.description ? `<div class="sub" style="margin-top:4px;">${escapeHTML(current.description)}</div>` : '')}
+        ${!currentLuogo && (current.luoghi||[]).length>0 ? `<div class="muted" style="margin-top:4px;font-size:11px;">Luoghi qui: ${(current.luoghi||[]).map(l=>escapeHTML(l.name)).join(', ')}</div>` : ''}
+        <div class="muted" style="margin-top:4px;font-size:11px;">Puoi raggiungere: ${(current.connections||[]).map(cid=>{ const c=sectors.find(x=>x.id===cid); return c?escapeHTML(c.name):''; }).filter(Boolean).join(', ') || 'nessun altro settore collegato'}</div>
+      </div>
+    ` : '';
     if(!scene || (!scene.background && !scene.title)){
-      return `<div class="scene-box"><div class="scene-empty">Nessuna scena impostata dal Master</div></div>` + encountersReadonlyHTML(scene);
+      return `<div class="scene-box"><div class="scene-empty">Nessuna scena impostata dal Master</div></div>` + sectorHTML + encountersReadonlyHTML(scene);
     }
     return `
       <div class="scene-box">
@@ -4395,7 +5361,7 @@
         <div class="overlay"></div>
         ${scene.title ? `<div class="title">${escapeHTML(scene.title)}</div>` : ''}
       </div>
-    ` + encountersReadonlyHTML(scene);
+    ` + sectorHTML + encountersReadonlyHTML(scene);
   }
 
   function encountersReadonlyHTML(scene){
@@ -4501,7 +5467,8 @@
           <div>${l.meta && l.meta.avatar ? `<img class="who-avatar" src="${escapeAttr(l.meta.avatar)}" onerror="this.style.display='none'" />` : ''}<span class="who mono" ${l.meta && l.meta.color ? `style="color:${escapeAttr(l.meta.color)};"` : ''}>${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span></div>
           ${canModerate ? `<div><button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;">✎</button><button class="btn ghost small" data-log-del="${l.id}" style="padding:2px 6px;">✕</button></div>` : ''}
         </div>
-        <div class="txt">${escapeHTML(displayText)}</div>
+        <div class="txt${l.meta && l.meta.digimoji ? ' digimoji-text' : ''}" ${l.meta && l.meta.digimoji ? `title="${escapeAttr(displayText)}"` : ''}>${escapeHTML(displayText)}</div>
+        ${l.meta && l.meta.digimoji ? `<div class="muted" style="font-size:10px;margin-top:2px;">(scritto in Digimoji — passa il mouse per leggere in chiaro)</div>` : ''}
         ${diceHTML}
         ${fulfillBtn}
       </div>
@@ -4566,7 +5533,7 @@
                 await saveMember(session.code, me);
               }
             }
-            const verdict = evaluateVsTN(total, tn);
+            const verdict = evaluateVsTN(total, tn, dice);
             text = `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict?` vs TN ${tn} → ${verdict.label}`:'') + ' (richiesto dal Master)';
             rollMeta = { dice, total, verdict: verdict?verdict.label:null };
           }

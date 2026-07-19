@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mappa — Digimon: Digital Adventures 2E</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
+
+<style>
+  @font-face {
+    font-family: 'Digicode';
+    src: url('https://www.wfonts.com/download/data/2016/10/03/digicode/digicode.woff') format('woff'),
+         url('https://fonts2u.com/fonts/d/digimon_digicode_font_by_mooshimon.ttf') format('truetype');
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'Pixel Digivolve';
+    src: url('https://db.onlinewebfonts.com/t/e7a35327535403014c02a38c285b82cf.woff2') format('woff2'),
+         url('https://db.onlinewebfonts.com/t/e7a35327535403014c02a38c285b82cf.woff') format('woff'),
+         url('https://db.onlinewebfonts.com/t/e7a35327535403014c02a38c285b82cf.ttf') format('truetype');
+    font-display: swap;
+  }
+  .pixel-title{ font-family:'Pixel Digivolve','Share Tech Mono',monospace; letter-spacing:0.03em; }
+  :root{
+    --bg: #080b10;
+    --panel: #0e141b;
+    --panel-2: #121a22;
+    --line: #1c2a30;
+    --cyan: #35e8c9;
+    --cyan-dim: #1f6e63;
+    --amber: #ff8a3d;
+    --text: #dcece8;
+    --text-mute: #6d8385;
+    --danger: #ff5d5d;
+    --radius: 2px;
+    font-family: 'Manrope', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body,#root-app{margin:0;padding:0;background:var(--bg);color:var(--text);}
+  .mono{font-family:'Share Tech Mono', monospace; letter-spacing: 0.04em;}
+  .app{min-height:100vh;background:
+      radial-gradient(circle at 15% 10%, rgba(53,232,201,0.06), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(255,138,61,0.05), transparent 45%),
+      var(--bg);
+      padding:20px; position:relative; overflow-x:hidden;}
+  .hud-frame{border:1px solid var(--line); background:var(--panel); border-radius:var(--radius); position:relative;}
+  .hud-frame::before{content:"";position:absolute;top:-1px;left:-1px;width:14px;height:14px;border-top:2px solid var(--cyan);border-left:2px solid var(--cyan);}
+  .hud-frame::after{content:"";position:absolute;bottom:-1px;right:-1px;width:14px;height:14px;border-bottom:2px solid var(--cyan);border-right:2px solid var(--cyan);}
+  .topbar{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand-dot{width:9px;height:9px;background:var(--cyan);box-shadow:0 0 8px var(--cyan);border-radius:50%;animation:pulse 2s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
+  .brand-title{font-family:'Pixel Digivolve','Share Tech Mono',monospace;font-size:15px;text-transform:uppercase;color:var(--cyan);letter-spacing:0.05em;}
+  .brand-sub{font-size:11px;color:var(--text-mute);}
+
+  .btn{font-family:'Share Tech Mono',monospace;background:transparent;border:1px solid var(--cyan-dim);color:var(--cyan);
+    padding:8px 14px;cursor:pointer;text-transform:uppercase;font-size:12px;letter-spacing:0.05em;border-radius:var(--radius);transition:.15s;}
+  .btn:hover{background:rgba(53,232,201,0.1);border-color:var(--cyan);}
+  .btn.solid{background:var(--cyan);color:#04211c;border-color:var(--cyan);font-weight:700;}
+  .btn.solid:hover{background:#4ffbe0;}
+  .btn.ghost{border-color:var(--line);color:var(--text-mute);}
+  .btn.small{padding:5px 10px;font-size:10px;}
+
+  input[type=text], select{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    padding:8px 10px; font-family:'Manrope',sans-serif; font-size:13px; border-radius:var(--radius); width:100%;
+  }
+  input:focus, select:focus{outline:none;border-color:var(--cyan-dim);}
+  label{font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;display:block;margin-bottom:4px;}
+  .field{margin-bottom:12px;}
+  .row{display:flex;gap:12px;}
+  .row > *{flex:1;}
+  .section-title{font-size:12px;text-transform:uppercase;color:var(--cyan);letter-spacing:0.08em;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);}
+  .card{padding:16px;margin-bottom:16px;max-width:760px;margin-left:auto;margin-right:auto;}
+  .muted{color:var(--text-mute);font-size:12px;}
+  .sub{color:var(--text-mute);font-size:12px;}
+  .tag{display:inline-block;border:1px solid var(--line);color:var(--text-mute);font-size:10px;padding:1px 6px;border-radius:10px;margin-left:4px;}
+  .err{color:var(--danger);font-size:12px;min-height:14px;}
+
+  .breadcrumb{font-family:'Share Tech Mono',monospace;font-size:13px;color:var(--cyan);margin-bottom:14px;}
+  .breadcrumb span{cursor:pointer;text-decoration:underline;}
+  .breadcrumb span:hover{color:#4ffbe0;}
+
+  .map-grid{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:8px;aspect-ratio:1/1;}
+  .map-cell{position:relative;border:1px solid var(--line);background:var(--panel-2);overflow:hidden;cursor:default;display:flex;align-items:flex-end;min-height:0;}
+  .map-cell.filled{cursor:pointer;}
+  .map-cell.filled:hover{border-color:var(--cyan);}
+  .map-cell img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.65;transition:.2s;}
+  .map-cell.filled:hover img{opacity:0.9;}
+  .map-cell .lbl{position:relative;z-index:1;width:100%;padding:6px 8px;background:linear-gradient(180deg, rgba(8,11,16,0) 0%, rgba(8,11,16,0.9) 90%);font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text);}
+  .map-cell.empty .lbl{color:var(--text-mute);font-size:10px;text-align:center;width:100%;padding:0;background:none;}
+  .map-cell.empty{align-items:center;justify-content:center;}
+  .map-cell.current{border-color:var(--cyan);box-shadow:0 0 12px rgba(53,232,201,0.35) inset;}
+
+  .luogo-grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;}
+  .luogo-tile{width:110px;border:1px solid var(--line);background:var(--panel-2);cursor:pointer;overflow:hidden;}
+  .luogo-tile:hover{border-color:var(--cyan);}
+  .luogo-tile .img{height:70px;background:#05070a;position:relative;overflow:hidden;}
+  .luogo-tile .img img{width:100%;height:100%;object-fit:cover;}
+  .luogo-tile .nm{font-size:11px;padding:5px;font-family:'Share Tech Mono',monospace;}
+
+  .detail-image{width:100%;max-height:260px;object-fit:cover;border:1px solid var(--line);margin-bottom:12px;background:#05070a;}
+  .connections-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+
+  .login-wrap{max-width:420px;margin:60px auto;padding:32px;}
+  .login-wrap h1{font-family:'Pixel Digivolve','Share Tech Mono',monospace;color:var(--cyan);font-size:24px;letter-spacing:0.03em;text-align:center;text-shadow:0 0 16px rgba(53,232,201,0.5);margin-bottom:4px;}
+  .role-pick{display:flex;gap:8px;}
+  .role-pick .btn.active{background:var(--cyan);color:#04211c;border-color:var(--cyan);}
+</style>
+</head>
+<body>
+<div id="root-app" class="app"><div class="hud-frame card"><div class="muted">Caricamento…</div></div></div>
+
+<script>
+(function(){
+  const SESSION_KEY = 'digivice_session_v1';
+  const root = document.getElementById('root-app');
+  let session = null;
+  let cachedScene = null;
+  let pollTimer = null;
+  // view state
+  let view = 'sectors'; // 'sectors' | 'sector' | 'luogo'
+  let selectedSectorId = null;
+  let selectedLuogoId = null;
+
+  function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function escapeAttr(s){ return escapeHTML(s); }
+  function sanitizeKeyPart(s){ return String(s||'').trim().toUpperCase().replace(/[^A-Z0-9_-]/g,''); }
+
+  function saveSession(s){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }catch(e){} }
+  function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
+
+  async function apiGet(path){
+    try{ const r = await fetch(path); const data = await r.json(); if(!r.ok) return null; return data; }catch(e){ return null; }
+  }
+  async function apiPost(path, body){
+    try{ const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); const data = await r.json(); if(!r.ok) return null; return data; }catch(e){ return null; }
+  }
+  async function getScene(code){
+    const d = await apiGet('/api/scene?code=' + encodeURIComponent(code));
+    const s = d ? d.scene : { title:'', background:'', music:'', encounters:[] };
+    if(!Array.isArray(s.macroScenes)) s.macroScenes = [];
+    if(s.currentMacroSceneId===undefined) s.currentMacroSceneId = null;
+    return s;
+  }
+  async function saveScene(code, scene){ const d = await apiPost('/api/scene', { code, ...scene }); return !!(d && d.ok); }
+
+  function topbarHTML(){
+    return `
+      <div class="topbar hud-frame">
+        <div class="brand">
+          <div class="brand-dot"></div>
+          <div>
+            <div class="brand-title">DIGIVICE OS // MAPPA</div>
+            <div class="brand-sub">Codice campagna: ${escapeHTML(session.code)} ${session.role==='master'?' · Master':''}</div>
+          </div>
+        </div>
+        <div>
+          <a href="index.html" class="btn ghost small" style="text-decoration:none;">↩ Torna al Tavolo</a>
+          <button class="btn ghost small" id="btn-logout">Esci</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // ---------- LOGIN ----------
+  function renderLogin(){
+    root.innerHTML = `
+      <div class="login-wrap hud-frame">
+        <h1 class="mono">MAPPA // ACCESSO</h1>
+        <div class="sub" style="text-align:center;margin-bottom:14px;">Inserisci lo stesso codice campagna usato nel Tavolo principale.</div>
+        <div class="field"><label>Codice Campagna</label><input type="text" id="in-code" placeholder="es. FRONTIER01" /></div>
+        <div class="field"><label>Nome Utente</label><input type="text" id="in-user" placeholder="il tuo nome al tavolo" /></div>
+        <div class="field">
+          <label>Ruolo</label>
+          <div class="role-pick">
+            <button class="btn active" id="role-player" data-role="player">Giocatore</button>
+            <button class="btn" id="role-master" data-role="master">Master</button>
+          </div>
+        </div>
+        <button class="btn solid" id="btn-enter" style="width:100%;padding:12px;">Apri la Mappa</button>
+        <div class="err" id="login-err"></div>
+      </div>
+    `;
+    let role = 'player';
+    document.getElementById('role-player').onclick = ()=>{ role='player'; document.getElementById('role-player').classList.add('active'); document.getElementById('role-master').classList.remove('active'); };
+    document.getElementById('role-master').onclick = ()=>{ role='master'; document.getElementById('role-master').classList.add('active'); document.getElementById('role-player').classList.remove('active'); };
+    document.getElementById('btn-enter').onclick = ()=>{
+      const code = sanitizeKeyPart(document.getElementById('in-code').value);
+      const username = document.getElementById('in-user').value.trim();
+      const errEl = document.getElementById('login-err');
+      if(!code || !username){ errEl.textContent = 'Inserisci sia il codice campagna che il nome utente.'; return; }
+      session = { code, username, role };
+      saveSession(session);
+      boot();
+    };
+  }
+
+  // ---------- MAP VIEWS ----------
+  function terrainLabel(t){ return t==='Dangerous' ? '☠ Pericoloso' : (t==='Difficult' ? '⚠ Difficile' : 'Normale'); }
+
+  function getActiveMacro(){
+    return (cachedScene.macroScenes||[]).find(m=>m.id===cachedScene.currentMacroSceneId) || (cachedScene.macroScenes||[])[0] || null;
+  }
+
+  function renderMap(){
+    if(!cachedScene){ return; }
+    const macroScenes = cachedScene.macroScenes || [];
+    let activeMacro = getActiveMacro();
+    root.innerHTML = `
+      <div style="max-width:760px;margin:0 auto;">
+        ${topbarHTML()}
+        <div class="hud-frame card">
+          ${macroScenes.length>1 ? `
+            <div class="field"><label>Macroscena</label>
+              <select id="map-macro-select">
+                ${macroScenes.map(m=>`<option value="${m.id}" ${activeMacro && activeMacro.id===m.id?'selected':''}>${escapeHTML(m.name)}</option>`).join('')}
+              </select>
+            </div>
+          ` : ''}
+          <div id="map-body"></div>
+        </div>
+      </div>
+    `;
+    const macroSel = document.getElementById('map-macro-select');
+    if(macroSel){
+      macroSel.onchange = ()=>{
+        activeMacro = macroScenes.find(m=>m.id===macroSel.value);
+        view = 'sectors'; selectedSectorId = null; selectedLuogoId = null;
+        renderMapBody(activeMacro);
+      };
+    }
+    const logoutBtn = document.getElementById('btn-logout');
+    if(logoutBtn) logoutBtn.onclick = ()=>{ if(pollTimer) clearInterval(pollTimer); renderLogin(); };
+    renderMapBody(activeMacro);
+  }
+
+  function renderMapBody(activeMacro){
+    const bodyEl = document.getElementById('map-body');
+    if(!bodyEl) return;
+    if(!activeMacro){
+      bodyEl.innerHTML = `<div class="muted" style="text-align:center;padding:40px 0;">Nessuna Macroscena ancora creata dal Master.</div>`;
+      return;
+    }
+    const sectors = activeMacro.sectors || [];
+    if(view==='sectors'){
+      const cells = [];
+      for(let i=0;i<9;i++){
+        const s = sectors.find(x=>x.gridPos===i);
+        if(s){
+          cells.push(`
+            <div class="map-cell filled ${cachedScene.currentSectorId===s.id?'current':''}" data-open-sector="${s.id}">
+              ${s.image ? `<img src="${escapeAttr(s.image)}" onerror="this.style.display='none'" />` : ''}
+              <div class="lbl">${escapeHTML(s.name)}<div style="font-size:9px;color:var(--text-mute);">${terrainLabel(s.terrain)}</div></div>
+            </div>
+          `);
+        } else {
+          cells.push(`<div class="map-cell empty"><div class="lbl">—</div></div>`);
+        }
+      }
+      bodyEl.innerHTML = `
+        <div class="breadcrumb">📍 ${escapeHTML(activeMacro.name)}</div>
+        <div class="muted" style="margin-bottom:10px;">${escapeHTML(activeMacro.description||'')}</div>
+        <div class="map-grid">${cells.join('')}</div>
+        <div class="muted" style="margin-top:10px;font-size:11px;">Clicca su un Settore per esplorarlo. Le caselle vuote non hanno ancora un Settore assegnato (il Master può assegnarle da Digivice OS).</div>
+      `;
+      bodyEl.querySelectorAll('[data-open-sector]').forEach(cell=>{
+        cell.onclick = ()=>{
+          selectedSectorId = cell.getAttribute('data-open-sector');
+          view = 'sector';
+          renderMapBody(activeMacro);
+        };
+      });
+    } else if(view==='sector'){
+      const s = sectors.find(x=>x.id===selectedSectorId);
+      if(!s){ view='sectors'; renderMapBody(activeMacro); return; }
+      const luoghi = s.luoghi || [];
+      bodyEl.innerHTML = `
+        <div class="breadcrumb"><span data-nav-macro>📍 ${escapeHTML(activeMacro.name)}</span> → ${escapeHTML(s.name)}</div>
+        ${s.image ? `<img class="detail-image" src="${escapeAttr(s.image)}" onerror="this.style.display='none'" />` : ''}
+        <div class="flex-between"><b>${escapeHTML(s.name)}</b><span class="tag">${terrainLabel(s.terrain)}</span></div>
+        ${s.description ? `<div class="sub" style="margin-top:6px;">${escapeHTML(s.description)}</div>` : ''}
+        ${luoghi.length>0 ? `
+          <div class="muted" style="margin-top:14px;">Luoghi:</div>
+          <div class="luogo-grid">
+            ${luoghi.map(lg=>`
+              <div class="luogo-tile" data-open-luogo="${lg.id}">
+                <div class="img">${lg.image?`<img src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" />`:''}</div>
+                <div class="nm">${escapeHTML(lg.name)}</div>
+              </div>
+            `).join('')}
+          </div>
+        ` : '<div class="muted" style="margin-top:14px;">Nessun luogo specifico in questo settore.</div>'}
+        <div class="muted" style="margin-top:14px;">Settori collegati:</div>
+        <div class="connections-row">
+          ${(s.connections||[]).length===0 ? '<span class="muted">nessuno</span>' : (s.connections||[]).map(cid=>{
+            const c = sectors.find(x=>x.id===cid); if(!c) return '';
+            return `<button class="btn small" data-open-sector="${c.id}">${escapeHTML(c.name)}</button>`;
+          }).join('')}
+        </div>
+        <button class="btn ghost small" style="margin-top:16px;" data-nav-back-macro>← Torna alla Mappa</button>
+      `;
+      bodyEl.querySelectorAll('[data-open-luogo]').forEach(el=>{
+        el.onclick = ()=>{ selectedLuogoId = el.getAttribute('data-open-luogo'); view='luogo'; renderMapBody(activeMacro); };
+      });
+      bodyEl.querySelectorAll('[data-open-sector]').forEach(el=>{
+        el.onclick = ()=>{ selectedSectorId = el.getAttribute('data-open-sector'); view='sector'; renderMapBody(activeMacro); };
+      });
+      const navMacro = bodyEl.querySelector('[data-nav-macro]');
+      if(navMacro) navMacro.onclick = ()=>{ view='sectors'; renderMapBody(activeMacro); };
+      const navBack = bodyEl.querySelector('[data-nav-back-macro]');
+      if(navBack) navBack.onclick = ()=>{ view='sectors'; renderMapBody(activeMacro); };
+    } else if(view==='luogo'){
+      const s = sectors.find(x=>x.id===selectedSectorId);
+      const lg = s ? (s.luoghi||[]).find(x=>x.id===selectedLuogoId) : null;
+      if(!s || !lg){ view='sectors'; renderMapBody(activeMacro); return; }
+      bodyEl.innerHTML = `
+        <div class="breadcrumb"><span data-nav-macro>📍 ${escapeHTML(activeMacro.name)}</span> → <span data-nav-sector>${escapeHTML(s.name)}</span> → ${escapeHTML(lg.name)}</div>
+        ${lg.image ? `<img class="detail-image" src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" />` : ''}
+        <div><b>${escapeHTML(lg.name)}</b></div>
+        ${lg.description ? `<div class="sub" style="margin-top:6px;">${escapeHTML(lg.description)}</div>` : '<div class="muted" style="margin-top:6px;">Nessuna descrizione.</div>'}
+        <button class="btn ghost small" style="margin-top:16px;" data-nav-back-sector>← Torna a "${escapeHTML(s.name)}"</button>
+      `;
+      const navMacro = bodyEl.querySelector('[data-nav-macro]');
+      if(navMacro) navMacro.onclick = ()=>{ view='sectors'; renderMapBody(activeMacro); };
+      const navSector = bodyEl.querySelector('[data-nav-sector]');
+      if(navSector) navSector.onclick = ()=>{ view='sector'; renderMapBody(activeMacro); };
+      const navBack = bodyEl.querySelector('[data-nav-back-sector]');
+      if(navBack) navBack.onclick = ()=>{ view='sector'; renderMapBody(activeMacro); };
+    }
+  }
+
+  async function refresh(){
+    if(!session) return;
+    const fresh = await getScene(session.code);
+    cachedScene = fresh;
+    renderMap();
+  }
+
+  function startPolling(){
+    if(pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(refresh, 4000);
+  }
+
+  async function boot(){
+    session = loadSession();
+    if(!session || !session.code || !session.username){
+      renderLogin();
+      return;
+    }
+    cachedScene = await getScene(session.code);
+    view = 'sectors'; selectedSectorId = null; selectedLuogoId = null;
+    renderMap();
+    startPolling();
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
