@@ -226,7 +226,7 @@
       <div class="hud-frame card">
         <div class="flex-between" style="margin-bottom:10px;">
           <div class="section-title" style="margin:0;border:none;padding:0;">Digimon Registrati (${cachedDex.length})</div>
-          ${isMaster ? `<span><button class="btn ghost small" id="btn-bulk-images" style="margin-right:6px;">🖼️ Incolla Immagini</button><button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button></span>` : ''}
+          ${isMaster ? `<span><button class="btn ghost small" id="btn-import-seed2" style="margin-right:6px;color:var(--cyan);">🎴 Importa/Correggi Famosi</button><button class="btn ghost small" id="btn-bulk-images" style="margin-right:6px;">🖼️ Incolla Immagini</button><button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button></span>` : ''}
         </div>
         <input type="text" id="dex-search" placeholder="🔍 Cerca per nome..." style="margin-bottom:14px;" />
         <div id="filter-bar" class="filter-bar"></div>
@@ -236,6 +236,8 @@
     document.getElementById('btn-logout').onclick = ()=>{ session=null; render(); };
     const newBtn = document.getElementById('btn-new-entry');
     if(newBtn) newBtn.onclick = ()=> openEditModal(null);
+    const importSeed2Btn = document.getElementById('btn-import-seed2');
+    if(importSeed2Btn) importSeed2Btn.onclick = ()=> openImportModal(SPECIES_SEED.concat(SPECIES_SEED_VILLAINS, SPECIES_SEED_2, SPECIES_SEED_3), 'Importa/Correggi Digimon Famosi');
     const bulkImagesBtn = document.getElementById('btn-bulk-images');
     if(bulkImagesBtn) bulkImagesBtn.onclick = ()=> openBulkImageModal();
     const searchInput = document.getElementById('dex-search');
@@ -502,7 +504,7 @@ Devimon: https://..."></textarea>
   const SPECIES_SEED = [
     { line:'Agumon', attribute:'Vaccine', family:"Dragon's Roar", chain:[
       {name:'Botamon', stage:'Fresh', desc:'Palla di gelatina nera, la primissima forma di Agumon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:1, baseHealth:1}},
-      {name:'Koromon', stage:'Baby', desc:'Piccolo e affamato, la forma Baby di Agumon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:3, baseDodge:2, baseArmor:1, baseHealth:2}, evolvesToNames:['Agumon','ToyAgumon']},
+      {name:'Koromon', stage:'Baby', desc:'Piccolo e affamato, la forma Baby di Agumon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:3, baseDodge:2, baseArmor:1, baseHealth:2}, evolvesToNames:['Agumon','ToyAgumon','ToyAgumon (Black)']},
       {name:'Agumon', stage:'Rookie', desc:'Rettile bipede leale e coraggioso, sputa piccole fiamme. Attacco: Pepper Breath.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:3, baseArmor:3, baseHealth:3}, evolvesToNames:['Greymon','Meramon','Tyrannomon','Tuskmon']},
       {name:'Greymon', stage:'Champion', desc:'Dinosauro corazzato dal morso potente. Attacco: Nova Blast.', stats:{baseAccuracy:8, baseDamage:10, baseDodge:6, baseArmor:5, baseHealth:6}, evolvesToNames:['MetalGreymon','SkullGreymon']},
       {name:'MetalGreymon', stage:'Ultimate', desc:'Mezzo organico, mezzo cybernetico, con la Giga Distruzione. Attacco: Giga Blaster.', stats:{baseAccuracy:12, baseDamage:15, baseDodge:8, baseArmor:7, baseHealth:8}, evolvesToNames:['WarGreymon','BlitzGreymon']},
@@ -543,7 +545,7 @@ Devimon: https://..."></textarea>
     ]},
     { line:'Gomamon', attribute:'Vaccine', family:'Deep Savers', chain:[
       {name:'Pukamon', stage:'Fresh', desc:'Palla di gelatina blu galleggiante, la primissima forma di Gomamon. Attacco: Bubble Blow.', stats:{baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:2, baseHealth:2}},
-      {name:'Bukamon', stage:'Baby', desc:'Piccola foca marina, forma Baby di Gomamon. Attacco: Bubble Blow.', stats:{baseAccuracy:1, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:3}, evolvesToNames:['Gomamon','MarineAngemon','Gizamon']},
+      {name:'Bukamon', stage:'Baby', desc:'Piccola foca marina, forma Baby di Gomamon. Attacco: Bubble Blow.', stats:{baseAccuracy:1, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:3}, evolvesToNames:['Gomamon','MarineAngemon','Gizamon','ClearAgumon']},
       {name:'Gomamon', stage:'Rookie', desc:'Foca giocherellona e leale amica. Attacco: Marching Fishes.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:5}, evolvesToNames:['Ikkakumon','Whamon','Ebidramon']},
       {name:'Ikkakumon', stage:'Champion', desc:'Trichecho con un corno d\'arpone. Attacco: Harpoon Torpedo.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:6, baseArmor:8, baseHealth:10}},
       {name:'Zudomon', stage:'Ultimate', desc:'Guerriero marino con il martello Vulcan. Attacco: Vulcan\'s Hammer.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:9, baseArmor:11, baseHealth:14}, evolvesToNames:['Vikemon','Plesiomon']},
@@ -571,7 +573,7 @@ Devimon: https://..."></textarea>
       {name:'Pokomon', stage:'Fresh', desc:'Palla di gelatina blu scuro, la primissima forma di Veemon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:1, baseHealth:1}},
       {name:'Chibomon', stage:'Baby', desc:'Piccola creatura blu, forma Baby di Veemon. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:2}},
       {name:'Veemon', stage:'Rookie', desc:'Rettile blu energico e testardo. Attacco: Vee Headbutt.', stats:{baseAccuracy:4, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:4}, evolvesToNames:['ExVeemon','Flamedramon','Raidramon','Sethmon','Honeybeemon','Depthmon','Yasyamon','Gargoylemon','Sagittarimon','Magnamon','GoldVeedramon','Kangarumon','Veedramon']},
-      {name:'ExVeemon', stage:'Champion', desc:'Guerriero blu dai pugni potenti. Attacco: Vee Laser.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}, evolvesToNames:['Paildramon','DinoBeemon']},
+      {name:'ExVeemon', stage:'Champion', desc:'Guerriero blu dai pugni potenti. Attacco: Vee Laser.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}, evolvesFromNames:['Veemon','ClearAgumon'], evolvesToNames:['Paildramon','DinoBeemon']},
       {name:'Flamedramon', stage:'Champion', desc:'Evoluzione Armor di Veemon (Digimental del Coraggio): guerriero corazzato avvolto dalle fiamme. Attacco: Fire Rocket.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}, evolvesFromNames:['Veemon'], evolvesToNames:[], originType:'armor'},
       {name:'Raidramon', stage:'Champion', desc:'Evoluzione Armor di Veemon (Digimental dell\'Amicizia): lupo corazzato velocissimo, cavalcabile. Attacco: Blue Thunder.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}, evolvesFromNames:['Veemon'], evolvesToNames:[], originType:'armor'},
       {name:'Sethmon', stage:'Champion', desc:'Evoluzione Armor di Veemon (Digimental dell\'Amore): sciacallo corazzato dal fiuto infallibile. Attacco: Desert Wind.', stats:{baseAccuracy:7, baseDamage:7, baseDodge:7, baseArmor:7, baseHealth:7}, evolvesFromNames:['Veemon'], evolvesToNames:[], originType:'armor'},
@@ -629,9 +631,9 @@ Devimon: https://..."></textarea>
       {name:'MetalSeadramon', stage:'Mega', desc:'Serpente marino totalmente corazzato, sovrano degli oceani digitali, uno dei Dark Masters. Attacco: River of Power.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:9, baseArmor:19, baseHealth:17}},
     ]},
     { line:'Guardromon', attribute:'Virus', family:'Metal Empire', chain:[
-      {name:'Hagurumon', stage:'Rookie', desc:'Piccolo ingranaggio digitale vivente. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:3, baseHealth:2}, evolvesToNames:['Guardromon','Numemon']},
+      {name:'Hagurumon', stage:'Rookie', desc:'Piccolo ingranaggio digitale vivente. Attacco: Bubble Blow.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:1, baseArmor:3, baseHealth:2}, evolvesToNames:['Guardromon','Numemon','Andromon']},
       {name:'Guardromon', stage:'Champion', desc:'Robot corazzato dal cuore leale, spesso sottovalutato. Attacco: Guardian Barrage.', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}},
-      {name:'Andromon', stage:'Ultimate', desc:'Cyborg dalla forza e precisione sovrumane. Attacco: Lightning Blade.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:10, baseHealth:9}},
+      {name:'Andromon', stage:'Ultimate', desc:'Cyborg dalla forza e precisione sovrumane. Attacco: Lightning Blade.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:10, baseHealth:9}, evolvesFromNames:['Hagurumon','Guardromon','Mechanorimon'], evolvesToNames:['HiAndromon']},
       {name:'Machinedramon', stage:'Mega', desc:'Colosso meccanico, il piu potente dei Dark Masters, costruito dai pezzi di innumerevoli Cyborg Digimon. Attacco: Giga Cannon.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:9, baseArmor:19, baseHealth:17}},
     ]},
     { line:'Puppetmon', attribute:'Virus', family:'Jungle Troopers', chain:[
@@ -908,6 +910,15 @@ Devimon: https://..."></textarea>
     { line:'Devitamamon', attribute:'Virus', family:'Unknown', chain:[
       {name:'Devitamamon', stage:'Mega', desc:'Forma oscura e corrotta di Digitamamon: uovo bipede alato dai nove occhi, incarnazione di ogni male. Attacco: Black Death Cloud.', stats:{baseAccuracy:15, baseDamage:16, baseDodge:11, baseArmor:14, baseHealth:15}, evolvesFromNames:['Digitamamon']},
     ]},
+    { line:'Mechanorimon', attribute:'Virus', family:'Metal Empire', chain:[
+      {name:'Mechanorimon', stage:'Champion', desc:'Robot corazzato costruito con parti riciclate, dal design grezzo ma efficace. Attacco: Twin Blaster.', stats:{baseAccuracy:6, baseDamage:8, baseDodge:4, baseArmor:9, baseHealth:9}, evolvesFromNames:['ToyAgumon','ToyAgumon (Black)'], evolvesToNames:['Andromon']},
+    ]},
+    { line:'HiAndromon', attribute:'Vaccine', family:'Metal Empire', chain:[
+      {name:'HiAndromon', stage:'Mega', desc:'Forma perfezionata di Andromon, ormai completamente robotica e dotata di libero arbitrio. Attacco: Atomic Ray.', stats:{baseAccuracy:9, baseDamage:11, baseDodge:9, baseArmor:19, baseHealth:17}, evolvesFromNames:['Andromon'], evolvesToNames:['Megadramon']},
+    ]},
+    { line:'Megadramon', attribute:'Virus', family:'Metal Empire', chain:[
+      {name:'Megadramon', stage:'Mega', desc:'Drago cibernetico remilitarizzato per l\'attacco antiaereo, tecnologia derivata direttamente da Andromon. Attacco: Genocide Attack.', stats:{baseAccuracy:13, baseDamage:18, baseDodge:11, baseArmor:15, baseHealth:14}, evolvesFromNames:['HiAndromon']},
+    ]},
     { line:'Tuskmon', attribute:'Data', family:'Unknown', chain:[
       {name:'Tuskmon', stage:'Champion', desc:'Dinosauro corazzato dalle enormi zanne ricurve, carica gli avversari a testa bassa. Attacco: Twin Tusk Crash.', stats:{baseAccuracy:7, baseDamage:10, baseDodge:5, baseArmor:9, baseHealth:9}, evolvesFromNames:['Agumon'], evolvesToNames:[]},
     ]},
@@ -1136,7 +1147,13 @@ Devimon: https://..."></textarea>
       {name:'Mummymon', stage:'Ultimate', desc:'Creatura ibrida bendata dall\'unico occhio dorato, creata artificialmente da dati e DNA umano, fedele compagno di Arukenimon. Attacco: Grave Scream.', stats:{baseAccuracy:10, baseDamage:12, baseDodge:9, baseArmor:9, baseHealth:11}, evolvesFromNames:['Wizardmon'], evolvesToNames:[]},
     ]},
     { line:'ToyAgumon', attribute:'Vaccine', family:'Unknown', chain:[
-      {name:'ToyAgumon', stage:'Rookie', desc:'Digimon giocattolo fatto di mattoncini colorati che imita l\'aspetto di Agumon, timido ma dal cuore giusto. Attacco: Toy Flame.', stats:{baseAccuracy:4, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:4}, evolvesFromNames:['Koromon'], evolvesToNames:[]},
+      {name:'ToyAgumon', stage:'Rookie', desc:'Digimon giocattolo fatto di mattoncini colorati che imita l\'aspetto di Agumon, timido ma dal cuore giusto. Attacco: Toy Flame.', stats:{baseAccuracy:4, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:4}, evolvesFromNames:['Koromon'], evolvesToNames:['Mechanorimon']},
+    ]},
+    { line:'ToyAgumon (Black)', attribute:'Virus', family:'Metal Empire', chain:[
+      {name:'ToyAgumon (Black)', stage:'Rookie', desc:'Variante nera di ToyAgumon, versione corrotta del giocattolo dall\'indole più aggressiva. Attacco: Toy Flame (Dark).', stats:{baseAccuracy:4, baseDamage:6, baseDodge:3, baseArmor:4, baseHealth:4}, evolvesFromNames:['Koromon'], evolvesToNames:['Mechanorimon']},
+    ]},
+    { line:'ClearAgumon', attribute:'Vaccine', family:'Unknown', chain:[
+      {name:'ClearAgumon', stage:'Rookie', desc:'Rarissima variante di ToyAgumon fatta interamente di blocchi di plastica trasparente, timido ma dal cuore giusto quanto il suo omologo. Attacco: Precious Flare.', stats:{baseAccuracy:5, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:5}, evolvesFromNames:['Bukamon'], evolvesToNames:['ExVeemon']},
     ]},
     { line:'Ophanimon', attribute:'Vaccine', family:'Virus Busters', chain:[
       {name:'Ophanimon', stage:'Mega', desc:'Uno dei Tre Grandi Angeli: arcangelo corazzato armato della lancia Spear of Light, guardiana della Speranza. Attacco: Eden\'s Javelin.', stats:{baseAccuracy:18, baseDamage:17, baseDodge:16, baseArmor:13, baseHealth:15}, evolvesFromNames:['Angewomon']},
