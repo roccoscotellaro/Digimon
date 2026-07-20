@@ -22,8 +22,21 @@
   body {
     margin: 0; background: var(--bg); color: var(--text);
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    display: flex; height: 100vh; overflow: hidden;
+    display: flex; flex-direction: column; height: 100vh; overflow: hidden;
   }
+  #topbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    background: var(--panel); border-bottom: 1px solid var(--line);
+    padding: 10px 18px; flex: 0 0 auto;
+  }
+  #topbar .left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  #topbar .brand { color: var(--cyan); font-size: 15px; letter-spacing: 1px; text-transform: uppercase; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #menuToggle {
+    display: none; background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+    border-radius: var(--radius); font-size: 16px; padding: 4px 10px; cursor: pointer; flex: 0 0 auto;
+  }
+  #mainRow { display: flex; flex: 1 1 auto; min-height: 0; position: relative; }
+  #sidebarBackdrop { display: none; }
   #sidebar {
     width: 320px; min-width: 320px; background: var(--panel);
     border-right: 1px solid var(--line); overflow-y: auto;
@@ -38,8 +51,9 @@
     background: var(--panel-2); border: 1px solid var(--line);
     color: var(--text); border-radius: var(--radius); font-size: 13px;
   }
+  #sidebar h1 { display: none; }
   #gmLockBtn {
-    width: 100%; padding: 7px; margin-bottom: 10px;
+    padding: 6px 14px;
     background: var(--panel-2); border: 1px solid var(--line);
     color: var(--text-mute); border-radius: var(--radius); font-size: 12px; cursor: pointer;
   }
@@ -112,14 +126,41 @@
   section.content.active { display: block; }
   ::-webkit-scrollbar { width: 9px; }
   ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+
+  @media (max-width: 760px) {
+    #menuToggle { display: inline-block; }
+    #topbar .brand { font-size: 12px; }
+    #gmLockBtn { font-size: 11px; padding: 5px 8px; white-space: nowrap; }
+    #sidebar {
+      position: fixed; top: 0; bottom: 0; left: 0;
+      width: 82%; max-width: 300px; z-index: 60;
+      transform: translateX(-105%);
+      transition: transform 0.22s ease;
+      box-shadow: 3px 0 16px rgba(0,0,0,0.6);
+    }
+    #sidebar.open { transform: translateX(0); }
+    #sidebarBackdrop.open {
+      display: block; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.55); z-index: 55;
+    }
+    #main { padding: 20px 16px 80px; }
+  }
 </style>
 </head>
 <body>
 
+<header id="topbar">
+  <div class="left">
+    <button id="menuToggle" onclick="toggleSidebar()">☰</button>
+    <div class="brand">DDA 2E · Indice Regole</div>
+  </div>
+  <button id="gmLockBtn" onclick="toggleGM()">🔒 Sblocca vista GM</button>
+</header>
+
+<div id="mainRow">
+<div id="sidebarBackdrop" onclick="toggleSidebar()"></div>
 <div id="sidebar">
-  <h1>DDA 2E · Indice Regole</h1>
   <input id="search" type="text" placeholder="Cerca una regola...">
-  <button id="gmLockBtn" onclick="toggleGM()">🔒 Sblocca vista Game Master</button>
   <div id="toc"></div>
 </div>
 
@@ -1449,6 +1490,7 @@
 
   </div>
 </div>
+</div>
 
 <script>
 const TOC = {
@@ -1557,6 +1599,11 @@ const TOC = {
 };
 
 let gmUnlocked = false;
+
+function toggleSidebar(){
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebarBackdrop').classList.toggle('open');
+}
 const GM_PASSWORD = "digimon"; // Rocco: cambia questa parola per il tuo gruppo
 
 function toggleGM(){
@@ -1629,7 +1676,13 @@ function renderTocEntry(sec, cls){
     tag.textContent = 'in arrivo';
     div.appendChild(tag);
   }
-  div.onclick = ()=> showSection(sec.id, sec.title, sec.done);
+  div.onclick = ()=> {
+    showSection(sec.id, sec.title, sec.done);
+    if(window.innerWidth <= 760){
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('sidebarBackdrop').classList.remove('open');
+    }
+  };
   return div;
 }
 
