@@ -11,8 +11,10 @@
 <style>
   @font-face {
     font-family: 'Digicode';
-    src: url('https://www.wfonts.com/download/data/2016/10/03/digicode/digicode.woff') format('woff'),
-         url('https://fonts2u.com/fonts/d/digimon_digicode_font_by_mooshimon.ttf') format('truetype');
+    src: url('https://db.onlinewebfonts.com/t/b57e4641681dbc9f0ed30d809bf82539.woff2') format('woff2'),
+         url('https://db.onlinewebfonts.com/t/b57e4641681dbc9f0ed30d809bf82539.woff') format('woff'),
+         url('https://db.onlinewebfonts.com/t/b57e4641681dbc9f0ed30d809bf82539.ttf') format('truetype'),
+         url('https://www.wfonts.com/download/data/2016/10/03/digicode/digicode.woff') format('woff');
     font-display: swap;
   }
   @font-face {
@@ -802,6 +804,7 @@
         CAMPAGNA <b>${session ? session.code : '---'}</b> &nbsp;|&nbsp; UTENTE <b>${session ? session.username : '---'}</b>
         ${session && cachedProgression ? ` &nbsp;|&nbsp; MILESTONE <b style="color:var(--cyan);">${cachedProgression.milestone}</b> &nbsp;|&nbsp; INSP. <b style="color:var(--cyan);">${cachedProgression.inspiration}</b>` : ''}
         ${session ? `&nbsp;<a href="dex.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">📖 Digidex</a>` : ''}
+        ${session ? `&nbsp;<a href="map.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">🗺️ Mappa</a>` : ''}
         ${session ? `&nbsp;<button class="btn ghost small" id="btn-logout" style="margin-left:10px;">Esci</button>` : ''}
       </div>
     </div>
@@ -3384,6 +3387,13 @@
               </div>
               <div class="muted" style="margin-bottom:10px;">Registra rapidamente un Digimon incontrato dal bottone "+Dex" sugli Incontri della Scena. Per la gestione completa (modifica, Qualities, evoluzioni, Attributo/Famiglia, import) usa la pagina dedicata.</div>
               <a href="dex.html" target="_blank" class="btn solid" style="display:inline-block;text-decoration:none;padding:10px 18px;">📖 Apri il Digidex Completo →</a>
+            </div>
+            <div class="hud-frame card">
+              <div class="flex-between" style="margin-bottom:6px;">
+                <div class="section-title" style="margin:0;border:none;padding:0;">Mappa</div>
+              </div>
+              <div class="muted" style="margin-bottom:10px;">Gestisci Macroscene, Settori e Luoghi dal pannello "🗺️ Mappa" qui sopra. Per la vista esplorabile a griglia 3×3 (immagini cliccabili, navigazione per i giocatori) usa la pagina dedicata.</div>
+              <a href="map.html" target="_blank" class="btn solid" style="display:inline-block;text-decoration:none;padding:10px 18px;">🗺️ Apri la Mappa Completa →</a>
             </div>
           </div>
           </div>
