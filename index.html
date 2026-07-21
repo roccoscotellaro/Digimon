@@ -238,6 +238,8 @@
   let dexActiveFilters = [];
   let dexAddEvolutions = [];
   let dexCanEditGlobal = false;
+  let sectorMapSelectedId = null; // which Settore is expanded in the compact Mappa panel
+  let encounterDraft = null; // pending Digimon (from Dex or homebrew) being reviewed before adding to the scene
   let cachedMe = null;
   let animatedLogIds = new Set();
   let cachedCombat = null;
@@ -608,6 +610,7 @@
     const d = await apiGet('/api/scene?code=' + encodeURIComponent(code));
     const s = d ? d.scene : { title:'', background:'', music:'', encounters:[] };
     if(!Array.isArray(s.encounters)) s.encounters = [];
+    s.encounters = s.encounters.map(normalizeEncounter);
     if(!s.id) s.id = 'scene'+Date.now()+Math.random().toString(36).slice(2,6);
     if(!Array.isArray(s.macroScenes)){
       // Migra la vecchia struttura piatta "sectors" in una Macroscena di default, se presente
@@ -3303,10 +3306,12 @@
             <div class="divider"></div>
             <label style="font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;">Digimon in questa Scena</label>
             <div id="encounters-live" style="margin:8px 0;">${encountersEditableHTML(cachedScene.encounters||[])}</div>
+            <datalist id="dex-name-datalist">${cachedDex.map(e=>`<option value="${escapeAttr(e.name)}"></option>`).join('')}</datalist>
             <div class="row">
-              <input type="text" id="encounter-name" placeholder="es. Gabumon" style="flex:2;" />
-              <button class="btn small" id="btn-add-encounter" style="flex:1;">Aggiungi</button>
+              <input type="text" id="encounter-search" list="dex-name-datalist" placeholder="Cerca nel Digidex o scrivi un nome nuovo..." style="flex:2;" />
+              <button class="btn small" id="btn-prepare-encounter" style="flex:1;">Cerca</button>
             </div>
+            <div id="encounter-draft-card" style="margin-top:8px;"></div>
             <div class="divider"></div>
             <div class="row">
               <button class="btn solid" id="btn-save-scene" style="flex:2;">Aggiorna Scena</button>
@@ -3326,7 +3331,7 @@
               <select id="speak-as">
                 <option value="master">Master (narrazione)</option>
                 ${players.map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (p.username+' — Digimon'))}</option>`).join('')}
-                ${(cachedScene.encounters||[]).map((name,i)=>`<option value="encounter:${i}">${escapeHTML(name)} (in scena)</option>`).join('')}
+                ${(cachedScene.encounters||[]).map((e,i)=>`<option value="encounter:${i}">${escapeHTML(encName(e))} (in scena)</option>`).join('')}
                 <option value="enemy">Nemico personalizzato...</option>
               </select>
             </div>
@@ -3491,10 +3496,11 @@
         color = member ? member.digimon.chatColor : null;
       } else if(mode.startsWith('encounter:')){
         const idx = Number(mode.slice('encounter:'.length));
-        who = (cachedScene.encounters||[])[idx] || 'Digimon';
+        const encObj = (cachedScene.encounters||[])[idx];
+        who = encName(encObj) || 'Digimon';
         const dexMatch = cachedDex.find(e=>e.name.trim().toLowerCase()===who.trim().toLowerCase());
         role = 'enemy';
-        avatar = dexMatch ? dexMatch.image_url : null;
+        avatar = (encObj && typeof encObj==='object' && encObj.image) ? encObj.image : (dexMatch ? dexMatch.image_url : null);
       } else if(mode==='enemy'){
         who = document.getElementById('enemy-speak-name').value.trim() || 'Nemico';
         role = 'enemy';
@@ -5122,6 +5128,11 @@
     const sectors = activeMacro ? (activeMacro.sectors||[]) : [];
     const terrainBadge = (t)=> t==='Dangerous' ? '<span class="tag" style="color:var(--danger);border-color:var(--danger);">☠ Pericoloso</span>' : (t==='Difficult' ? '<span class="tag" style="color:var(--amber);border-color:var(--amber);">⚠ Difficile</span>' : '<span class="tag">Normale</span>');
     const usedPositions = sectors.map(s=>s.gridPos).filter(p=>p!=null);
+    if(sectors.length>0 && !sectors.find(s=>s.id===sectorMapSelectedId)){
+      sectorMapSelectedId = cachedScene.currentSectorId && sectors.find(s=>s.id===cachedScene.currentSectorId) ? cachedScene.currentSectorId : sectors[0].id;
+    }
+    if(sectors.length===0) sectorMapSelectedId = null;
+    const selectedSector = sectors.find(s=>s.id===sectorMapSelectedId) || null;
     el.innerHTML = `
       <div class="section-title">🗺️ Mappa: Macroscene → Settori → Luoghi</div>
       <div class="muted" style="margin-bottom:8px;">Una Macroscena rappresenta una regione/location ampia (es. "Foresta di File"); si divide in Settori collegati tra loro (es. "Radura Nord"), che a loro volta contengono Luoghi specifici (es. "Vecchia Quercia"). Non sostituisce le zone Corto/Medio/Lungo del Combattimento. Assegna un'immagine e una posizione (1-9) a ogni Settore per vederli nella griglia 3×3 di <b>map.html</b>.</div>
@@ -5141,42 +5152,49 @@
           <button class="btn ghost small" id="btn-remove-macro" style="width:100%;">🗑️ Elimina Macroscena "${escapeHTML(activeMacro.name)}"</button>
         </div>
         <div class="divider"></div>
-        <div class="muted" style="margin-bottom:6px;">Settori di "${escapeHTML(activeMacro.name)}"</div>
-        ${sectors.length===0 ? '<div class="muted" style="margin-bottom:8px;">Nessun settore ancora creato in questa Macroscena.</div>' : sectors.map(s=>`
-          <div class="roster-item" style="padding:6px 8px;margin-bottom:6px;${cachedScene.currentSectorId===s.id?'border-color:var(--cyan);':''}">
+        <div class="muted" style="margin-bottom:6px;">Settori di "${escapeHTML(activeMacro.name)}" (${sectors.length})</div>
+        ${sectors.length===0 ? '<div class="muted" style="margin-bottom:8px;">Nessun settore ancora creato in questa Macroscena.</div>' : `
+          <div class="field"><label>Seleziona Settore da gestire</label>
+            <select id="sector-select">
+              ${sectors.map(s=>`<option value="${s.id}" ${sectorMapSelectedId===s.id?'selected':''}>${escapeHTML(s.name)} — Casella ${s.gridPos!=null?(Number(s.gridPos)+1):'—'}${cachedScene.currentSectorId===s.id?' · 📍 Attuale':''}</option>`).join('')}
+            </select>
+          </div>
+          ${selectedSector ? `
+          <div class="roster-item" style="padding:6px 8px;margin-bottom:6px;${cachedScene.currentSectorId===selectedSector.id?'border-color:var(--cyan);':''}">
             <div class="flex-between">
               <span style="display:flex;align-items:center;gap:6px;">
-                ${s.image ? `<img src="${escapeAttr(s.image)}" onerror="this.style.display='none'" style="width:28px;height:28px;object-fit:cover;border-radius:4px;" />` : ''}
-                <b>${escapeHTML(s.name)}</b> ${terrainBadge(s.terrain)} <span class="tag">#${s.gridPos!=null?(Number(s.gridPos)+1):'—'}</span> ${cachedScene.currentSectorId===s.id && !cachedScene.currentLuogoId ?'<span class="tag" style="color:var(--cyan);border-color:var(--cyan);">📍 Attuale</span>':''}
+                ${selectedSector.image ? `<img src="${escapeAttr(selectedSector.image)}" onerror="this.style.display='none'" style="width:28px;height:28px;object-fit:cover;border-radius:4px;" />` : ''}
+                <b>${escapeHTML(selectedSector.name)}</b> ${terrainBadge(selectedSector.terrain)} <span class="tag">#${selectedSector.gridPos!=null?(Number(selectedSector.gridPos)+1):'—'}</span> ${cachedScene.currentSectorId===selectedSector.id && !cachedScene.currentLuogoId ?'<span class="tag" style="color:var(--cyan);border-color:var(--cyan);">📍 Attuale</span>':''}
               </span>
             </div>
-            ${s.description ? `<div class="sub" style="margin-top:2px;">${escapeHTML(s.description)}</div>` : ''}
-            <div class="muted" style="margin-top:2px;font-size:11px;">Collegato a: ${(s.connections||[]).map(cid=>{ const c = sectors.find(x=>x.id===cid); return c?escapeHTML(c.name):''; }).filter(Boolean).join(', ') || 'nessuno'}</div>
+            ${selectedSector.description ? `<div class="sub" style="margin-top:2px;">${escapeHTML(selectedSector.description)}</div>` : ''}
+            <div class="muted" style="margin-top:2px;font-size:11px;">Collegato a: ${(selectedSector.connections||[]).map(cid=>{ const c = sectors.find(x=>x.id===cid); return c?escapeHTML(c.name):''; }).filter(Boolean).join(', ') || 'nessuno'}</div>
             <div class="row" style="margin-top:4px;">
-              <button class="btn small" data-sector-activate="${s.id}" style="flex:1;">📍 Rendi Attuale</button>
-              <button class="btn ghost small" data-sector-image="${s.id}" style="flex:1;">🖼️ Immagine</button>
-              <select data-sector-gridpos="${s.id}" style="flex:1;">
-                ${[0,1,2,3,4,5,6,7,8].map(p=>`<option value="${p}" ${s.gridPos===p?'selected':''}>Casella ${p+1}${usedPositions.includes(p) && s.gridPos!==p?' (occupata)':''}</option>`).join('')}
+              <button class="btn small" data-sector-activate="${selectedSector.id}" style="flex:1;">📍 Rendi Attuale</button>
+              <button class="btn ghost small" data-sector-image="${selectedSector.id}" style="flex:1;">🖼️ Immagine</button>
+              <select data-sector-gridpos="${selectedSector.id}" style="flex:1;">
+                ${[0,1,2,3,4,5,6,7,8].map(p=>`<option value="${p}" ${selectedSector.gridPos===p?'selected':''}>Casella ${p+1}${usedPositions.includes(p) && selectedSector.gridPos!==p?' (occupata)':''}</option>`).join('')}
               </select>
-              <button class="btn ghost small" data-sector-remove="${s.id}" style="flex:1;">🗑️</button>
+              <button class="btn ghost small" data-sector-remove="${selectedSector.id}" style="flex:1;">🗑️</button>
             </div>
             <div class="muted" style="margin-top:6px;font-size:11px;">Luoghi in questo Settore:</div>
-            ${(s.luoghi||[]).length===0 ? '<div class="muted" style="font-size:11px;">Nessun luogo ancora.</div>' : (s.luoghi||[]).map(lg=>`
+            ${(selectedSector.luoghi||[]).length===0 ? '<div class="muted" style="font-size:11px;">Nessun luogo ancora.</div>' : (selectedSector.luoghi||[]).map(lg=>`
               <div class="flex-between" style="margin-top:3px;padding:3px 6px;background:rgba(255,255,255,0.03);border-radius:6px;">
                 <span style="font-size:12px;display:flex;align-items:center;gap:5px;">${lg.image?`<img src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" style="width:18px;height:18px;object-fit:cover;border-radius:3px;" />`:''}${escapeHTML(lg.name)} ${cachedScene.currentLuogoId===lg.id?'<span class="tag" style="color:var(--cyan);border-color:var(--cyan);font-size:9px;">📍</span>':''}${lg.description?`<span class="muted" style="font-size:10px;"> — ${escapeHTML(lg.description)}</span>`:''}</span>
                 <span>
-                  <button class="btn small" data-luogo-activate="${s.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">📍</button>
-                  <button class="btn ghost small" data-luogo-image="${s.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">🖼️</button>
-                  <button class="btn ghost small" data-luogo-remove="${s.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">🗑️</button>
+                  <button class="btn small" data-luogo-activate="${selectedSector.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">📍</button>
+                  <button class="btn ghost small" data-luogo-image="${selectedSector.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">🖼️</button>
+                  <button class="btn ghost small" data-luogo-remove="${selectedSector.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">🗑️</button>
                 </span>
               </div>
             `).join('')}
             <div class="row" style="margin-top:6px;">
-              <input type="text" class="luogo-name-input" data-for-sector="${s.id}" placeholder="Nuovo Luogo (es. Vecchia Quercia)" style="flex:2;font-size:11px;" />
-              <button class="btn small" data-luogo-add="${s.id}" style="flex:1;font-size:11px;">+ Luogo</button>
+              <input type="text" class="luogo-name-input" data-for-sector="${selectedSector.id}" placeholder="Nuovo Luogo (es. Vecchia Quercia)" style="flex:2;font-size:11px;" />
+              <button class="btn small" data-luogo-add="${selectedSector.id}" style="flex:1;font-size:11px;">+ Luogo</button>
             </div>
           </div>
-        `).join('')}
+          ` : ''}
+        `}
         <div class="divider"></div>
         <div class="muted" style="margin-bottom:4px;">Nuovo Settore in "${escapeHTML(activeMacro.name)}"</div>
         <div class="row">
@@ -5209,9 +5227,15 @@
       cachedScene.currentMacroSceneId = macroSel.value || null;
       cachedScene.currentSectorId = null;
       cachedScene.currentLuogoId = null;
+      sectorMapSelectedId = null;
       await saveScene(code, cachedScene);
       renderSectorMap(code);
       refreshLiveParts();
+    };
+    const sectorSel = document.getElementById('sector-select');
+    if(sectorSel) sectorSel.onchange = ()=>{
+      sectorMapSelectedId = sectorSel.value;
+      renderSectorMap(code);
     };
     const addMacroBtn = document.getElementById('btn-add-macro');
     if(addMacroBtn) addMacroBtn.onclick = async ()=>{
@@ -5251,9 +5275,11 @@
     el.querySelectorAll('[data-sector-remove]').forEach(btn=>{
       btn.onclick = async ()=>{
         const id = btn.getAttribute('data-sector-remove');
+        if(!window.confirm('Eliminare questo Settore e tutti i suoi Luoghi?')) return;
         activeMacro.sectors = (activeMacro.sectors||[]).filter(s=>s.id!==id);
         activeMacro.sectors.forEach(s=>{ s.connections = (s.connections||[]).filter(cid=>cid!==id); });
         if(cachedScene.currentSectorId===id){ cachedScene.currentSectorId = null; cachedScene.currentLuogoId = null; }
+        if(sectorMapSelectedId===id) sectorMapSelectedId = null;
         await saveScene(code, cachedScene);
         renderSectorMap(code);
         refreshLiveParts();
@@ -5355,6 +5381,7 @@
           const other = activeMacro.sectors.find(s=>s.id===cid);
           if(other){ if(!other.connections) other.connections=[]; if(!other.connections.includes(id)) other.connections.push(id); }
         });
+        sectorMapSelectedId = id;
         await saveScene(code, cachedScene);
         renderSectorMap(code);
         refreshLiveParts();
@@ -5378,12 +5405,13 @@
         <div class="muted" style="margin-top:4px;font-size:11px;">Puoi raggiungere: ${(current.connections||[]).map(cid=>{ const c=sectors.find(x=>x.id===cid); return c?escapeHTML(c.name):''; }).filter(Boolean).join(', ') || 'nessun altro settore collegato'}</div>
       </div>
     ` : '';
-    if(!scene || (!scene.background && !scene.title)){
+    const bgImage = (currentLuogo && currentLuogo.image) || (current && current.image) || (scene && scene.background) || '';
+    if(!scene || (!bgImage && !scene.title)){
       return `<div class="scene-box"><div class="scene-empty">Nessuna scena impostata dal Master</div></div>` + sectorHTML + encountersReadonlyHTML(scene);
     }
     return `
       <div class="scene-box">
-        ${scene.background ? `<img class="bg" src="${escapeAttr(scene.background)}" onerror="this.style.display='none'" />` : ''}
+        ${bgImage ? `<img class="bg" src="${escapeAttr(bgImage)}" onerror="this.style.display='none'" />` : ''}
         <div class="overlay"></div>
         ${scene.title ? `<div class="title">${escapeHTML(scene.title)}</div>` : ''}
       </div>
@@ -5391,10 +5419,11 @@
   }
 
   function encountersReadonlyHTML(scene){
-    const enc = (scene && Array.isArray(scene.encounters)) ? scene.encounters : [];
-    if(enc.length===0) return '';
+    const enc = (scene && Array.isArray(scene.encounters)) ? scene.encounters.map(normalizeEncounter) : [];
+    const visible = enc.filter(e=>e.revealed!==false);
+    if(visible.length===0) return '';
     return `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">
-      ${enc.map(name=>`<span class="tag">${escapeHTML(name)}</span>`).join('')}
+      ${visible.map(e=>`<span class="tag" style="display:inline-flex;align-items:center;gap:4px;">${e.image?`<img src="${escapeAttr(e.image)}" onerror="this.style.display='none'" style="width:16px;height:16px;object-fit:cover;border-radius:3px;" />`:''}${escapeHTML(e.name)}${e.stage?` <span style="opacity:.6;">(${escapeHTML(e.stage)})</span>`:''}</span>`).join('')}
     </div>`;
   }
 
@@ -5403,33 +5432,118 @@
   }
 
   function encountersEditableHTML(list){
-    if(!list || list.length===0) return '<div class="muted">Nessun Digimon ancora aggiunto a questa scena.</div>';
-    return list.map((name,i)=>{
-      const already = isInDex(name);
+    const items = (list||[]).map(normalizeEncounter);
+    if(items.length===0) return '<div class="muted">Nessun Digimon ancora aggiunto a questa scena.</div>';
+    return items.map((e,i)=>{
+      const already = !!e.dexId || isInDex(e.name);
+      const visible = e.revealed!==false;
       return `
-        <span class="tag" style="display:inline-flex;align-items:center;gap:6px;margin:2px 4px 2px 0;">
-          ${escapeHTML(name)}
-          ${already ? '' : `<button class="btn small" data-quickdex="${i}" style="padding:1px 6px;">+Dex</button>`}
-          <button class="btn ghost small" data-rmenc="${i}" style="padding:1px 6px;">×</button>
-        </span>
+        <div class="roster-item" style="padding:6px 8px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          ${e.image ? `<img src="${escapeAttr(e.image)}" onerror="this.style.display='none'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0;" />` : ''}
+          <div style="flex:1;min-width:120px;">
+            <div><b>${escapeHTML(e.name)}</b> ${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>
+            <div class="muted" style="font-size:11px;">${visible ? '👁️ Visibile ai giocatori' : '🙈 Nascosto — solo il Master lo vede'}</div>
+          </div>
+          <button class="btn ${visible?'ghost':''} small" data-toggle-reveal="${i}" style="padding:4px 8px;font-size:10px;">${visible?'🙈 Nascondi':'👁️ Mostra ai giocatori'}</button>
+          ${already ? '' : `<button class="btn small" data-quickdex="${i}" style="padding:4px 8px;font-size:10px;">+Dex</button>`}
+          <button class="btn ghost small" data-rmenc="${i}" style="padding:4px 8px;font-size:10px;">×</button>
+        </div>
       `;
     }).join('');
   }
 
+  function renderEncounterDraftCard(){
+    const cardEl = document.getElementById('encounter-draft-card');
+    if(!cardEl) return;
+    if(!encounterDraft){ cardEl.innerHTML = ''; return; }
+    const d = encounterDraft;
+    cardEl.innerHTML = `
+      <div class="hud-frame" style="padding:10px 12px;">
+        <div class="muted" style="margin-bottom:6px;">${d.dexId ? '📖 Trovato nel Digidex — controlla i valori prima di confermare:' : '✏️ Non presente nel Digidex — Digimon homebrew, compila i valori:'}</div>
+        <div class="row">
+          <div class="field" style="flex:2;"><label>Nome</label><input type="text" id="draft-name" value="${escapeAttr(d.name)}" /></div>
+          <div class="field" style="flex:1;"><label>Stage</label>
+            <select id="draft-stage">${['Baby','Rookie','Champion','Ultimate','Mega'].map(s=>`<option ${d.stage===s?'selected':''}>${s}</option>`).join('')}</select>
+          </div>
+        </div>
+        <div class="field"><label>Categorie (separate da virgola, es. Deva, Vaccine)</label><input type="text" id="draft-categories" value="${escapeAttr((d.categories||[]).join(', '))}" /></div>
+        <div class="field"><label>URL Immagine</label><input type="text" id="draft-image" value="${escapeAttr(d.image)}" placeholder="https://..." /></div>
+        <div class="field"><label>Descrizione</label><textarea id="draft-desc" rows="2">${escapeHTML(d.description)}</textarea></div>
+        <div class="muted" style="margin:6px 0 4px;">Stat base (puoi lasciarle a 0 e completarle dopo)</div>
+        <div class="row">
+          <div class="field"><label>Accuracy</label><input type="number" id="draft-acc" value="${d.baseStats.baseAccuracy||0}" min="0" /></div>
+          <div class="field"><label>Damage</label><input type="number" id="draft-dmg" value="${d.baseStats.baseDamage||0}" min="0" /></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Dodge</label><input type="number" id="draft-dodge" value="${d.baseStats.baseDodge||0}" min="0" /></div>
+          <div class="field"><label>Armor</label><input type="number" id="draft-arm" value="${d.baseStats.baseArmor||0}" min="0" /></div>
+        </div>
+        <div class="field"><label>Health</label><input type="number" id="draft-hp" value="${d.baseStats.baseHealth||0}" min="0" /></div>
+        <div class="row" style="margin-top:6px;">
+          <button class="btn solid small" id="btn-confirm-encounter" style="flex:2;">✅ Conferma e Aggiungi alla Scena</button>
+          <button class="btn ghost small" id="btn-cancel-encounter" style="flex:1;">Annulla</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function bindEncounterDraftCard(code, username){
+    const confirmBtn = document.getElementById('btn-confirm-encounter');
+    if(confirmBtn) confirmBtn.onclick = async ()=>{
+      const name = document.getElementById('draft-name').value.trim();
+      if(!name) return;
+      const categories = document.getElementById('draft-categories').value.split(',').map(s=>s.trim()).filter(Boolean);
+      const image = document.getElementById('draft-image').value.trim();
+      const description = document.getElementById('draft-desc').value.trim();
+      const stage = document.getElementById('draft-stage').value;
+      const baseStats = {
+        baseAccuracy: Number(document.getElementById('draft-acc').value)||0,
+        baseDamage: Number(document.getElementById('draft-dmg').value)||0,
+        baseDodge: Number(document.getElementById('draft-dodge').value)||0,
+        baseArmor: Number(document.getElementById('draft-arm').value)||0,
+        baseHealth: Number(document.getElementById('draft-hp').value)||0
+      };
+      const finalEncounter = { id: encounterDraft.id, name, dexId: encounterDraft.dexId, stage, categories, image, description, baseStats, revealed:false };
+      cachedScene.encounters = cachedScene.encounters || [];
+      cachedScene.encounters.push(finalEncounter);
+      encounterDraft = null;
+      await saveScene(code, cachedScene);
+      const searchInput = document.getElementById('encounter-search');
+      if(searchInput) searchInput.value='';
+      document.getElementById('encounters-live').innerHTML = encountersEditableHTML(cachedScene.encounters);
+      bindEncountersInnerActions(code, username);
+      renderEncounterDraftCard();
+      refreshLiveParts();
+    };
+    const cancelBtn = document.getElementById('btn-cancel-encounter');
+    if(cancelBtn) cancelBtn.onclick = ()=>{ encounterDraft = null; renderEncounterDraftCard(); };
+  }
+
   function bindEncountersPanel(code, username){
-    const addBtn = document.getElementById('btn-add-encounter');
-    if(addBtn){
-      addBtn.onclick = async ()=>{
-        const input = document.getElementById('encounter-name');
+    const prepBtn = document.getElementById('btn-prepare-encounter');
+    if(prepBtn){
+      prepBtn.onclick = ()=>{
+        const input = document.getElementById('encounter-search');
         const name = input.value.trim();
         if(!name) return;
-        cachedScene.encounters = cachedScene.encounters || [];
-        cachedScene.encounters.push(name);
-        await saveScene(code, cachedScene);
-        input.value='';
-        document.getElementById('encounters-live').innerHTML = encountersEditableHTML(cachedScene.encounters);
-        bindEncountersInnerActions(code, username);
-        refreshLiveParts();
+        const dexMatch = cachedDex.find(e=>String(e.name).trim().toLowerCase()===name.toLowerCase());
+        encounterDraft = dexMatch ? {
+          id:'enc'+Date.now()+Math.random().toString(36).slice(2,6),
+          name: dexMatch.name,
+          dexId: dexMatch.id,
+          stage: dexMatch.stage || 'Rookie',
+          categories: (dexMatch.categories||[]).slice(),
+          image: dexMatch.image_url || '',
+          description: dexMatch.description || '',
+          baseStats: Object.assign({baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, dexMatch.base_stats||{}),
+          revealed:false
+        } : {
+          id:'enc'+Date.now()+Math.random().toString(36).slice(2,6),
+          name, dexId:null, stage:'Rookie', categories:[], image:'', description:'',
+          baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, revealed:false
+        };
+        renderEncounterDraftCard();
+        bindEncounterDraftCard(code, username);
       };
     }
     bindEncountersInnerActions(code, username);
@@ -5448,13 +5562,37 @@
         refreshLiveParts();
       };
     });
+    live.querySelectorAll('[data-toggle-reveal]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const idx = Number(btn.getAttribute('data-toggle-reveal'));
+        const e = cachedScene.encounters[idx];
+        if(!e) return;
+        const isVisible = e.revealed!==false;
+        e.revealed = !isVisible;
+        await saveScene(code, cachedScene);
+        live.innerHTML = encountersEditableHTML(cachedScene.encounters);
+        bindEncountersInnerActions(code, username);
+        refreshLiveParts();
+      };
+    });
     live.querySelectorAll('[data-quickdex]').forEach(btn=>{
       btn.onclick = async ()=>{
         const idx = Number(btn.getAttribute('data-quickdex'));
-        const name = cachedScene.encounters[idx];
-        const d = await addDexEntry(code, { name, stage:'Rookie', description:'', imageUrl:'', addedBy: username, discovered: true });
+        const e = cachedScene.encounters[idx];
+        const name = encName(e);
+        const d = await addDexEntry(code, {
+          name,
+          stage: (e && e.stage) || 'Rookie',
+          description: (e && e.description) || '',
+          imageUrl: (e && e.image) || '',
+          addedBy: username,
+          categories: (e && e.categories) || [],
+          baseStats: (e && e.baseStats) || {},
+          discovered: true
+        });
         if(d && d.entry){
           cachedDex.push(d.entry);
+          if(e && typeof e === 'object') e.dexId = d.entry.id;
           live.innerHTML = encountersEditableHTML(cachedScene.encounters);
           bindEncountersInnerActions(code, username);
           const dexLive = document.getElementById('dex-live');
@@ -5574,6 +5712,15 @@
 
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s){ return escapeHTML(s); }
+
+  // ---------- SCENE ENCOUNTERS: name-only strings (legacy) vs full Dex-linked objects ----------
+  function normalizeEncounter(e){
+    if(typeof e === 'string'){
+      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, revealed:true };
+    }
+    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, revealed:true }, e);
+  }
+  function encName(e){ return (typeof e==='string') ? e : ((e && e.name) || ''); }
 
   // ---------- DIGIMOJI: conversione fonetica italiana -> Hiragana ----------
   // Regole pensate per l'ortografia italiana (ca/co/cu = k, che/chi = k, ci = "chi",
