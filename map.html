@@ -141,6 +141,48 @@
   function escapeAttr(s){ return escapeHTML(s); }
   function sanitizeKeyPart(s){ return String(s||'').trim().toUpperCase().replace(/[^A-Z0-9_-]/g,''); }
 
+  // ---------- IMAGE UPLOAD (hosted via Supabase Storage, no external URL needed) ----------
+  function imageUploadRowHTML(textInputId){
+    return `<input type="file" accept="image/*" id="upload-file-${textInputId}" style="display:none;" />
+      <button type="button" class="btn ghost small" id="upload-btn-${textInputId}" style="white-space:nowrap;">📤 Carica</button>`;
+  }
+  function bindImageUpload(textInputId, statusElId){
+    const fileInput = document.getElementById('upload-file-'+textInputId);
+    const btn = document.getElementById('upload-btn-'+textInputId);
+    if(!fileInput || !btn) return;
+    btn.onclick = ()=> fileInput.click();
+    fileInput.onchange = async ()=>{
+      const file = fileInput.files[0];
+      if(!file) return;
+      const statusEl = statusElId ? document.getElementById(statusElId) : null;
+      if(statusEl) statusEl.textContent = 'Caricamento in corso...';
+      btn.disabled = true;
+      try{
+        const dataUrl = await new Promise((resolve, reject)=>{
+          const reader = new FileReader();
+          reader.onload = ()=> resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const res = await apiPost('/api/upload', { code: session.code, dataUrl });
+        if(res && res.ok && res.url){
+          const textInput = document.getElementById(textInputId);
+          if(textInput){
+            textInput.value = res.url;
+            textInput.dispatchEvent(new Event('change'));
+          }
+          if(statusEl) statusEl.textContent = '';
+        } else {
+          if(statusEl) statusEl.textContent = '⚠ Caricamento fallito: ' + (lastApiError || 'errore sconosciuto');
+        }
+      }catch(e){
+        if(statusEl) statusEl.textContent = '⚠ Errore durante il caricamento: ' + e.message;
+      }
+      btn.disabled = false;
+      fileInput.value = '';
+    };
+  }
+
   function saveSession(s){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }catch(e){} }
   function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
 
@@ -175,14 +217,23 @@
     if(!d || !d.ok) return false;
     lastSaveAt = Date.now();
     // The API can report ok:true without actually persisting every field (e.g. if the backend
-    // wasn't updated to store macroScenes). Re-fetch and compare to catch that silently.
+    // wasn't updated to store macroScenes). Re-fetch and do a light structural check to catch that —
+    // NOT a strict deep-equal, since jsonb storage can reorder object keys on a round-trip.
     try{
       const verify = await apiGet('/api/scene?code=' + encodeURIComponent(code));
-      const savedMacro = verify && verify.scene ? JSON.stringify(verify.scene.macroScenes||[]) : null;
-      const sentMacro = JSON.stringify(scene.macroScenes||[]);
-      if(savedMacro !== sentMacro){
-        lastApiError = 'Il server ha accettato la richiesta ma i dati della Mappa (Macroscene/Settori) non risultano salvati. È quasi certo un bug nel backend (api/scene) che non gestisce ancora il campo "macroScenes".';
+      const verifiedMacros = (verify && verify.scene && Array.isArray(verify.scene.macroScenes)) ? verify.scene.macroScenes : null;
+      const sentMacros = Array.isArray(scene.macroScenes) ? scene.macroScenes : [];
+      if(!verifiedMacros || verifiedMacros.length !== sentMacros.length){
+        lastApiError = 'Il server ha accettato la richiesta ma le Macroscene non risultano salvate correttamente. È quasi certo un bug nel backend (api/scene) che non gestisce ancora il campo "macroScenes".';
         return false;
+      }
+      if(scene.currentMacroSceneId){
+        const sentActive = sentMacros.find(m=>m.id===scene.currentMacroSceneId);
+        const verifiedActive = verifiedMacros.find(m=>m.id===scene.currentMacroSceneId);
+        if(sentActive && (!verifiedActive || (sentActive.sectors||[]).length !== (verifiedActive.sectors||[]).length)){
+          lastApiError = 'Il server ha accettato la richiesta ma i Settori della Macroscena attiva non risultano salvati correttamente.';
+          return false;
+        }
       }
     }catch(e){ /* if verification itself fails, don't block on it — trust the ok response */ }
     return true;
@@ -365,7 +416,12 @@
           </select>
         </div>
         <div class="field" style="margin-top:8px;"><label>Descrizione</label><textarea id="new-sector-desc" rows="2" placeholder="Breve descrizione (opzionale)"></textarea></div>
-        <div class="field"><label>URL Immagine</label><input type="text" id="new-sector-image" placeholder="URL Immagine (opzionale)" /></div>
+        <div class="field"><label>URL Immagine</label>
+          <div class="row" style="align-items:flex-start;">
+            <input type="text" id="new-sector-image" placeholder="URL Immagine (opzionale)" style="flex:2;" />
+            <div style="flex:1;display:flex;align-items:center;">${imageUploadRowHTML('new-sector-image')}</div>
+          </div>
+        </div>
         <div class="row" style="margin-top:6px;">
           <button class="btn solid small" id="btn-confirm-add-sector" style="flex:1;">Crea Settore</button>
           <button class="btn ghost small" id="btn-cancel-add-sector" style="flex:1;">Annulla</button>
@@ -376,6 +432,7 @@
   }
 
   function bindNewSectorForm(activeMacro){
+    bindImageUpload('new-sector-image', 'new-sector-status');
     const confirmBtn = document.getElementById('btn-confirm-add-sector');
     if(confirmBtn) confirmBtn.onclick = async ()=>{
       const name = document.getElementById('new-sector-name').value.trim();
@@ -419,7 +476,13 @@
           </select>
         </div>
         <div class="field" style="margin-top:8px;"><label>Descrizione</label><textarea id="edit-sector-desc" rows="2">${escapeHTML(s.description||'')}</textarea></div>
-        <div class="field"><label>URL Immagine</label><input type="text" id="edit-sector-image" value="${escapeAttr(s.image||'')}" /></div>
+        <div class="field"><label>URL Immagine</label>
+          <div class="row" style="align-items:flex-start;">
+            <input type="text" id="edit-sector-image" value="${escapeAttr(s.image||'')}" style="flex:2;" />
+            <div style="flex:1;display:flex;align-items:center;">${imageUploadRowHTML('edit-sector-image')}</div>
+          </div>
+          <div class="err" id="edit-sector-image-status"></div>
+        </div>
         <div class="field"><label>Posizione in griglia</label>
           <select id="edit-sector-gridpos">
             ${[0,1,2,3,4,5,6,7,8].map(p=>`<option value="${p}" ${s.gridPos===p?'selected':''} ${usedPositions.includes(p) && s.gridPos!==p?'disabled':''}>Casella ${p+1}${usedPositions.includes(p) && s.gridPos!==p?' (occupata)':''}</option>`).join('')}
@@ -549,6 +612,7 @@
       const navBack = bodyEl.querySelector('[data-nav-back-macro]');
       if(navBack) navBack.onclick = ()=>{ view='sectors'; renderMapBody(activeMacro); };
       if(master){
+        bindImageUpload('edit-sector-image', 'edit-sector-image-status');
         const nameEl = document.getElementById('edit-sector-name');
         if(nameEl) nameEl.onchange = async ()=>{ s.name = nameEl.value.trim() || s.name; await persist(); renderMapBody(activeMacro); };
         const terrainEl = document.getElementById('edit-sector-terrain');
@@ -619,7 +683,13 @@
             <div class="muted" style="margin-bottom:8px;">🛠️ Modifica Luogo (solo Master)</div>
             <div class="field"><label>Nome</label><input type="text" id="edit-luogo-name" value="${escapeAttr(lg.name)}" /></div>
             <div class="field"><label>Descrizione</label><textarea id="edit-luogo-desc" rows="3">${escapeHTML(lg.description||'')}</textarea></div>
-            <div class="field"><label>URL Immagine</label><input type="text" id="edit-luogo-image" value="${escapeAttr(lg.image||'')}" /></div>
+            <div class="field"><label>URL Immagine</label>
+              <div class="row" style="align-items:flex-start;">
+                <input type="text" id="edit-luogo-image" value="${escapeAttr(lg.image||'')}" style="flex:2;" />
+                <div style="flex:1;display:flex;align-items:center;">${imageUploadRowHTML('edit-luogo-image')}</div>
+              </div>
+              <div class="err" id="edit-luogo-image-status"></div>
+            </div>
           </div>
         ` : `
           ${lg.image ? `<img class="detail-image" src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" />` : ''}
@@ -638,6 +708,7 @@
       const navBack = bodyEl.querySelector('[data-nav-back-sector]');
       if(navBack) navBack.onclick = ()=>{ view='sector'; renderMapBody(activeMacro); };
       if(master){
+        bindImageUpload('edit-luogo-image', 'edit-luogo-image-status');
         const nameEl = document.getElementById('edit-luogo-name');
         if(nameEl) nameEl.onchange = async ()=>{ lg.name = nameEl.value.trim() || lg.name; await persist(); renderMapBody(activeMacro); };
         const descEl = document.getElementById('edit-luogo-desc');
