@@ -85,17 +85,17 @@
   .map-grid{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:0;aspect-ratio:1/1;border:1px solid var(--line);}
   .map-cell{position:relative;border:1px solid transparent;background:var(--panel-2);overflow:hidden;cursor:default;display:flex;align-items:flex-end;min-height:0;}
   .map-cell.filled{cursor:pointer;}
-  .map-cell.filled:hover{border-color:var(--cyan);}
-  .map-cell img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.65;transition:.2s;}
-  .map-cell.filled:hover img{opacity:0.9;}
-  .map-cell .lbl{position:relative;z-index:1;width:100%;padding:6px 8px;background:linear-gradient(180deg, rgba(8,11,16,0) 0%, rgba(8,11,16,0.9) 90%);font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text);}
-  .map-cell.empty .lbl{color:var(--text-mute);font-size:10px;text-align:center;width:100%;padding:0;background:none;}
+  .map-cell.filled:hover{border-color:var(--cyan);z-index:3;}
+  .map-cell img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .3s ease;}
+  .map-cell.filled:hover img{transform:scale(1.12);}
+  .map-cell .lbl{position:relative;z-index:1;width:100%;padding:6px 8px;font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text);}
+  .map-cell.empty .lbl{color:var(--text-mute);font-size:10px;text-align:center;width:100%;padding:0;}
   .map-cell.empty{align-items:center;justify-content:center;border-color:var(--line);}
   .map-cell.current{border-color:var(--cyan);box-shadow:0 0 12px rgba(53,232,201,0.35) inset;}
   .map-cell.addable{cursor:pointer;border-style:dashed;border-color:var(--line);}
   .map-cell.addable:hover{border-color:var(--cyan);}
   .map-cell.addable .lbl{color:var(--cyan-dim);}
-  .map-cell-del{position:absolute;top:2px;right:2px;z-index:2;padding:2px 6px !important;font-size:10px !important;background:rgba(8,11,16,0.7) !important;}
+  .map-cell-del{position:absolute;top:2px;right:2px;z-index:4;padding:2px 6px !important;font-size:10px !important;background:rgba(8,11,16,0.7) !important;}
 
   textarea{
     background:var(--panel-2); border:1px solid var(--line); color:var(--text);
@@ -432,10 +432,9 @@
         const s = sectors.find(x=>x.gridPos===i);
         if(s){
           cells.push(`
-            <div class="map-cell filled ${cachedScene.currentSectorId===s.id?'current':''}" data-open-sector="${s.id}">
-              ${s.image ? `<img src="${escapeAttr(s.image)}" onerror="this.style.display='none'" />` : ''}
+            <div class="map-cell filled ${cachedScene.currentSectorId===s.id?'current':''}" data-open-sector="${s.id}" title="${escapeAttr(s.name)}">
+              ${s.image ? `<img src="${escapeAttr(s.image)}" onerror="this.style.display='none'" />` : `<div class="lbl">${escapeHTML(s.name)}</div>`}
               ${master ? `<button class="btn ghost small map-cell-del" data-quick-del-sector="${s.id}">🗑</button>` : ''}
-              <div class="lbl">${escapeHTML(s.name)}<div style="font-size:9px;color:var(--text-mute);">${terrainLabel(s.terrain)}</div></div>
             </div>
           `);
         } else {
