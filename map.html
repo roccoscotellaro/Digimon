@@ -92,6 +92,16 @@
   .map-cell.empty .lbl{color:var(--text-mute);font-size:10px;text-align:center;width:100%;padding:0;background:none;}
   .map-cell.empty{align-items:center;justify-content:center;}
   .map-cell.current{border-color:var(--cyan);box-shadow:0 0 12px rgba(53,232,201,0.35) inset;}
+  .map-cell.addable{cursor:pointer;border-style:dashed;}
+  .map-cell.addable:hover{border-color:var(--cyan);}
+  .map-cell.addable .lbl{color:var(--cyan-dim);}
+  .map-cell-del{position:absolute;top:2px;right:2px;z-index:2;padding:2px 6px !important;font-size:10px !important;background:rgba(8,11,16,0.7) !important;}
+
+  textarea{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    padding:8px 10px; font-family:'Manrope',sans-serif; font-size:13px; border-radius:var(--radius); width:100%; resize:vertical;
+  }
+  textarea:focus{outline:none;border-color:var(--cyan-dim);}
 
   .luogo-grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;}
   .luogo-tile{width:110px;border:1px solid var(--line);background:var(--panel-2);cursor:pointer;overflow:hidden;}
@@ -123,6 +133,7 @@
   let view = 'sectors'; // 'sectors' | 'sector' | 'luogo'
   let selectedSectorId = null;
   let selectedLuogoId = null;
+  let addingSectorPos = null; // grid position (0-8) currently being filled with a new sector, master only
 
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s){ return escapeHTML(s); }
@@ -199,9 +210,14 @@
 
   // ---------- MAP VIEWS ----------
   function terrainLabel(t){ return t==='Dangerous' ? '☠ Pericoloso' : (t==='Difficult' ? '⚠ Difficile' : 'Normale'); }
+  function isMaster(){ return !!(session && session.role==='master'); }
 
   function getActiveMacro(){
     return (cachedScene.macroScenes||[]).find(m=>m.id===cachedScene.currentMacroSceneId) || (cachedScene.macroScenes||[])[0] || null;
+  }
+
+  async function persist(){
+    return await saveScene(session.code, cachedScene);
   }
 
   function renderMap(){
@@ -212,35 +228,178 @@
       <div style="max-width:760px;margin:0 auto;">
         ${topbarHTML()}
         <div class="hud-frame card">
-          ${macroScenes.length>1 ? `
+          ${(macroScenes.length>1 || isMaster()) ? `
             <div class="field"><label>Macroscena</label>
               <select id="map-macro-select">
+                ${macroScenes.length===0 ? '<option value="">— nessuna —</option>' : ''}
                 ${macroScenes.map(m=>`<option value="${m.id}" ${activeMacro && activeMacro.id===m.id?'selected':''}>${escapeHTML(m.name)}</option>`).join('')}
               </select>
             </div>
           ` : ''}
+          ${isMaster() ? masterMacroBarHTML(activeMacro) : ''}
           <div id="map-body"></div>
         </div>
       </div>
     `;
     const macroSel = document.getElementById('map-macro-select');
     if(macroSel){
-      macroSel.onchange = ()=>{
-        activeMacro = macroScenes.find(m=>m.id===macroSel.value);
-        view = 'sectors'; selectedSectorId = null; selectedLuogoId = null;
-        renderMapBody(activeMacro);
+      macroSel.onchange = async ()=>{
+        cachedScene.currentMacroSceneId = macroSel.value || null;
+        activeMacro = macroScenes.find(m=>m.id===macroSel.value) || null;
+        view = 'sectors'; selectedSectorId = null; selectedLuogoId = null; addingSectorPos = null;
+        await persist();
+        renderMap();
       };
     }
+    bindMasterMacroBar(activeMacro);
     const logoutBtn = document.getElementById('btn-logout');
     if(logoutBtn) logoutBtn.onclick = ()=>{ if(pollTimer) clearInterval(pollTimer); renderLogin(); };
     renderMapBody(activeMacro);
   }
 
+  // ---------- MASTER: MACROSCENA BAR ----------
+  function masterMacroBarHTML(activeMacro){
+    return `
+      <div class="hud-frame" style="padding:10px 12px;margin-bottom:12px;">
+        <div class="muted" style="margin-bottom:8px;">🛠️ Gestione Macroscena (solo Master)</div>
+        <div class="row" style="margin-bottom:${activeMacro?'8px':'0'};">
+          <input type="text" id="new-macro-name" placeholder="Nome nuova Macroscena" style="flex:2;" />
+          <button class="btn small" id="btn-map-add-macro" style="flex:1;">+ Nuova Macroscena</button>
+        </div>
+        ${activeMacro ? `
+          <div class="field" style="margin-top:8px;"><label>Nome Macroscena attiva</label><input type="text" id="edit-macro-name" value="${escapeAttr(activeMacro.name)}" /></div>
+          <div class="field"><label>Descrizione</label><textarea id="edit-macro-desc" rows="2">${escapeHTML(activeMacro.description||'')}</textarea></div>
+          <button class="btn ghost small" id="btn-map-remove-macro">🗑️ Elimina Macroscena "${escapeHTML(activeMacro.name)}"</button>
+        ` : ''}
+        <div class="err" id="map-master-status" style="margin-top:6px;"></div>
+      </div>
+    `;
+  }
+
+  function bindMasterMacroBar(activeMacro){
+    const addBtn = document.getElementById('btn-map-add-macro');
+    if(addBtn) addBtn.onclick = async ()=>{
+      const nameEl = document.getElementById('new-macro-name');
+      const name = nameEl.value.trim();
+      const statusEl = document.getElementById('map-master-status');
+      if(!name){ if(statusEl) statusEl.textContent = 'Inserisci un nome per la Macroscena.'; return; }
+      const id = 'ms'+Date.now()+Math.random().toString(36).slice(2,6);
+      if(!cachedScene.macroScenes) cachedScene.macroScenes = [];
+      cachedScene.macroScenes.push({ id, name, description:'', sectors:[] });
+      cachedScene.currentMacroSceneId = id;
+      cachedScene.currentSectorId = null; cachedScene.currentLuogoId = null;
+      view = 'sectors'; selectedSectorId = null; selectedLuogoId = null; addingSectorPos = null;
+      await persist();
+      renderMap();
+    };
+    const nameEl = document.getElementById('edit-macro-name');
+    if(nameEl) nameEl.onchange = async ()=>{
+      if(activeMacro) activeMacro.name = nameEl.value.trim() || activeMacro.name;
+      await persist();
+      renderMap();
+    };
+    const descEl = document.getElementById('edit-macro-desc');
+    if(descEl) descEl.onchange = async ()=>{
+      if(activeMacro) activeMacro.description = descEl.value;
+      await persist();
+      renderMap();
+    };
+    const removeBtn = document.getElementById('btn-map-remove-macro');
+    if(removeBtn) removeBtn.onclick = async ()=>{
+      if(!activeMacro) return;
+      if(!window.confirm(`Eliminare la Macroscena "${activeMacro.name}" e tutti i suoi Settori/Luoghi?`)) return;
+      cachedScene.macroScenes = (cachedScene.macroScenes||[]).filter(m=>m.id!==activeMacro.id);
+      if(cachedScene.currentMacroSceneId===activeMacro.id){ cachedScene.currentMacroSceneId=null; cachedScene.currentSectorId=null; cachedScene.currentLuogoId=null; }
+      view = 'sectors'; selectedSectorId = null; selectedLuogoId = null; addingSectorPos = null;
+      await persist();
+      renderMap();
+    };
+  }
+
+  // ---------- NEW SECTOR FORM (master, from an empty grid cell) ----------
+  function newSectorFormHTML(pos){
+    return `
+      <div class="hud-frame" style="padding:12px;margin-top:14px;">
+        <div class="muted" style="margin-bottom:8px;">Nuovo Settore — Casella ${pos+1}</div>
+        <div class="row">
+          <input type="text" id="new-sector-name" placeholder="es. Villaggio - Piazza" style="flex:2;" />
+          <select id="new-sector-terrain" style="flex:1;">
+            <option value="Basic">Terreno Normale</option>
+            <option value="Difficult">Terreno Difficile</option>
+            <option value="Dangerous">Terreno Pericoloso</option>
+          </select>
+        </div>
+        <div class="field" style="margin-top:8px;"><label>Descrizione</label><textarea id="new-sector-desc" rows="2" placeholder="Breve descrizione (opzionale)"></textarea></div>
+        <div class="field"><label>URL Immagine</label><input type="text" id="new-sector-image" placeholder="URL Immagine (opzionale)" /></div>
+        <div class="row" style="margin-top:6px;">
+          <button class="btn solid small" id="btn-confirm-add-sector" style="flex:1;">Crea Settore</button>
+          <button class="btn ghost small" id="btn-cancel-add-sector" style="flex:1;">Annulla</button>
+        </div>
+        <div class="err" id="new-sector-status"></div>
+      </div>
+    `;
+  }
+
+  function bindNewSectorForm(activeMacro){
+    const confirmBtn = document.getElementById('btn-confirm-add-sector');
+    if(confirmBtn) confirmBtn.onclick = async ()=>{
+      const name = document.getElementById('new-sector-name').value.trim();
+      const statusEl = document.getElementById('new-sector-status');
+      if(!name){ statusEl.textContent = 'Inserisci un nome per il settore.'; return; }
+      const terrain = document.getElementById('new-sector-terrain').value;
+      const description = document.getElementById('new-sector-desc').value.trim();
+      const image = document.getElementById('new-sector-image').value.trim();
+      const id = 's'+Date.now()+Math.random().toString(36).slice(2,6);
+      if(!activeMacro.sectors) activeMacro.sectors = [];
+      activeMacro.sectors.push({ id, name, description, terrain, connections:[], luoghi:[], image, gridPos: addingSectorPos });
+      addingSectorPos = null;
+      const ok = await persist();
+      if(!ok){ statusEl.textContent = 'Errore di salvataggio, riprova.'; }
+      renderMapBody(activeMacro);
+    };
+    const cancelBtn = document.getElementById('btn-cancel-add-sector');
+    if(cancelBtn) cancelBtn.onclick = ()=>{ addingSectorPos = null; renderMapBody(activeMacro); };
+  }
+
+  // ---------- SECTOR DETAIL: read-only vs master edit form ----------
+  function sectorReadOnlyHTML(s){
+    return `
+      ${s.image ? `<img class="detail-image" src="${escapeAttr(s.image)}" onerror="this.style.display='none'" />` : ''}
+      <div class="flex-between"><b>${escapeHTML(s.name)}</b><span class="tag">${terrainLabel(s.terrain)}</span></div>
+      ${s.description ? `<div class="sub" style="margin-top:6px;">${escapeHTML(s.description)}</div>` : ''}
+    `;
+  }
+
+  function sectorEditFormHTML(s, sectors){
+    const usedPositions = sectors.map(x=>x.gridPos).filter(p=>p!=null);
+    return `
+      <div class="hud-frame" style="padding:12px;margin-bottom:4px;">
+        <div class="muted" style="margin-bottom:8px;">🛠️ Modifica Settore (solo Master)</div>
+        <div class="row">
+          <input type="text" id="edit-sector-name" value="${escapeAttr(s.name)}" style="flex:2;" />
+          <select id="edit-sector-terrain" style="flex:1;">
+            <option value="Basic" ${s.terrain==='Basic'?'selected':''}>Terreno Normale</option>
+            <option value="Difficult" ${s.terrain==='Difficult'?'selected':''}>Terreno Difficile</option>
+            <option value="Dangerous" ${s.terrain==='Dangerous'?'selected':''}>Terreno Pericoloso</option>
+          </select>
+        </div>
+        <div class="field" style="margin-top:8px;"><label>Descrizione</label><textarea id="edit-sector-desc" rows="2">${escapeHTML(s.description||'')}</textarea></div>
+        <div class="field"><label>URL Immagine</label><input type="text" id="edit-sector-image" value="${escapeAttr(s.image||'')}" /></div>
+        <div class="field"><label>Posizione in griglia</label>
+          <select id="edit-sector-gridpos">
+            ${[0,1,2,3,4,5,6,7,8].map(p=>`<option value="${p}" ${s.gridPos===p?'selected':''} ${usedPositions.includes(p) && s.gridPos!==p?'disabled':''}>Casella ${p+1}${usedPositions.includes(p) && s.gridPos!==p?' (occupata)':''}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+    `;
+  }
+
   function renderMapBody(activeMacro){
     const bodyEl = document.getElementById('map-body');
     if(!bodyEl) return;
+    const master = isMaster();
     if(!activeMacro){
-      bodyEl.innerHTML = `<div class="muted" style="text-align:center;padding:40px 0;">Nessuna Macroscena ancora creata dal Master.</div>`;
+      bodyEl.innerHTML = `<div class="muted" style="text-align:center;padding:40px 0;">${master ? 'Crea una Macroscena qui sopra per iniziare.' : 'Nessuna Macroscena ancora creata dal Master.'}</div>`;
       return;
     }
     const sectors = activeMacro.sectors || [];
@@ -252,46 +411,77 @@
           cells.push(`
             <div class="map-cell filled ${cachedScene.currentSectorId===s.id?'current':''}" data-open-sector="${s.id}">
               ${s.image ? `<img src="${escapeAttr(s.image)}" onerror="this.style.display='none'" />` : ''}
+              ${master ? `<button class="btn ghost small map-cell-del" data-quick-del-sector="${s.id}">🗑</button>` : ''}
               <div class="lbl">${escapeHTML(s.name)}<div style="font-size:9px;color:var(--text-mute);">${terrainLabel(s.terrain)}</div></div>
             </div>
           `);
         } else {
-          cells.push(`<div class="map-cell empty"><div class="lbl">—</div></div>`);
+          cells.push(`<div class="map-cell empty ${master?'addable':''}" ${master?`data-add-sector-pos="${i}"`:''}><div class="lbl">${master?'+ Aggiungi':'—'}</div></div>`);
         }
       }
       bodyEl.innerHTML = `
         <div class="breadcrumb">📍 ${escapeHTML(activeMacro.name)}</div>
-        <div class="muted" style="margin-bottom:10px;">${escapeHTML(activeMacro.description||'')}</div>
+        ${activeMacro.description ? `<div class="muted" style="margin-bottom:10px;">${escapeHTML(activeMacro.description)}</div>` : ''}
         <div class="map-grid">${cells.join('')}</div>
-        <div class="muted" style="margin-top:10px;font-size:11px;">Clicca su un Settore per esplorarlo. Le caselle vuote non hanno ancora un Settore assegnato (il Master può assegnarle da Digivice OS).</div>
+        <div class="muted" style="margin-top:10px;font-size:11px;">${master ? 'Clicca su un Settore per modificarlo, su una casella vuota (tratteggiata) per crearne uno nuovo.' : 'Clicca su un Settore per esplorarlo.'}</div>
+        ${master && addingSectorPos!=null ? newSectorFormHTML(addingSectorPos) : ''}
       `;
       bodyEl.querySelectorAll('[data-open-sector]').forEach(cell=>{
-        cell.onclick = ()=>{
+        cell.onclick = (e)=>{
+          if(e.target.closest('[data-quick-del-sector]')) return;
           selectedSectorId = cell.getAttribute('data-open-sector');
           view = 'sector';
+          addingSectorPos = null;
           renderMapBody(activeMacro);
         };
       });
+      if(master){
+        bodyEl.querySelectorAll('[data-quick-del-sector]').forEach(btn=>{
+          btn.onclick = async (e)=>{
+            e.stopPropagation();
+            const id = btn.getAttribute('data-quick-del-sector');
+            const s = sectors.find(x=>x.id===id);
+            if(!window.confirm(`Eliminare il Settore "${s?s.name:''}" e tutti i suoi Luoghi?`)) return;
+            activeMacro.sectors = (activeMacro.sectors||[]).filter(x=>x.id!==id);
+            (activeMacro.sectors||[]).forEach(x=>{ x.connections = (x.connections||[]).filter(cid=>cid!==id); });
+            if(cachedScene.currentSectorId===id){ cachedScene.currentSectorId=null; cachedScene.currentLuogoId=null; }
+            await persist();
+            renderMapBody(activeMacro);
+          };
+        });
+        bodyEl.querySelectorAll('[data-add-sector-pos]').forEach(cell=>{
+          cell.onclick = ()=>{
+            addingSectorPos = Number(cell.getAttribute('data-add-sector-pos'));
+            renderMapBody(activeMacro);
+          };
+        });
+        bindNewSectorForm(activeMacro);
+      }
     } else if(view==='sector'){
       const s = sectors.find(x=>x.id===selectedSectorId);
       if(!s){ view='sectors'; renderMapBody(activeMacro); return; }
       const luoghi = s.luoghi || [];
       bodyEl.innerHTML = `
         <div class="breadcrumb"><span data-nav-macro>📍 ${escapeHTML(activeMacro.name)}</span> → ${escapeHTML(s.name)}</div>
-        ${s.image ? `<img class="detail-image" src="${escapeAttr(s.image)}" onerror="this.style.display='none'" />` : ''}
-        <div class="flex-between"><b>${escapeHTML(s.name)}</b><span class="tag">${terrainLabel(s.terrain)}</span></div>
-        ${s.description ? `<div class="sub" style="margin-top:6px;">${escapeHTML(s.description)}</div>` : ''}
-        ${luoghi.length>0 ? `
+        ${master ? sectorEditFormHTML(s, sectors) : sectorReadOnlyHTML(s)}
+        ${luoghi.length>0 || master ? `
           <div class="muted" style="margin-top:14px;">Luoghi:</div>
           <div class="luogo-grid">
             ${luoghi.map(lg=>`
               <div class="luogo-tile" data-open-luogo="${lg.id}">
                 <div class="img">${lg.image?`<img src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" />`:''}</div>
                 <div class="nm">${escapeHTML(lg.name)}</div>
+                ${master ? `<button class="btn ghost small" data-quick-del-luogo="${lg.id}" style="width:100%;font-size:9px;padding:2px;">🗑</button>` : ''}
               </div>
             `).join('')}
           </div>
         ` : '<div class="muted" style="margin-top:14px;">Nessun luogo specifico in questo settore.</div>'}
+        ${master ? `
+          <div class="row" style="margin-top:10px;">
+            <input type="text" id="new-luogo-name" placeholder="Nuovo Luogo (es. Vecchia Quercia)" style="flex:2;" />
+            <button class="btn small" id="btn-add-luogo" style="flex:1;">+ Luogo</button>
+          </div>
+        ` : ''}
         <div class="muted" style="margin-top:14px;">Settori collegati:</div>
         <div class="connections-row">
           ${(s.connections||[]).length===0 ? '<span class="muted">nessuno</span>' : (s.connections||[]).map(cid=>{
@@ -299,10 +489,23 @@
             return `<button class="btn small" data-open-sector="${c.id}">${escapeHTML(c.name)}</button>`;
           }).join('')}
         </div>
-        <button class="btn ghost small" style="margin-top:16px;" data-nav-back-macro>← Torna alla Mappa</button>
+        ${master && sectors.length>1 ? `
+          <div class="muted" style="margin-top:10px;">Collega/scollega Settori:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">
+            ${sectors.filter(x=>x.id!==s.id).map(x=>`<label style="display:flex;align-items:center;gap:4px;font-size:11px;"><input type="checkbox" class="connect-toggle-chk" value="${x.id}" ${(s.connections||[]).includes(x.id)?'checked':''}/> ${escapeHTML(x.name)}</label>`).join('')}
+          </div>
+        ` : ''}
+        <div class="row" style="margin-top:16px;">
+          <button class="btn ghost small" data-nav-back-macro style="flex:1;">← Torna alla Mappa</button>
+          ${master ? `<button class="btn ghost small" id="btn-delete-sector" style="flex:1;color:var(--danger);border-color:rgba(255,93,93,0.4);">🗑️ Elimina Settore</button>` : ''}
+        </div>
+        <div class="err" id="sector-edit-status"></div>
       `;
       bodyEl.querySelectorAll('[data-open-luogo]').forEach(el=>{
-        el.onclick = ()=>{ selectedLuogoId = el.getAttribute('data-open-luogo'); view='luogo'; renderMapBody(activeMacro); };
+        el.onclick = (e)=>{
+          if(e.target.closest('[data-quick-del-luogo]')) return;
+          selectedLuogoId = el.getAttribute('data-open-luogo'); view='luogo'; renderMapBody(activeMacro);
+        };
       });
       bodyEl.querySelectorAll('[data-open-sector]').forEach(el=>{
         el.onclick = ()=>{ selectedSectorId = el.getAttribute('data-open-sector'); view='sector'; renderMapBody(activeMacro); };
@@ -311,16 +514,88 @@
       if(navMacro) navMacro.onclick = ()=>{ view='sectors'; renderMapBody(activeMacro); };
       const navBack = bodyEl.querySelector('[data-nav-back-macro]');
       if(navBack) navBack.onclick = ()=>{ view='sectors'; renderMapBody(activeMacro); };
+      if(master){
+        const nameEl = document.getElementById('edit-sector-name');
+        if(nameEl) nameEl.onchange = async ()=>{ s.name = nameEl.value.trim() || s.name; await persist(); renderMapBody(activeMacro); };
+        const terrainEl = document.getElementById('edit-sector-terrain');
+        if(terrainEl) terrainEl.onchange = async ()=>{ s.terrain = terrainEl.value; await persist(); renderMapBody(activeMacro); };
+        const descEl = document.getElementById('edit-sector-desc');
+        if(descEl) descEl.onchange = async ()=>{ s.description = descEl.value; await persist(); renderMapBody(activeMacro); };
+        const imageEl = document.getElementById('edit-sector-image');
+        if(imageEl) imageEl.onchange = async ()=>{ s.image = imageEl.value.trim(); await persist(); renderMapBody(activeMacro); };
+        const gridEl = document.getElementById('edit-sector-gridpos');
+        if(gridEl) gridEl.onchange = async ()=>{ s.gridPos = Number(gridEl.value); await persist(); renderMapBody(activeMacro); };
+        bodyEl.querySelectorAll('.connect-toggle-chk').forEach(chk=>{
+          chk.onchange = async ()=>{
+            const otherId = chk.value;
+            const other = sectors.find(x=>x.id===otherId);
+            if(!s.connections) s.connections = [];
+            if(chk.checked){
+              if(!s.connections.includes(otherId)) s.connections.push(otherId);
+              if(other){ if(!other.connections) other.connections=[]; if(!other.connections.includes(s.id)) other.connections.push(s.id); }
+            } else {
+              s.connections = s.connections.filter(cid=>cid!==otherId);
+              if(other) other.connections = (other.connections||[]).filter(cid=>cid!==s.id);
+            }
+            await persist();
+            renderMapBody(activeMacro);
+          };
+        });
+        const addLuogoBtn = document.getElementById('btn-add-luogo');
+        if(addLuogoBtn) addLuogoBtn.onclick = async ()=>{
+          const input = document.getElementById('new-luogo-name');
+          const name = input.value.trim();
+          if(!name) return;
+          if(!s.luoghi) s.luoghi = [];
+          s.luoghi.push({ id:'l'+Date.now()+Math.random().toString(36).slice(2,6), name, description:'' });
+          await persist();
+          renderMapBody(activeMacro);
+        };
+        bodyEl.querySelectorAll('[data-quick-del-luogo]').forEach(btn=>{
+          btn.onclick = async (e)=>{
+            e.stopPropagation();
+            const id = btn.getAttribute('data-quick-del-luogo');
+            const lg = (s.luoghi||[]).find(x=>x.id===id);
+            if(!window.confirm(`Eliminare il Luogo "${lg?lg.name:''}"?`)) return;
+            s.luoghi = (s.luoghi||[]).filter(x=>x.id!==id);
+            if(cachedScene.currentLuogoId===id) cachedScene.currentLuogoId=null;
+            await persist();
+            renderMapBody(activeMacro);
+          };
+        });
+        const deleteSectorBtn = document.getElementById('btn-delete-sector');
+        if(deleteSectorBtn) deleteSectorBtn.onclick = async ()=>{
+          if(!window.confirm(`Eliminare il Settore "${s.name}" e tutti i suoi Luoghi?`)) return;
+          activeMacro.sectors = (activeMacro.sectors||[]).filter(x=>x.id!==s.id);
+          (activeMacro.sectors||[]).forEach(x=>{ x.connections = (x.connections||[]).filter(cid=>cid!==s.id); });
+          if(cachedScene.currentSectorId===s.id){ cachedScene.currentSectorId=null; cachedScene.currentLuogoId=null; }
+          view='sectors'; selectedSectorId=null;
+          await persist();
+          renderMapBody(activeMacro);
+        };
+      }
     } else if(view==='luogo'){
       const s = sectors.find(x=>x.id===selectedSectorId);
       const lg = s ? (s.luoghi||[]).find(x=>x.id===selectedLuogoId) : null;
       if(!s || !lg){ view='sectors'; renderMapBody(activeMacro); return; }
       bodyEl.innerHTML = `
         <div class="breadcrumb"><span data-nav-macro>📍 ${escapeHTML(activeMacro.name)}</span> → <span data-nav-sector>${escapeHTML(s.name)}</span> → ${escapeHTML(lg.name)}</div>
-        ${lg.image ? `<img class="detail-image" src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" />` : ''}
-        <div><b>${escapeHTML(lg.name)}</b></div>
-        ${lg.description ? `<div class="sub" style="margin-top:6px;">${escapeHTML(lg.description)}</div>` : '<div class="muted" style="margin-top:6px;">Nessuna descrizione.</div>'}
-        <button class="btn ghost small" style="margin-top:16px;" data-nav-back-sector>← Torna a "${escapeHTML(s.name)}"</button>
+        ${master ? `
+          <div class="hud-frame" style="padding:12px;margin-bottom:10px;">
+            <div class="muted" style="margin-bottom:8px;">🛠️ Modifica Luogo (solo Master)</div>
+            <div class="field"><label>Nome</label><input type="text" id="edit-luogo-name" value="${escapeAttr(lg.name)}" /></div>
+            <div class="field"><label>Descrizione</label><textarea id="edit-luogo-desc" rows="3">${escapeHTML(lg.description||'')}</textarea></div>
+            <div class="field"><label>URL Immagine</label><input type="text" id="edit-luogo-image" value="${escapeAttr(lg.image||'')}" /></div>
+          </div>
+        ` : `
+          ${lg.image ? `<img class="detail-image" src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" />` : ''}
+          <div><b>${escapeHTML(lg.name)}</b></div>
+          ${lg.description ? `<div class="sub" style="margin-top:6px;">${escapeHTML(lg.description)}</div>` : '<div class="muted" style="margin-top:6px;">Nessuna descrizione.</div>'}
+        `}
+        <div class="row" style="margin-top:16px;">
+          <button class="btn ghost small" style="flex:1;" data-nav-back-sector>← Torna a "${escapeHTML(s.name)}"</button>
+          ${master ? `<button class="btn ghost small" id="btn-delete-luogo" style="flex:1;color:var(--danger);border-color:rgba(255,93,93,0.4);">🗑️ Elimina Luogo</button>` : ''}
+        </div>
       `;
       const navMacro = bodyEl.querySelector('[data-nav-macro]');
       if(navMacro) navMacro.onclick = ()=>{ view='sectors'; renderMapBody(activeMacro); };
@@ -328,6 +603,23 @@
       if(navSector) navSector.onclick = ()=>{ view='sector'; renderMapBody(activeMacro); };
       const navBack = bodyEl.querySelector('[data-nav-back-sector]');
       if(navBack) navBack.onclick = ()=>{ view='sector'; renderMapBody(activeMacro); };
+      if(master){
+        const nameEl = document.getElementById('edit-luogo-name');
+        if(nameEl) nameEl.onchange = async ()=>{ lg.name = nameEl.value.trim() || lg.name; await persist(); renderMapBody(activeMacro); };
+        const descEl = document.getElementById('edit-luogo-desc');
+        if(descEl) descEl.onchange = async ()=>{ lg.description = descEl.value; await persist(); renderMapBody(activeMacro); };
+        const imageEl = document.getElementById('edit-luogo-image');
+        if(imageEl) imageEl.onchange = async ()=>{ lg.image = imageEl.value.trim(); await persist(); renderMapBody(activeMacro); };
+        const deleteBtn = document.getElementById('btn-delete-luogo');
+        if(deleteBtn) deleteBtn.onclick = async ()=>{
+          if(!window.confirm(`Eliminare il Luogo "${lg.name}"?`)) return;
+          s.luoghi = (s.luoghi||[]).filter(x=>x.id!==lg.id);
+          if(cachedScene.currentLuogoId===lg.id) cachedScene.currentLuogoId=null;
+          view='sector';
+          await persist();
+          renderMapBody(activeMacro);
+        };
+      }
     }
   }
 
@@ -350,7 +642,7 @@
       return;
     }
     cachedScene = await getScene(session.code);
-    view = 'sectors'; selectedSectorId = null; selectedLuogoId = null;
+    view = 'sectors'; selectedSectorId = null; selectedLuogoId = null; addingSectorPos = null;
     renderMap();
     startPolling();
   }
