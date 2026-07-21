@@ -625,15 +625,32 @@
 
   async function refresh(){
     if(!session) return;
+    if(isFieldFocused() || resumeTimer) return; // don't blow away an in-progress edit
     const fresh = await getScene(session.code);
     cachedScene = fresh;
     renderMap();
+  }
+
+  function isFieldFocused(){
+    const el = document.activeElement;
+    return !!(el && (el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.tagName==='SELECT'));
   }
 
   function startPolling(){
     if(pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(refresh, 4000);
   }
+
+  // While the Master is typing/selecting in any field, skip the periodic refresh entirely.
+  // A short delay after leaving the field avoids restarting the refresh mid-transition
+  // between two fields (e.g. tabbing from name to description).
+  let resumeTimer = null;
+  document.addEventListener('focusout', (e)=>{
+    if(e.target && (e.target.tagName==='INPUT' || e.target.tagName==='TEXTAREA' || e.target.tagName==='SELECT')){
+      if(resumeTimer) clearTimeout(resumeTimer);
+      resumeTimer = setTimeout(()=>{ resumeTimer = null; }, 600);
+    }
+  }, true);
 
   async function boot(){
     session = loadSession();
