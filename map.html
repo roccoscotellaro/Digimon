@@ -188,6 +188,7 @@
         </div>
         <div>
           <a href="index.html" class="btn ghost small" style="text-decoration:none;">↩ Torna al Tavolo</a>
+          <button class="btn ghost small" id="btn-manual-refresh">🔄 Aggiorna</button>
           <button class="btn ghost small" id="btn-logout">Esci</button>
         </div>
       </div>
@@ -274,6 +275,8 @@
     bindMasterMacroBar(activeMacro);
     const logoutBtn = document.getElementById('btn-logout');
     if(logoutBtn) logoutBtn.onclick = ()=>{ if(pollTimer) clearInterval(pollTimer); renderLogin(); };
+    const refreshBtn = document.getElementById('btn-manual-refresh');
+    if(refreshBtn) refreshBtn.onclick = refresh;
     renderMapBody(activeMacro);
   }
 
@@ -645,10 +648,9 @@
 
   async function refresh(){
     if(!session) return;
-    if(isFieldFocused() || resumeTimer) return; // don't blow away an in-progress edit
-    if(Date.now() - lastSaveAt < 5000) return; // give a just-completed save time to be reflected server-side
     const fresh = await getScene(session.code);
     cachedScene = fresh;
+    view = 'sectors'; selectedSectorId = null; selectedLuogoId = null; addingSectorPos = null;
     renderMap();
   }
 
@@ -657,21 +659,10 @@
     return !!(el && (el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.tagName==='SELECT'));
   }
 
-  function startPolling(){
-    if(pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(refresh, 4000);
-  }
-
-  // While the Master is typing/selecting in any field, skip the periodic refresh entirely.
-  // A short delay after leaving the field avoids restarting the refresh mid-transition
-  // between two fields (e.g. tabbing from name to description).
-  let resumeTimer = null;
-  document.addEventListener('focusout', (e)=>{
-    if(e.target && (e.target.tagName==='INPUT' || e.target.tagName==='TEXTAREA' || e.target.tagName==='SELECT')){
-      if(resumeTimer) clearTimeout(resumeTimer);
-      resumeTimer = setTimeout(()=>{ resumeTimer = null; }, 600);
-    }
-  }, true);
+  // Automatic polling is OFF: with editing now happening directly on this page, a background
+  // refresh could overwrite in-progress changes with stale data (e.g. from another open tab).
+  // The Master (or a player) refreshes manually with the 🔄 Aggiorna button instead.
+  function startPolling(){ /* intentionally disabled */ }
 
   async function boot(){
     session = loadSession();
@@ -682,7 +673,6 @@
     cachedScene = await getScene(session.code);
     view = 'sectors'; selectedSectorId = null; selectedLuogoId = null; addingSectorPos = null;
     renderMap();
-    startPolling();
   }
 
   boot();
