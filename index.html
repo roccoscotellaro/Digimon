@@ -3340,7 +3340,7 @@
             </div>
             <textarea id="gm-text" rows="2" placeholder="Narrazione del Master..."></textarea>
             <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--text-mute);">
-              <input type="checkbox" id="gm-digimoji-toggle" /> ✍️ Scrivi in Digimoji (funziona solo sui caratteri Hiragana, es. あいうえお — usa un IME giapponese o copia/incolla)
+              <input type="checkbox" id="gm-digimoji-toggle" /> ✍️ Scrivi in Digimoji (scrivi in italiano fonetico, es. "kaze", "shiro", "montana" — viene convertito in automatico in Hiragana mentre scrivi)
             </label>
             <details style="margin-top:4px;">
               <summary style="cursor:pointer;font-size:11px;color:var(--text-mute);">⌨️ Tastiera Hiragana (clic per inserire)</summary>
@@ -3476,6 +3476,8 @@
     }
     document.getElementById('btn-gm-post').onclick = async ()=>{
       const ta = document.getElementById('gm-text');
+      const gmDigimojiChkPre = document.getElementById('gm-digimoji-toggle');
+      if(gmDigimojiChkPre && gmDigimojiChkPre.checked){ ta.value = italianToHiragana(ta.value); }
       const text = ta.value.trim();
       if(!text) return;
       const mode = speakAsSel ? speakAsSel.value : 'master';
@@ -3517,6 +3519,7 @@
     });
     const hiraClearBtn = document.getElementById('hira-clear');
     if(hiraClearBtn) hiraClearBtn.onclick = ()=>{ const gmTa = document.getElementById('gm-text'); if(gmTa) gmTa.value=''; };
+    attachDigimojiInput('gm-text', 'gm-digimoji-toggle');
     const reqBtn = document.getElementById('btn-request-roll');
     if(reqBtn){
       reqBtn.onclick = async ()=>{
@@ -5571,6 +5574,89 @@
 
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s){ return escapeHTML(s); }
+
+  // ---------- DIGIMOJI: conversione fonetica italiana -> Hiragana ----------
+  // Regole pensate per l'ortografia italiana (ca/co/cu = k, che/chi = k, ci = "chi",
+  // ga/go/gu = g, ghe/ghi = g, gi = "ji", sci = "shi"), più le varianti standard
+  // (romaji "wapuro": ti/tu/si/hu/zi come alternative a chi/tsu/shi/fu/ji).
+  const HIRA3 = {chi:'き',che:'け',ghi:'ぎ',ghe:'げ',sci:'し',tsu:'つ',shi:'し'};
+  const HIRA2 = {
+    ka:'か',ki:'き',ku:'く',ke:'け',ko:'こ',
+    ca:'か',co:'こ',cu:'く',ci:'ち',
+    sa:'さ',si:'し',su:'す',se:'せ',so:'そ',
+    ta:'た',ti:'ち',te:'て',to:'と',tu:'つ',
+    na:'な',ni:'に',nu:'ぬ',ne:'ね',no:'の',
+    ha:'は',hi:'ひ',hu:'ふ',fu:'ふ',he:'へ',ho:'ほ',
+    ma:'ま',mi:'み',mu:'む',me:'め',mo:'も',
+    ya:'や',yu:'ゆ',yo:'よ',
+    ra:'ら',ri:'り',ru:'る',re:'れ',ro:'ろ',
+    wa:'わ',wo:'を',
+    ga:'が',gu:'ぐ',go:'ご',gi:'じ',
+    za:'ざ',zu:'ず',ze:'ぜ',zo:'ぞ',zi:'じ',
+    da:'だ',de:'で',do:'ど',di:'ぢ',du:'づ',
+    ba:'ば',bi:'び',bu:'ぶ',be:'べ',bo:'ぼ',
+    pa:'ぱ',pi:'ぴ',pu:'ぷ',pe:'ぺ',po:'ぽ',
+  };
+  const HIRA1 = {a:'あ',i:'い',u:'う',e:'え',o:'お',n:'ん'};
+
+  function italianToHiragana(text){
+    let out = '';
+    const lower = String(text||'').toLowerCase();
+    let i = 0;
+    while(i < lower.length){
+      const c3 = lower.substr(i,3);
+      const c2 = lower.substr(i,2);
+      const c1 = lower.substr(i,1);
+      if(c3.length===3 && HIRA3[c3]){ out += HIRA3[c3]; i+=3; continue; }
+      if(c2.length===2 && HIRA2[c2]){ out += HIRA2[c2]; i+=2; continue; }
+      if(HIRA1[c1]){ out += HIRA1[c1]; i+=1; continue; }
+      out += text[i]; i+=1;
+    }
+    return out;
+  }
+
+  // Collega la conversione live a una textarea + checkbox "Digimoji".
+  // Converte una parola non appena viene completata (spazio/punteggiatura/a capo),
+  // evitando l'ambiguità della "n" (es. "montana" convertita lettera per lettera
+  // rischierebbe di leggere "n" come ん prima di sapere se segue una vocale).
+  function attachDigimojiInput(taId, chkId){
+    const ta = document.getElementById(taId);
+    const chk = document.getElementById(chkId);
+    if(!ta || !chk) return;
+    function convertWordBeforeBoundary(){
+      const val = ta.value;
+      const pos = ta.selectionStart == null ? val.length : ta.selectionStart;
+      if(pos===0) return;
+      const justTyped = val[pos-1];
+      if(/[a-zA-Z]/.test(justTyped)) return; // parola non ancora conclusa
+      let start = pos-2;
+      while(start>=0 && /[a-zA-Z]/.test(val[start])) start--;
+      start++;
+      const wordEnd = pos-1;
+      if(start>=wordEnd) return;
+      const word = val.slice(start, wordEnd);
+      const converted = italianToHiragana(word);
+      if(converted===word) return;
+      ta.value = val.slice(0,start) + converted + val.slice(wordEnd);
+      const newPos = start + converted.length + (pos - wordEnd);
+      try{ ta.setSelectionRange(newPos, newPos); }catch(e){}
+    }
+    function convertAllNow(){
+      if(!chk.checked) return;
+      const pos = ta.selectionStart == null ? ta.value.length : ta.selectionStart;
+      const convertedBefore = italianToHiragana(ta.value.slice(0,pos));
+      ta.value = italianToHiragana(ta.value);
+      const newPos = convertedBefore.length;
+      try{ ta.setSelectionRange(newPos, newPos); }catch(e){}
+    }
+    ta.addEventListener('input', ()=>{ if(chk.checked) convertWordBeforeBoundary(); });
+    ta.addEventListener('blur', convertAllNow);
+    chk.addEventListener('change', ()=>{ if(chk.checked) convertAllNow(); });
+    // Passata di sicurezza: converte per intero (anche l'ultima parola rimasta
+    // a metà) subito prima dell'invio effettivo del messaggio.
+    ta.dataset.digimojiFinalize = 'true';
+  }
+
 
   // ---------- global dex filter delegation ----------
   document.addEventListener('click', function(e){
