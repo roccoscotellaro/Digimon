@@ -97,9 +97,10 @@
   .scene-box .portraits{position:absolute;bottom:10px;right:14px;display:flex;gap:6px;}
   .scene-box .portraits img{width:44px;height:44px;object-fit:cover;border:1px solid var(--cyan-dim);border-radius:50%;background:#000;}
   .scene-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-mute);font-size:12px;}
-  .enc-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;}
-  .enc-modal-card{position:relative;max-width:360px;width:100%;padding:20px;background:var(--panel);border:1px solid var(--line);}
-  .enc-modal-img{width:100%;max-height:220px;object-fit:cover;border-radius:6px;background:#05070a;}
+  .enc-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;overflow-y:auto;}
+  .enc-modal-card{position:relative;max-width:460px;width:100%;padding:20px;background:var(--panel);border:1px solid var(--line);max-height:90vh;overflow-y:auto;}
+  .enc-modal-img-wrap{width:100%;height:300px;background:#12181f;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  .enc-modal-img{max-width:100%;max-height:100%;object-fit:contain;}
 
   .log{height:280px;overflow-y:auto;padding:10px;background:var(--panel-2);border:1px solid var(--line);font-size:13px;}
   .log-entry{margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.03);}
@@ -944,6 +945,8 @@
     if(dexLive && dexEditOpenId===null){ dexLive.innerHTML = dexListHTML(cachedDex, session.role==='master'); if(session.role==='master') bindDexEditButtons(session.code); }
     const combatLive = document.getElementById('combat-live');
     if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
+    const attacksCard = document.getElementById('attacks-card');
+    if(attacksCard) attacksCard.style.display = (cachedCombat && cachedCombat.active) ? '' : 'none';
     const combatSelf = document.getElementById('combat-self-actions');
     if(combatSelf && session.role==='player'){
       combatSelf.innerHTML = combatSelfActionHTML(cachedCombat, session.username);
@@ -1052,7 +1055,7 @@
             </div>
             ${e.description ? `<div class="sub" style="margin-top:3px;">${escapeHTML(e.description)}</div>` : ''}
             ${hasStats ? `<div class="muted" style="margin-top:4px;font-size:10px;">ACC ${bs.baseAccuracy||0} · DMG ${bs.baseDamage||0} · DODGE ${bs.baseDodge||0} · ARM ${bs.baseArmor||0} · HP ${bs.baseHealth||0}</div>` : ''}
-            ${e.categories && e.categories.length ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">${e.categories.map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>` : ''}
+            ${e.categories && e.categories.length ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">${attributeBadgeHTML(splitCategoriesAttribute(e.categories).attribute)}${splitCategoriesAttribute(e.categories).family.map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>` : ''}
             ${e.evolutions && e.evolutions.length ? evolutionsReadonlyHTML(e.evolutions) : ''}
             ${e.qualities && e.qualities.length ? `<div class="muted" style="margin-top:4px;">Qualities: ${computeDpSpent(e.qualities)}/${e.dp_total||0} DP (${e.qualities.length})</div>` : ''}
             ${e.added_by ? `<div class="muted" style="margin-top:2px;">aggiunto da ${escapeHTML(e.added_by)}</div>` : ''}
@@ -1080,7 +1083,15 @@
         <div class="field"><label>URL Immagine</label><input type="text" id="dex-e-img-${entry.id}" value="${escapeAttr(entry.image_url)}" /></div>
       </div>
       <div class="field"><label>Descrizione</label><textarea id="dex-e-desc-${entry.id}" rows="2">${escapeHTML(entry.description)}</textarea></div>
-      <div class="field"><label>Categorie (separate da virgola)</label><input type="text" id="dex-e-categories-${entry.id}" value="${escapeAttr((entry.categories||[]).join(', '))}" placeholder="es. Deva, Angelo, Vaccine" /></div>
+      <div class="row">
+        <div class="field" style="flex:1;"><label>Attributo</label>
+          <select id="dex-e-attribute-${entry.id}">
+            <option value="">— nessuno —</option>
+            ${DEX_ATTRIBUTES.map(a=>`<option value="${a}" ${splitCategoriesAttribute(entry.categories).attribute===a?'selected':''}>${a}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field" style="flex:2;"><label>Famiglia (separate da virgola)</label><input type="text" id="dex-e-family-${entry.id}" value="${escapeAttr(splitCategoriesAttribute(entry.categories).family.join(', '))}" placeholder="es. Deva, Angelo" /></div>
+      </div>
       <div class="muted" style="margin:8px 0 4px;">Stat Base (Combattimento)</div>
       <div class="row">
         <div class="field"><label>Accuracy</label><input type="number" id="dex-e-acc-${entry.id}" value="${bs.baseAccuracy||0}" min="0" /></div>
@@ -1167,7 +1178,7 @@
         stage: document.getElementById('dex-e-stage-'+entry.id).value,
         description: document.getElementById('dex-e-desc-'+entry.id).value.trim(),
         imageUrl: document.getElementById('dex-e-img-'+entry.id).value.trim(),
-        categories: document.getElementById('dex-e-categories-'+entry.id).value.split(',').map(s=>s.trim()).filter(Boolean),
+        categories: [document.getElementById('dex-e-attribute-'+entry.id).value, ...document.getElementById('dex-e-family-'+entry.id).value.split(',').map(s=>s.trim()).filter(Boolean)].filter(Boolean),
         baseStats: {
           baseAccuracy: Number(document.getElementById('dex-e-acc-'+entry.id).value)||0,
           baseDamage: Number(document.getElementById('dex-e-dmg-'+entry.id).value)||0,
@@ -1238,8 +1249,11 @@
       const stage = document.getElementById('dex-stage').value;
       const description = document.getElementById('dex-desc').value.trim();
       const imageUrl = document.getElementById('dex-img').value.trim();
-      const catInput = document.getElementById('dex-categories');
-      const categories = catInput ? catInput.value.split(',').map(s=>s.trim()).filter(Boolean) : [];
+      const attributeSel = document.getElementById('dex-attribute');
+      const attribute = attributeSel ? attributeSel.value : '';
+      const familyInput = document.getElementById('dex-family');
+      const family = familyInput ? familyInput.value.split(',').map(s=>s.trim()).filter(Boolean) : [];
+      const categories = [attribute, ...family].filter(Boolean);
       const statusEl = document.getElementById('dex-status');
       if(!name){ statusEl.style.color='var(--danger)'; statusEl.textContent = 'Serve almeno un nome.'; return; }
       const baseStats = {
@@ -1258,7 +1272,8 @@
         document.getElementById('dex-name').value='';
         document.getElementById('dex-desc').value='';
         document.getElementById('dex-img').value='';
-        if(catInput) catInput.value='';
+        if(attributeSel) attributeSel.value='';
+        if(familyInput) familyInput.value='';
         ['dex-acc','dex-dmg','dex-dodge','dex-arm','dex-hp'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value='0'; });
         dexAddEvolutions = [];
         if(discoveredCheckbox) discoveredCheckbox.checked = false;
@@ -1315,7 +1330,7 @@
             <div class="muted" id="correct-status" style="margin-top:6px;"></div>
           </div>
 
-          <div class="hud-frame card">
+          <div class="hud-frame card" id="attacks-card" style="${(cachedCombat && cachedCombat.active) ? '' : 'display:none;'}">
             <div class="section-title">Attacchi di ${escapeHTML(me.digimon.name || 'Digimon')}</div>
             <div class="moves-grid">
               ${me.digimon.attacks.map((a,i)=>`
@@ -2083,7 +2098,15 @@
           </div>
           <div class="field"><label>URL Immagine (opz.)</label><input type="text" id="dex-img" placeholder="https://..." /></div>
         </div>
-        <div class="field"><label>Categorie (separate da virgola, es. Deva, Angelo)</label><input type="text" id="dex-categories" placeholder="es. Deva, Angelo, Vaccine" /></div>
+        <div class="row">
+          <div class="field" style="flex:1;"><label>Attributo</label>
+            <select id="dex-attribute">
+              <option value="">— nessuno —</option>
+              ${DEX_ATTRIBUTES.map(a=>`<option value="${a}">${a}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field" style="flex:2;"><label>Famiglia (separate da virgola, es. Deva, Angelo)</label><input type="text" id="dex-family" placeholder="es. Deva, Angelo" /></div>
+        </div>
         <div class="field"><label>Descrizione</label><textarea id="dex-desc" rows="2" placeholder="Cosa avete scoperto su questo Digimon..."></textarea></div>
         <div class="muted" style="margin:8px 0 4px;">Stat Base (Combattimento) — opzionale, puoi completarle anche dopo con "Modifica"</div>
         <div class="row">
@@ -2167,6 +2190,22 @@
   }
 
   const STAGES = ['Fresh','Baby','Rookie','Champion','Ultimate','Mega'];
+  const DEX_ATTRIBUTES = ['Vaccine','Data','Virus','Free','Variable'];
+  const DEX_ATTRIBUTE_COLOR = { Vaccine:'#5aa8ff', Data:'#3ddc84', Virus:'#ff5d5d', Free:'#b8b8b8', Variable:'#ff8a3d' };
+  // A Dex entry's "categories" array holds both Attribute and Family/Field tags together (no separate
+  // backend column for them). We treat any value matching a known Attribute as *the* Attribute, and
+  // everything else as Family tags, so we can show/edit them as distinct fields without any schema change.
+  function splitCategoriesAttribute(categories){
+    const cats = Array.isArray(categories) ? categories : [];
+    const attribute = cats.find(c=>DEX_ATTRIBUTES.includes(c)) || '';
+    const family = cats.filter(c=>!DEX_ATTRIBUTES.includes(c));
+    return { attribute, family };
+  }
+  function attributeBadgeHTML(attribute){
+    if(!attribute) return '';
+    const color = DEX_ATTRIBUTE_COLOR[attribute] || 'var(--text-mute)';
+    return `<span class="tag" style="color:${color};border-color:${color};">${escapeHTML(attribute)}</span>`;
+  }
   function stageIndex(s){ const i = STAGES.indexOf(s); return i<0?0:i; }
   function batteryCap(stage){ return stageIndex(stage)+1; }
   function evolutionCost(d, targetStage){
@@ -5480,6 +5519,7 @@
           </div>
           <button class="btn ${e.isBoss?'':'ghost'} small" data-toggle-boss="${i}" style="padding:4px 8px;font-size:10px;">${e.isBoss?'👑 Rimuovi Boss':'👑 Segna Boss'}</button>
           <button class="btn ${visible?'ghost':''} small" data-toggle-reveal="${i}" style="padding:4px 8px;font-size:10px;">${visible?'🙈 Nascondi':'👁️ Mostra ai giocatori'}</button>
+          <button class="btn ghost small" data-dupe-enc="${i}" style="padding:4px 8px;font-size:10px;" title="Aggiunge una copia identica">+1 copia</button>
           ${already ? '' : `<button class="btn small" data-quickdex="${i}" style="padding:4px 8px;font-size:10px;">+Dex</button>`}
           <button class="btn ghost small" data-rmenc="${i}" style="padding:4px 8px;font-size:10px;">×</button>
         </div>
@@ -5501,7 +5541,15 @@
             <select id="draft-stage">${['Baby','Rookie','Champion','Ultimate','Mega'].map(s=>`<option ${d.stage===s?'selected':''}>${s}</option>`).join('')}</select>
           </div>
         </div>
-        <div class="field"><label>Categorie (separate da virgola, es. Deva, Vaccine)</label><input type="text" id="draft-categories" value="${escapeAttr((d.categories||[]).join(', '))}" /></div>
+        <div class="row">
+          <div class="field" style="flex:1;"><label>Attributo</label>
+            <select id="draft-attribute">
+              <option value="">— nessuno —</option>
+              ${DEX_ATTRIBUTES.map(a=>`<option value="${a}" ${splitCategoriesAttribute(d.categories).attribute===a?'selected':''}>${a}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field" style="flex:2;"><label>Famiglia (separate da virgola, es. Deva, Angelo)</label><input type="text" id="draft-family" value="${escapeAttr(splitCategoriesAttribute(d.categories).family.join(', '))}" /></div>
+        </div>
         <div class="field"><label>URL Immagine</label><input type="text" id="draft-image" value="${escapeAttr(d.image)}" placeholder="https://..." /></div>
         <div class="field"><label>Descrizione</label><textarea id="draft-desc" rows="2">${escapeHTML(d.description)}</textarea></div>
         <div class="muted" style="margin:6px 0 4px;">Stat base (puoi lasciarle a 0 e completarle dopo)</div>
@@ -5528,7 +5576,9 @@
     if(confirmBtn) confirmBtn.onclick = async ()=>{
       const name = document.getElementById('draft-name').value.trim();
       if(!name) return;
-      const categories = document.getElementById('draft-categories').value.split(',').map(s=>s.trim()).filter(Boolean);
+      const attribute = document.getElementById('draft-attribute').value;
+      const family = document.getElementById('draft-family').value.split(',').map(s=>s.trim()).filter(Boolean);
+      const categories = [attribute, ...family].filter(Boolean);
       const image = document.getElementById('draft-image').value.trim();
       const description = document.getElementById('draft-desc').value.trim();
       const stage = document.getElementById('draft-stage').value;
@@ -5618,6 +5668,19 @@
         const e = cachedScene.encounters[idx];
         if(!e) return;
         e.isBoss = !e.isBoss;
+        await saveScene(code, cachedScene);
+        live.innerHTML = encountersEditableHTML(cachedScene.encounters);
+        bindEncountersInnerActions(code, username);
+        refreshLiveParts();
+      };
+    });
+    live.querySelectorAll('[data-dupe-enc]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const idx = Number(btn.getAttribute('data-dupe-enc'));
+        const e = cachedScene.encounters[idx];
+        if(!e) return;
+        const copy = Object.assign({}, e, { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6) });
+        cachedScene.encounters.splice(idx+1, 0, copy);
         await saveScene(code, cachedScene);
         live.innerHTML = encountersEditableHTML(cachedScene.encounters);
         bindEncountersInnerActions(code, username);
@@ -5818,7 +5881,13 @@
     }catch(err){ /* non-blocking: still show the detail card even if auto-registration fails */ }
 
     const evolutions = (dexMatch && Array.isArray(dexMatch.evolutions)) ? dexMatch.evolutions : [];
+    // Pre-evolutions: any Dex entry that lists this name among ITS evolutions.
+    const preEvolutions = cachedDex
+      .filter(d => Array.isArray(d.evolutions) && d.evolutions.some(ev => String(ev.name).trim().toLowerCase() === e.name.trim().toLowerCase()))
+      .map(d => ({ name: d.name, imageUrl: d.image_url }));
     const description = e.description || (dexMatch && dexMatch.description) || '';
+    const categories = (dexMatch && dexMatch.categories && dexMatch.categories.length) ? dexMatch.categories : (e.categories||[]);
+    const { attribute, family } = splitCategoriesAttribute(categories);
     const oldModal = document.getElementById('enc-detail-modal');
     if(oldModal) oldModal.remove();
     const modal = document.createElement('div');
@@ -5827,13 +5896,17 @@
     modal.innerHTML = `
       <div class="enc-modal-card hud-frame">
         <button class="btn ghost small" id="enc-modal-close" style="position:absolute;top:8px;right:8px;">✕</button>
-        ${e.image ? `<img src="${escapeAttr(e.image)}" onerror="this.style.display='none'" class="enc-modal-img" />` : ''}
+        ${e.image ? `<div class="enc-modal-img-wrap"><img src="${escapeAttr(e.image)}" onerror="this.style.display='none'" class="enc-modal-img" /></div>` : ''}
         <div class="flex-between" style="margin-top:10px;">
           <b style="font-size:16px;">${escapeHTML(e.name)}</b>
           <span>${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}${e.isBoss?`<span class="tag" style="color:var(--danger);border-color:var(--danger);">👑 Boss</span>`:''}</span>
         </div>
-        ${(e.categories||[]).length ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>` : ''}
+        ${(attribute || family.length) ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">${attributeBadgeHTML(attribute)}${family.map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>` : ''}
         ${description ? `<div class="sub" style="margin-top:8px;">${escapeHTML(description)}</div>` : '<div class="muted" style="margin-top:8px;">Nessuna descrizione disponibile.</div>'}
+        ${preEvolutions.length ? `
+          <div class="muted" style="margin-top:14px;margin-bottom:4px;">Pre-Evoluzioni</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">${preEvolutions.map(ev=>evoUnlockedHTML(ev)).join('')}</div>
+        ` : ''}
         ${evolutions.length ? `
           <div class="muted" style="margin-top:14px;margin-bottom:4px;">Possibili Evoluzioni</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;">${evolutions.map(ev=>evoUnlockedHTML(ev)).join('')}</div>
@@ -5845,6 +5918,12 @@
     modal.onclick = (ev)=>{ if(ev.target===modal) closeEncounterDetail(); };
   }
 
+  function rerenderSceneLive(){
+    const el = document.getElementById('scene-live');
+    if(!el) return;
+    el.innerHTML = `<div class="muted mono" style="margin-bottom:8px;">${onlineSummary(cachedRoster)}</div>` + sceneHTML(cachedScene);
+  }
+
   // Global delegation: works no matter which render function last drew the scene box
   // (master preview, player view, or a periodic refresh), without needing to rebind per-render.
   document.addEventListener('click', (ev)=>{
@@ -5852,7 +5931,7 @@
     const chip = ev.target.closest('[data-enc-name]');
     if(chip){ openEncounterDetail(chip.getAttribute('data-enc-name'), session.code, session.username); return; }
     const sizeBtn = ev.target.closest('[data-toggle-enc-size]');
-    if(sizeBtn){ setEncImgLarge(!getEncImgLarge()); refreshLiveParts(); }
+    if(sizeBtn){ setEncImgLarge(!getEncImgLarge()); rerenderSceneLive(); }
   });
 
   // ---------- DIGIMOJI: conversione fonetica italiana -> Hiragana ----------
