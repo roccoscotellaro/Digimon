@@ -172,8 +172,20 @@
   async function saveScene(code, scene){
     let d = await apiPost('/api/scene', { code, ...scene });
     if(!d){ d = await apiPost('/api/scene', { code, ...scene }); } // one retry, in case of a transient failure
-    if(d && d.ok) lastSaveAt = Date.now();
-    return !!(d && d.ok);
+    if(!d || !d.ok) return false;
+    lastSaveAt = Date.now();
+    // The API can report ok:true without actually persisting every field (e.g. if the backend
+    // wasn't updated to store macroScenes). Re-fetch and compare to catch that silently.
+    try{
+      const verify = await apiGet('/api/scene?code=' + encodeURIComponent(code));
+      const savedMacro = verify && verify.scene ? JSON.stringify(verify.scene.macroScenes||[]) : null;
+      const sentMacro = JSON.stringify(scene.macroScenes||[]);
+      if(savedMacro !== sentMacro){
+        lastApiError = 'Il server ha accettato la richiesta ma i dati della Mappa (Macroscene/Settori) non risultano salvati. È quasi certo un bug nel backend (api/scene) che non gestisce ancora il campo "macroScenes".';
+        return false;
+      }
+    }catch(e){ /* if verification itself fails, don't block on it — trust the ok response */ }
+    return true;
   }
 
   function topbarHTML(){
