@@ -82,17 +82,17 @@
   .breadcrumb span{cursor:pointer;text-decoration:underline;}
   .breadcrumb span:hover{color:#4ffbe0;}
 
-  .map-grid{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:8px;aspect-ratio:1/1;}
-  .map-cell{position:relative;border:1px solid var(--line);background:var(--panel-2);overflow:hidden;cursor:default;display:flex;align-items:flex-end;min-height:0;}
+  .map-grid{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:0;aspect-ratio:1/1;border:1px solid var(--line);}
+  .map-cell{position:relative;border:1px solid transparent;background:var(--panel-2);overflow:hidden;cursor:default;display:flex;align-items:flex-end;min-height:0;}
   .map-cell.filled{cursor:pointer;}
   .map-cell.filled:hover{border-color:var(--cyan);}
   .map-cell img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.65;transition:.2s;}
   .map-cell.filled:hover img{opacity:0.9;}
   .map-cell .lbl{position:relative;z-index:1;width:100%;padding:6px 8px;background:linear-gradient(180deg, rgba(8,11,16,0) 0%, rgba(8,11,16,0.9) 90%);font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text);}
   .map-cell.empty .lbl{color:var(--text-mute);font-size:10px;text-align:center;width:100%;padding:0;background:none;}
-  .map-cell.empty{align-items:center;justify-content:center;}
+  .map-cell.empty{align-items:center;justify-content:center;border-color:var(--line);}
   .map-cell.current{border-color:var(--cyan);box-shadow:0 0 12px rgba(53,232,201,0.35) inset;}
-  .map-cell.addable{cursor:pointer;border-style:dashed;}
+  .map-cell.addable{cursor:pointer;border-style:dashed;border-color:var(--line);}
   .map-cell.addable:hover{border-color:var(--cyan);}
   .map-cell.addable .lbl{color:var(--cyan-dim);}
   .map-cell-del{position:absolute;top:2px;right:2px;z-index:2;padding:2px 6px !important;font-size:10px !important;background:rgba(8,11,16,0.7) !important;}
@@ -129,6 +129,8 @@
   let session = null;
   let cachedScene = null;
   let pollTimer = null;
+  let lastApiError = null;
+  let lastSaveAt = 0;
   // view state
   let view = 'sectors'; // 'sectors' | 'sector' | 'luogo'
   let selectedSectorId = null;
@@ -143,10 +145,22 @@
   function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
 
   async function apiGet(path){
-    try{ const r = await fetch(path); const data = await r.json(); if(!r.ok) return null; return data; }catch(e){ return null; }
+    try{
+      const r = await fetch(path);
+      const data = await r.json();
+      if(!r.ok){ lastApiError = (data && data.error) || ('Errore di rete (' + r.status + ')'); return null; }
+      lastApiError = null;
+      return data;
+    }catch(e){ lastApiError = 'Impossibile contattare il server.'; return null; }
   }
   async function apiPost(path, body){
-    try{ const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); const data = await r.json(); if(!r.ok) return null; return data; }catch(e){ return null; }
+    try{
+      const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const data = await r.json();
+      if(!r.ok){ lastApiError = (data && data.error) || ('Errore di salvataggio (' + r.status + ')'); return null; }
+      lastApiError = null;
+      return data;
+    }catch(e){ lastApiError = 'Impossibile contattare il server.'; return null; }
   }
   async function getScene(code){
     const d = await apiGet('/api/scene?code=' + encodeURIComponent(code));
@@ -155,7 +169,12 @@
     if(s.currentMacroSceneId===undefined) s.currentMacroSceneId = null;
     return s;
   }
-  async function saveScene(code, scene){ const d = await apiPost('/api/scene', { code, ...scene }); return !!(d && d.ok); }
+  async function saveScene(code, scene){
+    let d = await apiPost('/api/scene', { code, ...scene });
+    if(!d){ d = await apiPost('/api/scene', { code, ...scene }); } // one retry, in case of a transient failure
+    if(d && d.ok) lastSaveAt = Date.now();
+    return !!(d && d.ok);
+  }
 
   function topbarHTML(){
     return `
@@ -172,6 +191,7 @@
           <button class="btn ghost small" id="btn-logout">Esci</button>
         </div>
       </div>
+      ${lastApiError ? `<div class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(lastApiError)} — la modifica potrebbe non essersi salvata, riprova.</div>` : ''}
     `;
   }
 
@@ -626,6 +646,7 @@
   async function refresh(){
     if(!session) return;
     if(isFieldFocused() || resumeTimer) return; // don't blow away an in-progress edit
+    if(Date.now() - lastSaveAt < 5000) return; // give a just-completed save time to be reflected server-side
     const fresh = await getScene(session.code);
     cachedScene = fresh;
     renderMap();
