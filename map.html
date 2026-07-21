@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mappa — Digimon: Digital Adventures 2E</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
+
+<style>
+  @font-face {
+    font-family: 'Digicode';
+    src: url(data:font/woff2;charset=utf-8;base64,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) format('woff2');
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'Pixel Digivolve';
+    src: url('https://db.onlinewebfonts.com/t/e7a35327535403014c02a38c285b82cf.woff2') format('woff2'),
+         url('https://db.onlinewebfonts.com/t/e7a35327535403014c02a38c285b82cf.woff') format('woff'),
+         url('https://db.onlinewebfonts.com/t/e7a35327535403014c02a38c285b82cf.ttf') format('truetype');
+    font-display: swap;
+  }
+  .pixel-title{ font-family:'Pixel Digivolve','Share Tech Mono',monospace; letter-spacing:0.03em; }
+  :root{
+    --bg: #080b10;
+    --panel: #0e141b;
+    --panel-2: #121a22;
+    --line: #1c2a30;
+    --cyan: #35e8c9;
+    --cyan-dim: #1f6e63;
+    --amber: #ff8a3d;
+    --text: #dcece8;
+    --text-mute: #6d8385;
+    --danger: #ff5d5d;
+    --radius: 2px;
+    font-family: 'Manrope', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body,#root-app{margin:0;padding:0;background:var(--bg);color:var(--text);}
+  .mono{font-family:'Share Tech Mono', monospace; letter-spacing: 0.04em;}
+  .app{min-height:100vh;background:
+      radial-gradient(circle at 15% 10%, rgba(53,232,201,0.06), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(255,138,61,0.05), transparent 45%),
+      var(--bg);
+      padding:20px; position:relative; overflow-x:hidden;}
+  .hud-frame{border:1px solid var(--line); background:var(--panel); border-radius:var(--radius); position:relative;}
+  .hud-frame::before{content:"";position:absolute;top:-1px;left:-1px;width:14px;height:14px;border-top:2px solid var(--cyan);border-left:2px solid var(--cyan);}
+  .hud-frame::after{content:"";position:absolute;bottom:-1px;right:-1px;width:14px;height:14px;border-bottom:2px solid var(--cyan);border-right:2px solid var(--cyan);}
+  .topbar{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand-dot{width:9px;height:9px;background:var(--cyan);box-shadow:0 0 8px var(--cyan);border-radius:50%;animation:pulse 2s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
+  .brand-title{font-family:'Pixel Digivolve','Share Tech Mono',monospace;font-size:15px;text-transform:uppercase;color:var(--cyan);letter-spacing:0.05em;}
+  .brand-sub{font-size:11px;color:var(--text-mute);}
+
+  .btn{font-family:'Share Tech Mono',monospace;background:transparent;border:1px solid var(--cyan-dim);color:var(--cyan);
+    padding:8px 14px;cursor:pointer;text-transform:uppercase;font-size:12px;letter-spacing:0.05em;border-radius:var(--radius);transition:.15s;}
+  .btn:hover{background:rgba(53,232,201,0.1);border-color:var(--cyan);}
+  .btn.solid{background:var(--cyan);color:#04211c;border-color:var(--cyan);font-weight:700;}
+  .btn.solid:hover{background:#4ffbe0;}
+  .btn.ghost{border-color:var(--line);color:var(--text-mute);}
+  .btn.small{padding:5px 10px;font-size:10px;}
+
+  input[type=text], select{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    padding:8px 10px; font-family:'Manrope',sans-serif; font-size:13px; border-radius:var(--radius); width:100%;
+  }
+  input:focus, select:focus{outline:none;border-color:var(--cyan-dim);}
+  label{font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;display:block;margin-bottom:4px;}
+  .field{margin-bottom:12px;}
+  .row{display:flex;gap:12px;}
+  .row > *{flex:1;}
+  .section-title{font-size:12px;text-transform:uppercase;color:var(--cyan);letter-spacing:0.08em;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);}
+  .card{padding:16px;margin-bottom:16px;max-width:760px;margin-left:auto;margin-right:auto;}
+  .muted{color:var(--text-mute);font-size:12px;}
+  .sub{color:var(--text-mute);font-size:12px;}
+  .tag{display:inline-block;border:1px solid var(--line);color:var(--text-mute);font-size:10px;padding:1px 6px;border-radius:10px;margin-left:4px;}
+  .err{color:var(--danger);font-size:12px;min-height:14px;}
+
+  .breadcrumb{font-family:'Share Tech Mono',monospace;font-size:13px;color:var(--cyan);margin-bottom:14px;}
+  .breadcrumb span{cursor:pointer;text-decoration:underline;}
+  .breadcrumb span:hover{color:#4ffbe0;}
+
+  .map-grid{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:8px;aspect-ratio:1/1;}
+  .map-cell{position:relative;border:1px solid var(--line);background:var(--panel-2);overflow:hidden;cursor:default;display:flex;align-items:flex-end;min-height:0;}
+  .map-cell.filled{cursor:pointer;}
+  .map-cell.filled:hover{border-color:var(--cyan);}
+  .map-cell img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.65;transition:.2s;}
+  .map-cell.filled:hover img{opacity:0.9;}
+  .map-cell .lbl{position:relative;z-index:1;width:100%;padding:6px 8px;background:linear-gradient(180deg, rgba(8,11,16,0) 0%, rgba(8,11,16,0.9) 90%);font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text);}
+  .map-cell.empty .lbl{color:var(--text-mute);font-size:10px;text-align:center;width:100%;padding:0;background:none;}
+  .map-cell.empty{align-items:center;justify-content:center;}
+  .map-cell.current{border-color:var(--cyan);box-shadow:0 0 12px rgba(53,232,201,0.35) inset;}
+  .map-cell.addable{cursor:pointer;border-style:dashed;}
+  .map-cell.addable:hover{border-color:var(--cyan);}
+  .map-cell.addable .lbl{color:var(--cyan-dim);}
+  .map-cell-del{position:absolute;top:2px;right:2px;z-index:2;padding:2px 6px !important;font-size:10px !important;background:rgba(8,11,16,0.7) !important;}
+
+  textarea{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    padding:8px 10px; font-family:'Manrope',sans-serif; font-size:13px; border-radius:var(--radius); width:100%; resize:vertical;
+  }
+  textarea:focus{outline:none;border-color:var(--cyan-dim);}
+
+  .luogo-grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;}
+  .luogo-tile{width:110px;border:1px solid var(--line);background:var(--panel-2);cursor:pointer;overflow:hidden;}
+  .luogo-tile:hover{border-color:var(--cyan);}
+  .luogo-tile .img{height:70px;background:#05070a;position:relative;overflow:hidden;}
+  .luogo-tile .img img{width:100%;height:100%;object-fit:cover;}
+  .luogo-tile .nm{font-size:11px;padding:5px;font-family:'Share Tech Mono',monospace;}
+
+  .detail-image{width:100%;max-height:260px;object-fit:cover;border:1px solid var(--line);margin-bottom:12px;background:#05070a;}
+  .connections-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+
+  .login-wrap{max-width:420px;margin:60px auto;padding:32px;}
+  .login-wrap h1{font-family:'Pixel Digivolve','Share Tech Mono',monospace;color:var(--cyan);font-size:24px;letter-spacing:0.03em;text-align:center;text-shadow:0 0 16px rgba(53,232,201,0.5);margin-bottom:4px;}
+  .role-pick{display:flex;gap:8px;}
+  .role-pick .btn.active{background:var(--cyan);color:#04211c;border-color:var(--cyan);}
+</style>
+</head>
+<body>
+<div id="root-app" class="app"><div class="hud-frame card"><div class="muted">Caricamento…</div></div></div>
+
+<script>
+(function(){
+  const SESSION_KEY = 'digivice_session_v1';
+  const root = document.getElementById('root-app');
+  let session = null;
+  let cachedScene = null;
+  let pollTimer = null;
+  // view state
+  let view = 'sectors'; // 'sectors' | 'sector' | 'luogo'
+  let selectedSectorId = null;
+  let selectedLuogoId = null;
+  let addingSectorPos = null; // grid position (0-8) currently being filled with a new sector, master only
+
+  function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function escapeAttr(s){ return escapeHTML(s); }
+  function sanitizeKeyPart(s){ return String(s||'').trim().toUpperCase().replace(/[^A-Z0-9_-]/g,''); }
+
+  function saveSession(s){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }catch(e){} }
+  function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
+
+  async function apiGet(path){
+    try{ const r = await fetch(path); const data = await r.json(); if(!r.ok) return null; return data; }catch(e){ return null; }
+  }
+  async function apiPost(path, body){
+    try{ const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); const data = await r.json(); if(!r.ok) return null; return data; }catch(e){ return null; }
+  }
+  async function getScene(code){
+    const d = await apiGet('/api/scene?code=' + encodeURIComponent(code));
+    const s = d ? d.scene : { title:'', background:'', music:'', encounters:[] };
+    if(!Array.isArray(s.macroScenes)) s.macroScenes = [];
+    if(s.currentMacroSceneId===undefined) s.currentMacroSceneId = null;
+    return s;
+  }
+  async function saveScene(code, scene){ const d = await apiPost('/api/scene', { code, ...scene }); return !!(d && d.ok); }
+
+  function topbarHTML(){
+    return `
+      <div class="topbar hud-frame">
+        <div class="brand">
+          <div class="brand-dot"></div>
+          <div>
+            <div class="brand-title">DIGIVICE OS // MAPPA</div>
+            <div class="brand-sub">Codice campagna: ${escapeHTML(session.code)} ${session.role==='master'?' · Master':''}</div>
+          </div>
+        </div>
+        <div>
+          <a href="index.html" class="btn ghost small" style="text-decoration:none;">↩ Torna al Tavolo</a>
+          <button class="btn ghost small" id="btn-logout">Esci</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // ---------- LOGIN ----------
+  function renderLogin(){
+    root.innerHTML = `
+      <div class="login-wrap hud-frame">
+        <h1 class="mono">MAPPA // ACCESSO</h1>
+        <div class="sub" style="text-align:center;margin-bottom:14px;">Inserisci lo stesso codice campagna usato nel Tavolo principale.</div>
+        <div class="field"><label>Codice Campagna</label><input type="text" id="in-code" placeholder="es. FRONTIER01" /></div>
+        <div class="field"><label>Nome Utente</label><input type="text" id="in-user" placeholder="il tuo nome al tavolo" /></div>
+        <div class="field">
+          <label>Ruolo</label>
+          <div class="role-pick">
+            <button class="btn active" id="role-player" data-role="player">Giocatore</button>
+            <button class="btn" id="role-master" data-role="master">Master</button>
+          </div>
+        </div>
+        <button class="btn solid" id="btn-enter" style="width:100%;padding:12px;">Apri la Mappa</button>
+        <div class="err" id="login-err"></div>
+      </div>
+    `;
+    let role = 'player';
+    document.getElementById('role-player').onclick = ()=>{ role='player'; document.getElementById('role-player').classList.add('active'); document.getElementById('role-master').classList.remove('active'); };
+    document.getElementById('role-master').onclick = ()=>{ role='master'; document.getElementById('role-master').classList.add('active'); document.getElementById('role-player').classList.remove('active'); };
+    document.getElementById('btn-enter').onclick = ()=>{
+      const code = sanitizeKeyPart(document.getElementById('in-code').value);
+      const username = document.getElementById('in-user').value.trim();
+      const errEl = document.getElementById('login-err');
+      if(!code || !username){ errEl.textContent = 'Inserisci sia il codice campagna che il nome utente.'; return; }
+      session = { code, username, role };
+      saveSession(session);
+      boot();
+    };
+  }
+
+  // ---------- MAP VIEWS ----------
+  function terrainLabel(t){ return t==='Dangerous' ? '☠ Pericoloso' : (t==='Difficult' ? '⚠ Difficile' : 'Normale'); }
+  function isMaster(){ return !!(session && session.role==='master'); }
+
+  function getActiveMacro(){
+    return (cachedScene.macroScenes||[]).find(m=>m.id===cachedScene.currentMacroSceneId) || (cachedScene.macroScenes||[])[0] || null;
+  }
+
+  async function persist(){
+    return await saveScene(session.code, cachedScene);
+  }
+
+  function renderMap(){
+    if(!cachedScene){ return; }
+    const macroScenes = cachedScene.macroScenes || [];
+    let activeMacro = getActiveMacro();
+    root.innerHTML = `
+      <div style="max-width:760px;margin:0 auto;">
+        ${topbarHTML()}
+        <div class="hud-frame card">
+          ${(macroScenes.length>1 || isMaster()) ? `
+            <div class="field"><label>Macroscena</label>
+              <select id="map-macro-select">
+                ${macroScenes.length===0 ? '<option value="">— nessuna —</option>' : ''}
+                ${macroScenes.map(m=>`<option value="${m.id}" ${activeMacro && activeMacro.id===m.id?'selected':''}>${escapeHTML(m.name)}</option>`).join('')}
+              </select>
+            </div>
+          ` : ''}
+          ${isMaster() ? masterMacroBarHTML(activeMacro) : ''}
+          <div id="map-body"></div>
+        </div>
+      </div>
+    `;
+    const macroSel = document.getElementById('map-macro-select');
+    if(macroSel){
+      macroSel.onchange = async ()=>{
+        cachedScene.currentMacroSceneId = macroSel.value || null;
+        activeMacro = macroScenes.find(m=>m.id===macroSel.value) || null;
+        view = 'sectors'; selectedSectorId = null; selectedLuogoId = null; addingSectorPos = null;
+        await persist();
+        renderMap();
+      };
+    }
+    bindMasterMacroBar(activeMacro);
+    const logoutBtn = document.getElementById('btn-logout');
+    if(logoutBtn) logoutBtn.onclick = ()=>{ if(pollTimer) clearInterval(pollTimer); renderLogin(); };
+    renderMapBody(activeMacro);
+  }
+
+  // ---------- MASTER: MACROSCENA BAR ----------
+  function masterMacroBarHTML(activeMacro){
+    return `
+      <div class="hud-frame" style="padding:10px 12px;margin-bottom:12px;">
+        <div class="muted" style="margin-bottom:8px;">🛠️ Gestione Macroscena (solo Master)</div>
+        <div class="row" style="margin-bottom:${activeMacro?'8px':'0'};">
+          <input type="text" id="new-macro-name" placeholder="Nome nuova Macroscena" style="flex:2;" />
+          <button class="btn small" id="btn-map-add-macro" style="flex:1;">+ Nuova Macroscena</button>
+        </div>
+        ${activeMacro ? `
+          <div class="field" style="margin-top:8px;"><label>Nome Macroscena attiva</label><input type="text" id="edit-macro-name" value="${escapeAttr(activeMacro.name)}" /></div>
+          <div class="field"><label>Descrizione</label><textarea id="edit-macro-desc" rows="2">${escapeHTML(activeMacro.description||'')}</textarea></div>
+          <button class="btn ghost small" id="btn-map-remove-macro">🗑️ Elimina Macroscena "${escapeHTML(activeMacro.name)}"</button>
+        ` : ''}
+        <div class="err" id="map-master-status" style="margin-top:6px;"></div>
+      </div>
+    `;
+  }
+
+  function bindMasterMacroBar(activeMacro){
+    const addBtn = document.getElementById('btn-map-add-macro');
+    if(addBtn) addBtn.onclick = async ()=>{
+      const nameEl = document.getElementById('new-macro-name');
+      const name = nameEl.value.trim();
+      const statusEl = document.getElementById('map-master-status');
+      if(!name){ if(statusEl) statusEl.textContent = 'Inserisci un nome per la Macroscena.'; return; }
+      const id = 'ms'+Date.now()+Math.random().toString(36).slice(2,6);
+      if(!cachedScene.macroScenes) cachedScene.macroScenes = [];
+      cachedScene.macroScenes.push({ id, name, description:'', sectors:[] });
+      cachedScene.currentMacroSceneId = id;
+      cachedScene.currentSectorId = null; cachedScene.currentLuogoId = null;
+      view = 'sectors'; selectedSectorId = null; selectedLuogoId = null; addingSectorPos = null;
+      await persist();
+      renderMap();
+    };
+    const nameEl = document.getElementById('edit-macro-name');
+    if(nameEl) nameEl.onchange = async ()=>{
+      if(activeMacro) activeMacro.name = nameEl.value.trim() || activeMacro.name;
+      await persist();
+      renderMap();
+    };
+    const descEl = document.getElementById('edit-macro-desc');
+    if(descEl) descEl.onchange = async ()=>{
+      if(activeMacro) activeMacro.description = descEl.value;
+      await persist();
+      renderMap();
+    };
+    const removeBtn = document.getElementById('btn-map-remove-macro');
+    if(removeBtn) removeBtn.onclick = async ()=>{
+      if(!activeMacro) return;
+      if(!window.confirm(`Eliminare la Macroscena "${activeMacro.name}" e tutti i suoi Settori/Luoghi?`)) return;
+      cachedScene.macroScenes = (cachedScene.macroScenes||[]).filter(m=>m.id!==activeMacro.id);
+      if(cachedScene.currentMacroSceneId===activeMacro.id){ cachedScene.currentMacroSceneId=null; cachedScene.currentSectorId=null; cachedScene.currentLuogoId=null; }
+      view = 'sectors'; selectedSectorId = null; selectedLuogoId = null; addingSectorPos = null;
+      await persist();
+      renderMap();
+    };
+  }
+
+  // ---------- NEW SECTOR FORM (master, from an empty grid cell) ----------
+  function newSectorFormHTML(pos){
+    return `
+      <div class="hud-frame" style="padding:12px;margin-top:14px;">
+        <div class="muted" style="margin-bottom:8px;">Nuovo Settore — Casella ${pos+1}</div>
+        <div class="row">
+          <input type="text" id="new-sector-name" placeholder="es. Villaggio - Piazza" style="flex:2;" />
+          <select id="new-sector-terrain" style="flex:1;">
+            <option value="Basic">Terreno Normale</option>
+            <option value="Difficult">Terreno Difficile</option>
+            <option value="Dangerous">Terreno Pericoloso</option>
+          </select>
+        </div>
+        <div class="field" style="margin-top:8px;"><label>Descrizione</label><textarea id="new-sector-desc" rows="2" placeholder="Breve descrizione (opzionale)"></textarea></div>
+        <div class="field"><label>URL Immagine</label><input type="text" id="new-sector-image" placeholder="URL Immagine (opzionale)" /></div>
+        <div class="row" style="margin-top:6px;">
+          <button class="btn solid small" id="btn-confirm-add-sector" style="flex:1;">Crea Settore</button>
+          <button class="btn ghost small" id="btn-cancel-add-sector" style="flex:1;">Annulla</button>
+        </div>
+        <div class="err" id="new-sector-status"></div>
+      </div>
+    `;
+  }
+
+  function bindNewSectorForm(activeMacro){
+    const confirmBtn = document.getElementById('btn-confirm-add-sector');
+    if(confirmBtn) confirmBtn.onclick = async ()=>{
+      const name = document.getElementById('new-sector-name').value.trim();
+      const statusEl = document.getElementById('new-sector-status');
+      if(!name){ statusEl.textContent = 'Inserisci un nome per il settore.'; return; }
+      const terrain = document.getElementById('new-sector-terrain').value;
+      const description = document.getElementById('new-sector-desc').value.trim();
+      const image = document.getElementById('new-sector-image').value.trim();
+      const id = 's'+Date.now()+Math.random().toString(36).slice(2,6);
+      if(!activeMacro.sectors) activeMacro.sectors = [];
+      activeMacro.sectors.push({ id, name, description, terrain, connections:[], luoghi:[], image, gridPos: addingSectorPos });
+      addingSectorPos = null;
+      const ok = await persist();
+      if(!ok){ statusEl.textContent = 'Errore di salvataggio, riprova.'; }
+      renderMapBody(activeMacro);
+    };
+    const cancelBtn = document.getElementById('btn-cancel-add-sector');
+    if(cancelBtn) cancelBtn.onclick = ()=>{ addingSectorPos = null; renderMapBody(activeMacro); };
+  }
+
+  // ---------- SECTOR DETAIL: read-only vs master edit form ----------
+  function sectorReadOnlyHTML(s){
+    return `
+      ${s.image ? `<img class="detail-image" src="${escapeAttr(s.image)}" onerror="this.style.display='none'" />` : ''}
+      <div class="flex-between"><b>${escapeHTML(s.name)}</b><span class="tag">${terrainLabel(s.terrain)}</span></div>
+      ${s.description ? `<div class="sub" style="margin-top:6px;">${escapeHTML(s.description)}</div>` : ''}
+    `;
+  }
+
+  function sectorEditFormHTML(s, sectors){
+    const usedPositions = sectors.map(x=>x.gridPos).filter(p=>p!=null);
+    return `
+      <div class="hud-frame" style="padding:12px;margin-bottom:4px;">
+        <div class="muted" style="margin-bottom:8px;">🛠️ Modifica Settore (solo Master)</div>
+        <div class="row">
+          <input type="text" id="edit-sector-name" value="${escapeAttr(s.name)}" style="flex:2;" />
+          <select id="edit-sector-terrain" style="flex:1;">
+            <option value="Basic" ${s.terrain==='Basic'?'selected':''}>Terreno Normale</option>
+            <option value="Difficult" ${s.terrain==='Difficult'?'selected':''}>Terreno Difficile</option>
+            <option value="Dangerous" ${s.terrain==='Dangerous'?'selected':''}>Terreno Pericoloso</option>
+          </select>
+        </div>
+        <div class="field" style="margin-top:8px;"><label>Descrizione</label><textarea id="edit-sector-desc" rows="2">${escapeHTML(s.description||'')}</textarea></div>
+        <div class="field"><label>URL Immagine</label><input type="text" id="edit-sector-image" value="${escapeAttr(s.image||'')}" /></div>
+        <div class="field"><label>Posizione in griglia</label>
+          <select id="edit-sector-gridpos">
+            ${[0,1,2,3,4,5,6,7,8].map(p=>`<option value="${p}" ${s.gridPos===p?'selected':''} ${usedPositions.includes(p) && s.gridPos!==p?'disabled':''}>Casella ${p+1}${usedPositions.includes(p) && s.gridPos!==p?' (occupata)':''}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderMapBody(activeMacro){
+    const bodyEl = document.getElementById('map-body');
+    if(!bodyEl) return;
+    const master = isMaster();
+    if(!activeMacro){
+      bodyEl.innerHTML = `<div class="muted" style="text-align:center;padding:40px 0;">${master ? 'Crea una Macroscena qui sopra per iniziare.' : 'Nessuna Macroscena ancora creata dal Master.'}</div>`;
+      return;
+    }
+    const sectors = activeMacro.sectors || [];
+    if(view==='sectors'){
+      const cells = [];
+      for(let i=0;i<9;i++){
+        const s = sectors.find(x=>x.gridPos===i);
+        if(s){
+          cells.push(`
+            <div class="map-cell filled ${cachedScene.currentSectorId===s.id?'current':''}" data-open-sector="${s.id}">
+              ${s.image ? `<img src="${escapeAttr(s.image)}" onerror="this.style.display='none'" />` : ''}
+              ${master ? `<button class="btn ghost small map-cell-del" data-quick-del-sector="${s.id}">🗑</button>` : ''}
+              <div class="lbl">${escapeHTML(s.name)}<div style="font-size:9px;color:var(--text-mute);">${terrainLabel(s.terrain)}</div></div>
+            </div>
+          `);
+        } else {
+          cells.push(`<div class="map-cell empty ${master?'addable':''}" ${master?`data-add-sector-pos="${i}"`:''}><div class="lbl">${master?'+ Aggiungi':'—'}</div></div>`);
+        }
+      }
+      bodyEl.innerHTML = `
+        <div class="breadcrumb">📍 ${escapeHTML(activeMacro.name)}</div>
+        ${activeMacro.description ? `<div class="muted" style="margin-bottom:10px;">${escapeHTML(activeMacro.description)}</div>` : ''}
+        <div class="map-grid">${cells.join('')}</div>
+        <div class="muted" style="margin-top:10px;font-size:11px;">${master ? 'Clicca su un Settore per modificarlo, su una casella vuota (tratteggiata) per crearne uno nuovo.' : 'Clicca su un Settore per esplorarlo.'}</div>
+        ${master && addingSectorPos!=null ? newSectorFormHTML(addingSectorPos) : ''}
+      `;
+      bodyEl.querySelectorAll('[data-open-sector]').forEach(cell=>{
+        cell.onclick = (e)=>{
+          if(e.target.closest('[data-quick-del-sector]')) return;
+          selectedSectorId = cell.getAttribute('data-open-sector');
+          view = 'sector';
+          addingSectorPos = null;
+          renderMapBody(activeMacro);
+        };
+      });
+      if(master){
+        bodyEl.querySelectorAll('[data-quick-del-sector]').forEach(btn=>{
+          btn.onclick = async (e)=>{
+            e.stopPropagation();
+            const id = btn.getAttribute('data-quick-del-sector');
+            const s = sectors.find(x=>x.id===id);
+            if(!window.confirm(`Eliminare il Settore "${s?s.name:''}" e tutti i suoi Luoghi?`)) return;
+            activeMacro.sectors = (activeMacro.sectors||[]).filter(x=>x.id!==id);
+            (activeMacro.sectors||[]).forEach(x=>{ x.connections = (x.connections||[]).filter(cid=>cid!==id); });
+            if(cachedScene.currentSectorId===id){ cachedScene.currentSectorId=null; cachedScene.currentLuogoId=null; }
+            await persist();
+            renderMapBody(activeMacro);
+          };
+        });
+        bodyEl.querySelectorAll('[data-add-sector-pos]').forEach(cell=>{
+          cell.onclick = ()=>{
+            addingSectorPos = Number(cell.getAttribute('data-add-sector-pos'));
+            renderMapBody(activeMacro);
+          };
+        });
+        bindNewSectorForm(activeMacro);
+      }
+    } else if(view==='sector'){
+      const s = sectors.find(x=>x.id===selectedSectorId);
+      if(!s){ view='sectors'; renderMapBody(activeMacro); return; }
+      const luoghi = s.luoghi || [];
+      bodyEl.innerHTML = `
+        <div class="breadcrumb"><span data-nav-macro>📍 ${escapeHTML(activeMacro.name)}</span> → ${escapeHTML(s.name)}</div>
+        ${master ? sectorEditFormHTML(s, sectors) : sectorReadOnlyHTML(s)}
+        ${luoghi.length>0 || master ? `
+          <div class="muted" style="margin-top:14px;">Luoghi:</div>
+          <div class="luogo-grid">
+            ${luoghi.map(lg=>`
+              <div class="luogo-tile" data-open-luogo="${lg.id}">
+                <div class="img">${lg.image?`<img src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" />`:''}</div>
+                <div class="nm">${escapeHTML(lg.name)}</div>
+                ${master ? `<button class="btn ghost small" data-quick-del-luogo="${lg.id}" style="width:100%;font-size:9px;padding:2px;">🗑</button>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        ` : '<div class="muted" style="margin-top:14px;">Nessun luogo specifico in questo settore.</div>'}
+        ${master ? `
+          <div class="row" style="margin-top:10px;">
+            <input type="text" id="new-luogo-name" placeholder="Nuovo Luogo (es. Vecchia Quercia)" style="flex:2;" />
+            <button class="btn small" id="btn-add-luogo" style="flex:1;">+ Luogo</button>
+          </div>
+        ` : ''}
+        <div class="muted" style="margin-top:14px;">Settori collegati:</div>
+        <div class="connections-row">
+          ${(s.connections||[]).length===0 ? '<span class="muted">nessuno</span>' : (s.connections||[]).map(cid=>{
+            const c = sectors.find(x=>x.id===cid); if(!c) return '';
+            return `<button class="btn small" data-open-sector="${c.id}">${escapeHTML(c.name)}</button>`;
+          }).join('')}
+        </div>
+        ${master && sectors.length>1 ? `
+          <div class="muted" style="margin-top:10px;">Collega/scollega Settori:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">
+            ${sectors.filter(x=>x.id!==s.id).map(x=>`<label style="display:flex;align-items:center;gap:4px;font-size:11px;"><input type="checkbox" class="connect-toggle-chk" value="${x.id}" ${(s.connections||[]).includes(x.id)?'checked':''}/> ${escapeHTML(x.name)}</label>`).join('')}
+          </div>
+        ` : ''}
+        <div class="row" style="margin-top:16px;">
+          <button class="btn ghost small" data-nav-back-macro style="flex:1;">← Torna alla Mappa</button>
+          ${master ? `<button class="btn ghost small" id="btn-delete-sector" style="flex:1;color:var(--danger);border-color:rgba(255,93,93,0.4);">🗑️ Elimina Settore</button>` : ''}
+        </div>
+        <div class="err" id="sector-edit-status"></div>
+      `;
+      bodyEl.querySelectorAll('[data-open-luogo]').forEach(el=>{
+        el.onclick = (e)=>{
+          if(e.target.closest('[data-quick-del-luogo]')) return;
+          selectedLuogoId = el.getAttribute('data-open-luogo'); view='luogo'; renderMapBody(activeMacro);
+        };
+      });
+      bodyEl.querySelectorAll('[data-open-sector]').forEach(el=>{
+        el.onclick = ()=>{ selectedSectorId = el.getAttribute('data-open-sector'); view='sector'; renderMapBody(activeMacro); };
+      });
+      const navMacro = bodyEl.querySelector('[data-nav-macro]');
+      if(navMacro) navMacro.onclick = ()=>{ view='sectors'; renderMapBody(activeMacro); };
+      const navBack = bodyEl.querySelector('[data-nav-back-macro]');
+      if(navBack) navBack.onclick = ()=>{ view='sectors'; renderMapBody(activeMacro); };
+      if(master){
+        const nameEl = document.getElementById('edit-sector-name');
+        if(nameEl) nameEl.onchange = async ()=>{ s.name = nameEl.value.trim() || s.name; await persist(); renderMapBody(activeMacro); };
+        const terrainEl = document.getElementById('edit-sector-terrain');
+        if(terrainEl) terrainEl.onchange = async ()=>{ s.terrain = terrainEl.value; await persist(); renderMapBody(activeMacro); };
+        const descEl = document.getElementById('edit-sector-desc');
+        if(descEl) descEl.onchange = async ()=>{ s.description = descEl.value; await persist(); renderMapBody(activeMacro); };
+        const imageEl = document.getElementById('edit-sector-image');
+        if(imageEl) imageEl.onchange = async ()=>{ s.image = imageEl.value.trim(); await persist(); renderMapBody(activeMacro); };
+        const gridEl = document.getElementById('edit-sector-gridpos');
+        if(gridEl) gridEl.onchange = async ()=>{ s.gridPos = Number(gridEl.value); await persist(); renderMapBody(activeMacro); };
+        bodyEl.querySelectorAll('.connect-toggle-chk').forEach(chk=>{
+          chk.onchange = async ()=>{
+            const otherId = chk.value;
+            const other = sectors.find(x=>x.id===otherId);
+            if(!s.connections) s.connections = [];
+            if(chk.checked){
+              if(!s.connections.includes(otherId)) s.connections.push(otherId);
+              if(other){ if(!other.connections) other.connections=[]; if(!other.connections.includes(s.id)) other.connections.push(s.id); }
+            } else {
+              s.connections = s.connections.filter(cid=>cid!==otherId);
+              if(other) other.connections = (other.connections||[]).filter(cid=>cid!==s.id);
+            }
+            await persist();
+            renderMapBody(activeMacro);
+          };
+        });
+        const addLuogoBtn = document.getElementById('btn-add-luogo');
+        if(addLuogoBtn) addLuogoBtn.onclick = async ()=>{
+          const input = document.getElementById('new-luogo-name');
+          const name = input.value.trim();
+          if(!name) return;
+          if(!s.luoghi) s.luoghi = [];
+          s.luoghi.push({ id:'l'+Date.now()+Math.random().toString(36).slice(2,6), name, description:'' });
+          await persist();
+          renderMapBody(activeMacro);
+        };
+        bodyEl.querySelectorAll('[data-quick-del-luogo]').forEach(btn=>{
+          btn.onclick = async (e)=>{
+            e.stopPropagation();
+            const id = btn.getAttribute('data-quick-del-luogo');
+            const lg = (s.luoghi||[]).find(x=>x.id===id);
+            if(!window.confirm(`Eliminare il Luogo "${lg?lg.name:''}"?`)) return;
+            s.luoghi = (s.luoghi||[]).filter(x=>x.id!==id);
+            if(cachedScene.currentLuogoId===id) cachedScene.currentLuogoId=null;
+            await persist();
+            renderMapBody(activeMacro);
+          };
+        });
+        const deleteSectorBtn = document.getElementById('btn-delete-sector');
+        if(deleteSectorBtn) deleteSectorBtn.onclick = async ()=>{
+          if(!window.confirm(`Eliminare il Settore "${s.name}" e tutti i suoi Luoghi?`)) return;
+          activeMacro.sectors = (activeMacro.sectors||[]).filter(x=>x.id!==s.id);
+          (activeMacro.sectors||[]).forEach(x=>{ x.connections = (x.connections||[]).filter(cid=>cid!==s.id); });
+          if(cachedScene.currentSectorId===s.id){ cachedScene.currentSectorId=null; cachedScene.currentLuogoId=null; }
+          view='sectors'; selectedSectorId=null;
+          await persist();
+          renderMapBody(activeMacro);
+        };
+      }
+    } else if(view==='luogo'){
+      const s = sectors.find(x=>x.id===selectedSectorId);
+      const lg = s ? (s.luoghi||[]).find(x=>x.id===selectedLuogoId) : null;
+      if(!s || !lg){ view='sectors'; renderMapBody(activeMacro); return; }
+      bodyEl.innerHTML = `
+        <div class="breadcrumb"><span data-nav-macro>📍 ${escapeHTML(activeMacro.name)}</span> → <span data-nav-sector>${escapeHTML(s.name)}</span> → ${escapeHTML(lg.name)}</div>
+        ${master ? `
+          <div class="hud-frame" style="padding:12px;margin-bottom:10px;">
+            <div class="muted" style="margin-bottom:8px;">🛠️ Modifica Luogo (solo Master)</div>
+            <div class="field"><label>Nome</label><input type="text" id="edit-luogo-name" value="${escapeAttr(lg.name)}" /></div>
+            <div class="field"><label>Descrizione</label><textarea id="edit-luogo-desc" rows="3">${escapeHTML(lg.description||'')}</textarea></div>
+            <div class="field"><label>URL Immagine</label><input type="text" id="edit-luogo-image" value="${escapeAttr(lg.image||'')}" /></div>
+          </div>
+        ` : `
+          ${lg.image ? `<img class="detail-image" src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" />` : ''}
+          <div><b>${escapeHTML(lg.name)}</b></div>
+          ${lg.description ? `<div class="sub" style="margin-top:6px;">${escapeHTML(lg.description)}</div>` : '<div class="muted" style="margin-top:6px;">Nessuna descrizione.</div>'}
+        `}
+        <div class="row" style="margin-top:16px;">
+          <button class="btn ghost small" style="flex:1;" data-nav-back-sector>← Torna a "${escapeHTML(s.name)}"</button>
+          ${master ? `<button class="btn ghost small" id="btn-delete-luogo" style="flex:1;color:var(--danger);border-color:rgba(255,93,93,0.4);">🗑️ Elimina Luogo</button>` : ''}
+        </div>
+      `;
+      const navMacro = bodyEl.querySelector('[data-nav-macro]');
+      if(navMacro) navMacro.onclick = ()=>{ view='sectors'; renderMapBody(activeMacro); };
+      const navSector = bodyEl.querySelector('[data-nav-sector]');
+      if(navSector) navSector.onclick = ()=>{ view='sector'; renderMapBody(activeMacro); };
+      const navBack = bodyEl.querySelector('[data-nav-back-sector]');
+      if(navBack) navBack.onclick = ()=>{ view='sector'; renderMapBody(activeMacro); };
+      if(master){
+        const nameEl = document.getElementById('edit-luogo-name');
+        if(nameEl) nameEl.onchange = async ()=>{ lg.name = nameEl.value.trim() || lg.name; await persist(); renderMapBody(activeMacro); };
+        const descEl = document.getElementById('edit-luogo-desc');
+        if(descEl) descEl.onchange = async ()=>{ lg.description = descEl.value; await persist(); renderMapBody(activeMacro); };
+        const imageEl = document.getElementById('edit-luogo-image');
+        if(imageEl) imageEl.onchange = async ()=>{ lg.image = imageEl.value.trim(); await persist(); renderMapBody(activeMacro); };
+        const deleteBtn = document.getElementById('btn-delete-luogo');
+        if(deleteBtn) deleteBtn.onclick = async ()=>{
+          if(!window.confirm(`Eliminare il Luogo "${lg.name}"?`)) return;
+          s.luoghi = (s.luoghi||[]).filter(x=>x.id!==lg.id);
+          if(cachedScene.currentLuogoId===lg.id) cachedScene.currentLuogoId=null;
+          view='sector';
+          await persist();
+          renderMapBody(activeMacro);
+        };
+      }
+    }
+  }
+
+  async function refresh(){
+    if(!session) return;
+    const fresh = await getScene(session.code);
+    cachedScene = fresh;
+    renderMap();
+  }
+
+  function startPolling(){
+    if(pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(refresh, 4000);
+  }
+
+  async function boot(){
+    session = loadSession();
+    if(!session || !session.code || !session.username){
+      renderLogin();
+      return;
+    }
+    cachedScene = await getScene(session.code);
+    view = 'sectors'; selectedSectorId = null; selectedLuogoId = null; addingSectorPos = null;
+    renderMap();
+    startPolling();
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
