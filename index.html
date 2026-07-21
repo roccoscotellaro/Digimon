@@ -97,6 +97,9 @@
   .scene-box .portraits{position:absolute;bottom:10px;right:14px;display:flex;gap:6px;}
   .scene-box .portraits img{width:44px;height:44px;object-fit:cover;border:1px solid var(--cyan-dim);border-radius:50%;background:#000;}
   .scene-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-mute);font-size:12px;}
+  .enc-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;}
+  .enc-modal-card{position:relative;max-width:360px;width:100%;padding:20px;background:var(--panel);border:1px solid var(--line);}
+  .enc-modal-img{width:100%;max-height:220px;object-fit:cover;border-radius:6px;background:#05070a;}
 
   .log{height:280px;overflow-y:auto;padding:10px;background:var(--panel-2);border:1px solid var(--line);font-size:13px;}
   .log-entry{margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.03);}
@@ -5265,7 +5268,10 @@
       btn.onclick = async ()=>{
         cachedScene.currentSectorId = btn.getAttribute('data-sector-activate');
         cachedScene.currentLuogoId = null;
-        await saveScene(code, cachedScene);
+        const ok = await saveScene(code, cachedScene);
+        const statusEl = document.getElementById('sector-status');
+        if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); return; }
+        if(statusEl) statusEl.textContent = '';
         const s = (activeMacro.sectors||[]).find(x=>x.id===cachedScene.currentSectorId);
         await pushLog(code, { who:'Sistema', role:'gm', text: `📍 Il gruppo si sposta a "${s?s.name:''}".` });
         renderSectorMap(code);
@@ -5314,7 +5320,10 @@
         const [sectorId, luogoId] = btn.getAttribute('data-luogo-activate').split(':');
         cachedScene.currentSectorId = sectorId;
         cachedScene.currentLuogoId = luogoId;
-        await saveScene(code, cachedScene);
+        const ok = await saveScene(code, cachedScene);
+        const statusEl = document.getElementById('sector-status');
+        if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); return; }
+        if(statusEl) statusEl.textContent = '';
         const s = (activeMacro.sectors||[]).find(x=>x.id===sectorId);
         const lg = s ? (s.luoghi||[]).find(x=>x.id===luogoId) : null;
         await pushLog(code, { who:'Sistema', role:'gm', text: `📍 Il gruppo arriva a "${lg?lg.name:''}" (${s?s.name:''}).` });
@@ -5418,13 +5427,38 @@
     ` + sectorHTML + encountersReadonlyHTML(scene);
   }
 
+  function getEncImgLarge(){ try{ return localStorage.getItem('digivice_enc_img_large')==='1'; }catch(e){ return false; } }
+  function setEncImgLarge(v){ try{ localStorage.setItem('digivice_enc_img_large', v?'1':'0'); }catch(e){} }
+
   function encountersReadonlyHTML(scene){
     const enc = (scene && Array.isArray(scene.encounters)) ? scene.encounters.map(normalizeEncounter) : [];
     const visible = enc.filter(e=>e.revealed!==false);
     if(visible.length===0) return '';
-    return `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">
-      ${visible.map(e=>`<span class="tag" style="display:inline-flex;align-items:center;gap:4px;">${e.image?`<img src="${escapeAttr(e.image)}" onerror="this.style.display='none'" style="width:16px;height:16px;object-fit:cover;border-radius:3px;" />`:''}${escapeHTML(e.name)}${e.stage?` <span style="opacity:.6;">(${escapeHTML(e.stage)})</span>`:''}</span>`).join('')}
-    </div>`;
+    // Group visually-identical entries (same name/stage/image) so duplicates show a ×N counter instead of repeating.
+    const groups = [];
+    visible.forEach(e=>{
+      const key = e.name.trim().toLowerCase()+'|'+(e.stage||'')+'|'+(e.image||'');
+      let g = groups.find(x=>x.key===key);
+      if(!g){ g = { key, name:e.name, stage:e.stage, image:e.image, isBoss:false, count:0 }; groups.push(g); }
+      g.count++;
+      if(e.isBoss) g.isBoss = true;
+    });
+    const large = getEncImgLarge();
+    const imgSize = large ? 56 : 30;
+    return `
+      <div style="margin-top:8px;">
+        <button type="button" class="btn ghost small" data-toggle-enc-size style="margin-bottom:8px;">${large?'🔎 Immagini più piccole':'🔍 Immagini più grandi'}</button>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;">
+          ${groups.map(g=>`
+            <div data-enc-name="${escapeAttr(g.name)}" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;width:${imgSize+18}px;padding:4px;border-radius:8px;border:2px solid ${g.isBoss?'var(--danger)':'transparent'};position:relative;" title="Clicca per i dettagli">
+              ${g.count>1 ? `<span style="position:absolute;top:-4px;right:0px;background:var(--cyan);color:#04211c;font-size:9px;font-weight:700;border-radius:8px;padding:1px 5px;">×${g.count}</span>` : ''}
+              ${g.image ? `<img src="${escapeAttr(g.image)}" onerror="this.style.display='none'" style="width:${imgSize}px;height:${imgSize}px;object-fit:cover;border-radius:6px;" />` : `<div style="width:${imgSize}px;height:${imgSize}px;display:flex;align-items:center;justify-content:center;background:var(--panel-2);border-radius:6px;color:var(--text-mute);font-size:16px;">${escapeHTML((g.name||'?')[0]||'?')}</div>`}
+              <div style="font-size:10px;text-align:center;margin-top:3px;line-height:1.2;">${escapeHTML(g.name)}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
   }
 
   function isInDex(name){
@@ -5438,12 +5472,13 @@
       const already = !!e.dexId || isInDex(e.name);
       const visible = e.revealed!==false;
       return `
-        <div class="roster-item" style="padding:6px 8px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <div class="roster-item" style="padding:6px 8px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;${e.isBoss?'border-color:var(--danger);':''}">
           ${e.image ? `<img src="${escapeAttr(e.image)}" onerror="this.style.display='none'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0;" />` : ''}
           <div style="flex:1;min-width:120px;">
-            <div><b>${escapeHTML(e.name)}</b> ${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>
+            <div><b>${escapeHTML(e.name)}</b> ${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}${e.isBoss?`<span class="tag" style="color:var(--danger);border-color:var(--danger);">👑 Boss</span>`:''}${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>
             <div class="muted" style="font-size:11px;">${visible ? '👁️ Visibile ai giocatori' : '🙈 Nascosto — solo il Master lo vede'}</div>
           </div>
+          <button class="btn ${e.isBoss?'':'ghost'} small" data-toggle-boss="${i}" style="padding:4px 8px;font-size:10px;">${e.isBoss?'👑 Rimuovi Boss':'👑 Segna Boss'}</button>
           <button class="btn ${visible?'ghost':''} small" data-toggle-reveal="${i}" style="padding:4px 8px;font-size:10px;">${visible?'🙈 Nascondi':'👁️ Mostra ai giocatori'}</button>
           ${already ? '' : `<button class="btn small" data-quickdex="${i}" style="padding:4px 8px;font-size:10px;">+Dex</button>`}
           <button class="btn ghost small" data-rmenc="${i}" style="padding:4px 8px;font-size:10px;">×</button>
@@ -5479,6 +5514,7 @@
           <div class="field"><label>Armor</label><input type="number" id="draft-arm" value="${d.baseStats.baseArmor||0}" min="0" /></div>
         </div>
         <div class="field"><label>Health</label><input type="number" id="draft-hp" value="${d.baseStats.baseHealth||0}" min="0" /></div>
+        <label style="font-size:11px;display:flex;align-items:center;gap:6px;margin:8px 0;"><input type="checkbox" id="draft-isboss" ${d.isBoss?'checked':''} /> 👑 Boss (bordo rosso nella scena)</label>
         <div class="row" style="margin-top:6px;">
           <button class="btn solid small" id="btn-confirm-encounter" style="flex:2;">✅ Conferma e Aggiungi alla Scena</button>
           <button class="btn ghost small" id="btn-cancel-encounter" style="flex:1;">Annulla</button>
@@ -5496,6 +5532,7 @@
       const image = document.getElementById('draft-image').value.trim();
       const description = document.getElementById('draft-desc').value.trim();
       const stage = document.getElementById('draft-stage').value;
+      const isBoss = document.getElementById('draft-isboss').checked;
       const baseStats = {
         baseAccuracy: Number(document.getElementById('draft-acc').value)||0,
         baseDamage: Number(document.getElementById('draft-dmg').value)||0,
@@ -5503,7 +5540,7 @@
         baseArmor: Number(document.getElementById('draft-arm').value)||0,
         baseHealth: Number(document.getElementById('draft-hp').value)||0
       };
-      const finalEncounter = { id: encounterDraft.id, name, dexId: encounterDraft.dexId, stage, categories, image, description, baseStats, revealed:false };
+      const finalEncounter = { id: encounterDraft.id, name, dexId: encounterDraft.dexId, stage, categories, image, description, baseStats, revealed:false, isBoss };
       cachedScene.encounters = cachedScene.encounters || [];
       cachedScene.encounters.push(finalEncounter);
       encounterDraft = null;
@@ -5536,11 +5573,11 @@
           image: dexMatch.image_url || '',
           description: dexMatch.description || '',
           baseStats: Object.assign({baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, dexMatch.base_stats||{}),
-          revealed:false
+          revealed:false, isBoss:false
         } : {
           id:'enc'+Date.now()+Math.random().toString(36).slice(2,6),
           name, dexId:null, stage:'Rookie', categories:[], image:'', description:'',
-          baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, revealed:false
+          baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, revealed:false, isBoss:false
         };
         renderEncounterDraftCard();
         bindEncounterDraftCard(code, username);
@@ -5569,6 +5606,18 @@
         if(!e) return;
         const isVisible = e.revealed!==false;
         e.revealed = !isVisible;
+        await saveScene(code, cachedScene);
+        live.innerHTML = encountersEditableHTML(cachedScene.encounters);
+        bindEncountersInnerActions(code, username);
+        refreshLiveParts();
+      };
+    });
+    live.querySelectorAll('[data-toggle-boss]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const idx = Number(btn.getAttribute('data-toggle-boss'));
+        const e = cachedScene.encounters[idx];
+        if(!e) return;
+        e.isBoss = !e.isBoss;
         await saveScene(code, cachedScene);
         live.innerHTML = encountersEditableHTML(cachedScene.encounters);
         bindEncountersInnerActions(code, username);
@@ -5716,11 +5765,95 @@
   // ---------- SCENE ENCOUNTERS: name-only strings (legacy) vs full Dex-linked objects ----------
   function normalizeEncounter(e){
     if(typeof e === 'string'){
-      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, revealed:true };
+      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, revealed:true, isBoss:false };
     }
-    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, revealed:true }, e);
+    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, revealed:true, isBoss:false }, e);
   }
   function encName(e){ return (typeof e==='string') ? e : ((e && e.name) || ''); }
+
+  // ---------- SCENE ENCOUNTER DETAIL: click-to-inspect modal (players & master) ----------
+  function closeEncounterDetail(){
+    const modal = document.getElementById('enc-detail-modal');
+    if(modal) modal.remove();
+  }
+
+  function evoUnlockedHTML(ev){
+    const dexMatch = cachedDex.find(d=>String(d.name).trim().toLowerCase()===String(ev.name).trim().toLowerCase());
+    const unlocked = !!(dexMatch && dexMatch.discovered);
+    if(unlocked){
+      return `<div style="display:flex;flex-direction:column;align-items:center;width:56px;">
+        ${portraitHTML(ev.imageUrl, ev.name, 'sm')}
+        <div class="muted" style="font-size:10px;text-align:center;margin-top:2px;">${escapeHTML(ev.name)}</div>
+      </div>`;
+    }
+    return `<div style="display:flex;flex-direction:column;align-items:center;width:56px;">
+      <div class="portrait-sm" style="display:flex;align-items:center;justify-content:center;color:var(--text-mute);font-size:20px;">❓</div>
+      <div class="muted" style="font-size:10px;text-align:center;margin-top:2px;">???</div>
+    </div>`;
+  }
+
+  async function openEncounterDetail(name, code, username){
+    const e = (cachedScene.encounters||[]).map(normalizeEncounter).find(x=>x.revealed!==false && x.name.trim().toLowerCase()===String(name).trim().toLowerCase());
+    if(!e) return;
+    // Auto-register in the Digidex the moment someone looks this Digimon up, since they've now "met" it.
+    let dexMatch = cachedDex.find(d=>String(d.name).trim().toLowerCase()===e.name.trim().toLowerCase());
+    try{
+      if(!dexMatch){
+        const d = await addDexEntry(code, {
+          name: e.name, stage: e.stage||'Rookie', description: e.description||'', imageUrl: e.image||'',
+          categories: e.categories||[], baseStats: e.baseStats||{}, addedBy: username, discovered: true
+        });
+        if(d && d.entry){ cachedDex.push(d.entry); dexMatch = d.entry; }
+      } else if(!dexMatch.discovered){
+        const ok = await updateDexEntry(code, dexMatch.id, {
+          name: dexMatch.name, stage: dexMatch.stage, description: dexMatch.description,
+          imageUrl: dexMatch.image_url, categories: dexMatch.categories||[], baseStats: dexMatch.base_stats||{},
+          evolutions: dexMatch.evolutions||[], qualities: dexMatch.qualities||[], dpTotal: dexMatch.dp_total||0,
+          discovered: true
+        });
+        if(ok) dexMatch.discovered = true;
+      }
+      const dexLive = document.getElementById('dex-live');
+      if(dexLive) dexLive.innerHTML = dexListHTML(cachedDex, session && session.role==='master');
+    }catch(err){ /* non-blocking: still show the detail card even if auto-registration fails */ }
+
+    const evolutions = (dexMatch && Array.isArray(dexMatch.evolutions)) ? dexMatch.evolutions : [];
+    const description = e.description || (dexMatch && dexMatch.description) || '';
+    const oldModal = document.getElementById('enc-detail-modal');
+    if(oldModal) oldModal.remove();
+    const modal = document.createElement('div');
+    modal.id = 'enc-detail-modal';
+    modal.className = 'enc-modal-backdrop';
+    modal.innerHTML = `
+      <div class="enc-modal-card hud-frame">
+        <button class="btn ghost small" id="enc-modal-close" style="position:absolute;top:8px;right:8px;">✕</button>
+        ${e.image ? `<img src="${escapeAttr(e.image)}" onerror="this.style.display='none'" class="enc-modal-img" />` : ''}
+        <div class="flex-between" style="margin-top:10px;">
+          <b style="font-size:16px;">${escapeHTML(e.name)}</b>
+          <span>${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}${e.isBoss?`<span class="tag" style="color:var(--danger);border-color:var(--danger);">👑 Boss</span>`:''}</span>
+        </div>
+        ${(e.categories||[]).length ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>` : ''}
+        ${description ? `<div class="sub" style="margin-top:8px;">${escapeHTML(description)}</div>` : '<div class="muted" style="margin-top:8px;">Nessuna descrizione disponibile.</div>'}
+        ${evolutions.length ? `
+          <div class="muted" style="margin-top:14px;margin-bottom:4px;">Possibili Evoluzioni</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">${evolutions.map(ev=>evoUnlockedHTML(ev)).join('')}</div>
+        ` : ''}
+      </div>
+    `;
+    document.body.appendChild(modal);
+    document.getElementById('enc-modal-close').onclick = closeEncounterDetail;
+    modal.onclick = (ev)=>{ if(ev.target===modal) closeEncounterDetail(); };
+  }
+
+  // Global delegation: works no matter which render function last drew the scene box
+  // (master preview, player view, or a periodic refresh), without needing to rebind per-render.
+  document.addEventListener('click', (ev)=>{
+    if(!session) return;
+    const chip = ev.target.closest('[data-enc-name]');
+    if(chip){ openEncounterDetail(chip.getAttribute('data-enc-name'), session.code, session.username); return; }
+    const sizeBtn = ev.target.closest('[data-toggle-enc-size]');
+    if(sizeBtn){ setEncImgLarge(!getEncImgLarge()); refreshLiveParts(); }
+  });
 
   // ---------- DIGIMOJI: conversione fonetica italiana -> Hiragana ----------
   // Regole pensate per l'ortografia italiana (ca/co/cu = k, che/chi = k, ci = "chi",
