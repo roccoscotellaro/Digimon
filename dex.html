@@ -430,6 +430,7 @@ Devimon: https://..."></textarea>
           ${e.origin_type==='jogress' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Jogress/Fusione">🤝</span>` : ''}
           ${e.origin_type==='spirit' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Spirito (Digimon Frontier)">✨</span>` : ''}
           ${e.origin_type==='burst' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Burst Mode">🔥</span>` : ''}
+          ${e.signature_move ? `<span style="position:absolute;bottom:4px;left:4px;font-size:12px;" title="${escapeAttr(e.signature_move)}">⭐</span>` : ''}
           ${e.slide_evolution ? `<span style="position:absolute;top:4px;left:4px;font-size:14px;" title="Ha Slide Evolution">🔄</span>` : ''}
         </div>
         <div class="info">
@@ -500,6 +501,7 @@ Devimon: https://..."></textarea>
         ${entry.origin_type ? `<div class="muted" style="margin-bottom:8px;font-size:10px;">Livello di riferimento: ${escapeHTML(entry.stage)}</div>` : ''}
         ${entry.categories && entry.categories.length ? `<div style="margin-bottom:8px;">${entry.categories.map(c=>`<span class="tag" style="margin-right:4px;">${escapeHTML(c)}</span>`).join('')}</div>` : ''}
         ${entry.description ? `<div class="muted" style="margin-bottom:10px;">${escapeHTML(entry.description)}</div>` : ''}
+        ${entry.signature_move ? `<div class="hud-frame" style="padding:8px 10px;margin-bottom:10px;border-color:var(--amber);"><div class="muted" style="font-size:10px;margin-bottom:2px;">⭐ SIGNATURE MOVE</div><div style="color:var(--amber);font-family:'Share Tech Mono',monospace;font-size:13px;">${escapeHTML(entry.signature_move)}</div></div>` : ''}
         ${hasStats ? `<div class="grid-stats">
           <div class="stat-box"><div class="v">${bs.baseAccuracy||0}</div><div class="l">ACC</div></div>
           <div class="stat-box"><div class="v">${bs.baseDamage||0}</div><div class="l">DMG</div></div>
@@ -1579,7 +1581,7 @@ Devimon: https://..."></textarea>
   function openEditModal(entry){
     const isNew = !entry;
     const draft = entry ? JSON.parse(JSON.stringify(entry)) : {
-      name:'', stage:'Rookie', description:'', image_url:'', categories:[], base_stats:{}, evolutions:[], qualities:[], dp_total:0, discovered:false
+      name:'', stage:'Rookie', description:'', signature_move:'', image_url:'', categories:[], base_stats:{}, evolutions:[], qualities:[], dp_total:0, discovered:false
     };
     if(!draft.evolutions) draft.evolutions = [];
     if(!draft.evolvesFrom) draft.evolvesFrom = [];
@@ -1604,6 +1606,7 @@ Devimon: https://..."></textarea>
           <div class="field"><label>URL Immagine</label><input type="text" id="ed-img" value="${escapeAttr(draft.image_url)}" /></div>
         </div>
         <div class="field"><label>Descrizione</label><textarea id="ed-desc" rows="2">${escapeHTML(draft.description)}</textarea></div>
+        <div class="field"><label>⭐ Signature Move (nome + Tag meccanico, es. "Fire Rocket — [MELEE][DAMAGE 8-10]")</label><input type="text" id="ed-sigmove" value="${escapeAttr(draft.signature_move||'')}" placeholder="Nome — [TAG valore]" /></div>
         <div class="row">
           <div class="field"><label>Attributo</label>
             <select id="ed-attribute"><option value="">— nessuno —</option>${ATTRIBUTES.map(a=>`<option ${draft.attribute===a?'selected':''}>${a}</option>`).join('')}</select>
@@ -1752,6 +1755,7 @@ Devimon: https://..."></textarea>
         name,
         stage: document.getElementById('ed-stage').value,
         description: document.getElementById('ed-desc').value.trim(),
+        signatureMove: document.getElementById('ed-sigmove').value.trim(),
         imageUrl: document.getElementById('ed-img').value.trim(),
         categories: document.getElementById('ed-categories').value.split(',').map(s=>s.trim()).filter(Boolean),
         attribute: document.getElementById('ed-attribute').value,

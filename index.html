@@ -5516,6 +5516,7 @@
           ${e.image ? `<img src="${escapeAttr(e.image)}" onerror="this.style.display='none'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0;" />` : ''}
           <div style="flex:1;min-width:120px;">
             <div><b>${escapeHTML(e.name)}</b> ${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}${e.isBoss?`<span class="tag" style="color:var(--danger);border-color:var(--danger);">👑 Boss</span>`:''}${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>
+            ${e.signatureMove ? `<div style="font-size:11px;color:var(--amber);font-family:'Share Tech Mono',monospace;">⭐ ${escapeHTML(e.signatureMove)}</div>` : ''}
             <div class="muted" style="font-size:11px;">${visible ? '👁️ Visibile ai giocatori' : '🙈 Nascosto — solo il Master lo vede'}</div>
           </div>
           <button class="btn ${e.isBoss?'':'ghost'} small" data-toggle-boss="${i}" style="padding:4px 8px;font-size:10px;">${e.isBoss?'👑 Rimuovi Boss':'👑 Segna Boss'}</button>
@@ -5553,6 +5554,7 @@
         </div>
         <div class="field"><label>URL Immagine</label><input type="text" id="draft-image" value="${escapeAttr(d.image)}" placeholder="https://..." /></div>
         <div class="field"><label>Descrizione</label><textarea id="draft-desc" rows="2">${escapeHTML(d.description)}</textarea></div>
+        <div class="field"><label>⭐ Signature Move (nome + Tag meccanico)</label><input type="text" id="draft-sigmove" value="${escapeAttr(d.signatureMove||'')}" placeholder="Nome — [TAG valore]" /></div>
         <div class="muted" style="margin:6px 0 4px;">Stat base (puoi lasciarle a 0 e completarle dopo)</div>
         <div class="row">
           <div class="field"><label>Accuracy</label><input type="number" id="draft-acc" value="${d.baseStats.baseAccuracy||0}" min="0" /></div>
@@ -5584,6 +5586,7 @@
       const description = document.getElementById('draft-desc').value.trim();
       const stage = document.getElementById('draft-stage').value;
       const isBoss = document.getElementById('draft-isboss').checked;
+      const signatureMove = document.getElementById('draft-sigmove').value.trim();
       const baseStats = {
         baseAccuracy: Number(document.getElementById('draft-acc').value)||0,
         baseDamage: Number(document.getElementById('draft-dmg').value)||0,
@@ -5591,7 +5594,7 @@
         baseArmor: Number(document.getElementById('draft-arm').value)||0,
         baseHealth: Number(document.getElementById('draft-hp').value)||0
       };
-      const finalEncounter = { id: encounterDraft.id, name, dexId: encounterDraft.dexId, stage, categories, image, description, baseStats, revealed:false, isBoss };
+      const finalEncounter = { id: encounterDraft.id, name, dexId: encounterDraft.dexId, stage, categories, image, description, baseStats, signatureMove, revealed:false, isBoss };
       cachedScene.encounters = cachedScene.encounters || [];
       cachedScene.encounters.push(finalEncounter);
       encounterDraft = null;
@@ -5624,11 +5627,12 @@
           image: dexMatch.image_url || '',
           description: dexMatch.description || '',
           baseStats: Object.assign({baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, dexMatch.base_stats||{}),
+          signatureMove: dexMatch.signature_move || '',
           revealed:false, isBoss:false
         } : {
           id:'enc'+Date.now()+Math.random().toString(36).slice(2,6),
           name, dexId:null, stage:'Rookie', categories:[], image:'', description:'',
-          baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, revealed:false, isBoss:false
+          baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, signatureMove:'', revealed:false, isBoss:false
         };
         renderEncounterDraftCard();
         bindEncounterDraftCard(code, username);
@@ -5697,6 +5701,7 @@
           name,
           stage: (e && e.stage) || 'Rookie',
           description: (e && e.description) || '',
+          signatureMove: (e && e.signatureMove) || '',
           imageUrl: (e && e.image) || '',
           addedBy: username,
           categories: (e && e.categories) || [],
@@ -5864,13 +5869,13 @@
     try{
       if(!dexMatch){
         const d = await addDexEntry(code, {
-          name: e.name, stage: e.stage||'Rookie', description: e.description||'', imageUrl: e.image||'',
+          name: e.name, stage: e.stage||'Rookie', description: e.description||'', signatureMove: e.signatureMove||'', imageUrl: e.image||'',
           categories: e.categories||[], baseStats: e.baseStats||{}, addedBy: username, discovered: true
         });
         if(d && d.entry){ cachedDex.push(d.entry); dexMatch = d.entry; }
       } else if(!dexMatch.discovered){
         const ok = await updateDexEntry(code, dexMatch.id, {
-          name: dexMatch.name, stage: dexMatch.stage, description: dexMatch.description,
+          name: dexMatch.name, stage: dexMatch.stage, description: dexMatch.description, signatureMove: dexMatch.signature_move||'',
           imageUrl: dexMatch.image_url, categories: dexMatch.categories||[], baseStats: dexMatch.base_stats||{},
           evolutions: dexMatch.evolutions||[], qualities: dexMatch.qualities||[], dpTotal: dexMatch.dp_total||0,
           discovered: true
@@ -5887,6 +5892,7 @@
       .filter(d => Array.isArray(d.evolutions) && d.evolutions.some(ev => String(ev.name).trim().toLowerCase() === e.name.trim().toLowerCase()))
       .map(d => ({ name: d.name, imageUrl: d.image_url }));
     const description = e.description || (dexMatch && dexMatch.description) || '';
+    const signatureMove = e.signatureMove || (dexMatch && dexMatch.signature_move) || '';
     const categories = (dexMatch && dexMatch.categories && dexMatch.categories.length) ? dexMatch.categories : (e.categories||[]);
     const { attribute, family } = splitCategoriesAttribute(categories);
     const oldModal = document.getElementById('enc-detail-modal');
@@ -5904,6 +5910,7 @@
         </div>
         ${(attribute || family.length) ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">${attributeBadgeHTML(attribute)}${family.map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>` : ''}
         ${description ? `<div class="sub" style="margin-top:8px;">${escapeHTML(description)}</div>` : '<div class="muted" style="margin-top:8px;">Nessuna descrizione disponibile.</div>'}
+        ${signatureMove ? `<div class="hud-frame" style="padding:8px 10px;margin-top:10px;border-color:var(--amber);"><div class="muted" style="font-size:10px;margin-bottom:2px;">⭐ SIGNATURE MOVE</div><div style="color:var(--amber);font-family:'Share Tech Mono',monospace;font-size:13px;">${escapeHTML(signatureMove)}</div></div>` : ''}
         ${preEvolutions.length ? `
           <div class="muted" style="margin-top:14px;margin-bottom:4px;">Pre-Evoluzioni</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;">${preEvolutions.map(ev=>evoUnlockedHTML(ev)).join('')}</div>
