@@ -11,11 +11,32 @@ module.exports = async (req, res) => {
         .eq('campaign_code', code)
         .maybeSingle();
       if (error) return res.status(500).json({ error: error.message });
-      return res.status(200).json({ scene: data || { title: '', background: '', music: '', encounters: [] } });
+      return res.status(200).json({
+        scene: data || {
+          title: '',
+          background: '',
+          music: '',
+          encounters: [],
+          macroScenes: [],
+          currentMacroSceneId: null,
+          currentSectorId: null,
+          currentLuogoId: null
+        }
+      });
     }
 
     if (req.method === 'POST') {
-      const { code, title, background, music, encounters } = req.body || {};
+      const {
+        code,
+        title,
+        background,
+        music,
+        encounters,
+        macroScenes,
+        currentMacroSceneId,
+        currentSectorId,
+        currentLuogoId
+      } = req.body || {};
       const campaignCode = cleanCode(code);
       if (!campaignCode) return res.status(400).json({ error: 'missing code' });
       await supabase.from('campaigns').upsert({ code: campaignCode }, { onConflict: 'code' });
@@ -24,7 +45,11 @@ module.exports = async (req, res) => {
         title: title || '',
         background: background || '',
         music: music || '',
-        encounters: Array.isArray(encounters) ? encounters : []
+        encounters: Array.isArray(encounters) ? encounters : [],
+        macroScenes: Array.isArray(macroScenes) ? macroScenes : [],
+        currentMacroSceneId: currentMacroSceneId || null,
+        currentSectorId: currentSectorId || null,
+        currentLuogoId: currentLuogoId || null
       }, { onConflict: 'campaign_code' });
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true });
