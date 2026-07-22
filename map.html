@@ -95,6 +95,10 @@
   .map-cell.addable{cursor:pointer;border-style:dashed;border-color:var(--line);}
   .map-cell.addable:hover{border-color:var(--cyan);}
   .map-cell.addable .lbl{color:var(--cyan-dim);}
+  .map-cell.mystery{align-items:center;justify-content:center;cursor:default;}
+  .map-cell.mystery .q{font-size:22px;color:var(--text-mute);opacity:0.6;}
+  .digimoji-mystery{font-family:'Hiragino Sans','Yu Gothic',sans-serif;font-size:10px;color:var(--text-mute);opacity:0.7;margin-top:2px;}
+  .map-cell-reveal{position:absolute;bottom:2px;right:2px;z-index:4;padding:2px 6px !important;font-size:10px !important;background:rgba(8,11,16,0.7) !important;}
   .map-cell-del{position:absolute;top:2px;right:2px;z-index:4;padding:2px 6px !important;font-size:10px !important;background:rgba(8,11,16,0.7) !important;}
 
   textarea{
@@ -138,6 +142,43 @@
   let addingSectorPos = null; // grid position (0-8) currently being filled with a new sector, master only
 
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  // ---------- DIGIMOJI: stessa conversione fonetica italiana -> Hiragana usata in index.html ----------
+  const HIRA3 = {chi:'き',che:'け',ghi:'ぎ',ghe:'げ',sci:'し',tsu:'つ',shi:'し'};
+  const HIRA2 = {
+    ka:'か',ki:'き',ku:'く',ke:'け',ko:'こ',
+    ca:'か',co:'こ',cu:'く',ci:'ち',
+    sa:'さ',si:'し',su:'す',se:'せ',so:'そ',
+    ta:'た',ti:'ち',te:'て',to:'と',tu:'つ',
+    na:'な',ni:'に',nu:'ぬ',ne:'ね',no:'の',
+    ha:'は',hi:'ひ',hu:'ふ',fu:'ふ',he:'へ',ho:'ほ',
+    ma:'ま',mi:'み',mu:'む',me:'め',mo:'も',
+    ya:'や',yu:'ゆ',yo:'よ',
+    ra:'ら',ri:'り',ru:'る',re:'れ',ro:'ろ',
+    wa:'わ',wo:'を',
+    ga:'が',gu:'ぐ',go:'ご',gi:'じ',
+    za:'ざ',zu:'ず',ze:'ぜ',zo:'ぞ',zi:'じ',
+    da:'だ',de:'で',do:'ど',di:'ぢ',du:'づ',
+    ba:'ば',bi:'び',bu:'ぶ',be:'べ',bo:'ぼ',
+    pa:'ぱ',pi:'ぴ',pu:'ぷ',pe:'ぺ',po:'ぽ',
+  };
+  const HIRA1 = {a:'あ',i:'い',u:'う',e:'え',o:'お',n:'ん'};
+  function italianToHiragana(text){
+    let out = '';
+    const lower = String(text||'').toLowerCase();
+    let i = 0;
+    while(i < lower.length){
+      const c3 = lower.substr(i,3);
+      const c2 = lower.substr(i,2);
+      const c1 = lower.substr(i,1);
+      if(c3.length===3 && HIRA3[c3]){ out += HIRA3[c3]; i+=3; continue; }
+      if(c2.length===2 && HIRA2[c2]){ out += HIRA2[c2]; i+=2; continue; }
+      if(HIRA1[c1]){ out += HIRA1[c1]; i+=1; continue; }
+      out += text[i]; i+=1;
+    }
+    return out;
+  }
+  const MYSTERY_LABEL = italianToHiragana('sconosciuto');
   function escapeAttr(s){ return escapeHTML(s); }
   function sanitizeKeyPart(s){ return String(s||'').trim().toUpperCase().replace(/[^A-Z0-9_-]/g,''); }
 
@@ -443,7 +484,7 @@
       const image = document.getElementById('new-sector-image').value.trim();
       const id = 's'+Date.now()+Math.random().toString(36).slice(2,6);
       if(!activeMacro.sectors) activeMacro.sectors = [];
-      activeMacro.sectors.push({ id, name, description, terrain, connections:[], luoghi:[], image, gridPos: addingSectorPos });
+      activeMacro.sectors.push({ id, name, description, terrain, connections:[], luoghi:[], image, gridPos: addingSectorPos, revealed:false });
       addingSectorPos = null;
       const ok = await persist();
       if(!ok){ statusEl.textContent = 'Errore di salvataggio, riprova.'; }
@@ -488,6 +529,7 @@
             ${[0,1,2,3,4,5,6,7,8].map(p=>`<option value="${p}" ${s.gridPos===p?'selected':''} ${usedPositions.includes(p) && s.gridPos!==p?'disabled':''}>Casella ${p+1}${usedPositions.includes(p) && s.gridPos!==p?' (occupata)':''}</option>`).join('')}
           </select>
         </div>
+        <button class="btn ${s.revealed?'ghost':''} small" id="btn-toggle-sector-reveal" style="margin-top:4px;">${s.revealed?'🙈 Nascondi ai giocatori':'👁️ Rivela ai giocatori'}</button>
       </div>
     `;
   }
@@ -506,12 +548,23 @@
       for(let i=0;i<9;i++){
         const s = sectors.find(x=>x.gridPos===i);
         if(s){
-          cells.push(`
-            <div class="map-cell filled ${cachedScene.currentSectorId===s.id?'current':''}" data-open-sector="${s.id}" title="${escapeAttr(s.name)}">
-              ${s.image ? `<img src="${escapeAttr(s.image)}" onerror="this.style.display='none'" />` : `<div class="lbl">${escapeHTML(s.name)}</div>`}
-              ${master ? `<button class="btn ghost small map-cell-del" data-quick-del-sector="${s.id}">🗑</button>` : ''}
-            </div>
-          `);
+          const revealed = !!s.revealed;
+          if(!revealed && !master){
+            cells.push(`
+              <div class="map-cell mystery">
+                <div class="q">❓</div>
+                <div class="digimoji-mystery" title="Sconosciuto">${MYSTERY_LABEL}</div>
+              </div>
+            `);
+          } else {
+            cells.push(`
+              <div class="map-cell filled ${cachedScene.currentSectorId===s.id?'current':''}" data-open-sector="${s.id}" title="${escapeAttr(s.name)}" style="${master && !revealed?'opacity:0.55;':''}">
+                ${s.image ? `<img src="${escapeAttr(s.image)}" onerror="this.style.display='none'" />` : `<div class="lbl">${escapeHTML(s.name)}</div>`}
+                ${master ? `<button class="btn ghost small map-cell-del" data-quick-del-sector="${s.id}">🗑</button>` : ''}
+                ${master ? `<button class="btn ghost small map-cell-reveal" data-quick-reveal-sector="${s.id}">${revealed?'🙈':'👁️'}</button>` : ''}
+              </div>
+            `);
+          }
         } else {
           cells.push(`<div class="map-cell empty ${master?'addable':''}" ${master?`data-add-sector-pos="${i}"`:''}><div class="lbl">${master?'+ Aggiungi':'—'}</div></div>`);
         }
@@ -520,12 +573,13 @@
         <div class="breadcrumb">📍 ${escapeHTML(activeMacro.name)}</div>
         ${activeMacro.description ? `<div class="muted" style="margin-bottom:10px;">${escapeHTML(activeMacro.description)}</div>` : ''}
         <div class="map-grid">${cells.join('')}</div>
-        <div class="muted" style="margin-top:10px;font-size:11px;">${master ? 'Clicca su un Settore per modificarlo, su una casella vuota (tratteggiata) per crearne uno nuovo.' : 'Clicca su un Settore per esplorarlo.'}</div>
+        <div class="muted" style="margin-top:10px;font-size:11px;">${master ? 'Clicca su un Settore per modificarlo, su una casella vuota (tratteggiata) per crearne uno nuovo. Il 👁️/🙈 su ogni Settore ne controlla la visibilità per i giocatori (i Settori più chiari non sono ancora rivelati).' : 'Clicca su un Settore per esplorarlo.'}</div>
+        ${master && sectors.some(s=>!s.revealed) ? `<button class="btn ghost small" id="btn-reveal-all-sectors" style="margin-top:8px;">👁️ Rivela tutti i Settori di questa Macroscena</button>` : ''}
         ${master && addingSectorPos!=null ? newSectorFormHTML(addingSectorPos) : ''}
       `;
       bodyEl.querySelectorAll('[data-open-sector]').forEach(cell=>{
         cell.onclick = (e)=>{
-          if(e.target.closest('[data-quick-del-sector]')) return;
+          if(e.target.closest('[data-quick-del-sector]') || e.target.closest('[data-quick-reveal-sector]')) return;
           selectedSectorId = cell.getAttribute('data-open-sector');
           view = 'sector';
           addingSectorPos = null;
@@ -546,12 +600,29 @@
             renderMapBody(activeMacro);
           };
         });
+        bodyEl.querySelectorAll('[data-quick-reveal-sector]').forEach(btn=>{
+          btn.onclick = async (e)=>{
+            e.stopPropagation();
+            const id = btn.getAttribute('data-quick-reveal-sector');
+            const s = sectors.find(x=>x.id===id);
+            if(!s) return;
+            s.revealed = !s.revealed;
+            await persist();
+            renderMapBody(activeMacro);
+          };
+        });
         bodyEl.querySelectorAll('[data-add-sector-pos]').forEach(cell=>{
           cell.onclick = ()=>{
             addingSectorPos = Number(cell.getAttribute('data-add-sector-pos'));
             renderMapBody(activeMacro);
           };
         });
+        const revealAllBtn = document.getElementById('btn-reveal-all-sectors');
+        if(revealAllBtn) revealAllBtn.onclick = async ()=>{
+          sectors.forEach(s=>{ s.revealed = true; });
+          await persist();
+          renderMapBody(activeMacro);
+        };
         bindNewSectorForm(activeMacro);
       }
     } else if(view==='sector'){
@@ -564,13 +635,25 @@
         ${luoghi.length>0 || master ? `
           <div class="muted" style="margin-top:14px;">Luoghi:</div>
           <div class="luogo-grid">
-            ${luoghi.map(lg=>`
-              <div class="luogo-tile" data-open-luogo="${lg.id}">
+            ${luoghi.map(lg=>{
+              const revealed = !!lg.revealed;
+              if(!revealed && !master){
+                return `<div class="luogo-tile" style="cursor:default;">
+                  <div class="img" style="display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--text-mute);">❓</div>
+                  <div class="nm digimoji-mystery" style="text-align:center;" title="Sconosciuto">${MYSTERY_LABEL}</div>
+                </div>`;
+              }
+              return `
+              <div class="luogo-tile" data-open-luogo="${lg.id}" style="${master && !revealed?'opacity:0.55;':''}">
                 <div class="img">${lg.image?`<img src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" />`:''}</div>
                 <div class="nm">${escapeHTML(lg.name)}</div>
-                ${master ? `<button class="btn ghost small" data-quick-del-luogo="${lg.id}" style="width:100%;font-size:9px;padding:2px;">🗑</button>` : ''}
+                ${master ? `<div class="row" style="gap:2px;padding:0 2px 2px;">
+                  <button class="btn ghost small" data-quick-reveal-luogo="${s.id}:${lg.id}" style="flex:1;font-size:9px;padding:2px;">${revealed?'🙈':'👁️'}</button>
+                  <button class="btn ghost small" data-quick-del-luogo="${lg.id}" style="flex:1;font-size:9px;padding:2px;">🗑</button>
+                </div>` : ''}
               </div>
-            `).join('')}
+            `;
+            }).join('')}
           </div>
         ` : '<div class="muted" style="margin-top:14px;">Nessun luogo specifico in questo settore.</div>'}
         ${master ? `
@@ -600,8 +683,20 @@
       `;
       bodyEl.querySelectorAll('[data-open-luogo]').forEach(el=>{
         el.onclick = (e)=>{
-          if(e.target.closest('[data-quick-del-luogo]')) return;
+          if(e.target.closest('[data-quick-del-luogo]') || e.target.closest('[data-quick-reveal-luogo]')) return;
           selectedLuogoId = el.getAttribute('data-open-luogo'); view='luogo'; renderMapBody(activeMacro);
+        };
+      });
+      bodyEl.querySelectorAll('[data-quick-reveal-luogo]').forEach(btn=>{
+        btn.onclick = async (e)=>{
+          e.stopPropagation();
+          const [sectorId, luogoId] = btn.getAttribute('data-quick-reveal-luogo').split(':');
+          const parentSector = sectors.find(x=>x.id===sectorId);
+          const lg = parentSector ? (parentSector.luoghi||[]).find(x=>x.id===luogoId) : null;
+          if(!lg) return;
+          lg.revealed = !lg.revealed;
+          await persist();
+          renderMapBody(activeMacro);
         };
       });
       bodyEl.querySelectorAll('[data-open-sector]').forEach(el=>{
@@ -623,6 +718,8 @@
         if(imageEl) imageEl.onchange = async ()=>{ s.image = imageEl.value.trim(); await persist(); renderMapBody(activeMacro); };
         const gridEl = document.getElementById('edit-sector-gridpos');
         if(gridEl) gridEl.onchange = async ()=>{ s.gridPos = Number(gridEl.value); await persist(); renderMapBody(activeMacro); };
+        const revealBtn = document.getElementById('btn-toggle-sector-reveal');
+        if(revealBtn) revealBtn.onclick = async ()=>{ s.revealed = !s.revealed; await persist(); renderMapBody(activeMacro); };
         bodyEl.querySelectorAll('.connect-toggle-chk').forEach(chk=>{
           chk.onchange = async ()=>{
             const otherId = chk.value;
@@ -645,7 +742,7 @@
           const name = input.value.trim();
           if(!name) return;
           if(!s.luoghi) s.luoghi = [];
-          s.luoghi.push({ id:'l'+Date.now()+Math.random().toString(36).slice(2,6), name, description:'' });
+          s.luoghi.push({ id:'l'+Date.now()+Math.random().toString(36).slice(2,6), name, description:'', revealed:false });
           await persist();
           renderMapBody(activeMacro);
         };
@@ -690,6 +787,7 @@
               </div>
               <div class="err" id="edit-luogo-image-status"></div>
             </div>
+            <button class="btn ${lg.revealed?'ghost':''} small" id="btn-toggle-luogo-reveal">${lg.revealed?'🙈 Nascondi ai giocatori':'👁️ Rivela ai giocatori'}</button>
           </div>
         ` : `
           ${lg.image ? `<img class="detail-image" src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" />` : ''}
@@ -715,6 +813,8 @@
         if(descEl) descEl.onchange = async ()=>{ lg.description = descEl.value; await persist(); renderMapBody(activeMacro); };
         const imageEl = document.getElementById('edit-luogo-image');
         if(imageEl) imageEl.onchange = async ()=>{ lg.image = imageEl.value.trim(); await persist(); renderMapBody(activeMacro); };
+        const luogoRevealBtn = document.getElementById('btn-toggle-luogo-reveal');
+        if(luogoRevealBtn) luogoRevealBtn.onclick = async ()=>{ lg.revealed = !lg.revealed; await persist(); renderMapBody(activeMacro); };
         const deleteBtn = document.getElementById('btn-delete-luogo');
         if(deleteBtn) deleteBtn.onclick = async ()=>{
           if(!window.confirm(`Eliminare il Luogo "${lg.name}"?`)) return;
