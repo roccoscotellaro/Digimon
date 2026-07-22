@@ -21,7 +21,7 @@
          url('https://db.onlinewebfonts.com/t/e7a35327535403014c02a38c285b82cf.ttf') format('truetype');
     font-display: swap;
   }
-  .digimoji-text{ font-family:'Hiragino Sans','Yu Gothic',sans-serif; letter-spacing:0.08em; font-size:20px; cursor:help; }
+  .digimoji-text{ font-family:'Digicode','Share Tech Mono',monospace; letter-spacing:0.08em; font-size:20px; cursor:help; }
   .pixel-title{ font-family:'Pixel Digivolve','Share Tech Mono',monospace; letter-spacing:0.03em; }
   :root{
     --bg: #080b10;
@@ -980,20 +980,32 @@
           btn.disabled = true; btn.textContent = 'Generando...';
           const contesto = cachedLog.slice(-6).map(l=>`${l.who}: ${l.text}`).join('\n');
           const lines = await suggerisciBattute(p.digimon.name || 'Digimon', p.digimon.personality, contesto);
+          rosterSuggestLines[p.username] = lines;
           const box = document.getElementById('suggest-box-'+i);
           if(box){
             box.innerHTML = lines.map(l=>`<div class="suggest-line" data-line="${escapeAttr(l)}">${escapeHTML(l)}</div>`).join('');
             box.style.display = 'block';
-            box.querySelectorAll('.suggest-line').forEach(el=>{
-              el.onclick = async ()=>{
-                await pushLog(session.code, { who: p.digimon.name || 'Digimon', role:'digimon', text: el.getAttribute('data-line'), meta: p.digimon.chatColor ? { color: p.digimon.chatColor, avatar: p.digimon.imageUrl } : null });
-                refreshLiveParts();
-              };
-            });
+            bindSuggestLineClicks(box, p);
           }
           btn.disabled = false; btn.textContent = 'Suggerisci Battuta';
         };
       }
+      const existingBox = document.getElementById('suggest-box-'+i);
+      if(existingBox && (rosterSuggestLines[p.username]||[]).length){
+        bindSuggestLineClicks(existingBox, p);
+      }
+    });
+  }
+
+  function bindSuggestLineClicks(box, p){
+    box.querySelectorAll('.suggest-line').forEach(el=>{
+      el.onclick = async ()=>{
+        await pushLog(session.code, { who: p.digimon.name || 'Digimon', role:'digimon', text: el.getAttribute('data-line'), meta: p.digimon.chatColor ? { color: p.digimon.chatColor, avatar: p.digimon.imageUrl } : null });
+        delete rosterSuggestLines[p.username];
+        box.innerHTML = '';
+        box.style.display = 'none';
+        refreshLiveParts();
+      };
     });
   }
 
@@ -3598,6 +3610,7 @@
   }
 
   let openManageIdx = null;
+  let rosterSuggestLines = {}; // username -> array of suggested lines, kept so the box survives the periodic roster refresh
 
   function bindRosterManageButtons(players){
     players.forEach((p,i)=>{
@@ -5167,10 +5180,14 @@
         </div>
         <div class="sub" style="margin-top:6px;">Digimon: ${escapeHTML(p.digimon.name || '(senza nome)')} — Ferite: ${p.digimon.currentWounds}/${p.digimon.maxWounds}${p.digimon.tempWounds>0?` (+${p.digimon.tempWounds} Shield)`:''} — MP: ${p.digimon.currentMp}/${p.digimon.maxMp}</div>
         <div class="sub">AGI ${p.tamer.agility} · BODY ${p.tamer.body} · CAR ${p.tamer.charisma} · INT ${p.tamer.intelligence} · WILL ${p.tamer.willpower}</div>
-        <div id="suggest-box-${i}" class="suggest-box" style="display:none;"></div>
+        <div id="suggest-box-${i}" class="suggest-box" style="${(rosterSuggestLines[p.username]||[]).length ? 'display:block;' : 'display:none;'}">${(rosterSuggestLines[p.username]||[]).map(l=>`<div class="suggest-line" data-line="${escapeAttr(l)}">${escapeHTML(l)}</div>`).join('')}</div>
         <div id="manage-panel-${i}" style="display:none;margin-top:10px;"></div>
       </div>
     `;
+  }
+
+  function liveActiveMacro(){
+    return (cachedScene.macroScenes||[]).find(m=>m.id===cachedScene.currentMacroSceneId) || null;
   }
 
   function renderSectorMap(code){
@@ -5307,7 +5324,9 @@
     };
     const removeMacroBtn = document.getElementById('btn-remove-macro');
     if(removeMacroBtn) removeMacroBtn.onclick = async ()=>{
-      const id = activeMacro.id;
+      const liveMacro = liveActiveMacro();
+      if(!liveMacro) return;
+      const id = liveMacro.id;
       cachedScene.macroScenes = (cachedScene.macroScenes||[]).filter(m=>m.id!==id);
       if(cachedScene.currentMacroSceneId===id){ cachedScene.currentMacroSceneId=null; cachedScene.currentSectorId=null; cachedScene.currentLuogoId=null; }
       await saveScene(code, cachedScene);
@@ -5316,9 +5335,11 @@
     };
     el.querySelectorAll('[data-sector-activate]').forEach(btn=>{
       btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
         cachedScene.currentSectorId = btn.getAttribute('data-sector-activate');
         cachedScene.currentLuogoId = null;
-        const s = (activeMacro.sectors||[]).find(x=>x.id===cachedScene.currentSectorId);
+        const s = (liveMacro.sectors||[]).find(x=>x.id===cachedScene.currentSectorId);
         if(s) s.revealed = true; // standing there means the party has now seen it on the map
         const ok = await saveScene(code, cachedScene);
         const statusEl = document.getElementById('sector-status');
@@ -5331,10 +5352,12 @@
     });
     el.querySelectorAll('[data-sector-remove]').forEach(btn=>{
       btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
         const id = btn.getAttribute('data-sector-remove');
         if(!window.confirm('Eliminare questo Settore e tutti i suoi Luoghi?')) return;
-        activeMacro.sectors = (activeMacro.sectors||[]).filter(s=>s.id!==id);
-        activeMacro.sectors.forEach(s=>{ s.connections = (s.connections||[]).filter(cid=>cid!==id); });
+        liveMacro.sectors = (liveMacro.sectors||[]).filter(s=>s.id!==id);
+        liveMacro.sectors.forEach(s=>{ s.connections = (s.connections||[]).filter(cid=>cid!==id); });
         if(cachedScene.currentSectorId===id){ cachedScene.currentSectorId = null; cachedScene.currentLuogoId = null; }
         if(sectorMapSelectedId===id) sectorMapSelectedId = null;
         await saveScene(code, cachedScene);
@@ -5344,8 +5367,10 @@
     });
     el.querySelectorAll('[data-sector-image]').forEach(btn=>{
       btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
         const id = btn.getAttribute('data-sector-image');
-        const s = (activeMacro.sectors||[]).find(x=>x.id===id);
+        const s = (liveMacro.sectors||[]).find(x=>x.id===id);
         if(!s) return;
         const url = window.prompt('URL immagine per "'+s.name+'":', s.image||'');
         if(url===null) return;
@@ -5357,8 +5382,10 @@
     });
     el.querySelectorAll('[data-sector-gridpos]').forEach(sel=>{
       sel.onchange = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
         const id = sel.getAttribute('data-sector-gridpos');
-        const s = (activeMacro.sectors||[]).find(x=>x.id===id);
+        const s = (liveMacro.sectors||[]).find(x=>x.id===id);
         if(!s) return;
         s.gridPos = Number(sel.value);
         await saveScene(code, cachedScene);
@@ -5368,10 +5395,12 @@
     });
     el.querySelectorAll('[data-luogo-activate]').forEach(btn=>{
       btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
         const [sectorId, luogoId] = btn.getAttribute('data-luogo-activate').split(':');
         cachedScene.currentSectorId = sectorId;
         cachedScene.currentLuogoId = luogoId;
-        const s = (activeMacro.sectors||[]).find(x=>x.id===sectorId);
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorId);
         const lg = s ? (s.luoghi||[]).find(x=>x.id===luogoId) : null;
         if(s) s.revealed = true;
         if(lg) lg.revealed = true;
@@ -5386,8 +5415,10 @@
     });
     el.querySelectorAll('[data-luogo-remove]').forEach(btn=>{
       btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
         const [sectorId, luogoId] = btn.getAttribute('data-luogo-remove').split(':');
-        const s = (activeMacro.sectors||[]).find(x=>x.id===sectorId);
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorId);
         if(s) s.luoghi = (s.luoghi||[]).filter(l=>l.id!==luogoId);
         if(cachedScene.currentLuogoId===luogoId) cachedScene.currentLuogoId = null;
         await saveScene(code, cachedScene);
@@ -5397,8 +5428,10 @@
     });
     el.querySelectorAll('[data-luogo-image]').forEach(btn=>{
       btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
         const [sectorId, luogoId] = btn.getAttribute('data-luogo-image').split(':');
-        const s = (activeMacro.sectors||[]).find(x=>x.id===sectorId);
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorId);
         const lg = s ? (s.luoghi||[]).find(l=>l.id===luogoId) : null;
         if(!lg) return;
         const url = window.prompt('URL immagine per "'+lg.name+'":', lg.image||'');
@@ -5411,14 +5444,16 @@
     });
     el.querySelectorAll('[data-luogo-add]').forEach(btn=>{
       btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
         const sectorId = btn.getAttribute('data-luogo-add');
         const input = el.querySelector(`.luogo-name-input[data-for-sector="${sectorId}"]`);
         const name = input ? input.value.trim() : '';
         if(!name) return;
-        const s = (activeMacro.sectors||[]).find(x=>x.id===sectorId);
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorId);
         if(!s) return;
         if(!s.luoghi) s.luoghi = [];
-        s.luoghi.push({ id:'l'+Date.now()+Math.random().toString(36).slice(2,6), name, description:'' });
+        s.luoghi.push({ id:'l'+Date.now()+Math.random().toString(36).slice(2,6), name, description:'', revealed:false });
         await saveScene(code, cachedScene);
         renderSectorMap(code);
         refreshLiveParts();
@@ -5427,6 +5462,8 @@
     const addBtn = document.getElementById('btn-add-sector');
     if(addBtn){
       addBtn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
         const name = document.getElementById('sector-name').value.trim();
         const statusEl = document.getElementById('sector-status');
         if(!name){ statusEl.textContent = 'Inserisci un nome per il settore.'; return; }
@@ -5437,10 +5474,10 @@
         const gridPos = gridPosSel!=='' ? Number(gridPosSel) : null;
         const connections = Array.from(el.querySelectorAll('.sector-connect-chk:checked')).map(c=>c.value);
         const id = 's'+Date.now()+Math.random().toString(36).slice(2,6);
-        if(!activeMacro.sectors) activeMacro.sectors = [];
-        activeMacro.sectors.push({ id, name, description, terrain, connections, luoghi: [], image, gridPos });
+        if(!liveMacro.sectors) liveMacro.sectors = [];
+        liveMacro.sectors.push({ id, name, description, terrain, connections, luoghi: [], image, gridPos, revealed:false });
         connections.forEach(cid=>{
-          const other = activeMacro.sectors.find(s=>s.id===cid);
+          const other = liveMacro.sectors.find(s=>s.id===cid);
           if(other){ if(!other.connections) other.connections=[]; if(!other.connections.includes(id)) other.connections.push(id); }
         });
         sectorMapSelectedId = id;
