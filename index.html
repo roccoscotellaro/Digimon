@@ -804,7 +804,7 @@
         <div>
           <div class="brand-title mono">Digivice OS // ${subtitle}</div>
           <div class="brand-sub">Digimon: Digital Adventures — Tavolo Testuale</div>
-          <div class="digimoji-text" style="font-size:10px;opacity:0.4;letter-spacing:0.04em;margin-top:1px;" title="Digimon: Digital Adventures">${escapeHTML(italianToHiragana('Digimon Digital Adventures'))}</div>
+          <div class="digimoji-text" style="font-size:10px;opacity:0.4;letter-spacing:0.04em;margin-top:1px;" title="Digimon: Digital Adventures">${escapeHTML(italianToHiragana('Dejimon Digitaru addoventuresu'))}</div>
         </div>
       </div>
       <div class="conn-ticker mono">
@@ -6087,16 +6087,20 @@
     ra:'ら',ri:'り',ru:'る',re:'れ',ro:'ろ',
     wa:'わ',wo:'を',
     ga:'が',gu:'ぐ',go:'ご',gi:'じ',
-    za:'ざ',zu:'ず',ze:'ぜ',zo:'ぞ',zi:'じ',
+    za:'ざ',zu:'ず',ze:'ぜ',zo:'ぞ',zi:'じ',ji:'じ',
     da:'だ',de:'で',do:'ど',di:'ぢ',du:'づ',
     ba:'ば',bi:'び',bu:'ぶ',be:'べ',bo:'ぼ',
     pa:'ぱ',pi:'ぴ',pu:'ぷ',pe:'ぺ',po:'ぽ',
+    va:'ば',vi:'び',vu:'ぶ',ve:'べ',vo:'ぼ', // Japanese has no native "v" sound; approximated on the b-row
   };
   const HIRA1 = {a:'あ',i:'い',u:'う',e:'え',o:'お',n:'ん'};
 
   function italianToHiragana(text){
     let out = '';
-    const lower = String(text||'').toLowerCase();
+    let lower = String(text||'').toLowerCase();
+    // Sokuon (small tsu): a doubled consonant becomes っ + the single consonant,
+    // e.g. "addo" -> "aっdo", matching how Japanese renders gemination in loanwords.
+    lower = lower.replace(/([bcdfghjklmpqrstvwxyz])\1/g, 'っ$1');
     let i = 0;
     while(i < lower.length){
       const c3 = lower.substr(i,3);
@@ -6105,7 +6109,7 @@
       if(c3.length===3 && HIRA3[c3]){ out += HIRA3[c3]; i+=3; continue; }
       if(c2.length===2 && HIRA2[c2]){ out += HIRA2[c2]; i+=2; continue; }
       if(HIRA1[c1]){ out += HIRA1[c1]; i+=1; continue; }
-      out += text[i]; i+=1;
+      out += lower[i]; i+=1;
     }
     return out;
   }

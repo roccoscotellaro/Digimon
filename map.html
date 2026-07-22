@@ -157,15 +157,17 @@
     ra:'ら',ri:'り',ru:'る',re:'れ',ro:'ろ',
     wa:'わ',wo:'を',
     ga:'が',gu:'ぐ',go:'ご',gi:'じ',
-    za:'ざ',zu:'ず',ze:'ぜ',zo:'ぞ',zi:'じ',
+    za:'ざ',zu:'ず',ze:'ぜ',zo:'ぞ',zi:'じ',ji:'じ',
     da:'だ',de:'で',do:'ど',di:'ぢ',du:'づ',
     ba:'ば',bi:'び',bu:'ぶ',be:'べ',bo:'ぼ',
     pa:'ぱ',pi:'ぴ',pu:'ぷ',pe:'ぺ',po:'ぽ',
+    va:'ば',vi:'び',vu:'ぶ',ve:'べ',vo:'ぼ',
   };
   const HIRA1 = {a:'あ',i:'い',u:'う',e:'え',o:'お',n:'ん'};
   function italianToHiragana(text){
     let out = '';
-    const lower = String(text||'').toLowerCase();
+    let lower = String(text||'').toLowerCase();
+    lower = lower.replace(/([bcdfghjklmpqrstvwxyz])\1/g, 'っ$1');
     let i = 0;
     while(i < lower.length){
       const c3 = lower.substr(i,3);
@@ -174,7 +176,7 @@
       if(c3.length===3 && HIRA3[c3]){ out += HIRA3[c3]; i+=3; continue; }
       if(c2.length===2 && HIRA2[c2]){ out += HIRA2[c2]; i+=2; continue; }
       if(HIRA1[c1]){ out += HIRA1[c1]; i+=1; continue; }
-      out += text[i]; i+=1;
+      out += lower[i]; i+=1;
     }
     return out;
   }
