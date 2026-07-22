@@ -270,7 +270,7 @@
       <div class="hud-frame card">
         <div class="flex-between" style="margin-bottom:10px;">
           <div class="section-title" style="margin:0;border:none;padding:0;">Digimon Registrati (${cachedDex.length})</div>
-          ${isMaster ? `<span><button class="btn ghost small" id="btn-import-seed2" style="margin-right:6px;color:var(--cyan);">🎴 Importa/Correggi Famosi</button><button class="btn ghost small" id="btn-bulk-images" style="margin-right:6px;">🖼️ Incolla Immagini</button><button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button></span>` : ''}
+          ${isMaster ? `<span><button class="btn ghost small" id="btn-import-seed2" style="margin-right:6px;color:var(--cyan);">🎴 Importa/Correggi Famosi</button><button class="btn ghost small" id="btn-force-sync" style="margin-right:6px;color:var(--amber);">⚠️ Forza Sync Attr/Famiglia/Mossa</button><button class="btn ghost small" id="btn-bulk-images" style="margin-right:6px;">🖼️ Incolla Immagini</button><button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button></span>` : ''}
         </div>
         <input type="text" id="dex-search" placeholder="🔍 Cerca per nome..." style="margin-bottom:14px;" />
         <div id="filter-bar" class="filter-bar"></div>
@@ -282,6 +282,8 @@
     if(newBtn) newBtn.onclick = ()=> openEditModal(null);
     const importSeed2Btn = document.getElementById('btn-import-seed2');
     if(importSeed2Btn) importSeed2Btn.onclick = ()=> openImportModal(SPECIES_SEED.concat(SPECIES_SEED_VILLAINS, SPECIES_SEED_2, SPECIES_SEED_3), 'Importa/Correggi Digimon Famosi');
+    const forceSyncBtn = document.getElementById('btn-force-sync');
+    if(forceSyncBtn) forceSyncBtn.onclick = ()=> runForceSync();
     const bulkImagesBtn = document.getElementById('btn-bulk-images');
     if(bulkImagesBtn) bulkImagesBtn.onclick = ()=> openBulkImageModal();
     const searchInput = document.getElementById('dex-search');
@@ -1576,6 +1578,84 @@ Devimon: https://..."></textarea>
       statusEl.style.color = 'var(--cyan)';
       statusEl.textContent = `Importati ${Object.keys(insertedByName).length} Digimon, con evoluzioni collegate.`;
       setTimeout(()=>{ closeModal(); renderDexPage(); }, 1200);
+    };
+  }
+
+  function buildSeedReferenceByName(){
+    const ref = {};
+    [SPECIES_SEED, SPECIES_SEED_VILLAINS, SPECIES_SEED_2, SPECIES_SEED_3].forEach(arr=>{
+      arr.forEach(line=>{
+        (line.chain||[]).forEach(sp=>{
+          ref[sp.name] = {
+            attribute: sp.attribute || line.attribute || '',
+            family: sp.family || line.family || '',
+            signatureMove: sp.signatureMove || ''
+          };
+        });
+      });
+    });
+    return ref;
+  }
+
+  function runForceSync(){
+    const ref = buildSeedReferenceByName();
+    // Detect duplicates in the live catalog first, since force-sync would apply to both copies.
+    const byName = {};
+    cachedDex.forEach(e=>{ (byName[e.name] = byName[e.name]||[]).push(e); });
+    const duplicates = Object.entries(byName).filter(([n,list])=>list.length>1).map(([n])=>n);
+
+    const affected = cachedDex.filter(e=> ref[e.name]);
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="hud-frame modal-box card" style="max-width:560px;">
+        <div class="flex-between" style="margin-bottom:10px;">
+          <h3 style="margin:0;color:var(--amber);">⚠️ Forza Sincronizzazione dal Seed</h3>
+          <button class="btn ghost small" id="fs-close">✕</button>
+        </div>
+        <div class="muted" style="margin-bottom:10px;">
+          Questa azione <b>sovrascrive</b> Attributo, Famiglia e Signature Move per ogni Digimon del tuo Digidex il cui nome corrisponde a una voce del seed — anche se il campo aveva già un valore. Non tocca stats, descrizione, immagine, evoluzioni o altro.
+        </div>
+        <div style="margin-bottom:10px;">Voci che verranno aggiornate: <b>${affected.length}</b> su ${cachedDex.length} totali.</div>
+        ${duplicates.length ? `<div class="hud-frame" style="padding:8px 10px;margin-bottom:10px;border-color:var(--danger);">
+          <div style="color:var(--danger);font-size:12px;margin-bottom:4px;">⚠️ Trovati nomi duplicati nel tuo Digidex (entrambe le copie verranno aggiornate allo stesso modo — valutane la rimozione manuale dopo):</div>
+          <div style="font-size:12px;">${duplicates.map(escapeHTML).join(', ')}</div>
+        </div>` : ''}
+        <div id="fs-status" class="muted" style="margin-bottom:10px;"></div>
+        <div class="flex-between">
+          <button class="btn ghost" id="fs-cancel">Annulla</button>
+          <button class="btn solid" id="fs-confirm" style="background:var(--amber);">Sovrascrivi ${affected.length} voci</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = ()=> overlay.remove();
+    document.getElementById('fs-close').onclick = close;
+    document.getElementById('fs-cancel').onclick = close;
+    overlay.onclick = (e)=>{ if(e.target===overlay) close(); };
+    const statusEl = document.getElementById('fs-status');
+    document.getElementById('fs-confirm').onclick = async ()=>{
+      document.getElementById('fs-confirm').disabled = true;
+      let done = 0;
+      for(const e of affected){
+        const r = ref[e.name];
+        statusEl.textContent = `Aggiornamento ${done+1}/${affected.length}: ${e.name}...`;
+        try{
+          await updateDexEntry(session.code, e.id, {
+            name: e.name, stage: e.stage, description: e.description, imageUrl: e.image_url,
+            baseStats: e.base_stats, categories: e.categories, qualities: e.qualities,
+            dpTotal: e.dp_total, discovered: e.discovered, evolutions: e.evolutions, evolvesFrom: e.evolves_from,
+            slideEvolution: e.slide_evolution || false,
+            attribute: r.attribute, family: r.family, signatureMove: r.signatureMove
+          });
+        }catch(err){ console.error('force sync failed for', e.name, err); }
+        done++;
+      }
+      statusEl.style.color = 'var(--cyan)';
+      statusEl.textContent = `Fatto: ${done} voci sincronizzate.`;
+      cachedDex = await getDex(session.code);
+      setTimeout(()=>{ close(); renderDexPage(); }, 1200);
     };
   }
 
