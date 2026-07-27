@@ -250,6 +250,10 @@
   let animatedLogIds = new Set();
   let cachedCombat = null;
   let cachedProgression = null;
+  let cachedNotices = [];
+  let noticeQueue = [];
+  let noticeModalOpen = false;
+  let pendingChatImage = { player: null, gm: null }; // { url } dopo upload, prima dell'invio
 
   async function getProgression(code){
     const d = await apiGet('/api/progression?code=' + encodeURIComponent(code));
@@ -645,6 +649,70 @@
   async function correggiItaliano(testo){ const d = await apiPost('/api/ai-correct', { text: testo }); return d && d.corrected ? d.corrected : testo; }
   async function suggerisciBattute(digimonName, personality, contesto){ const d = await apiPost('/api/ai-suggest', { digimonName, personality, context: contesto }); return d && d.lines ? d.lines : ['(errore nel generare suggerimenti, riprova)']; }
 
+  // ---------- AVVISI POP-UP (con conferma obbligatoria e tracciamento) ----------
+  // Ogni notice: { id, code, text, image_url, created_by, created_at, active }
+  // Ogni ack: { notice_id, username, acked_at }
+  async function getNotices(code){ const d = await apiGet('/api/notice?code=' + encodeURIComponent(code)); return d ? (d.notices||[]) : []; }
+  async function createNotice(code, { text, imageUrl, createdBy }){ return apiPost('/api/notice', { code, text, imageUrl: imageUrl || null, createdBy }); }
+  async function deactivateNotice(code, id){ return apiPut('/api/notice', { code, id, deactivate: true }); }
+  async function deleteNotice(code, id){ return apiDelete('/api/notice?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
+  async function ackNotice(code, id, username){ return apiPut('/api/notice', { code, id, ack: username }); }
+
+  // ---------- UPLOAD IMMAGINI (chat) ----------
+  function fileToDataUrl(file){
+    return new Promise((resolve, reject)=>{
+      const r = new FileReader();
+      r.onload = ()=>resolve(r.result);
+      r.onerror = ()=>reject(new Error('Lettura file fallita'));
+      r.readAsDataURL(file);
+    });
+  }
+  async function uploadChatImage(code, file){
+    if(!file) return null;
+    if(file.size > 6*1024*1024){ lastApiError = 'Immagine troppo grande (max 6MB).'; return null; }
+    const dataUrl = await fileToDataUrl(file);
+    const d = await apiPost('/api/upload', { code, filename: file.name, dataUrl, folder: 'chat' });
+    return d && d.url ? d.url : null;
+  }
+
+  // Controlla se ci sono avvisi attivi non ancora confermati da questo utente e mostra la coda a schermo.
+  async function checkAndShowNotices(){
+    if(!session) return;
+    cachedNotices = await getNotices(session.code);
+    const mine = cachedNotices
+      .filter(n => n.active && !(n.acked_by||[]).includes(session.username))
+      .sort((a,b)=> new Date(a.created_at) - new Date(b.created_at));
+    noticeQueue = mine;
+    if(noticeQueue.length>0 && !noticeModalOpen) showNextNotice();
+  }
+  function showNextNotice(){
+    if(noticeQueue.length===0){ noticeModalOpen = false; const ex = document.getElementById('notice-modal-overlay'); if(ex) ex.remove(); return; }
+    noticeModalOpen = true;
+    const n = noticeQueue[0];
+    let overlay = document.getElementById('notice-modal-overlay');
+    if(!overlay){
+      overlay = document.createElement('div');
+      overlay.id = 'notice-modal-overlay';
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(4,8,14,0.88);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+      document.body.appendChild(overlay);
+    }
+    overlay.innerHTML = `
+      <div class="hud-frame" style="max-width:480px;width:100%;padding:24px;border-color:var(--amber, #ff8a3d);">
+        <div class="section-title" style="margin-top:0;">📢 Avviso dal Master${noticeQueue.length>1?` (1 di ${noticeQueue.length})`:''}</div>
+        ${n.image_url ? `<img src="${escapeAttr(n.image_url)}" style="width:100%;border-radius:8px;margin-bottom:12px;" onerror="this.style.display='none'" />` : ''}
+        <div style="white-space:pre-wrap;line-height:1.5;margin-bottom:18px;">${escapeHTML(n.text)}</div>
+        <button class="btn solid" id="btn-notice-ack" style="width:100%;padding:12px;">Ho capito, prosegui</button>
+      </div>
+    `;
+    document.getElementById('btn-notice-ack').onclick = async ()=>{
+      const btn = document.getElementById('btn-notice-ack');
+      btn.disabled = true; btn.textContent = 'Attendere...';
+      await ackNotice(session.code, n.id, session.username);
+      noticeQueue.shift();
+      showNextNotice();
+    };
+  }
+
   function sanitizeKeyPart(s){ return String(s||'').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 48); }
 
   const DIE_FACES = ['','⚀','⚁','⚂','⚃','⚄','⚅'];
@@ -811,6 +879,7 @@
         CAMPAGNA <b>${session ? session.code : '---'}</b> &nbsp;|&nbsp; UTENTE <b>${session ? session.username : '---'}</b>
         ${session && cachedProgression ? ` &nbsp;|&nbsp; MILESTONE <b style="color:var(--cyan);">${cachedProgression.milestone}</b> &nbsp;|&nbsp; INSP. <b style="color:var(--cyan);">${cachedProgression.inspiration}</b>` : ''}
         ${session ? `&nbsp;<a href="dex.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">📖 Digidex</a>` : ''}
+        ${session ? `&nbsp;<a href="digivice-scan.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">📡 Scan Starter</a>` : ''}
         ${session ? `&nbsp;<a href="map.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">🗺️ Mappa</a>` : ''}
         ${session ? `&nbsp;<a href="DDA2E_Indice_Regole.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">📜 Regole</a>` : ''}
         ${session ? `&nbsp;<button class="btn ghost small" id="btn-logout" style="margin-left:10px;">Esci</button>` : ''}
@@ -860,6 +929,17 @@
       editingTamer = false; editingDigimon = false; editingScene = false;
       startPolling();
       render();
+
+      // Se arriviamo da un link "Aggiungi come Starter" del Bio-Resonance Scan e il personaggio
+      // è ancora vuoto, apri subito la Creation Wizard pre-compilata (senza il dialog di conferma,
+      // dato che non c'è nulla da "azzerare" su un personaggio nuovo).
+      const prefill = getStarterPrefillFromURL();
+      if(prefill && role==='player' && !member.digimon.name){
+        setTimeout(()=>{
+          openCreationWizard(member, 'sidebar-content', prefill, true);
+          clearStarterPrefillFromURL();
+        }, 50);
+      }
     };
   }
 
@@ -874,9 +954,11 @@
     if(pollTimer) clearInterval(pollTimer);
     heartbeat(session.code, session.username);
     refreshLiveParts();
+    checkAndShowNotices();
     pollTimer = setInterval(async ()=>{
       if(session) await heartbeat(session.code, session.username);
       refreshLiveParts();
+      checkAndShowNotices();
     }, 4000);
   }
 
@@ -1343,6 +1425,12 @@
             <textarea id="action-text" rows="3" placeholder="Scrivi cosa fa il tuo Tamer o il tuo Digimon..." style="margin-top:10px;"></textarea>
             <div class="muted" id="action-hint" style="margin-top:4px;">Scorciatoia: scrivi <code>/tira NomeSkill [TN] [major|minor]</code> (es. <code>/tira awareness 15 major</code>) per tirare in chat, opzionalmente usando un Aspect.</div>
             <div id="action-roll-result" style="margin-top:8px;"></div>
+            <div class="row" style="margin-top:6px;align-items:center;">
+              <input type="file" id="action-image-input" accept="image/*" style="display:none;" />
+              <button type="button" class="btn ghost small" id="btn-action-attach">📎 Allega immagine</button>
+              <span class="muted" id="action-image-status" style="font-size:11px;"></span>
+            </div>
+            <div id="action-image-preview" style="margin-top:6px;"></div>
             <div class="row" style="margin-top:8px;">
               <button class="btn" id="btn-correct">Correggi Italiano</button>
               <button class="btn solid" id="btn-send-action">Invia</button>
@@ -1393,17 +1481,39 @@
       ta.value = corrected;
       status.textContent = lastApiError ? ('Errore: ' + lastApiError) : 'Testo corretto.';
     };
+    pendingChatImage.player = null;
+    const actionImgInput = document.getElementById('action-image-input');
+    const actionImgStatus = document.getElementById('action-image-status');
+    const actionImgPreview = document.getElementById('action-image-preview');
+    document.getElementById('btn-action-attach').onclick = ()=> actionImgInput.click();
+    actionImgInput.onchange = async ()=>{
+      const file = actionImgInput.files[0];
+      if(!file) return;
+      actionImgStatus.textContent = 'Caricamento...';
+      const url = await uploadChatImage(code, file);
+      if(url){
+        pendingChatImage.player = url;
+        actionImgStatus.textContent = '';
+        actionImgPreview.innerHTML = `<img src="${escapeAttr(url)}" style="max-height:80px;border-radius:6px;" /> <button type="button" class="btn ghost small" id="btn-action-image-remove">✕ rimuovi</button>`;
+        document.getElementById('btn-action-image-remove').onclick = ()=>{ pendingChatImage.player=null; actionImgPreview.innerHTML=''; actionImgInput.value=''; };
+      } else {
+        actionImgStatus.textContent = 'Errore upload: ' + (lastApiError||'sconosciuto');
+      }
+    };
+    function clearActionImage(){ pendingChatImage.player=null; actionImgPreview.innerHTML=''; actionImgInput.value=''; }
     document.getElementById('btn-send-action').onclick = async ()=>{
       const ta = document.getElementById('action-text');
       const raw = ta.value.trim();
-      if(!raw) return;
+      const img = pendingChatImage.player;
+      if(!raw && !img) return;
       if(playerChatMode==='private'){
-        await pushPrivateLog(code, session.username, { who: session.username, role:'player', text: raw });
+        await pushPrivateLog(code, session.username, { who: session.username, role:'player', text: raw || '(immagine)', meta: img ? { image: img } : null });
         ta.value='';
+        clearActionImage();
         await refreshPlayerLogDisplay(code, me);
         return;
       }
-      const rollResult = await tryParseRollShortcut(raw, me);
+      const rollResult = raw ? await tryParseRollShortcut(raw, me) : null;
       const resEl = document.getElementById('action-roll-result');
       if(rollResult){
         if(rollResult.dice && resEl){
@@ -1413,9 +1523,10 @@
         }
         await pushLog(code, { who: session.username, role:'roll', text: rollResult.text, meta: rollResult.dice ? { dice: rollResult.dice } : null });
       } else {
-        await pushLog(code, { who: session.username, role:'player', text: raw });
+        await pushLog(code, { who: session.username, role:'player', text: raw || '(immagine)', meta: img ? { image: img } : null });
       }
       ta.value='';
+      clearActionImage();
       refreshLiveParts();
     };
     document.querySelectorAll('[data-move-idx]').forEach(btn=>{
@@ -1615,15 +1726,51 @@
     digimon.currentWounds = Math.max(0, Math.min(newMax, newMax - missing));
   }
 
-  function openCreationWizard(me, hostId){
-    if(!window.confirm('La Creazione Guidata azzera Attributi, Skill e Stat Base del Digimon per ricostruirli da zero rispettando i vincoli del manuale. Continuare?')) return;
+  function getStarterPrefillFromURL(){
+    try{
+      const params = new URLSearchParams(location.search);
+      if(!params.has('prefillName')) return null;
+      return {
+        name: params.get('prefillName') || '',
+        attribute: params.get('prefillAttribute') || 'Free',
+        personality: params.get('prefillPersonality') || '',
+        baseAccuracy: Number(params.get('prefillAcc'))||2,
+        baseDamage: Number(params.get('prefillDmg'))||2,
+        baseDodge: Number(params.get('prefillDodge'))||2,
+        baseArmor: Number(params.get('prefillArmor'))||2,
+        baseHealth: Number(params.get('prefillHp'))||2,
+        signatureMove: params.get('prefillSig') || ''
+      };
+    }catch(e){ return null; }
+  }
+
+  function clearStarterPrefillFromURL(){
+    try{
+      const url = new URL(location.href);
+      ['prefillName','prefillAttribute','prefillPersonality','prefillAcc','prefillDmg','prefillDodge','prefillArmor','prefillHp','prefillSig'].forEach(k=>url.searchParams.delete(k));
+      history.replaceState(null, '', url.toString());
+    }catch(e){}
+  }
+
+  function openCreationWizard(me, hostId, prefill, skipConfirm){
+    if(!skipConfirm && !window.confirm('La Creazione Guidata azzera Attributi, Skill e Stat Base del Digimon per ricostruirli da zero rispettando i vincoli del manuale. Continuare?')) return;
     creationDraft = {
       hostId: hostId || 'sidebar-content',
       tamer: { agility:1, body:1, charisma:1, intelligence:1, willpower:1, skills: defaultSkills(), digiviceImageUrl: me.tamer.digiviceImageUrl||'' },
-      digimon: { stage:'Rookie', size:'Medium', name: me.digimon.name||'', imageUrl: me.digimon.imageUrl||'', personality: me.digimon.personality||'', attribute: me.digimon.attribute||'Free',
-        baseAccuracy: STAGE_CREATION.Rookie.startStat, baseDamage: STAGE_CREATION.Rookie.startStat, baseDodge: STAGE_CREATION.Rookie.startStat, baseArmor: STAGE_CREATION.Rookie.startStat, baseHealth: STAGE_CREATION.Rookie.startStat },
+      digimon: { stage:'Rookie', size:'Medium', name: (prefill && prefill.name) || me.digimon.name||'', imageUrl: me.digimon.imageUrl||'', personality: (prefill && prefill.personality) || me.digimon.personality||'', attribute: (prefill && prefill.attribute) || me.digimon.attribute||'Free',
+        baseAccuracy: (prefill && prefill.baseAccuracy) || STAGE_CREATION.Rookie.startStat,
+        baseDamage: (prefill && prefill.baseDamage) || STAGE_CREATION.Rookie.startStat,
+        baseDodge: (prefill && prefill.baseDodge) || STAGE_CREATION.Rookie.startStat,
+        baseArmor: (prefill && prefill.baseArmor) || STAGE_CREATION.Rookie.startStat,
+        baseHealth: (prefill && prefill.baseHealth) || STAGE_CREATION.Rookie.startStat },
       step: 1
     };
+    if(prefill && prefill.signatureMove){
+      creationDraft.digimon.attacks = [
+        { name: prefill.signatureMove, shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc:'Attacco caratteristico portato dal Bio-Resonance Scan.', signature:true, reach:1, areaAttack:false },
+        { name:'Raggio a Distanza', shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc:'Un colpo dalla distanza.', signature:false, reach:1, areaAttack:false }
+      ];
+    }
     if(creationDraft.hostId==='sidebar-content') sidebarTab = 'wizard';
     renderCreationWizard(me);
   }
@@ -3408,6 +3555,12 @@
               <input type="color" id="speak-color" value="#ff8a3d" style="flex:1;padding:2px;height:34px;" />
             </div>
             <textarea id="gm-text" rows="2" placeholder="Narrazione del Master..."></textarea>
+            <div class="row" style="margin-top:6px;align-items:center;">
+              <input type="file" id="gm-chat-image-input" accept="image/*" style="display:none;" />
+              <button type="button" class="btn ghost small" id="btn-gm-chat-attach">📎 Allega immagine</button>
+              <span class="muted" id="gm-chat-image-status" style="font-size:11px;"></span>
+            </div>
+            <div id="gm-chat-image-preview" style="margin-top:6px;"></div>
             <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--text-mute);">
               <input type="checkbox" id="gm-digimoji-toggle" /> ✍️ Scrivi in Digimoji (scrivi in italiano fonetico, es. "kaze", "shiro", "montana" — viene convertito in automatico in Hiragana mentre scrivi)
             </label>
@@ -3449,6 +3602,7 @@
             <button class="btn amber" id="btn-request-roll" style="width:100%;">Richiedi Tiro</button>
           </div>
           <div class="hud-frame card" id="combat-mgr-card"></div>
+          <div class="hud-frame card" id="notice-master-card"></div>
           <div class="hud-frame card" id="private-chat-master-card"></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
             <div class="hud-frame card" id="progression-card"></div>
@@ -3482,6 +3636,7 @@
     bindEncountersPanel(code, session.username);
     bindSceneCurrentSectorLuoghi(code);
     renderCombatManager(code, players);
+    renderNoticeMaster(code, players);
     renderPrivateChatMaster(code, players);
     renderProgressionMaster(code);
     renderEncounterBalance();
@@ -3544,12 +3699,31 @@
         }
       };
     }
+    pendingChatImage.gm = null;
+    const gmImgInput = document.getElementById('gm-chat-image-input');
+    const gmImgStatus = document.getElementById('gm-chat-image-status');
+    const gmImgPreview = document.getElementById('gm-chat-image-preview');
+    document.getElementById('btn-gm-chat-attach').onclick = ()=> gmImgInput.click();
+    gmImgInput.onchange = async ()=>{
+      const file = gmImgInput.files[0];
+      if(!file) return;
+      gmImgStatus.textContent = 'Caricamento...';
+      const url = await uploadChatImage(code, file);
+      if(url){
+        pendingChatImage.gm = url;
+        gmImgStatus.textContent = '';
+        gmImgPreview.innerHTML = `<img src="${escapeAttr(url)}" style="max-height:80px;border-radius:6px;" /> <button type="button" class="btn ghost small" id="btn-gm-chat-image-remove">✕ rimuovi</button>`;
+        document.getElementById('btn-gm-chat-image-remove').onclick = ()=>{ pendingChatImage.gm=null; gmImgPreview.innerHTML=''; gmImgInput.value=''; };
+      } else {
+        gmImgStatus.textContent = 'Errore upload: ' + (lastApiError||'sconosciuto');
+      }
+    };
     document.getElementById('btn-gm-post').onclick = async ()=>{
       const ta = document.getElementById('gm-text');
       const gmDigimojiChkPre = document.getElementById('gm-digimoji-toggle');
       if(gmDigimojiChkPre && gmDigimojiChkPre.checked){ ta.value = italianToHiragana(ta.value); }
       const text = ta.value.trim();
-      if(!text) return;
+      if(!text && !pendingChatImage.gm) return;
       const mode = speakAsSel ? speakAsSel.value : 'master';
       let who = 'Master', role = 'gm', avatar = null, color = null;
       if(mode.startsWith('digimon:')){
@@ -3577,8 +3751,12 @@
       if(chosenColor) meta.color = chosenColor;
       const gmDigimojiChk = document.getElementById('gm-digimoji-toggle');
       if(gmDigimojiChk && gmDigimojiChk.checked) meta.digimoji = true;
-      await pushLog(code, { who, role, text, meta: Object.keys(meta).length ? meta : null });
+      if(pendingChatImage.gm) meta.image = pendingChatImage.gm;
+      await pushLog(code, { who, role, text: text || '(immagine)', meta: Object.keys(meta).length ? meta : null });
       ta.value='';
+      pendingChatImage.gm = null;
+      gmImgPreview.innerHTML = '';
+      gmImgInput.value = '';
       if(gmDigimojiChk) gmDigimojiChk.checked = false;
       refreshLiveParts();
     };
@@ -4137,6 +4315,101 @@
       st.textContent = ok ? 'Salvato.' : ('Errore: '+(lastApiError||''));
       renderProgressionMaster(code);
     };
+  }
+
+  async function renderNoticeMaster(code, players){
+    const cardEl = document.getElementById('notice-master-card');
+    if(!cardEl) return;
+    cachedNotices = await getNotices(code);
+    const sorted = [...cachedNotices].sort((a,b)=> new Date(b.created_at) - new Date(a.created_at));
+    const playerNames = players.map(p=>p.username);
+    function ackSummary(n){
+      const acked = playerNames.filter(u=>(n.acked_by||[]).includes(u));
+      const pending = playerNames.filter(u=>!(n.acked_by||[]).includes(u));
+      const ackTimes = n.ack_details || {}; // { username: iso_timestamp }
+      return `
+        <div style="font-size:11px;margin-top:6px;">
+          ${acked.length>0 ? `<div style="color:var(--text-mute);">✅ Confermato da: ${acked.map(u=>`${escapeHTML(u)}${ackTimes[u]?` (${new Date(ackTimes[u]).toLocaleString('it-IT')})`:''}`).join(', ')}</div>` : ''}
+          ${pending.length>0 ? `<div style="color:var(--amber,#ff8a3d);">⏳ In attesa di: ${pending.map(escapeHTML).join(', ')}</div>` : '<div style="color:var(--text-mute);">Confermato da tutti.</div>'}
+        </div>`;
+    }
+    cardEl.innerHTML = `
+      <div class="section-title">📢 Avvisi Pop-up</div>
+      <div class="muted" style="margin-bottom:8px;font-size:11px;">Il messaggio resta bloccante a schermo per ogni giocatore finché non clicca "Ho capito". Puoi inviarne più di uno: verranno mostrati in coda, uno alla volta.</div>
+      <textarea id="notice-text" rows="2" placeholder="Testo dell'avviso..."></textarea>
+      <div class="row" style="margin-top:6px;align-items:center;">
+        <input type="file" id="notice-image-input" accept="image/*" style="display:none;" />
+        <button type="button" class="btn ghost small" id="btn-notice-attach">📎 Allega immagine</button>
+        <span class="muted" id="notice-image-status" style="font-size:11px;"></span>
+      </div>
+      <div id="notice-image-preview" style="margin-top:6px;"></div>
+      <button class="btn amber" id="btn-notice-send" style="width:100%;margin-top:8px;">Invia Avviso a tutti i Giocatori</button>
+      <div class="muted" id="notice-send-status" style="margin-top:6px;"></div>
+      <div class="divider"></div>
+      <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Avvisi inviati</div>
+      ${sorted.length===0 ? '<div class="muted">Nessun avviso inviato finora.</div>' : sorted.map(n=>`
+        <div class="hud-frame" style="padding:10px;margin-bottom:8px;${n.active?'':'opacity:0.55;'}">
+          <div class="flex-between">
+            <div style="font-size:11px;color:var(--text-mute);">${new Date(n.created_at).toLocaleString('it-IT')} ${n.active?'':'— disattivato'}</div>
+            <div>
+              ${n.active ? `<button class="btn ghost small" data-notice-deactivate="${n.id}">Disattiva</button>` : ''}
+              <button class="btn ghost small" data-notice-delete="${n.id}">✕ Elimina</button>
+            </div>
+          </div>
+          ${n.image_url ? `<img src="${escapeAttr(n.image_url)}" style="max-height:60px;border-radius:6px;margin:4px 0;" />` : ''}
+          <div style="white-space:pre-wrap;">${escapeHTML(n.text)}</div>
+          ${ackSummary(n)}
+        </div>
+      `).join('')}
+    `;
+    pendingChatImage.notice = null;
+    const noticeImgInput = document.getElementById('notice-image-input');
+    const noticeImgStatus = document.getElementById('notice-image-status');
+    const noticeImgPreview = document.getElementById('notice-image-preview');
+    document.getElementById('btn-notice-attach').onclick = ()=> noticeImgInput.click();
+    noticeImgInput.onchange = async ()=>{
+      const file = noticeImgInput.files[0];
+      if(!file) return;
+      noticeImgStatus.textContent = 'Caricamento...';
+      const url = await uploadChatImage(code, file);
+      if(url){
+        pendingChatImage.notice = url;
+        noticeImgStatus.textContent = '';
+        noticeImgPreview.innerHTML = `<img src="${escapeAttr(url)}" style="max-height:80px;border-radius:6px;" /> <button type="button" class="btn ghost small" id="btn-notice-image-remove">✕ rimuovi</button>`;
+        document.getElementById('btn-notice-image-remove').onclick = ()=>{ pendingChatImage.notice=null; noticeImgPreview.innerHTML=''; noticeImgInput.value=''; };
+      } else {
+        noticeImgStatus.textContent = 'Errore upload: ' + (lastApiError||'sconosciuto');
+      }
+    };
+    document.getElementById('btn-notice-send').onclick = async ()=>{
+      const ta = document.getElementById('notice-text');
+      const text = ta.value.trim();
+      const st = document.getElementById('notice-send-status');
+      if(!text && !pendingChatImage.notice){ st.textContent = 'Scrivi un testo o allega un\'immagine.'; return; }
+      const ok = await createNotice(code, { text: text || '(immagine)', imageUrl: pendingChatImage.notice, createdBy: session.username });
+      st.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
+      st.textContent = ok ? 'Avviso inviato a tutti i giocatori.' : ('Errore: ' + (lastApiError||''));
+      if(ok){
+        ta.value = '';
+        pendingChatImage.notice = null;
+        noticeImgPreview.innerHTML = '';
+        noticeImgInput.value = '';
+        renderNoticeMaster(code, players);
+      }
+    };
+    cardEl.querySelectorAll('[data-notice-deactivate]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        await deactivateNotice(code, btn.getAttribute('data-notice-deactivate'));
+        renderNoticeMaster(code, players);
+      };
+    });
+    cardEl.querySelectorAll('[data-notice-delete]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        if(!window.confirm('Eliminare definitivamente questo avviso e le sue conferme?')) return;
+        await deleteNotice(code, btn.getAttribute('data-notice-delete'));
+        renderNoticeMaster(code, players);
+      };
+    });
   }
 
   async function renderPrivateChatMaster(code, players){
@@ -5797,6 +6070,7 @@
         </div>
         <div class="txt${l.meta && l.meta.digimoji ? ' digimoji-text' : ''}" ${l.meta && l.meta.digimoji ? `title="${escapeAttr(displayText)}"` : ''}>${escapeHTML(displayText)}</div>
         ${l.meta && l.meta.digimoji ? `<div class="muted" style="font-size:10px;margin-top:2px;">(scritto in Digimoji — passa il mouse per leggere in chiaro)</div>` : ''}
+        ${l.meta && l.meta.image ? `<a href="${escapeAttr(l.meta.image)}" target="_blank"><img src="${escapeAttr(l.meta.image)}" style="max-width:220px;max-height:220px;border-radius:8px;margin-top:6px;display:block;" onerror="this.style.display='none'" /></a>` : ''}
         ${diceHTML}
         ${fulfillBtn}
       </div>
@@ -6181,6 +6455,25 @@
     session = restored;
   }
   render();
+
+  // Se la sessione è già salvata (utente che torna) e arriviamo da un link "Aggiungi come Starter",
+  // controlla comunque il prefill dopo aver ricaricato il roster.
+  (async ()=>{
+    const prefill = getStarterPrefillFromURL();
+    if(prefill && session && session.role==='player'){
+      const roster = await getRoster(session.code);
+      const existing = roster.find(m=>m.username===session.username);
+      const member = normalizeMember(existing || { username: session.username, role: session.role });
+      if(!member.digimon.name){
+        setTimeout(()=>{
+          openCreationWizard(member, 'sidebar-content', prefill, true);
+          clearStarterPrefillFromURL();
+        }, 300);
+      } else {
+        clearStarterPrefillFromURL();
+      }
+    }
+  })();
 })();
 </script>
 </body>
