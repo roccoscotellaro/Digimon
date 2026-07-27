@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DIGIVICE OS — Bio-Resonance Scan</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+  :root{
+    --bg: #080b10;
+    --panel: #0e141b;
+    --panel-2: #121a22;
+    --line: #1c2a30;
+    --cyan: #35e8c9;
+    --cyan-dim: #1f6e63;
+    --text: #dcece8;
+    --text-mute: #6d8385;
+    --danger: #ff5d5d;
+    --radius: 2px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; background:var(--bg); color:var(--text);
+    font-family:'Manrope',sans-serif;
+    display:flex; align-items:center; justify-content:center; padding:24px;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size:32px 32px;
+    background-position:center;
+  }
+  .unit{
+    width:100%; max-width:560px; background:var(--panel);
+    border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:0 0 0 1px #000, 0 20px 60px rgba(0,0,0,0.6);
+    position:relative; overflow:hidden;
+  }
+  .unit::before{
+    content:''; position:absolute; top:0; left:0; right:0; height:2px;
+    background:linear-gradient(90deg, transparent, var(--cyan), transparent);
+    animation:scanline 3s linear infinite;
+  }
+  @keyframes scanline{ 0%{transform:translateX(-100%);} 100%{transform:translateX(100%);} }
+
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 18px; border-bottom:1px solid var(--line); background:var(--panel-2);
+  }
+  .topbar .tag{
+    font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.12em;
+    color:var(--cyan-dim); text-transform:uppercase;
+  }
+  .topbar .dot{width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan); display:inline-block; margin-right:8px; animation:pulse 1.6s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:1;} 50%{opacity:0.3;}}
+
+  .progress-row{ display:flex; gap:3px; padding:14px 18px 0 18px; }
+  .progress-seg{ flex:1; height:3px; background:var(--line); border-radius:2px; overflow:hidden; }
+  .progress-seg.done{ background:var(--cyan-dim); }
+  .progress-seg.current{ background:var(--cyan); }
+
+  .body-pad{ padding:22px 22px 26px 22px; }
+
+  .qnum{
+    font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--cyan);
+    letter-spacing:0.14em; text-transform:uppercase; margin-bottom:6px;
+  }
+  .candidates-left{
+    font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--text-mute);
+    margin-bottom:14px; letter-spacing:0.03em;
+  }
+  .qtext{ font-size:19px; font-weight:700; line-height:1.4; margin:0 0 20px 0; color:var(--text); }
+
+  .opt{
+    display:block; width:100%; text-align:left; background:var(--panel-2);
+    border:1px solid var(--line); border-radius:var(--radius); color:var(--text);
+    padding:16px 16px; margin-bottom:10px; font-family:'Manrope',sans-serif; font-size:15px;
+    cursor:pointer; transition:border-color .15s, background .15s, transform .1s;
+    line-height:1.4;
+  }
+  .opt:hover{ border-color:var(--cyan-dim); background:#152029; }
+  .opt:active{ transform:scale(0.99); }
+  .opt .k{ font-family:'JetBrains Mono',monospace; color:var(--cyan); margin-right:10px; }
+
+  .intro-icon{ font-size:44px; text-align:center; margin-bottom:6px; filter:drop-shadow(0 0 12px var(--cyan-dim)); }
+  .intro-title{ font-size:22px; font-weight:800; text-align:center; margin:6px 0 4px 0; letter-spacing:0.01em; }
+  .intro-sub{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text-mute); text-align:center; margin-bottom:22px; letter-spacing:0.05em; }
+  .intro-body{ font-size:14.5px; color:var(--text-mute); line-height:1.6; margin-bottom:22px; }
+  .intro-body b{ color:var(--text); }
+
+  .btn{
+    display:block; width:100%; background:var(--cyan); color:#04110d; border:none;
+    border-radius:var(--radius); padding:14px; font-family:'JetBrains Mono',monospace;
+    font-weight:700; font-size:13px; letter-spacing:0.08em; text-transform:uppercase;
+    cursor:pointer; transition:filter .15s;
+  }
+  .btn:hover{ filter:brightness(1.1); }
+  .btn.ghost{ background:transparent; border:1px solid var(--cyan-dim); color:var(--cyan); margin-top:10px; }
+
+  .scan-wrap{ text-align:center; padding:50px 22px; }
+  .scan-bars{ display:flex; justify-content:center; gap:5px; height:44px; align-items:flex-end; margin-bottom:18px; }
+  .scan-bars span{ width:5px; background:var(--cyan); border-radius:2px; animation:bar 0.9s ease-in-out infinite; }
+  .scan-bars span:nth-child(1){animation-delay:0s;} .scan-bars span:nth-child(2){animation-delay:0.1s;}
+  .scan-bars span:nth-child(3){animation-delay:0.2s;} .scan-bars span:nth-child(4){animation-delay:0.3s;}
+  .scan-bars span:nth-child(5){animation-delay:0.4s;} .scan-bars span:nth-child(6){animation-delay:0.5s;}
+  .scan-bars span:nth-child(7){animation-delay:0.6s;}
+  @keyframes bar{ 0%,100%{height:8px;} 50%{height:44px;} }
+  .scan-label{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--cyan-dim); letter-spacing:0.1em; }
+
+  .result-icon{ font-size:64px; text-align:center; margin:6px 0 10px 0; filter:drop-shadow(0 0 16px var(--cyan)); }
+  .result-tag{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--cyan); text-align:center; letter-spacing:0.16em; text-transform:uppercase; margin-bottom:6px; }
+  .result-name{ font-size:28px; font-weight:800; text-align:center; margin-bottom:4px; letter-spacing:0.01em; }
+  .result-stage{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text-mute); text-align:center; margin-bottom:20px; }
+  .result-card{ background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:16px 18px; margin-bottom:16px; }
+  .result-card .h{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--cyan-dim); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:6px; }
+  .result-card .b{ font-size:14px; line-height:1.55; color:var(--text); }
+  .traits-row{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  .trait-pill{ font-family:'JetBrains Mono',monospace; font-size:10.5px; padding:5px 10px; border:1px solid var(--cyan-dim); color:var(--cyan); border-radius:20px; }
+
+  .runner-up{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--text-mute); text-align:center; margin-bottom:18px; letter-spacing:0.03em; }
+  .runner-up b{ color:var(--cyan-dim); }
+
+  .hidden{ display:none !important; }
+  .footer-note{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-mute); text-align:center; margin-top:6px; letter-spacing:0.05em; }
+</style>
+</head>
+<body>
+
+<div class="unit">
+  <div class="topbar">
+    <span class="tag"><span class="dot"></span>DIGIVICE OS · MODULO SCAN</span>
+    <span class="tag" id="stepLabel">INIT</span>
+  </div>
+  <div class="progress-row" id="progressRow"></div>
+
+  <!-- INTRO -->
+  <div class="body-pad" id="screen-intro">
+    <div class="intro-icon">📡</div>
+    <div class="intro-title">Bio-Resonance Compatibility Scan</div>
+    <div class="intro-sub">— v8: scansione ad albero decisionale —</div>
+    <div class="intro-body">
+      Il Digivice non somma più punti — <b>elimina candidati</b>. Ogni risposta restringe il campo tra i 40 Digimon possibili, in base a un asse psicologico netto (istinto o riflessione, fiducia o cautela, parole o fatti...).
+      <br><br>
+      Fino a 10 domande, ma se il Digivice trova un match chiaro prima, si ferma subito. Percorsi diversi per persone diverse — nessun risultato "vince" solo perché appare più spesso.
+    </div>
+    <button class="btn" id="startBtn">Avvia la Scansione</button>
+  </div>
+
+  <!-- QUESTION -->
+  <div class="body-pad hidden" id="screen-question">
+    <div class="qnum" id="qnum"></div>
+    <div class="candidates-left" id="candidatesLeft"></div>
+    <div class="qtext" id="qtext"></div>
+    <div id="optsWrap"></div>
+  </div>
+
+  <!-- SCANNING TRANSITION -->
+  <div class="scan-wrap hidden" id="screen-scanning">
+    <div class="scan-bars"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+    <div class="scan-label" id="scanLabel">SINCRONIZZAZIONE PATTERN IN CORSO...</div>
+  </div>
+
+  <!-- RESULT -->
+  <div class="body-pad hidden" id="screen-result">
+    <div class="result-tag" id="resultTag">Corrispondenza Rilevata</div>
+    <div class="result-icon" id="resIcon"></div>
+    <div class="result-name" id="resName"></div>
+    <div class="result-stage" id="resStage"></div>
+    <div class="result-card">
+      <div class="h">Log di Compatibilità</div>
+      <div class="b" id="resWhy"></div>
+    </div>
+    <div class="traits-row" id="resTraits"></div>
+    <div class="runner-up" id="runnerUp"></div>
+    <button class="btn" id="addStarterBtn" style="margin-bottom:10px;">🧬 Aggiungi come Starter</button>
+    <button class="btn ghost" id="restartBtn">Ripeti la Scansione</button>
+    <div class="footer-note" id="starterNote" style="display:none;">Apri Digivice OS con il Digimon e le statistiche già pronte nella Creation Wizard — dovrai comunque accedere con codice campagna e nome utente.</div>
+    <div class="footer-note">Il risultato è un punto di partenza narrativo, non un vincolo: il GM ha sempre l'ultima parola.</div>
+  </div>
+</div>
+
+<script>
+// ---------- DATI DIGIMON (flavor + profilo psicologico) ----------
+// Ogni Digimon ha un profilo su 10 assi (vedi QUESTIONS sotto per il significato di ogni asse).
+// I profili sono stati verificati programmaticamente: nessun duplicato tra i 40.
+const DIGIMON = {
+  Agumon:        { icon:'🦖', stage:'Rookie · Vaccine · Dragon\'s Roar', tags:'AAAAAABAAB', attribute:'Vaccine', stats:{baseAccuracy:5, baseDamage:6, baseDodge:3, baseArmor:3, baseHealth:3}, signatureMove:'Pepper Breath',
+    traits:['Diretto','Coraggioso','Impulsivo','Protettivo'],
+    why:'Agisci prima di aver finito di pensare — non perché non ci arrivi, ma perché aspettare troppo ti sembra un tradimento verso chi hai davanti. Agumon non calcola i rischi: li affronta. La sua lealtà è un fatto, non una scelta.' },
+  Gabumon:       { icon:'🐺', stage:'Rookie · Data · Nature Spirits', tags:'BABBBABBBB', attribute:'Data', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}, signatureMove:'Blue Blaster',
+    traits:['Cauto','Leale','Riservato','Insicuro'],
+    why:'Ti fidi lentamente e ti proteggi tenendo le persone a distanza di sicurezza — come Gabumon indossa la pelle di Garurumon prima ancora di sapere se sarà accettato per quello che è davvero. Ma quando ti affezioni, è per sempre.' },
+  Veemon:        { icon:'🔵', stage:'Rookie · Free · Unknown', tags:'AAAAABAAAB', attribute:'Free', stats:{baseAccuracy:4, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:4}, signatureMove:'Vee Headbutt',
+    traits:['Ottimista','Impulsivo','Leale','Ingenuo'],
+    why:'Per te il bicchiere è sempre mezzo pieno, anche quando è quasi vuoto. Veemon si butta prima di guardare, sbaglia, si rialza ridendo e ci riprova — trascinando tutti gli altri a crederci insieme a lui.' },
+  Guilmon:       { icon:'🔴', stage:'Rookie · Virus · Dragon\'s Roar', tags:'ABAAAAAABB', attribute:'Virus', stats:{baseAccuracy:5, baseDamage:6, baseDodge:3, baseArmor:3, baseHealth:3}, signatureMove:'Pyro Sphere',
+    traits:['Istintivo','Puro','Devoto','Imprevedibile'],
+    why:'Non hai filtri tra quello che senti e quello che fai. Guilmon non mente mai perché non sa come si fa: agisce col cuore, e quando quel cuore è ferito o spaventato, la potenza che ne esce può sorprendere anche te.' },
+  Renamon:       { icon:'🦊', stage:'Rookie · Data · Nature Spirits', tags:'BBBBABAABB', attribute:'Data', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}, signatureMove:'Diamond Storm',
+    traits:['Indipendente','Orgogliosa','Riservata','Determinata'],
+    why:'Preferisci dimostrare il tuo valore da sola/o piuttosto che chiedere aiuto. Renamon osserva prima di agire, si fida a fatica, e considera ogni legame una cosa da guadagnare — mai da dare per scontata.' },
+  Terriermon:    { icon:'🐰', stage:'Rookie · Vaccine · Nature Spirits', tags:'AABAABAAAB', attribute:'Vaccine', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}, signatureMove:'Terrier Tornado',
+    traits:['Arguto','Ironico','Leale','Schivo (emotivamente)'],
+    why:'Usi la battuta come scudo: se ridi prima tu, fa meno male quando arriva davvero. Terriermon nasconde dietro il sarcasmo un attaccamento fortissimo che non ammetterebbe mai ad alta voce.' },
+  Palmon:        { icon:'🌿', stage:'Rookie · Data · Nature Spirits', tags:'AAAABABABB', attribute:'Data', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}, signatureMove:'Poison Ivy',
+    traits:['Empatica','Protettiva','Permalosa','Devota'],
+    why:'Ti prendi cura degli altri prima che di te stesso/a, ma non dimentichi facilmente chi ti ha ferito. Palmon ama con tutta se stessa, e per questo si aspetta lo stesso in cambio.' },
+  Patamon:       { icon:'🟤', stage:'Rookie · Free · Nature Spirits', tags:'AAAABABAAB', attribute:'Free', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}, signatureMove:'Boom Bubble',
+    traits:['Idealista','Fiducioso','Speranzoso','Sacrificale'],
+    why:'Credi nel meglio delle persone anche quando le prove dicono il contrario. Patamon spera sempre che le cose si risolvano, e quando serve è pronto a sacrificare tutto pur di proteggere chi ama.' },
+  Impmon:        { icon:'👹', stage:'Rookie · Virus · Nightmare Soldiers', tags:'BBABBBABBB', attribute:'Virus', stats:{baseAccuracy:5, baseDamage:6, baseDodge:3, baseArmor:3, baseHealth:3}, signatureMove:'Infernal Funnel',
+    traits:['Orgoglioso','Diffidente','Ferito','Indipendente'],
+    why:'Rifiuti l\'aiuto anche quando ti servirebbe, per orgoglio. Impmon rifiuta perfino l\'evoluzione tradizionale pur di farcela a modo suo — l\'orgoglio è la corazza che porti contro la paura di essere abbandonato di nuovo.' },
+  Wormmon:       { icon:'🐛', stage:'Rookie · Data · Nightmare Soldiers', tags:'BABABABABB', attribute:'Data', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}, signatureMove:'Silk Thread',
+    traits:['Devoto','Sottovalutato','Sacrificale','Silenzioso'],
+    why:'Ti sacrifichi in silenzio pur di essere utile a chi ami, anche quando nessuno se ne accorge. Wormmon viene sottovalutato da tutti tranne che da chi conta davvero — e questo, per te, basta.' },
+  Hawkmon:       { icon:'🦅', stage:'Rookie · Vaccine · Wind Guardians', tags:'ABBAABBABA', attribute:'Vaccine', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}, signatureMove:'Feather Strike',
+    traits:['Strategico','Elegante','Romantico','Calcolatore'],
+    why:'Pensi prima di agire, valuti ogni mossa come una partita a scacchi — ma sotto la strategia batte un cuore romantico che si offre volentieri per chi ama. Hawkmon è tattica e sentimento nella stessa creatura.' },
+  Armadillomon:  { icon:'🛡️', stage:'Rookie · Data · Nature Spirits', tags:'AAAAAAABBB', attribute:'Data', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}, signatureMove:'Diamond Shell',
+    traits:['Amichevole','Semplice','Leale','Senza secondi fini'],
+    why:'La tua lealtà è pura e senza calcoli. Armadillomon ama con semplicità disarmante, senza secondi fini né sospetti — è la prima persona che dà fiducia, non l\'ultima.' },
+  Lopmon:        { icon:'🐇', stage:'Rookie · Data · Nature Spirits', tags:'ABBBBABBBB', attribute:'Data', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:3, baseHealth:4}, signatureMove:'Blazing Ice',
+    traits:['Timido','Fermo nei principi','Riservato','Leale'],
+    why:'Sei timido nel quotidiano, ma diventi incrollabile quando conta davvero. Lopmon si nasconde volentieri dietro la propria timidezza, finché arriva il momento in cui i suoi principi non si toccano.' },
+  Salamon:       { icon:'🐕', stage:'Rookie · Data · Nature Spirits', tags:'AAAAAABBBB', attribute:'Data', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}, signatureMove:'Puppy Punch',
+    traits:['Coraggiosa','Protettiva','Fragile in apparenza','Devota'],
+    why:'La tua fragilità apparente nasconde un coraggio enorme quando chi ami è in pericolo. Salamon è piccola e gentile, ma non esita mai quando serve proteggere qualcuno.' },
+  Kudamon:       { icon:'🦊', stage:'Rookie · Data · Wind Guardians', tags:'BBBBBBBBBB', attribute:'Data', stats:{baseAccuracy:5, baseDamage:4, baseDodge:6, baseArmor:3, baseHealth:4}, signatureMove:'Kudamon Whip',
+    traits:['Saggio','Calmo','Osservatore','Maturo oltre l\'età'],
+    why:'Osservi più di quanto parli, e la tua calma è la tua forza. Kudamon è saggio ben oltre la propria giovane età — preferisce capire prima di agire, e raramente si sbaglia.' },
+  Gomamon:       { icon:'🦭', stage:'Rookie · Vaccine · Deep Savers', tags:'AABAAAABAB', attribute:'Vaccine', stats:{baseAccuracy:3, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:5}, signatureMove:'Marching Fishes',
+    traits:['Giocherellone','Umoristico','Leale in silenzio','Ottimista'],
+    why:'Usi il gioco e la leggerezza per tenere unito il gruppo nei momenti difficili. Gomamon sdrammatizza sempre, ma la sua lealtà verso gli amici è più solida di quanto la sua leggerezza lasci intendere.' },
+  Elecmon:       { icon:'⚡', stage:'Rookie · Data · Nature Spirits', tags:'ABABBABABB', attribute:'Data', stats:{baseAccuracy:4, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:5}, signatureMove:'Thunder Ball',
+    traits:['Protettivo','Severo quando serve','Custode','Responsabile'],
+    why:'Ti prendi cura dei più deboli o dei più giovani anche quando nessuno te lo chiede. Elecmon è il custode del Villaggio dei Nuovi Inizi — gentile per natura, severo quando la situazione lo richiede.' },
+  Gaomon:        { icon:'🥊', stage:'Rookie · Vaccine · Metal Empire', tags:'ABABBBABBB', attribute:'Vaccine', stats:{baseAccuracy:5, baseDamage:5, baseDodge:5, baseArmor:3, baseHealth:3}, signatureMove:'Gao Rush',
+    traits:['Disciplinato','Orgoglioso','Instancabile','Rispetta la forza'],
+    why:'Ti alleni senza sosta e credi che il valore si dimostri con i fatti, non con le parole. Gaomon rispetta la disciplina e la forza guadagnata col sudore più di ogni talento naturale.' },
+  Falcomon:      { icon:'🦉', stage:'Rookie · Data · Wind Guardians', tags:'BBBBBABBBB', attribute:'Data', stats:{baseAccuracy:6, baseDamage:5, baseDodge:6, baseArmor:2, baseHealth:3}, signatureMove:'Shadow Feather',
+    traits:['Diffidente','Fedele a un solo legame','Cresciuto isolato','Leale fino in fondo'],
+    why:'Sei cresciuto lontano dagli altri e fatichi a fidarti — ma quando lo fai, è per sempre. Falcomon è cresciuto quasi da solo nel Digital World, e questo lo ha reso fedele fino in fondo a chi ha scelto di fidarsi.' },
+  Dracomon:      { icon:'🐉', stage:'Rookie · Data · Dragon\'s Roar', tags:'AABAAAAAAB', attribute:'Data', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:4, baseHealth:5}, signatureMove:'Baby Breath',
+    traits:['Impetuoso','Combattivo','Temperamento acceso','Istintivo'],
+    why:'Il tuo temperamento è acceso: agisci di getto, litighi, ti scusi dopo. Il Gekirin di Dracomon lo rende impetuoso e combattivo — vive di getto, con tutta l\'intensità che questo comporta.' },
+  BlackAgumon:   { icon:'🖤', stage:'Rookie · Virus · Dragon\'s Roar', tags:'ABBBABAABB', attribute:'Virus', stats:{baseAccuracy:5, baseDamage:7, baseDodge:3, baseArmor:4, baseHealth:3}, signatureMove:'Dark Pepper Breath',
+    traits:['Feroce','Diffidente','Presagio di potenza','Determinato a dimostrarsi'],
+    why:'Sei diffidente e feroce, e preferisci dimostrare il tuo valore a modo tuo, senza scorciatoie. BlackAgumon è la versione in ombra di Agumon — la stessa lealtà di fondo, ma filtrata attraverso più cicatrici.' },
+  Floramon:      { icon:'🌸', stage:'Rookie · Data · Nature Spirits', tags:'AABABABABA', attribute:'Data', stats:{baseAccuracy:5, baseDamage:4, baseDodge:5, baseArmor:4, baseHealth:5}, signatureMove:'Rain of Pollen',
+    traits:['Gelosa','Competitiva','Insicura','Determinata'],
+    why:'La gelosia ti spinge più che paralizzarti. Floramon, rivale di Palmon nel canone, trasforma l\'insicurezza in carburante per migliorarsi — anche se a volte fa più male del necessario.' },
+  Lunamon:       { icon:'🌙', stage:'Rookie · Data · Wind Guardians', tags:'BBBABBBABB', attribute:'Data', stats:{baseAccuracy:5, baseDamage:4, baseDodge:6, baseArmor:3, baseHealth:4}, signatureMove:'Lunatic Charm',
+    traits:['Malinconica','Osservatrice','Dolce','Silenziosamente devota'],
+    why:'Osservi da lontano e ti affezioni in silenzio, senza dirlo mai apertamente. Lunamon porta una dolcezza malinconica — ama profondamente, ma raramente lo dichiara ad alta voce.' },
+  Dracmon:       { icon:'🧛', stage:'Rookie · Virus · Dark Area', tags:'BABAAABABA', attribute:'Virus', stats:{baseAccuracy:5, baseDamage:4, baseDodge:6, baseArmor:3, baseHealth:4}, signatureMove:'Eye of Nightmare',
+    traits:['Dispettoso','Manipolatore per gioco','Ama il caos controllato','Ironico'],
+    why:'Ti piace complicare le cose, ma raramente per vera cattiveria. Dracmon è il folletto più dispettoso della Dark Area — il caos che semina è quasi sempre un gioco, un modo per non annoiarsi mai.' },
+  Strabimon:     { icon:'🥷', stage:'Rookie · Data · Wind Guardians', tags:'BBBBABABBB', attribute:'Data', stats:{baseAccuracy:5, baseDamage:5, baseDodge:6, baseArmor:3, baseHealth:3}, signatureMove:'Ninja Blade',
+    traits:['Silenzioso','Solitario','Disciplinato','Leale quando conta'],
+    why:'Preferisci muoverti da solo/a, in silenzio, senza bisogno di spiegare ogni mossa. Strabimon è la forma agile e ninja che precede il lupo solitario Koji — diffidente all\'inizio, ma assolutamente fedele quando qualcuno guadagna davvero la sua fiducia.' },
+  Flamemon:      { icon:'🔥', stage:'Rookie · Vaccine · Nature Spirits', tags:'AAAAAAAAAB', attribute:'Vaccine', stats:{baseAccuracy:5, baseDamage:6, baseDodge:4, baseArmor:3, baseHealth:4}, signatureMove:'Baby Salamander',
+    traits:['Impulsivo','Focoso','Testardo','Grande cuore sotto la spavalderia'],
+    why:'Ti butti nelle cose a testa bassa, con la fiamma sempre un po\' instabile. Flamemon precede l\'evoluzione di Takuya — spavaldo e testardo in superficie, ma con un cuore enorme che si vede solo quando conta davvero.' },
+  Coronamon:     { icon:'🦁', stage:'Rookie · Vaccine · Nature Spirits', tags:'AAAAAAAABB', attribute:'Vaccine', stats:{baseAccuracy:5, baseDamage:6, baseDodge:4, baseArmor:3, baseHealth:4}, signatureMove:'Corona Flame',
+    traits:['Allegro','Energico','Ottimista','Fedele'],
+    why:'La tua energia contagia chi ti sta intorno. Coronamon è un leoncino di fuoco dal carattere allegro — semplice, diretto, e fedele senza secondi fini a chi considera famiglia.' },
+  Monodramon:    { icon:'🔷', stage:'Rookie · Vaccine · Dragon\'s Roar', tags:'BBBBBAABBB', attribute:'Vaccine', stats:{baseAccuracy:5, baseDamage:5, baseDodge:5, baseArmor:3, baseHealth:4}, signatureMove:'Twister Claw',
+    traits:['Solitario','Intuitivo','Sottovalutato','Forza nascosta'],
+    why:'Non hai bisogno di compagnia per sentirti completo/a. Monodramon è un piccolo drago solitario dal fiuto acuto — sottovaluta se stesso quanto gli altri lo sottovalutano, ma nasconde una forza sorprendente.' },
+  Gammamon:      { icon:'🐲', stage:'Rookie · Vaccine · Virus Busters', tags:'AAABAABAAB', attribute:'Vaccine', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:4}, signatureMove:'Horn Attack',
+    traits:['Curioso','Dispettoso ma obbediente','Impulsivo','Affettuoso'],
+    why:'Sei curioso di tutto e non riesci a stare fermo — vuoi "assaggiare" ogni cosa nuova che incontri, letteralmente o no. Gammamon è dispettoso ma ascolta sempre chi ama davvero, e si affeziona con una lealtà quasi ingenua.' },
+  Angoramon:     { icon:'🐰', stage:'Rookie · Data · Virus Busters', tags:'BBBBBBBABB', attribute:'Data', stats:{baseAccuracy:6, baseDamage:5, baseDodge:5, baseArmor:3, baseHealth:4}, signatureMove:'Ear Blade',
+    traits:['Percettivo','Calmo','Osservatore','Riservato'],
+    why:'Ascolti più di quanto parli — letteralmente, nel caso di Angoramon, le cui lunghe orecchie colgono ogni minimo dettaglio. Calmo e riservato, agisci solo dopo aver capito davvero la situazione.' },
+  Jellymon:      { icon:'🪼', stage:'Rookie · Data · Deep Savers', tags:'BAABAABABB', attribute:'Data', stats:{baseAccuracy:5, baseDamage:5, baseDodge:6, baseArmor:2, baseHealth:4}, signatureMove:'Fluid Tackle',
+    traits:['Adattabile','Fluida/o','Gentile','Va dritta/o al punto'],
+    why:'Ti adatti a qualsiasi situazione senza rigidità, un po\' come Jellymon attraversa pareti e terreno senza sforzo. Gentile ma diretta/o, non hai bisogno di troppi fronzoli per far capire cosa provi.' },
+  Ghostmon:      { icon:'👻', stage:'Rookie · Data · Nightmare Soldiers', tags:'BBBBABABBA', attribute:'Data', stats:{baseAccuracy:5, baseDamage:4, baseDodge:7, baseArmor:3, baseHealth:4}, signatureMove:'Little Plasma',
+    traits:['Timido','Altruista in segreto','Evita il conflitto','Teme l\'abbandono'],
+    why:'Aiuti gli altri senza volere essere visto/a — quasi ti infastidisce essere ringraziato/a. Ghostmon è timido fino all\'invisibilità letterale, ma il suo cuore gentile lo spinge sempre ad aiutare chi ha bisogno, di nascosto.' },
+  Gekkomon:      { icon:'🦎', stage:'Rookie · Data · Unknown (Digimon Beatbreak)', tags:'AAAAAABAAA', attribute:'Data', stats:{baseAccuracy:5, baseDamage:5, baseDodge:5, baseArmor:3, baseHealth:4}, signatureMove:'Smash Beat',
+    traits:['Goloso','Diretto','Semplice','Vive alla giornata'],
+    why:'Prendi la vita così com\'è, senza troppe complicazioni: quello che conta è il momento presente. Gekkomon (Beatbreak) è sempre affamato e sempre entusiasta — la sua semplicità è la sua forza più grande.' },
+  Tentomon:      { icon:'🪲', stage:'Rookie · Vaccine · Nature Spirits', tags:'BABABBBABB', attribute:'Vaccine', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}, signatureMove:'Super Shocker',
+    traits:['Curioso','Erudito','Analitico','Pacato'],
+    why:'Preferisci capire prima di agire, e ogni domanda nuova ti entusiasma più di una battaglia. Tentomon è curioso ed erudito — analizza ogni situazione con calma, spesso trovando la soluzione che altri si perdono per fretta.' },
+  KoKabuterimon: { icon:'🪳', stage:'Rookie · Data · Nature Spirits', tags:'AAABABAAAB', attribute:'Data', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:4, baseHealth:5}, signatureMove:'Electro Shock',
+    traits:['Energico','Impaziente di crescere','Porta un potere non ancora suo','Determinato'],
+    why:'Senti di avere dentro qualcosa di più grande di te, e non vedi l\'ora di dimostrare di esserne all\'altezza. KoKabuterimon porta il potere di uno dei Dieci Guerrieri Leggendari ancora prima di sapere come usarlo davvero.' },
+  BlackGabumon:  { icon:'🐊', stage:'Rookie · Virus · Nature Spirits', tags:'BBBBBBABBB', attribute:'Virus', stats:{baseAccuracy:4, baseDamage:5, baseDodge:5, baseArmor:4, baseHealth:4}, signatureMove:'Dark Blue Blaster',
+    traits:['Ombroso','Diffidente','Solitario','Nasconde una ferita'],
+    why:'Ti avvolgi in un\'armatura di diffidenza per non farti scoprire vulnerabile. BlackGabumon è la versione in ombra di Gabumon — la stessa insicurezza di fondo, filtrata attraverso più sospetto e meno pazienza per chi cerca di avvicinarsi.' },
+  DemiDevimon:   { icon:'🦇', stage:'Rookie · Virus · Nightmare Soldiers', tags:'BABBBBBABA', attribute:'Virus', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:2, baseHealth:3}, signatureMove:'Demi Dart',
+    traits:['Bugiardo per sopravvivenza','Manipolatore','Codardo sotto pressione','Cerca l\'approvazione dei potenti'],
+    why:'Ti attacchi a chi è più forte di te per sentirti al sicuro, e non hai troppi scrupoli a piegare la verità pur di restarci vicino. DemiDevimon mente e manipola non per pura cattiveria, ma perché non si fida di poter contare solo sulle proprie forze.' },
+  Betamon:       { icon:'🦎', stage:'Rookie · Data · Deep Savers', tags:'BBBABBBABA', attribute:'Data', stats:{baseAccuracy:3, baseDamage:4, baseDodge:3, baseArmor:5, baseHealth:5}, signatureMove:'Electric Shock',
+    traits:['Vigile','Modesto','Adattabile','Affidabile senza clamore'],
+    why:'Non hai bisogno dei riflettori per essere utile — osservi con attenzione e ti adatti a qualsiasi situazione. Betamon è modesto e vigile, il tipo di compagno su cui puoi sempre contare anche se non fa mai rumore.' },
+  Dorumon:       { icon:'🐲', stage:'Rookie · Data · Dragon\'s Roar', tags:'ABAAABABBB', attribute:'Data', stats:{baseAccuracy:5, baseDamage:5, baseDodge:6, baseArmor:4, baseHealth:4}, signatureMove:'Metal Cannon',
+    traits:['Gentile','Curioso','In cerca di un posto a cui appartenere','Leale una volta trovata una famiglia'],
+    why:'Cerchi un posto dove sentirti davvero a casa, più di ogni altra cosa. Dorumon è gentile e curioso, spesso solitario per circostanze più che per scelta — ma una volta trovata una famiglia, la sua lealtà non vacilla mai.' },
+  Meicoomon:     { icon:'🐈‍⬛', stage:'Rookie · Virus · Nightmare Soldiers', tags:'ABBAABABBB', attribute:'Virus', stats:{baseAccuracy:5, baseDamage:5, baseDodge:6, baseArmor:3, baseHealth:4}, signatureMove:'Kitty\'s Kick',
+    traits:['Dolce in superficie','Cova un potenziale oscuro','Instabile sotto stress','Fiercemente protettiva del suo legame speciale'],
+    why:'Sei gentile e affettuoso/a nella norma, ma sotto stress qualcosa dentro di te può esplodere in modi che sorprendono anche te stesso/a. Meicoomon ha un cuore dolce, ma nasconde un potenziale oscuro che si risveglia solo per proteggere il legame che ama di più.' }
+};
+
+// ---------- LE 10 DOMANDE (una per asse psicologico) ----------
+// Ogni asse è indipendente: A o B, nessun punteggio pesato diversamente.
+const QUESTIONS = [
+  { axis:0, text:"Un pericolo emerge all'improvviso, senza preavviso.",
+    a:"Reagisco d'istinto, prima ancora di pensarci.", b:"Mi fermo un istante a valutare la situazione." },
+  { axis:1, text:"Nel tempo libero, cosa preferisci davvero?",
+    a:"Stare con altri — il rumore di un gruppo mi carica.", b:"Un momento tutto per me, in pace." },
+  { axis:2, text:"Quando provi un'emozione forte...",
+    a:"Si vede subito da come reagisco.", b:"Preferisco tenerla per me." },
+  { axis:3, text:"Incontri qualcuno di nuovo.",
+    a:"Parto dandogli fiducia, salvo prova contraria.", b:"Aspetto di vedere come si comporta, prima di fidarmi." },
+  { axis:4, text:"Una regola ti sembra ingiusta in una situazione specifica.",
+    a:"La piego, se la causa lo giustifica davvero.", b:"La rispetto comunque — le regole esistono per un motivo." },
+  { axis:5, text:"Cosa ti spinge di più ad agire, nel profondo?",
+    a:"Proteggere chi amo.", b:"Dimostrare quanto valgo." },
+  { axis:6, text:"Il tuo modo di risolvere un conflitto?",
+    a:"Affronto tutto di petto, in modo diretto.", b:"Uso l'ingegno o le parole prima della forza." },
+  { axis:7, text:"Di fronte a un futuro incerto...",
+    a:"Penso che, alla fine, andrà tutto bene.", b:"Mi preparo al peggio, per sicurezza." },
+  { axis:8, text:"Preferisci essere...",
+    a:"Al centro dell'attenzione.", b:"Dietro le quinte, senza clamore." },
+  { axis:9, text:"Come dimostri il tuo affetto verso chi ami?",
+    a:"Lo dico apertamente, con le parole.", b:"Lo dimostro con i fatti, senza troppi discorsi." }
+];
+
+const ALL_NAMES = Object.keys(DIGIMON);
+let current = 0;
+let answers = []; // 'A'/'B' per asse risposto finora
+
+const screens = {
+  intro: document.getElementById('screen-intro'),
+  question: document.getElementById('screen-question'),
+  scanning: document.getElementById('screen-scanning'),
+  result: document.getElementById('screen-result')
+};
+const stepLabel = document.getElementById('stepLabel');
+const progressRow = document.getElementById('progressRow');
+
+function buildProgress(){
+  progressRow.innerHTML = '';
+  QUESTIONS.forEach((_,i)=>{
+    const seg = document.createElement('div');
+    seg.className = 'progress-seg';
+    seg.id = 'seg-'+i;
+    progressRow.appendChild(seg);
+  });
+}
+buildProgress();
+
+function showScreen(name){
+  Object.values(screens).forEach(s=>s.classList.add('hidden'));
+  screens[name].classList.remove('hidden');
+}
+
+// Calcola, per ogni Digimon, il numero di MISMATCH rispetto alle risposte date finora.
+function computeMismatches(){
+  const mismatch = {};
+  ALL_NAMES.forEach(name=>{
+    const tags = DIGIMON[name].tags;
+    let m = 0;
+    for(let i=0;i<answers.length;i++){
+      if(answers[i] !== tags[i]) m++;
+    }
+    mismatch[name] = m;
+  });
+  return mismatch;
+}
+
+function remainingPerfectMatches(){
+  const mismatch = computeMismatches();
+  return ALL_NAMES.filter(n=>mismatch[n]===0);
+}
+
+function updateProgress(){
+  QUESTIONS.forEach((_,i)=>{
+    const seg = document.getElementById('seg-'+i);
+    seg.classList.remove('done','current');
+    if(i < current) seg.classList.add('done');
+    else if(i === current) seg.classList.add('current');
+  });
+}
+
+function renderQuestion(){
+  stepLabel.textContent = 'SCAN ' + (current+1) + '/' + QUESTIONS.length;
+  updateProgress();
+  const q = QUESTIONS[current];
+  const perfect = remainingPerfectMatches();
+  document.getElementById('qnum').textContent = 'Domanda ' + (current+1);
+  document.getElementById('candidatesLeft').textContent = perfect.length + ' candidati compatibili al 100% finora';
+  document.getElementById('qtext').textContent = q.text;
+  const wrap = document.getElementById('optsWrap');
+  wrap.innerHTML = '';
+  ['A','B'].forEach(letter=>{
+    const btn = document.createElement('button');
+    btn.className = 'opt';
+    btn.innerHTML = '<span class="k">'+letter+'</span>' + (letter==='A'?q.a:q.b);
+    btn.onclick = ()=> selectOption(letter);
+    wrap.appendChild(btn);
+  });
+  showScreen('question');
+}
+
+function selectOption(letter){
+  answers.push(letter);
+  current++;
+
+  const perfect = remainingPerfectMatches();
+
+  // Uscita anticipata: se resta esattamente 1 candidato perfetto (e ne abbiamo già escluso almeno un altro), rivela subito.
+  const earlyExit = (perfect.length === 1 && current < QUESTIONS.length && current >= 3);
+
+  if(earlyExit || current >= QUESTIONS.length){
+    document.getElementById('scanLabel').textContent = current >= QUESTIONS.length ? 'ANALISI FINALE DEL PATTERN...' : 'MATCH ANTICIPATO RILEVATO...';
+    showScreen('scanning');
+    stepLabel.textContent = 'ANALISI';
+    setTimeout(()=>{ renderResult(earlyExit); }, 1300);
+  } else {
+    document.getElementById('scanLabel').textContent = 'SINCRONIZZAZIONE PATTERN IN CORSO...';
+    showScreen('scanning');
+    setTimeout(()=>{ renderQuestion(); }, 450);
+  }
+}
+
+function renderResult(wasEarly){
+  const mismatch = computeMismatches();
+  // Ordina per minor numero di mismatch; a parità, ordine di inserimento (stabile).
+  const ranked = ALL_NAMES.slice().sort((a,b)=> mismatch[a]-mismatch[b]);
+  const best = ranked[0];
+  const second = ranked.find(n=>n!==best && mismatch[n]>mismatch[best]) || ranked[1];
+  const d = DIGIMON[best];
+
+  document.getElementById('resultTag').textContent = wasEarly ? 'Corrispondenza Anticipata' : 'Corrispondenza Rilevata';
+  document.getElementById('resIcon').textContent = d.icon;
+  document.getElementById('resName').textContent = best;
+  document.getElementById('resStage').textContent = d.stage;
+  document.getElementById('resWhy').textContent = d.why;
+  const traitsWrap = document.getElementById('resTraits');
+  traitsWrap.innerHTML = '';
+  d.traits.forEach(t=>{
+    const pill = document.createElement('span');
+    pill.className = 'trait-pill';
+    pill.textContent = t;
+    traitsWrap.appendChild(pill);
+  });
+  const tiedWithBest = ranked.filter(n=>mismatch[n]===mismatch[best] && n!==best);
+  if(tiedWithBest.length > 0){
+    document.getElementById('runnerUp').innerHTML = 'Corrispondenza equivalente anche con <b>' + tiedWithBest.join(', ') + '</b> — scegli quello che ti convince di più, o lascia decidere il GM.';
+  } else if(second){
+    document.getElementById('runnerUp').innerHTML = 'Il più vicino tra gli altri candidati: <b>' + second + '</b>.';
+  } else {
+    document.getElementById('runnerUp').innerHTML = '';
+  }
+  stepLabel.textContent = 'MATCH';
+  document.getElementById('starterNote').style.display = 'block';
+  showScreen('result');
+}
+
+document.getElementById('addStarterBtn').onclick = ()=>{
+  const bestName = document.getElementById('resName').textContent;
+  const d = DIGIMON[bestName];
+  if(!d || !d.stats){ alert('Dati statistici non disponibili per questo Digimon.'); return; }
+  const params = new URLSearchParams({
+    prefillName: bestName,
+    prefillAttribute: d.attribute || 'Free',
+    prefillPersonality: d.why.slice(0, 180),
+    prefillAcc: d.stats.baseAccuracy,
+    prefillDmg: d.stats.baseDamage,
+    prefillDodge: d.stats.baseDodge,
+    prefillArmor: d.stats.baseArmor,
+    prefillHp: d.stats.baseHealth,
+    prefillSig: d.signatureMove || ''
+  });
+  // NB: assume index.html si trova nella stessa cartella di questo file (stesso deploy Vercel).
+  window.open('index.html?' + params.toString(), '_blank');
+};
+
+document.getElementById('startBtn').onclick = ()=>{
+  current = 0;
+  answers = [];
+  renderQuestion();
+};
+
+document.getElementById('restartBtn').onclick = ()=>{
+  current = 0;
+  answers = [];
+  stepLabel.textContent = 'INIT';
+  showScreen('intro');
+};
+</script>
+
+</body>
+</html>
