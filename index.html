@@ -647,7 +647,7 @@
   async function addDexEntry(code, entry){ return apiPost('/api/dex', { code, ...entry }); }
   async function updateDexEntry(code, id, fields){ return apiPut('/api/dex', { code, id, ...fields }); }
   async function correggiItaliano(testo){ const d = await apiPost('/api/ai-correct', { text: testo }); return d && d.corrected ? d.corrected : testo; }
-  async function suggerisciBattute(digimonName, personality, contesto){ const d = await apiPost('/api/ai-suggest', { digimonName, personality, context: contesto }); return d && d.lines ? d.lines : ['(errore nel generare suggerimenti, riprova)']; }
+  async function suggerisciBattute(digimonName, personality, contesto, mode){ const d = await apiPost('/api/ai-suggest', { digimonName, personality, context: contesto, mode: mode || 'battute' }); return d && d.lines ? d.lines : ['(errore nel generare suggerimenti, riprova)']; }
 
   // ---------- AVVISI POP-UP (con conferma obbligatoria e tracciamento) ----------
   // Ogni notice: { id, code, text, image_url, created_by, created_at, active }
@@ -1533,7 +1533,22 @@
       btn.onclick = async ()=>{
         const idx = Number(btn.getAttribute('data-move-idx'));
         const atk = me.digimon.attacks[idx];
-        await pushLog(code, { who: session.username, role:'player', text: `${me.digimon.name || 'Il Digimon'} dichiara ${atk.name}! (${attackTagsPlain(atk)}) — il Master lo risolve dal Combat Manager.` });
+        const originalLabel = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Narrazione in corso...';
+        let narrazione = '';
+        try{
+          const contesto = `Il Digimon sta usando l'attacco "${atk.name}" (${attackTagsPlain(atk)}). ` +
+            `Descrizione di riferimento: "${atk.desc || 'nessuna descrizione disponibile, inventane una coerente col nome dell attacco'}". ` +
+            `Scrivi UNA SOLA frase narrativa (max 25 parole) che descriva l'attacco in azione, in italiano, nello stesso stile e tono della descrizione di riferimento ma con parole ed elementi differenti — non ripetere la frase identica, varia sempre pur restando fedele al personaggio e all'attacco.`;
+          const lines = await suggerisciBattute(me.digimon.name || 'Digimon', me.digimon.personality || '', contesto, 'narrazione-attacco');
+          narrazione = (lines && lines[0]) ? lines[0].replace(/^["']|["']$/g,'') : '';
+        }catch(e){ narrazione = ''; }
+        const testoBase = `${me.digimon.name || 'Il Digimon'} dichiara ${atk.name}! (${attackTagsPlain(atk)}) — il Master lo risolve dal Combat Manager.`;
+        const testoFinale = narrazione ? `${testoBase}\n💬 ${narrazione}` : testoBase;
+        await pushLog(code, { who: session.username, role:'player', text: testoFinale });
+        btn.disabled = false;
+        btn.textContent = originalLabel;
         refreshLiveParts();
       };
     });
@@ -1739,7 +1754,8 @@
         baseDodge: Number(params.get('prefillDodge'))||2,
         baseArmor: Number(params.get('prefillArmor'))||2,
         baseHealth: Number(params.get('prefillHp'))||2,
-        signatureMove: params.get('prefillSig') || ''
+        signatureMove: params.get('prefillSig') || '',
+        attackDesc: params.get('prefillAttackDesc') || ''
       };
     }catch(e){ return null; }
   }
@@ -1747,7 +1763,7 @@
   function clearStarterPrefillFromURL(){
     try{
       const url = new URL(location.href);
-      ['prefillName','prefillAttribute','prefillPersonality','prefillAcc','prefillDmg','prefillDodge','prefillArmor','prefillHp','prefillSig'].forEach(k=>url.searchParams.delete(k));
+      ['prefillName','prefillAttribute','prefillPersonality','prefillAcc','prefillDmg','prefillDodge','prefillArmor','prefillHp','prefillSig','prefillAttackDesc'].forEach(k=>url.searchParams.delete(k));
       history.replaceState(null, '', url.toString());
     }catch(e){}
   }
@@ -1767,7 +1783,7 @@
     };
     if(prefill && prefill.signatureMove){
       creationDraft.digimon.attacks = [
-        { name: prefill.signatureMove, shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc:'Attacco caratteristico portato dal Bio-Resonance Scan.', signature:true, reach:1, areaAttack:false },
+        { name: prefill.signatureMove, shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc: prefill.attackDesc || 'Attacco caratteristico portato dal Bio-Resonance Scan.', signature:true, reach:1, areaAttack:false },
         { name:'Raggio a Distanza', shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc:'Un colpo dalla distanza.', signature:false, reach:1, areaAttack:false }
       ];
     }
@@ -4428,17 +4444,45 @@
       </div>
       <div class="log" id="private-log-live-master" style="height:220px;">${logHTML(log, false)}</div>
       <textarea id="private-text-master" rows="2" placeholder="Scrivi in privato..." style="margin-top:8px;"></textarea>
+      <div class="row" style="margin-top:6px;align-items:center;">
+        <input type="file" id="private-image-input-master" accept="image/*" style="display:none;" />
+        <button type="button" class="btn ghost small" id="btn-private-attach-master">📎 Allega immagine</button>
+        <span class="muted" id="private-image-status-master" style="font-size:11px;"></span>
+      </div>
+      <div id="private-image-preview-master" style="margin-top:6px;"></div>
       <button class="btn amber" id="btn-private-send-master" style="width:100%;margin-top:6px;">Invia</button>
     `;
     document.getElementById('private-thread-select').onchange = (e)=>{
       masterPrivateThread = e.target.value;
       renderPrivateChatMaster(code, players);
     };
+    pendingChatImage.privateMaster = null;
+    const privImgInput = document.getElementById('private-image-input-master');
+    const privImgStatus = document.getElementById('private-image-status-master');
+    const privImgPreview = document.getElementById('private-image-preview-master');
+    document.getElementById('btn-private-attach-master').onclick = ()=> privImgInput.click();
+    privImgInput.onchange = async ()=>{
+      const file = privImgInput.files[0];
+      if(!file) return;
+      privImgStatus.textContent = 'Caricamento...';
+      const url = await uploadChatImage(code, file);
+      if(url){
+        pendingChatImage.privateMaster = url;
+        privImgStatus.textContent = '';
+        privImgPreview.innerHTML = `<img src="${escapeAttr(url)}" style="max-height:80px;border-radius:6px;" /> <button type="button" class="btn ghost small" id="btn-private-image-remove-master">✕ rimuovi</button>`;
+        document.getElementById('btn-private-image-remove-master').onclick = ()=>{ pendingChatImage.privateMaster=null; privImgPreview.innerHTML=''; privImgInput.value=''; };
+      } else {
+        privImgStatus.textContent = 'Errore upload: ' + (lastApiError||'sconosciuto');
+      }
+    };
     document.getElementById('btn-private-send-master').onclick = async ()=>{
       const ta = document.getElementById('private-text-master');
-      if(!ta.value.trim() || !masterPrivateThread) return;
-      await pushPrivateLog(code, masterPrivateThread, { who:'Master', role:'gm', text: ta.value.trim() });
+      const img = pendingChatImage.privateMaster;
+      if(!ta.value.trim() && !img) return;
+      if(!masterPrivateThread) return;
+      await pushPrivateLog(code, masterPrivateThread, { who:'Master', role:'gm', text: ta.value.trim() || '(immagine)', meta: img ? { image: img } : null });
       ta.value='';
+      pendingChatImage.privateMaster = null;
       renderPrivateChatMaster(code, players);
     };
     const logLive = document.getElementById('private-log-live-master');
@@ -6039,6 +6083,63 @@
     });
   }
 
+  function escapeRegex(s){ return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+  // Trasforma i nomi di Digimon presenti nel Digidex, quando compaiono nel testo di un messaggio,
+  // in tag cliccabili che aprono la scheda del Digidex in pop-up.
+  function linkifyDexTags(escapedHtml){
+    if(!cachedDex || cachedDex.length===0) return escapedHtml;
+    const uniqueNames = Array.from(new Set(cachedDex.map(e=>e.name).filter(Boolean))).sort((a,b)=>b.length-a.length);
+    if(uniqueNames.length===0) return escapedHtml;
+    const alternation = uniqueNames.map(n=>escapeRegex(escapeHTML(n))).join('|');
+    let pattern;
+    try{
+      pattern = new RegExp('(?<![\\w-])(' + alternation + ')(?![\\w-])', 'gi');
+    }catch(e){
+      // Fallback per motori senza supporto al lookbehind
+      pattern = new RegExp('\\b(' + alternation + ')\\b', 'gi');
+    }
+    return escapedHtml.replace(pattern, (m)=> `<span class="dex-tag" data-dex-tag="${escapeAttr(m)}" style="color:var(--cyan);cursor:pointer;text-decoration:underline dotted;">📖 ${m}</span>`);
+  }
+
+  function showDexCardModal(entry){
+    if(!entry) return;
+    let overlay = document.getElementById('dex-card-modal-overlay');
+    if(!overlay){
+      overlay = document.createElement('div');
+      overlay.id = 'dex-card-modal-overlay';
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(4,8,14,0.82);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px;';
+      overlay.onclick = (e)=>{ if(e.target===overlay) overlay.remove(); };
+      document.body.appendChild(overlay);
+    }
+    const isMaster = session && session.role==='master';
+    const hidden = !entry.discovered && !isMaster;
+    const bs = entry.base_stats || {};
+    const hasStats = bs.baseAccuracy || bs.baseDamage || bs.baseDodge || bs.baseArmor || bs.baseHealth;
+    const catData = entry.categories ? splitCategoriesAttribute(entry.categories) : { attribute:null, family:[] };
+    overlay.innerHTML = `
+      <div class="hud-frame" style="max-width:420px;width:100%;padding:20px;max-height:85vh;overflow-y:auto;" onclick="event.stopPropagation()">
+        <div class="flex-between" style="margin-bottom:10px;">
+          <div class="section-title" style="margin:0;border:none;padding:0;">${hidden ? '???' : escapeHTML(entry.name)}</div>
+          <button class="btn ghost small" id="btn-dex-card-close">✕</button>
+        </div>
+        ${hidden ? `<div class="muted">Questo Digimon non è ancora stato scoperto nel Digidex.</div>` : `
+          ${entry.image_url ? `<img src="${escapeAttr(entry.image_url)}" style="width:100%;border-radius:8px;margin-bottom:10px;" onerror="this.style.display='none'" />` : ''}
+          <div style="margin-bottom:6px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+            ${entry.stage ? `<span class="tag">${escapeHTML(entry.stage)}</span>` : ''}
+            ${attributeBadgeHTML(catData.attribute)}
+            ${catData.family.map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}
+          </div>
+          ${entry.description ? `<div class="sub" style="margin-bottom:8px;">${escapeHTML(entry.description)}</div>` : ''}
+          ${hasStats ? `<div class="muted" style="font-size:11px;margin-bottom:6px;">ACC ${bs.baseAccuracy||0} · DMG ${bs.baseDamage||0} · DODGE ${bs.baseDodge||0} · ARM ${bs.baseArmor||0} · HP ${bs.baseHealth||0}</div>` : ''}
+          ${entry.signature_move ? `<div class="muted" style="font-size:11px;margin-bottom:6px;">⚡ ${escapeHTML(entry.signature_move)}</div>` : ''}
+          <a href="dex.html" target="_blank" class="btn ghost small" style="text-decoration:none;">📖 Apri nel Digidex completo →</a>
+        `}
+      </div>
+    `;
+    document.getElementById('btn-dex-card-close').onclick = ()=> overlay.remove();
+  }
+
   function logHTML(log, canModerate){
     if(!log || log.length===0) return '<div class="muted">Il registro è vuoto. Le azioni appariranno qui.</div>';
     return log.map(l=>{
@@ -6068,7 +6169,7 @@
           <div>${l.meta && l.meta.avatar ? `<img class="who-avatar" src="${escapeAttr(l.meta.avatar)}" onerror="this.style.display='none'" />` : ''}<span class="who mono" ${l.meta && l.meta.color ? `style="color:${escapeAttr(l.meta.color)};"` : ''}>${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span></div>
           ${canModerate ? `<div><button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;">✎</button><button class="btn ghost small" data-log-del="${l.id}" style="padding:2px 6px;">✕</button></div>` : ''}
         </div>
-        <div class="txt${l.meta && l.meta.digimoji ? ' digimoji-text' : ''}" ${l.meta && l.meta.digimoji ? `title="${escapeAttr(displayText)}"` : ''}>${escapeHTML(displayText)}</div>
+        <div class="txt${l.meta && l.meta.digimoji ? ' digimoji-text' : ''}" ${l.meta && l.meta.digimoji ? `title="${escapeAttr(displayText)}"` : ''}>${linkifyDexTags(escapeHTML(displayText))}</div>
         ${l.meta && l.meta.digimoji ? `<div class="muted" style="font-size:10px;margin-top:2px;">(scritto in Digimoji — passa il mouse per leggere in chiaro)</div>` : ''}
         ${l.meta && l.meta.image ? `<a href="${escapeAttr(l.meta.image)}" target="_blank"><img src="${escapeAttr(l.meta.image)}" style="max-width:220px;max-height:220px;border-radius:8px;margin-top:6px;display:block;" onerror="this.style.display='none'" /></a>` : ''}
         ${diceHTML}
@@ -6085,6 +6186,13 @@
       const editBtn = e.target.closest('[data-log-edit]');
       const delBtn = e.target.closest('[data-log-del]');
       const fulfillBtn = e.target.closest('[data-fulfill-target]');
+      const dexTag = e.target.closest('[data-dex-tag]');
+      if(dexTag){
+        const name = dexTag.getAttribute('data-dex-tag');
+        const entry = (cachedDex||[]).find(d=>d.name && d.name.toLowerCase()===String(name).toLowerCase());
+        if(entry) showDexCardModal(entry);
+        return;
+      }
       if(editBtn){
         const id = editBtn.getAttribute('data-log-edit');
         const entry = cachedLog.find(l=>String(l.id)===String(id));

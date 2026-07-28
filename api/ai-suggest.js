@@ -4,14 +4,28 @@ module.exports = async (req, res) => {
       res.setHeader('Allow', 'POST');
       return res.status(405).json({ error: 'method not allowed' });
     }
-    const { digimonName, personality, context } = req.body || {};
+    const { digimonName, personality, context, mode } = req.body || {};
     if (!process.env.GEMINI_API_KEY) {
       return res.status(500).json({ error: 'GEMINI_API_KEY non configurata su Vercel' });
     }
 
-    const system = "Sei un aiuto-regista per un gioco di ruolo testuale ambientato nel mondo di Digimon. Genera esattamente 3 possibili battute brevi (massimo 20 parole ciascuna) che il Digimon indicato potrebbe pronunciare ora, coerenti con la sua personalità e con il contesto recente. Rispondi SOLO con un array JSON di 3 stringhe in italiano, senza altro testo, senza markdown.";
+    const isAttackNarration = mode === 'narrazione-attacco';
+    const wantedLines = isAttackNarration ? 1 : 3;
 
-    const userText = `Digimon: ${digimonName || 'Digimon'}\nPersonalità: ${personality || 'non specificata, usa un tono neutro da compagno leale'}\nContesto recente:\n${context || '(nessun contesto precedente)'}`;
+    // Nonce di variazione: non viene mai citato nella risposta, serve solo a impedire
+    // che, a parita' di attacco/contesto, il modello tenda a ripetere la stessa frase.
+    const varietyNonce = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const system = isAttackNarration
+      ? "Sei il narratore di combattimento per un gioco di ruolo testuale ambientato nel mondo di Digimon. " +
+        "Il messaggio dell'utente descrive un attacco (con nome, tag ed eventuale descrizione di riferimento) che un Digimon sta eseguendo ORA, anche quando l'attacco non ha una descrizione ufficiale predefinita. " +
+        "Genera ESATTAMENTE 1 frase narrativa originale (massimo 25 parole), in italiano, che descriva l'attacco in azione in modo vivido e coerente col nome, i tag e lo stile della descrizione di riferimento se presente. " +
+        "Ogni volta che ricevi questa richiesta, anche per lo stesso identico attacco, DEVI produrre una formulazione diversa dalle precedenti: cambia verbi, immagini, ritmo e dettagli sensoriali, senza mai riciclare la stessa frase o struttura di frase. " +
+        "Non ripetere mai testualmente la descrizione di riferimento: usala solo come ispirazione di tono. " +
+        "Rispondi SOLO con un array JSON contenente ESATTAMENTE 1 stringa in italiano, senza markdown, senza altro testo."
+      : "Sei un aiuto-regista per un gioco di ruolo testuale ambientato nel mondo di Digimon. Genera esattamente 3 possibili battute brevi (massimo 20 parole ciascuna) che il Digimon indicato potrebbe pronunciare ora, coerenti con la sua personalità e con il contesto recente. Rispondi SOLO con un array JSON di 3 stringhe in italiano, senza altro testo, senza markdown.";
+
+    const userText = `Digimon: ${digimonName || 'Digimon'}\nPersonalità: ${personality || 'non specificata, usa un tono neutro da compagno leale'}\nContesto recente:\n${context || '(nessun contesto precedente)'}\n\n[variazione interna, non citare: ${varietyNonce}]`;
 
     const model = 'gemini-flash-latest';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
@@ -22,7 +36,12 @@ module.exports = async (req, res) => {
       body: JSON.stringify({
         system_instruction: { parts: [{ text: system }] },
         contents: [{ parts: [{ text: userText.slice(0, 4000) }] }],
-        generationConfig: { responseMimeType: 'application/json' }
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: isAttackNarration ? 1.15 : 0.9,
+          topP: 0.97,
+          topK: 64
+        }
       })
     });
 
@@ -41,7 +60,9 @@ module.exports = async (req, res) => {
     } catch (e) {
       lines = [raw || '(nessuna risposta generata, riprova)'];
     }
-    return res.status(200).json({ lines: lines.slice(0, 3) });
+    lines = lines.filter(l => typeof l === 'string' && l.trim().length > 0);
+    if (lines.length === 0) lines = ['(nessuna risposta generata, riprova)'];
+    return res.status(200).json({ lines: lines.slice(0, wantedLines) });
   } catch (e) {
     return res.status(500).json({ error: e.message || String(e) });
   }
