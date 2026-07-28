@@ -15,7 +15,7 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'POST') {
-      const { code, name, stage, description, imageUrl, addedBy, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered, attribute, family, originType, signatureMove, slideEvolution } = req.body || {};
+      const { code, name, stage, description, imageUrl, addedBy, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered, attribute, family, originType, signatureMove, slideEvolution, digimental, attackDesc } = req.body || {};
       const campaignCode = cleanCode(code);
       if (!campaignCode || !name) return res.status(400).json({ error: 'missing code or name' });
       await supabase.from('campaigns').upsert({ code: campaignCode }, { onConflict: 'code' });
@@ -37,14 +37,16 @@ module.exports = async (req, res) => {
         family: family || '',
         origin_type: originType || '',
         signature_move: String(signatureMove || '').slice(0, 300),
-        slide_evolution: !!slideEvolution
+        slide_evolution: !!slideEvolution,
+        digimental: String(digimental || '').slice(0, 80),
+        attack_desc: String(attackDesc || '').slice(0, 500)
       }).select().single();
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ entry: data });
     }
 
     if (req.method === 'PUT') {
-      const { code, id, name, stage, description, imageUrl, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered, attribute, family, originType, signatureMove, slideEvolution } = req.body || {};
+      const { code, id, name, stage, description, imageUrl, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered, attribute, family, originType, signatureMove, slideEvolution, digimental, attackDesc } = req.body || {};
       const campaignCode = cleanCode(code);
       if (!campaignCode || !id) return res.status(400).json({ error: 'missing code or id' });
       const { error } = await supabase.from('dex_entries').update({
@@ -63,7 +65,9 @@ module.exports = async (req, res) => {
         family: family || '',
         origin_type: originType || '',
         signature_move: String(signatureMove || '').slice(0, 300),
-        slide_evolution: !!slideEvolution
+        slide_evolution: !!slideEvolution,
+        digimental: String(digimental || '').slice(0, 80),
+        attack_desc: String(attackDesc || '').slice(0, 500)
       }).eq('campaign_code', campaignCode).eq('id', id);
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true });
