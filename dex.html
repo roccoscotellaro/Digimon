@@ -219,8 +219,11 @@
 
   function evolutionChartHTML(entry, graph){
     if(!graph || graph.nodes.length<=1 || graph.nodes.length>18) return '';
-    const byId = {};
-    graph.nodes.forEach(n=>{ byId[String(n.id)] = n; });
+    const byIdFull = {};
+    cachedDex.forEach(e=>{ byIdFull[String(e.id)] = e; }); // tutto il dex, non solo i nodi già raccolti nel grafo:
+    // serve per controllare lo Stage del genitore anche quando il genitore stesso non compare in QUESTO albero
+    // (es. guardando Paildramon, "Omnimon" non è nel grafo ma serve comunque per capire che Omnimon Merciful
+    // Mode è un salto di livello e non una sua evoluzione diretta).
     const columns = {};
     STAGE_ORDER.forEach(s=>columns[s]=[]);
     const extra = [];
@@ -233,7 +236,7 @@
       // altra origine: l'unico criterio è che lo Stage non cambi rispetto al genitore.
       const parents = n.evolves_from || n.evolvesFrom || [];
       const isSameTierLeap = parents.some(p=>{
-        const parent = p.id!=null ? byId[String(p.id)] : null;
+        const parent = p.id!=null ? byIdFull[String(p.id)] : null;
         return parent && parent.stage === n.stage;
       });
       if(isSameTierLeap){ fusionColumn.push(n); }
