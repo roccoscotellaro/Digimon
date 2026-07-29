@@ -759,6 +759,11 @@ Devimon: https://..."></textarea>
       {name:'Imperialdramon Paladin Mode', stage:'Mega', evolvesFromNames:['Imperialdramon Fighter Mode','Omnimon']},
       {name:'Omnimon Merciful Mode', stage:'Mega', desc:'Forma angelica di Omnimon, con ali candide e "Photon Spreads" simili a lacrime di luce che ne percorrono il corpo: nasce dalla tristezza e dalla determinazione di dover giudicare Digimon corrotti che meritavano ancora salvezza.', signatureMove:'Fearsome Blade — [MELEE][DAMAGE 21-23]', attackDesc:'Abbatte il bersaglio con un unico fendente della propria katana, la Fearsome Blade nata dalla trasformazione della Grey Sword, con il cuore colmo di rimpianto.', stats:{baseAccuracy:16, baseDamage:20, baseDodge:14, baseArmor:11, baseHealth:13}, evolvesFromNames:['Omnimon']},
     ]},
+    { line:'Imperialdramon Dragon Mode', attribute:'Free', family:'Unknown', chain:[
+      {name:'Paildramon', stage:'Ultimate', evolvesToNames:['Imperialdramon Dragon Mode']},
+      {name:'Imperialdramon Dragon Mode', stage:'Mega', evolvesFromNames:['Paildramon'], evolvesToNames:['Imperialdramon Fighter Mode']},
+      {name:'Imperialdramon Fighter Mode', stage:'Mega', evolvesFromNames:['Imperialdramon Dragon Mode'], evolvesToNames:['Imperialdramon Paladin Mode']},
+    ]},
   ];
 
   function openImportModal(seedList, title){
