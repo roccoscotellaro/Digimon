@@ -266,15 +266,32 @@
     svg.setAttribute('width', w);
     svg.setAttribute('height', h);
     svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    // Contiamo quante volte ogni colonna (stessa X, cioè stesso Stage) ha già un collegamento verticale,
+    // per scostare leggermente le linee successive ed evitare che si sovrappongano esattamente.
+    const columnLineCount = {};
     svg.innerHTML = edges.map((ed,i)=>{
       const a = document.getElementById('chart-node-'+ed.from);
       const b = document.getElementById('chart-node-'+ed.to);
       if(!a || !b) return '';
       const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
+      const color = i%2===0 ? 'rgba(255,150,60,0.85)' : 'rgba(110,220,140,0.85)';
+      const sameColumn = Math.abs(((ar.left+ar.right)/2) - ((br.left+br.right)/2)) < 8;
+      if(sameColumn){
+        // Stessa colonna (es. Slide Evolution tra forme dello stesso Stage): basta una linea verticale
+        // a lato del riquadro, così non attraversa mai i nodi intermedi.
+        const colX = (ar.left+ar.right)/2 - wrapRect.left + wrap.scrollLeft;
+        const key = Math.round(colX);
+        const n = columnLineCount[key] || 0;
+        columnLineCount[key] = n + 1;
+        const sideX = colX + ar.width/2 + 10 + n*7;
+        const top = Math.min(ar.top, br.top), bottom = Math.max(ar.bottom, br.bottom);
+        const y1 = (ar.top < br.top ? ar.top + ar.height/2 : br.top + br.height/2) - wrapRect.top + wrap.scrollTop;
+        const y2 = (ar.top < br.top ? br.top + br.height/2 : ar.top + ar.height/2) - wrapRect.top + wrap.scrollTop;
+        return `<path d="M ${colX} ${y1} L ${sideX} ${y1} L ${sideX} ${y2} L ${colX} ${y2}" stroke="${color}" stroke-width="1.6" fill="none"/>`;
+      }
       const x1 = ar.right - wrapRect.left + wrap.scrollLeft, y1 = ar.top + ar.height/2 - wrapRect.top + wrap.scrollTop;
       const x2 = br.left - wrapRect.left + wrap.scrollLeft, y2 = br.top + br.height/2 - wrapRect.top + wrap.scrollTop;
       const midX = (x1+x2)/2;
-      const color = i%2===0 ? 'rgba(255,150,60,0.85)' : 'rgba(110,220,140,0.85)';
       return `<path d="M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}" stroke="${color}" stroke-width="1.6" fill="none"/>`;
     }).join('');
   }
@@ -736,6 +753,11 @@ Devimon: https://..."></textarea>
       {name:'Curimon', stage:'Fresh', desc:'Piccolo Digimon dal corpo tondo e curioso di tutto ciò che gli capita a tiro, primissimo stadio prima di Gammamon: già manifesta la stessa vivacità irrequieta.', signatureMove:'Bubble Blow — [RANGE][DAMAGE 2-4]', attackDesc:'Rilascia un debole spruzzo di bolle mentre rotola sul posto.', stats:{baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:2}, evolvesToNames:['Gurimon']},
       {name:'Gurimon', stage:'Baby', desc:'Digimon dal corpo tondeggiante con due piccole corna appena spuntate, secondo stadio prima di Gammamon: morde tutto ciò che gli capita a tiro per pura curiosità.', signatureMove:'Horn Bump — [MELEE][DAMAGE 3-5]', attackDesc:'Incorna il bersaglio con un colpo secco delle proprie piccole corna.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:2, baseArmor:2, baseHealth:2}, evolvesFromNames:['Curimon'], evolvesToNames:['Gammamon']},
       {name:'Gammamon', stage:'Rookie', desc:'Digimon Ceratopside raro e di recente scoperta, dalle due corna robuste usate sia in attacco che in difesa: mostra raramente le proprie emozioni, ma si affeziona profondamente a chi riesce a conquistare la sua fiducia.', signatureMove:'Horn Attack — [MELEE][DAMAGE 6-8]', attackDesc:'Carica a testa bassa colpendo con le proprie corna robuste.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:4, baseArmor:4, baseHealth:4}, evolvesFromNames:['Gurimon']},
+    ]},
+    { line:'Omnimon Merciful Mode', attribute:'Vaccine', family:'Unknown', chain:[
+      {name:'Omnimon', stage:'Mega', evolvesToNames:['Imperialdramon Paladin Mode','Omnimon Merciful Mode']},
+      {name:'Imperialdramon Paladin Mode', stage:'Mega', evolvesFromNames:['Imperialdramon Fighter Mode','Omnimon']},
+      {name:'Omnimon Merciful Mode', stage:'Mega', desc:'Forma angelica di Omnimon, con ali candide e "Photon Spreads" simili a lacrime di luce che ne percorrono il corpo: nasce dalla tristezza e dalla determinazione di dover giudicare Digimon corrotti che meritavano ancora salvezza.', signatureMove:'Fearsome Blade — [MELEE][DAMAGE 21-23]', attackDesc:'Abbatte il bersaglio con un unico fendente della propria katana, la Fearsome Blade nata dalla trasformazione della Grey Sword, con il cuore colmo di rimpianto.', stats:{baseAccuracy:16, baseDamage:20, baseDodge:14, baseArmor:11, baseHealth:13}, evolvesFromNames:['Omnimon']},
     ]},
   ];
 
