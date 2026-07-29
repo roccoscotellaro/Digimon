@@ -229,7 +229,7 @@
   }
 
   function evolutionChartHTML(entry, graph){
-    if(!graph || graph.nodes.length<=1 || graph.nodes.length>40) return '';
+    if(!graph || graph.nodes.length<=1) return '';
     const byIdFull = {};
     cachedDex.forEach(e=>{ byIdFull[String(e.id)] = e; }); // tutto il dex, non solo i nodi già raccolti nel grafo:
     // serve per controllare lo Stage del genitore anche quando il genitore stesso non compare in QUESTO albero
