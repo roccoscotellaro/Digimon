@@ -1826,6 +1826,7 @@ Devimon: https://..."></textarea>
     if(!draft.qualities) draft.qualities = [];
     if(!draft.categories) draft.categories = [];
     if(!draft.extraAttacks) draft.extraAttacks = draft.extra_attacks || [];
+    if(!draft.slideTargets) draft.slideTargets = draft.slide_targets || [];
     const bs = draft.base_stats || {};
 
     const overlay = document.createElement('div');
@@ -1878,6 +1879,12 @@ Devimon: https://..."></textarea>
         <div class="field"><label>Type/Group (separati da virgola — es. Dinosaur, Royal Knights)</label><input type="text" id="ed-categories" value="${escapeAttr((draft.categories||[]).join(', '))}" /></div>
         <label style="font-size:11px;display:flex;align-items:center;gap:6px;margin:6px 0;"><input type="checkbox" id="ed-discovered" ${draft.discovered?'checked':''} /> Scoperto dai giocatori</label>
         <label style="font-size:11px;display:flex;align-items:center;gap:6px;margin:6px 0;"><input type="checkbox" id="ed-slide" ${draft.slide_evolution?'checked':''} /> 🔄 Ha la possibilità di Slide Evolution (indipendente dall'Origine — es. tutti gli Spirit)</label>
+        <div class="muted" style="margin-bottom:6px;">🔄 In cosa può Slide Evolvere (diverso da "Possibili Evoluzioni": stesso Stage, nessun consumo di Stage)</div>
+        <div id="ed-slidelist"></div>
+        <div class="row">
+          <input type="text" id="ed-slide-name" list="dex-species-list" placeholder="Cerca un Digimon già nel Dex..." style="flex:2;" />
+          <button class="btn small" id="btn-slide-add" style="flex:1;">Aggiungi</button>
+        </div>
         <div class="divider"></div>
         <div class="muted" style="margin-bottom:6px;">Stat Base (Combattimento)</div>
         <div class="row">
@@ -1975,10 +1982,19 @@ Devimon: https://..."></textarea>
         b.onclick = ()=>{ draft.extraAttacks.splice(Number(b.getAttribute('data-rmattack')),1); renderAttackList(); };
       });
     }
+    function renderSlideList(){
+      document.getElementById('ed-slidelist').innerHTML = draft.slideTargets.length===0
+        ? '<div class="muted" style="margin-bottom:6px;">Nessuno Slide Target.</div>'
+        : draft.slideTargets.map((n,i)=>`<div class="flex-between" style="margin-bottom:4px;"><span>${escapeHTML(n)}</span><button class="btn ghost small" data-rmslide="${i}">Rimuovi</button></div>`).join('');
+      document.querySelectorAll('[data-rmslide]').forEach(b=>{
+        b.onclick = ()=>{ draft.slideTargets.splice(Number(b.getAttribute('data-rmslide')),1); renderSlideList(); };
+      });
+    }
     renderEvoList();
     renderPreEvoList();
     renderQualList();
     renderAttackList();
+    renderSlideList();
 
     function resolveSpeciesLink(name, manualImg){
       const match = cachedDex.find(e=>e.name.trim().toLowerCase()===name.trim().toLowerCase());
@@ -1998,6 +2014,13 @@ Devimon: https://..."></textarea>
       draft.evolvesFrom.push(resolveSpeciesLink(n, document.getElementById('ed-preevo-img').value.trim()));
       document.getElementById('ed-preevo-name').value=''; document.getElementById('ed-preevo-img').value='';
       renderPreEvoList();
+    };
+    document.getElementById('btn-slide-add').onclick = ()=>{
+      const n = document.getElementById('ed-slide-name').value.trim();
+      if(!n) return;
+      draft.slideTargets.push(n);
+      document.getElementById('ed-slide-name').value='';
+      renderSlideList();
     };
     document.getElementById('btn-attack-add').onclick = ()=>{
       const move = document.getElementById('ed-attack-move').value.trim();
@@ -2034,6 +2057,7 @@ Devimon: https://..."></textarea>
         originType: document.getElementById('ed-origin').value,
         discovered: document.getElementById('ed-discovered').checked,
         slideEvolution: document.getElementById('ed-slide').checked,
+        slideTargets: draft.slideTargets,
         baseStats: {
           baseAccuracy: Number(document.getElementById('ed-acc').value)||0,
           baseDamage: Number(document.getElementById('ed-dmg').value)||0,
