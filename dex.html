@@ -161,32 +161,64 @@
   const STAGE_COLORS = { 'Fresh':'#9a9a9a', 'Baby':'#e6564f', 'Rookie':'#e8c14a', 'Champion':'#57c76b', 'Ultimate':'#4fa9e8', 'Mega':'#b48ce8' };
 
   function evolutionFamilyGraph(entry){
-    if(!entry || entry.id==null) return { nodes:[], edges:[] };
+    if(!entry || entry.id==null) return { nodes:[], edges:[], armorNodes:[] };
     const byId = {};
     cachedDex.forEach(e=>{ byId[String(e.id)] = e; });
     const nodes = new Map();
     const edges = [];
-    function explore(e, seen){
+    const armorNodes = new Map();
+    const isArmor = e => e && e.origin_type === 'armor';
+
+    // Discendenti: SOLO seguendo "evolutions" in avanti (mai a ritroso da un discendente).
+    // Così non si "incrociano" mai altre linee che condividono un antenato comune.
+    function descend(e, seen){
       if(!e || e.id==null || seen.has(String(e.id))) return;
       seen.add(String(e.id));
-      nodes.set(String(e.id), e);
+      if(!isArmor(e)) nodes.set(String(e.id), e);
       (e.evolutions||[]).forEach(ev=>{
         const t = ev.id!=null ? byId[String(ev.id)] : null;
-        if(t){ edges.push({ from:String(e.id), to:String(t.id) }); explore(t, seen); }
-      });
-      (e.evolves_from||e.evolvesFrom||[]).forEach(ev=>{
-        const t = ev.id!=null ? byId[String(ev.id)] : null;
-        if(t){ edges.push({ from:String(t.id), to:String(e.id) }); explore(t, seen); }
+        if(!t) return;
+        if(isArmor(t)){ armorNodes.set(String(t.id), t); return; } // le Armor si vedono a parte, non nel grafo principale
+        edges.push({ from:String(e.id), to:String(t.id) });
+        descend(t, seen);
       });
     }
-    explore(entry, new Set());
+    // Antenati: SOLO seguendo "evolvesFrom" a ritroso (mai in avanti da un antenato,
+    // quindi non si aprono i "fratelli"/altre linee che condividono lo stesso antenato).
+    function ascend(e, seen){
+      if(!e || e.id==null || seen.has(String(e.id))) return;
+      seen.add(String(e.id));
+      if(!isArmor(e)) nodes.set(String(e.id), e);
+      (e.evolves_from||e.evolvesFrom||[]).forEach(ev=>{
+        const t = ev.id!=null ? byId[String(ev.id)] : null;
+        if(!t || isArmor(t)) return;
+        edges.push({ from:String(t.id), to:String(e.id) });
+        ascend(t, seen);
+      });
+    }
+    if(!isArmor(entry)) nodes.set(String(entry.id), entry);
+    descend(entry, new Set());
+    ascend(entry, new Set());
     const edgeKeys = new Set();
     const uniqueEdges = edges.filter(ed=>{ const k=ed.from+'>'+ed.to; if(edgeKeys.has(k)) return false; edgeKeys.add(k); return true; });
-    return { nodes: Array.from(nodes.values()), edges: uniqueEdges };
+    return { nodes: Array.from(nodes.values()), edges: uniqueEdges, armorNodes: Array.from(armorNodes.values()) };
+  }
+
+  function armorEvolutionsHTML(armorNodes){
+    if(!armorNodes || !armorNodes.length) return '';
+    return `<div class="muted" style="margin:10px 0 4px;">🛡️ Evoluzioni Armor disponibili</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        ${armorNodes.map(n=>`
+          <div style="display:flex;flex-direction:column;align-items:center;width:56px;cursor:pointer;" data-nav-evo="${n.id}">
+            ${n.image_url ? `<img src="${escapeAttr(n.image_url)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:1px solid var(--violet, #b98cf0);" onerror="this.style.visibility='hidden'"/>` : `<div style="width:40px;height:40px;border-radius:50%;background:var(--panel-2);border:1px solid var(--violet, #b98cf0);"></div>`}
+            <div class="muted" style="font-size:9px;text-align:center;margin-top:2px;color:var(--violet, #b98cf0);">${escapeHTML(n.name)}</div>
+          </div>
+        `).join('')}
+      </div>`;
   }
 
   function evolutionChartHTML(entry, graph){
-    if(!graph || graph.nodes.length<=1) return '';
+    if(!graph || graph.nodes.length<=1 || graph.nodes.length>18) return '';
     const columns = {};
     STAGE_ORDER.forEach(s=>columns[s]=[]);
     const extra = [];
@@ -606,6 +638,7 @@ Devimon: https://..."></textarea>
         ${(()=>{ const graph = evolutionFamilyGraph(entry); const chart = evolutionChartHTML(entry, graph);
           return chart || (evolutionsHTML(entry.evolvesFrom || entry.evolves_from, 'Pre-Evoluzioni (da cosa evolve)') + evolutionsHTML(entry.evolutions, 'Possibili Evoluzioni (in cosa evolve)'));
         })()}
+        ${armorEvolutionsHTML(evolutionFamilyGraph(entry).armorNodes)}
         ${qualitiesHTML(entry.qualities, entry.dp_total)}
         ${entry.added_by ? `<div class="muted" style="margin-top:8px;">Aggiunto da ${escapeHTML(entry.added_by)}</div>` : ''}
         ${isMaster ? `<div class="divider"></div><div class="row"><button class="btn amber" id="btn-edit-entry" style="flex:2;">Modifica</button><button class="btn ghost" id="btn-delete-entry-detail" style="flex:1;color:var(--danger);border-color:rgba(255,93,93,0.4);">🗑 Elimina</button></div>` : ''}
