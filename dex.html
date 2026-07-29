@@ -219,10 +219,27 @@
 
   function evolutionChartHTML(entry, graph){
     if(!graph || graph.nodes.length<=1 || graph.nodes.length>18) return '';
+    const byId = {};
+    graph.nodes.forEach(n=>{ byId[String(n.id)] = n; });
     const columns = {};
     STAGE_ORDER.forEach(s=>columns[s]=[]);
     const extra = [];
-    graph.nodes.forEach(n=>{ if(columns[n.stage]) columns[n.stage].push(n); else extra.push(n); });
+    const fusionColumn = [];
+    graph.nodes.forEach(n=>{
+      // Se anche un solo genitore è già allo stesso Stage del risultato (Fighter Mode+Omnimon -> Paladin Mode,
+      // ma anche il semplice Omnimon -> Omnimon Merciful Mode, o una Burst Mode) non è una "prossima evoluzione"
+      // normale: è un salto ulteriore che merita il proprio quadrato laterale, non va impilato nella colonna
+      // dello Stage insieme alle evoluzioni sequenziali vere e proprie. Vale per Jogress, Burst Mode o qualunque
+      // altra origine: l'unico criterio è che lo Stage non cambi rispetto al genitore.
+      const parents = n.evolves_from || n.evolvesFrom || [];
+      const isSameTierLeap = parents.some(p=>{
+        const parent = p.id!=null ? byId[String(p.id)] : null;
+        return parent && parent.stage === n.stage;
+      });
+      if(isSameTierLeap){ fusionColumn.push(n); }
+      else if(columns[n.stage]) columns[n.stage].push(n);
+      else extra.push(n);
+    });
     const stagesPresent = STAGE_ORDER.filter(s=>columns[s].length);
     return `<div class="muted" style="margin:10px 0 4px;">Linea Evolutiva Completa (con diramazioni)</div>
       <div id="evo-chart-wrap" style="position:relative;overflow-x:auto;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:14px;">
@@ -241,6 +258,19 @@
               </div>
             </div>
           `).join('')}
+          ${fusionColumn.length ? `<div style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
+            <div style="font-size:9px;font-weight:bold;color:#e07fe0;margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px;">⚡ Evoluzione Ulteriore</div>
+            <div style="display:flex;flex-direction:column;gap:16px;">
+              ${fusionColumn.map(n=>{
+                const icon = n.origin_type==='jogress' ? '🤝' : (n.origin_type==='burst' ? '🔥' : '⚡');
+                return `
+                <div id="chart-node-${n.id}" data-nav-evo="${n.id}" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;width:68px;padding:4px;border-radius:6px;background:${String(n.id)===String(entry.id)?'rgba(255,193,74,0.18)':'transparent'};border:1px solid ${String(n.id)===String(entry.id)?'var(--amber)':'#e07fe0'};">
+                  ${n.image_url ? `<img src="${escapeAttr(n.image_url)}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;" onerror="this.style.visibility='hidden'"/>` : `<div style="width:38px;height:38px;border-radius:50%;background:var(--panel);border:1px solid #e07fe0;"></div>`}
+                  <div class="muted" style="font-size:8px;text-align:center;margin-top:3px;line-height:1.2;">${icon} ${escapeHTML(n.name)}</div>
+                </div>
+              `;}).join('')}
+            </div>
+          </div>` : ''}
           ${extra.length ? `<div style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
             <div style="font-size:9px;font-weight:bold;color:#ccc;margin-bottom:10px;text-transform:uppercase;">Altro</div>
             <div style="display:flex;flex-direction:column;gap:16px;">
@@ -278,16 +308,15 @@
       const sameColumn = Math.abs(((ar.left+ar.right)/2) - ((br.left+br.right)/2)) < 8;
       if(sameColumn){
         // Stessa colonna (es. Slide Evolution tra forme dello stesso Stage): basta una linea verticale
-        // a lato del riquadro, così non attraversa mai i nodi intermedi.
-        const colX = (ar.left+ar.right)/2 - wrapRect.left + wrap.scrollLeft;
-        const key = Math.round(colX);
+        // a lato del riquadro, così non attraversa mai i nodi intermedi né taglia dentro le icone.
+        const edgeX = Math.max(ar.right, br.right) - wrapRect.left + wrap.scrollLeft;
+        const key = Math.round((ar.left+ar.right)/2);
         const n = columnLineCount[key] || 0;
         columnLineCount[key] = n + 1;
-        const sideX = colX + ar.width/2 + 10 + n*7;
-        const top = Math.min(ar.top, br.top), bottom = Math.max(ar.bottom, br.bottom);
+        const sideX = edgeX + 10 + n*7;
         const y1 = (ar.top < br.top ? ar.top + ar.height/2 : br.top + br.height/2) - wrapRect.top + wrap.scrollTop;
         const y2 = (ar.top < br.top ? br.top + br.height/2 : ar.top + ar.height/2) - wrapRect.top + wrap.scrollTop;
-        return `<path d="M ${colX} ${y1} L ${sideX} ${y1} L ${sideX} ${y2} L ${colX} ${y2}" stroke="${color}" stroke-width="1.6" fill="none"/>`;
+        return `<path d="M ${edgeX} ${y1} L ${sideX} ${y1} L ${sideX} ${y2} L ${edgeX} ${y2}" stroke="${color}" stroke-width="1.6" fill="none"/>`;
       }
       const x1 = ar.right - wrapRect.left + wrap.scrollLeft, y1 = ar.top + ar.height/2 - wrapRect.top + wrap.scrollTop;
       const x2 = br.left - wrapRect.left + wrap.scrollLeft, y2 = br.top + br.height/2 - wrapRect.top + wrap.scrollTop;
@@ -729,19 +758,19 @@ Devimon: https://..."></textarea>
     ]},
     { line:'Hiyarimon', attribute:'Free', family:'Unknown', chain:[
       {name:'Hiyarimon', stage:'Baby', desc:'Piccolo Digimon dal corpo tondeggiante sempre ricoperto di neve, che si scioglie sotto il sole e per questo si muove soprattutto di notte: più energico è il ghiacciolo che gli pende dal becco, più è vivace.', signatureMove:'Diamond Dust — [RANGE][DAMAGE 3-5]', attackDesc:'Emette un debole respiro gelido dal becco, sufficiente a far rabbrividire chi gli sta vicino.', stats:{baseAccuracy:2, baseDamage:2, baseDodge:2, baseArmor:1, baseHealth:2}, evolvesToNames:['Bearmon','Blucomon','Penmon','SnowGoblimon']},
-      {name:'Bearmon', stage:'Rookie', desc:'Piccolo orsetto digitale dal carattere ingenuo e giocherellone, sempre pronto a improvvisare acrobazie con il proprio cappello a cilindro.', signatureMove:'Bear Rush — [MELEE][DAMAGE 6-8]', attackDesc:'Carica a testa bassa sfoderando gli artigli, con più entusiasmo che precisione.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:5, baseArmor:3, baseHealth:4}, evolvesFromNames:['Hiyarimon'], attribute:'Vaccine', family:'Nature Spirits'},
+      {name:'Bearmon', stage:'Rookie', desc:'Piccolo orsetto digitale dal carattere ingenuo e giocherellone, sempre pronto a improvvisare acrobazie con il proprio cappello a cilindro.', signatureMove:'Bear Rush — [MELEE][DAMAGE 6-8]', attackDesc:'Carica a testa bassa sfoderando gli artigli, con più entusiasmo che precisione.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:5, baseArmor:3, baseHealth:4}, evolvesFromNames:['Hiyarimon'], evolvesToNames:[], attribute:'Vaccine', family:'Nature Spirits'},
       {name:'Blucomon', stage:'Rookie', desc:'Digimon dal corpo tondo e peloso simile a un piccolo yeti, timido con gli sconosciuti ma capace di lunghe planate grazie alle proprie braccia a forma di ali. Legato da una profonda amicizia con Penmon.', signatureMove:'Snow Wing — [RANGE][DAMAGE 6-8]', attackDesc:'Plana sul bersaglio sollevando un turbine di neve fresca con le proprie braccia-ali.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:5, baseArmor:3, baseHealth:4}, evolvesFromNames:['Hiyarimon'], evolvesToNames:['Paledramon'], attribute:'Data', family:'Unknown'},
       {name:'Paledramon', stage:'Champion', desc:'Evoluzione draconica di Blucomon, corpo ormai quasi interamente di ghiaccio compatto: la fragilità del proprio stadio precedente lascia il posto a una corazza gelida capace di incrinare l\'acciaio.', signatureMove:'Glacier Fang — [MELEE][DAMAGE 9-11]', attackDesc:'Morde con fauci ricoperte di ghiaccio affilato come lame.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:6, baseArmor:6, baseHealth:7}, evolvesFromNames:['Blucomon'], evolvesToNames:['Cryspaledramon']},
       {name:'Cryspaledramon', stage:'Ultimate', desc:'Drago di cristallo di ghiaccio, evoluzione di Paledramon: ogni movimento del proprio corpo scintillante rilascia schegge gelide capaci di squarciare la carne a distanza.', signatureMove:'Crystal Blizzard — [RANGE][DAMAGE 13-15]', attackDesc:'Scaglia una tempesta di schegge di cristallo ghiacciato dal proprio corpo.', stats:{baseAccuracy:10, baseDamage:13, baseDodge:9, baseArmor:8, baseHealth:9}, evolvesFromNames:['Paledramon'], evolvesToNames:['Hexeblaumon']},
-      {name:'Hexeblaumon', stage:'Mega', desc:'Forma suprema della linea di Blucomon, strega glaciale capace di controllare il gelo assoluto: dietro l\'aspetto elegante si cela una delle entità più fredde e letali del Digital World.', signatureMove:'Absolute Zero Hex — [RANGE][DAMAGE 19-21]', attackDesc:'Scatena un incantesimo capace di congelare istantaneamente ogni cosa nel proprio raggio d\'azione.', stats:{baseAccuracy:15, baseDamage:18, baseDodge:13, baseArmor:10, baseHealth:12}, evolvesFromNames:['Cryspaledramon']},
-      {name:'Penmon', stage:'Rookie', desc:'Digimon dall\'aspetto di pulcino di pinguino, goffo fuori dall\'acqua ma sorprendentemente agile quando si tuffa, con un cappellino a punta che non perde mai anche nelle capriole più assurde.', signatureMove:'Penguin Roll — [MELEE][DAMAGE 6-8]', attackDesc:'Si lancia in una capriola scivolosa che travolge il bersaglio di sorpresa.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:5, baseArmor:3, baseHealth:4}, evolvesFromNames:['Hiyarimon'], attribute:'Data', family:'Unknown'},
+      {name:'Hexeblaumon', stage:'Mega', desc:'Forma suprema della linea di Blucomon, strega glaciale capace di controllare il gelo assoluto: dietro l\'aspetto elegante si cela una delle entità più fredde e letali del Digital World.', signatureMove:'Absolute Zero Hex — [RANGE][DAMAGE 19-21]', attackDesc:'Scatena un incantesimo capace di congelare istantaneamente ogni cosa nel proprio raggio d\'azione.', stats:{baseAccuracy:15, baseDamage:18, baseDodge:13, baseArmor:10, baseHealth:12}, evolvesFromNames:['Cryspaledramon'], evolvesToNames:[]},
+      {name:'Penmon', stage:'Rookie', desc:'Digimon dall\'aspetto di pulcino di pinguino, goffo fuori dall\'acqua ma sorprendentemente agile quando si tuffa, con un cappellino a punta che non perde mai anche nelle capriole più assurde.', signatureMove:'Penguin Roll — [MELEE][DAMAGE 6-8]', attackDesc:'Si lancia in una capriola scivolosa che travolge il bersaglio di sorpresa.', stats:{baseAccuracy:5, baseDamage:5, baseDodge:5, baseArmor:3, baseHealth:4}, evolvesFromNames:['Hiyarimon'], evolvesToNames:[], attribute:'Data', family:'Unknown'},
       {name:'SnowGoblimon', stage:'Rookie', desc:'Variante artica di Goblimon, avvolta in una calda pelliccia e con la pianta dei piedi spessa abbastanza da camminare sulla neve senza il minimo disagio: stesso spirito dispettoso, temperato solo dal freddo.', signatureMove:'Snow Goblin Volt — [RANGE][DAMAGE 6-8]', attackDesc:'Scaglia palle di neve infarcite di sassi con la ferocia tipica della propria stirpe.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:4, baseArmor:4, baseHealth:4}, evolvesFromNames:['Hiyarimon'], evolvesToNames:['Hyogamon'], attribute:'Virus', family:'Unknown'},
       {name:'Hyogamon', stage:'Champion', desc:'Evoluzione corazzata di SnowGoblimon, ricoperta da uno spesso strato di ghiaccio che funge da armatura naturale: colpisce con la forza bruta di un iceberg alla deriva.', signatureMove:'Absolute Zero — [MELEE][DAMAGE 9-11]', attackDesc:'Sferra un colpo con il proprio pugno ghiacciato, lasciando brina sul punto d\'impatto.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:5, baseArmor:7, baseHealth:7}, evolvesFromNames:['SnowGoblimon']},
     ]},
     { line:'Goblimon', attribute:'Virus', family:'Unknown', chain:[
       {name:'Goblimon', stage:'Rookie', evolvesToNames:['Ogremon','Fugamon']},
-      {name:'Ogremon', stage:'Champion', desc:'Evoluzione feroce di Goblimon, guerriero brutale che vive per la battaglia: viene spesso chiamato "il Cacciatore di Digimon" per la sua ossessione a sfidare avversari forti quanto lui.', signatureMove:'Pummel Whack — [MELEE][DAMAGE 9-11]', attackDesc:'Sferra un colpo devastante con la propria clava ossuta.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:6, baseArmor:6, baseHealth:7}, evolvesFromNames:['Goblimon']},
-      {name:'Shamamon', stage:'Rookie', desc:'Digimon sciamano goblinoide avvolto in un mantello di piume e ossa, esperto di rituali primitivi che invocano gli spiriti della natura selvaggia.', signatureMove:'Curse Chant — [RANGE][DAMAGE 6-8]', attackDesc:'Intona un canto rituale che scaglia energia oscura verso il bersaglio.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:4, baseArmor:3, baseHealth:4}, evolvesToNames:['Fugamon']},
+      {name:'Ogremon', stage:'Champion', desc:'Evoluzione feroce di Goblimon, guerriero brutale che vive per la battaglia: viene spesso chiamato "il Cacciatore di Digimon" per la sua ossessione a sfidare avversari forti quanto lui.', signatureMove:'Pummel Whack — [MELEE][DAMAGE 9-11]', attackDesc:'Sferra un colpo devastante con la propria clava ossuta.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:6, baseArmor:6, baseHealth:7}, evolvesFromNames:['Goblimon'], evolvesToNames:[]},
+      {name:'Shamamon', stage:'Rookie', desc:'Digimon sciamano goblinoide avvolto in un mantello di piume e ossa, esperto di rituali primitivi che invocano gli spiriti della natura selvaggia.', signatureMove:'Curse Chant — [RANGE][DAMAGE 6-8]', attackDesc:'Intona un canto rituale che scaglia energia oscura verso il bersaglio.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:4, baseArmor:3, baseHealth:4}, evolvesFromNames:[], evolvesToNames:['Fugamon']},
       {name:'Fugamon', stage:'Champion', desc:'Variante arancione e più aggressiva di Ogremon, stessa stirpe bellicosa ma temperamento ancora più incline allo scontro diretto.', signatureMove:'Evil Hurricane — [RANGE][DAMAGE 9-11]', attackDesc:'Scaglia una piccola raffica ciclonica dalla propria clava.', stats:{baseAccuracy:7, baseDamage:9, baseDodge:6, baseArmor:6, baseHealth:7}, evolvesFromNames:['Goblimon','Shamamon']},
     ]},
     { line:'Dorimon', attribute:'Data', family:'Unknown', chain:[
@@ -756,7 +785,7 @@ Devimon: https://..."></textarea>
     ]},
     { line:'Omnimon Merciful Mode', attribute:'Vaccine', family:'Unknown', chain:[
       {name:'Omnimon', stage:'Mega', evolvesToNames:['Imperialdramon Paladin Mode','Omnimon Merciful Mode']},
-      {name:'Imperialdramon Paladin Mode', stage:'Mega', evolvesFromNames:['Imperialdramon Fighter Mode','Omnimon']},
+      {name:'Imperialdramon Paladin Mode', stage:'Mega', evolvesFromNames:['Imperialdramon Fighter Mode','Omnimon'], evolvesToNames:[]},
       {name:'Omnimon Merciful Mode', stage:'Mega', desc:'Forma angelica di Omnimon, con ali candide e "Photon Spreads" simili a lacrime di luce che ne percorrono il corpo: nasce dalla tristezza e dalla determinazione di dover giudicare Digimon corrotti che meritavano ancora salvezza.', signatureMove:'Fearsome Blade — [MELEE][DAMAGE 21-23]', attackDesc:'Abbatte il bersaglio con un unico fendente della propria katana, la Fearsome Blade nata dalla trasformazione della Grey Sword, con il cuore colmo di rimpianto.', stats:{baseAccuracy:16, baseDamage:20, baseDodge:14, baseArmor:11, baseHealth:13}, evolvesFromNames:['Omnimon']},
     ]},
     { line:'Imperialdramon Dragon Mode', attribute:'Free', family:'Unknown', chain:[
