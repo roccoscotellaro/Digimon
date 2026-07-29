@@ -163,7 +163,18 @@
   function evolutionFamilyGraph(entry){
     if(!entry || entry.id==null) return { nodes:[], edges:[], armorNodes:[] };
     const byId = {};
-    cachedDex.forEach(e=>{ byId[String(e.id)] = e; });
+    const byName = {};
+    cachedDex.forEach(e=>{ byId[String(e.id)] = e; byName[String(e.name||'').trim().toLowerCase()] = e; });
+    // Risolve un riferimento di evoluzione: prima per id, e se non risolve (id mancante o non più valido,
+    // caso noto per vecchi collegamenti importati prima che il deploy fosse completo) prova per nome,
+    // esattamente come faceva già la vecchia lista semplice. Senza questo fallback il grafo ignora in
+    // silenzio collegamenti che in realtà esistono, mentre la vecchia lista li mostrava comunque.
+    function resolveRef(ev){
+      if(!ev) return null;
+      if(ev.id!=null && byId[String(ev.id)]) return byId[String(ev.id)];
+      if(ev.name) return byName[String(ev.name).trim().toLowerCase()] || null;
+      return null;
+    }
     const nodes = new Map();
     const edges = [];
     const armorNodes = new Map();
@@ -176,7 +187,7 @@
       seen.add(String(e.id));
       if(!isArmor(e)) nodes.set(String(e.id), e);
       (e.evolutions||[]).forEach(ev=>{
-        const t = ev.id!=null ? byId[String(ev.id)] : null;
+        const t = resolveRef(ev);
         if(!t) return;
         if(isArmor(t)){ armorNodes.set(String(t.id), t); return; } // le Armor si vedono a parte, non nel grafo principale
         edges.push({ from:String(e.id), to:String(t.id) });
@@ -190,7 +201,7 @@
       seen.add(String(e.id));
       if(!isArmor(e)) nodes.set(String(e.id), e);
       (e.evolves_from||e.evolvesFrom||[]).forEach(ev=>{
-        const t = ev.id!=null ? byId[String(ev.id)] : null;
+        const t = resolveRef(ev);
         if(!t || isArmor(t)) return;
         edges.push({ from:String(t.id), to:String(e.id) });
         ascend(t, seen);
@@ -795,6 +806,11 @@ Devimon: https://..."></textarea>
       {name:'Paildramon', stage:'Ultimate', evolvesToNames:['Imperialdramon Dragon Mode']},
       {name:'Imperialdramon Dragon Mode', stage:'Mega', evolvesFromNames:['Paildramon'], evolvesToNames:['Imperialdramon Fighter Mode']},
       {name:'Imperialdramon Fighter Mode', stage:'Mega', evolvesFromNames:['Imperialdramon Dragon Mode'], evolvesToNames:['Imperialdramon Paladin Mode']},
+    ]},
+    { line:'Agumon', attribute:'Vaccine', family:'Nature Spirits', chain:[
+      {name:'Botamon', stage:'Fresh', evolvesToNames:['Koromon']},
+      {name:'Koromon', stage:'Baby', evolvesFromNames:['Botamon'], evolvesToNames:['Agumon']},
+      {name:'Agumon', stage:'Rookie', evolvesFromNames:['Koromon']},
     ]},
   ];
 
