@@ -696,7 +696,8 @@ Devimon: https://..."></textarea>
           <div class="stat-box"><div class="v">${bs.baseHealth||0}</div><div class="l">HP</div></div>
         </div>` : ''}
         ${(()=>{ const graph = evolutionFamilyGraph(entry); const chart = evolutionChartHTML(entry, graph);
-          return chart || (evolutionsHTML(entry.evolvesFrom || entry.evolves_from, 'Pre-Evoluzioni (da cosa evolve)') + evolutionsHTML(entry.evolutions, 'Possibili Evoluzioni (in cosa evolve)'));
+          const debugLine = `<div class="muted" style="font-size:10px;opacity:0.6;">[debug: nodi grafo=${graph.nodes.length}, entry.evolutions grezzo=${JSON.stringify(entry.evolutions||[])}, entry.evolves_from grezzo=${JSON.stringify(entry.evolves_from||entry.evolvesFrom||[])}]</div>`;
+          return debugLine + (chart || (evolutionsHTML(entry.evolvesFrom || entry.evolves_from, 'Pre-Evoluzioni (da cosa evolve)') + evolutionsHTML(entry.evolutions, 'Possibili Evoluzioni (in cosa evolve)')));
         })()}
         ${armorEvolutionsHTML(evolutionFamilyGraph(entry).armorNodes)}
         ${qualitiesHTML(entry.qualities, entry.dp_total)}
