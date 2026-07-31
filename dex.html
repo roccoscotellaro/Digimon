@@ -1318,7 +1318,43 @@ Devimon: https://..."></textarea>
       if(isNew) result = await addDexEntry(session.code, payload);
       else result = await updateDexEntry(session.code, entry.id, payload);
       if(result){
-        statusEl.style.color='var(--text-mute)'; statusEl.textContent='Salvato.';
+        // Crea in automatico il collegamento reciproco sull'altro Digimon coinvolto, così non serve
+        // più aprirlo a mano e aggiungerlo anche lì. Le due entry restano sincronizzate su entrambi i lati.
+        statusEl.style.color='var(--text-mute)'; statusEl.textContent='Salvato, sincronizzo collegamenti reciproci...';
+        const savedId = isNew ? (result.entry && result.entry.id) : entry.id;
+        const savedRef = { id: savedId, name, imageUrl: payload.imageUrl || '' };
+        function resolveTarget(link){
+          if(!link) return null;
+          if(link.id!=null){ const t = cachedDex.find(e=>String(e.id)===String(link.id)); if(t) return t; }
+          if(link.name){ const t = cachedDex.find(e=>e.name && e.name.trim().toLowerCase()===String(link.name).trim().toLowerCase()); if(t) return t; }
+          return null;
+        }
+        function fullPayloadFor(targetEntry, field, updatedList){
+          return {
+            name: targetEntry.name, stage: targetEntry.stage, description: targetEntry.description,
+            imageUrl: targetEntry.image_url, baseStats: targetEntry.base_stats,
+            evolutions: field==='evolutions' ? updatedList : (targetEntry.evolutions||[]),
+            evolvesFrom: field==='evolves_from' ? updatedList : (targetEntry.evolves_from||[]),
+            categories: targetEntry.categories, qualities: targetEntry.qualities,
+            dpTotal: targetEntry.dp_total, discovered: targetEntry.discovered,
+            attribute: targetEntry.attribute, family: targetEntry.family, originType: targetEntry.origin_type,
+            signatureMove: targetEntry.signature_move, slideEvolution: targetEntry.slide_evolution,
+            digimental: targetEntry.digimental, attackDesc: targetEntry.attack_desc,
+            extraAttacks: targetEntry.extra_attacks, slideTargets: targetEntry.slide_targets
+          };
+        }
+        async function ensureReciprocal(link, field){
+          const target = resolveTarget(link);
+          if(!target || savedId==null || String(target.id)===String(savedId)) return;
+          const current = target[field] || [];
+          const already = current.some(x=> (x.id!=null && String(x.id)===String(savedId)) || (!x.id && x.name && x.name.toLowerCase()===name.toLowerCase()));
+          if(already) return;
+          const updatedList = current.concat([savedRef]);
+          try { await updateDexEntry(session.code, target.id, fullPayloadFor(target, field, updatedList)); } catch(e){ /* best-effort, non bloccante */ }
+        }
+        for(const link of (draft.evolutions||[])) await ensureReciprocal(link, 'evolves_from');
+        for(const link of (draft.evolvesFrom||[])) await ensureReciprocal(link, 'evolutions');
+        statusEl.textContent='Salvato.';
         closeModal();
         renderDexPage();
       } else {
