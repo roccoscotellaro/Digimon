@@ -112,6 +112,7 @@
   let activeAttrFilter = '';
   let searchQuery = '';
   let activeFamilyFilter = '';
+  let activeStageFilter = '';
   const ATTRIBUTES = ['Vaccine','Data','Virus','Free','Variable'];
   const FAMILIES = ['Dark Empire','Deep Savers',"Dragon's Roar",'Jungle Troopers','Metal Empire','Nature Spirits','Nightmare Soldiers','Unknown','Virus Busters','Wind Guardians'];
   let editEntry = null; // entry being edited/added in modal
@@ -238,25 +239,39 @@
     const columns = {};
     STAGE_ORDER.forEach(s=>columns[s]=[]);
     const extra = [];
-    const fusionColumn = [];
+    const leaps = []; // ogni salto di livello: {node, depth}, uno per colonna propria, MAI impilati insieme
+    function parentsOf(n){
+      return (n.evolves_from || n.evolvesFrom || []).map(p=>p.id!=null?byIdFull[String(p.id)]:null).filter(Boolean);
+    }
+    function leapDepth(n, seen){
+      if(seen.has(String(n.id))) return 1; // guardia anti-ciclo
+      seen.add(String(n.id));
+      const sameTierParents = parentsOf(n).filter(p=>p.stage===n.stage);
+      if(!sameTierParents.length) return 1;
+      return 1 + Math.max(...sameTierParents.map(p=>leapDepth(p, seen)));
+    }
     graph.nodes.forEach(n=>{
       // Se anche un solo genitore è già allo stesso Stage del risultato (Fighter Mode+Omnimon -> Paladin Mode,
       // ma anche il semplice Omnimon -> Omnimon Merciful Mode, o una Burst Mode) non è una "prossima evoluzione"
-      // normale: è un salto ulteriore che merita il proprio quadrato laterale, non va impilato nella colonna
-      // dello Stage insieme alle evoluzioni sequenziali vere e proprie. Vale per Jogress, Burst Mode o qualunque
-      // altra origine — TRANNE gli Spirit (Digimon Frontier): la loro Slide Evolution è un meccanismo a parte,
-      // resta stesso Stage per definizione e va mostrata con la linea verticale nella colonna di Stage normale,
-      // non spostata in una colonna laterale.
-      const parents = n.evolves_from || n.evolvesFrom || [];
-      const isSameTierLeap = n.origin_type!=='spirit' && parents.some(p=>{
-        const parent = p.id!=null ? byIdFull[String(p.id)] : null;
-        return parent && parent.stage === n.stage;
-      });
-      if(isSameTierLeap){ fusionColumn.push(n); }
+      // normale: è un salto ulteriore che merita il proprio quadrato SEPARATO — MAI impilato con altri salti,
+      // perché due salti diversi dallo stesso Stage (es. Paladin Mode e Merciful Mode, entrambi da Omnimon) non
+      // hanno nulla a che vedere l'uno con l'altro e impilarli insieme dà la falsa impressione che siano collegati.
+      // Vale per Jogress, Burst Mode o qualunque altra origine — TRANNE gli Spirit (Digimon Frontier): la loro
+      // Slide Evolution è un meccanismo a parte, resta stesso Stage per definizione e va mostrata con la linea
+      // verticale nella colonna di Stage normale, non spostata lateralmente.
+      const isSameTierLeap = n.origin_type!=='spirit' && parentsOf(n).some(p=>p.stage===n.stage);
+      if(isSameTierLeap){ leaps.push({ node:n, depth: leapDepth(n, new Set()) }); }
       else if(columns[n.stage]) columns[n.stage].push(n);
       else extra.push(n);
     });
+    leaps.sort((a,b)=>a.depth-b.depth || a.node.name.localeCompare(b.node.name));
     const stagesPresent = STAGE_ORDER.filter(s=>columns[s].length);
+    function nodeBoxHTML(n, borderColor, icon){
+      return `<div id="chart-node-${n.id}" data-nav-evo="${n.id}" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;width:68px;padding:4px;border-radius:6px;background:${String(n.id)===String(entry.id)?'rgba(255,193,74,0.18)':'transparent'};border:1px solid ${String(n.id)===String(entry.id)?'var(--amber)':borderColor};">
+        ${n.image_url ? `<img src="${escapeAttr(n.image_url)}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;" onerror="this.style.visibility='hidden'"/>` : `<div style="width:38px;height:38px;border-radius:50%;background:var(--panel);border:1px solid ${borderColor};"></div>`}
+        <div class="muted" style="font-size:8px;text-align:center;margin-top:3px;line-height:1.2;">${icon?icon+' ':''}${escapeHTML(n.name)}</div>
+      </div>`;
+    }
     return `<div class="muted" style="margin:10px 0 4px;">Linea Evolutiva Completa (con diramazioni)</div>
       <div id="evo-chart-wrap" style="position:relative;overflow-x:auto;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:14px;">
         <svg id="evo-chart-svg" style="position:absolute;top:0;left:0;pointer-events:none;"></svg>
@@ -265,37 +280,24 @@
             <div style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
               <div style="font-size:9px;font-weight:bold;color:${STAGE_COLORS[s]||'#ccc'};margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px;">${s}</div>
               <div style="display:flex;flex-direction:column;gap:16px;">
-                ${columns[s].map(n=>`
-                  <div id="chart-node-${n.id}" data-nav-evo="${n.id}" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;width:68px;padding:4px;border-radius:6px;background:${String(n.id)===String(entry.id)?'rgba(255,193,74,0.18)':'transparent'};border:1px solid ${String(n.id)===String(entry.id)?'var(--amber)':(STAGE_COLORS[s]||'#666')};">
-                    ${n.image_url ? `<img src="${escapeAttr(n.image_url)}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;" onerror="this.style.visibility='hidden'"/>` : `<div style="width:38px;height:38px;border-radius:50%;background:var(--panel);border:1px solid ${STAGE_COLORS[s]||'#666'};"></div>`}
-                    <div class="muted" style="font-size:8px;text-align:center;margin-top:3px;line-height:1.2;">${escapeHTML(n.name)}</div>
-                  </div>
-                `).join('')}
+                ${columns[s].map(n=>nodeBoxHTML(n, STAGE_COLORS[s]||'#666')).join('')}
               </div>
             </div>
           `).join('')}
-          ${fusionColumn.length ? `<div style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
-            <div style="font-size:9px;font-weight:bold;color:#e07fe0;margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px;">⚡ Evoluzione Ulteriore</div>
-            <div style="display:flex;flex-direction:column;gap:16px;">
-              ${fusionColumn.map(n=>{
-                const icon = n.origin_type==='jogress' ? '🤝' : (n.origin_type==='burst' ? '🔥' : '⚡');
-                return `
-                <div id="chart-node-${n.id}" data-nav-evo="${n.id}" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;width:68px;padding:4px;border-radius:6px;background:${String(n.id)===String(entry.id)?'rgba(255,193,74,0.18)':'transparent'};border:1px solid ${String(n.id)===String(entry.id)?'var(--amber)':'#e07fe0'};">
-                  ${n.image_url ? `<img src="${escapeAttr(n.image_url)}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;" onerror="this.style.visibility='hidden'"/>` : `<div style="width:38px;height:38px;border-radius:50%;background:var(--panel);border:1px solid #e07fe0;"></div>`}
-                  <div class="muted" style="font-size:8px;text-align:center;margin-top:3px;line-height:1.2;">${icon} ${escapeHTML(n.name)}</div>
-                </div>
-              `;}).join('')}
-            </div>
-          </div>` : ''}
+          ${leaps.map(({node:n, depth})=>{
+            const icon = n.origin_type==='jogress' ? '🤝' : (n.origin_type==='burst' ? '🔥' : '⚡');
+            const label = `${(n.stage||'').toUpperCase()}${'+'.repeat(depth)}`;
+            return `<div style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
+              <div style="font-size:9px;font-weight:bold;color:#e07fe0;margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px;">${label}</div>
+              <div style="display:flex;flex-direction:column;gap:16px;">
+                ${nodeBoxHTML(n, '#e07fe0', icon)}
+              </div>
+            </div>`;
+          }).join('')}
           ${extra.length ? `<div style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
             <div style="font-size:9px;font-weight:bold;color:#ccc;margin-bottom:10px;text-transform:uppercase;">Altro</div>
             <div style="display:flex;flex-direction:column;gap:16px;">
-              ${extra.map(n=>`
-                <div id="chart-node-${n.id}" data-nav-evo="${n.id}" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;width:68px;padding:4px;border-radius:6px;background:${String(n.id)===String(entry.id)?'rgba(255,193,74,0.18)':'transparent'};border:1px solid ${String(n.id)===String(entry.id)?'var(--amber)':'#666'};">
-                  ${n.image_url ? `<img src="${escapeAttr(n.image_url)}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;" onerror="this.style.visibility='hidden'"/>` : `<div style="width:38px;height:38px;border-radius:50%;background:var(--panel);border:1px solid #666;"></div>`}
-                  <div class="muted" style="font-size:8px;text-align:center;margin-top:3px;line-height:1.2;">${escapeHTML(n.name)}</div>
-                </div>
-              `).join('')}
+              ${extra.map(n=>nodeBoxHTML(n, '#666')).join('')}
             </div>
           </div>` : ''}
           <div style="min-width:34px;flex-shrink:0;" aria-hidden="true"></div>
@@ -542,6 +544,14 @@ Devimon: https://..."></textarea>
     cachedDex.forEach(e=>(e.categories||[]).forEach(c=>allCats.add(c)));
 
     let html = '';
+    const usedStages = new Set(cachedDex.map(e=>stageGroupKey(e)).filter(Boolean));
+    if(usedStages.size>0){
+      const order = ['Fresh','Baby','Rookie','Champion','Ultimate','Mega','🤝 Jogress/Fusione','🛡️ Armor','✨ Spirito','🔥 Burst Mode','Altro'];
+      html += `<div class="muted" style="width:100%;margin-bottom:2px;font-size:10px;">Stadio/Tipo</div>`;
+      html += order.filter(s=>usedStages.has(s)).map(s=>`<span class="tag filter-chip ${activeStageFilter===s?'active':''}" data-stage-filter="${escapeAttr(s)}">${escapeHTML(s)}</span>`).join('');
+      if(activeStageFilter) html += `<span class="tag filter-chip" style="color:var(--danger);border-color:var(--danger);" data-stage-filter="__clear__">×</span>`;
+      html += `<div style="width:100%;height:6px;"></div>`;
+    }
     if(usedAttrs.size>0){
       html += `<div class="muted" style="width:100%;margin-bottom:2px;font-size:10px;">Attributo</div>`;
       html += Array.from(usedAttrs).sort().map(a=>`<span class="tag filter-chip ${activeAttrFilter===a?'active':''}" data-attr-filter="${escapeAttr(a)}">${escapeHTML(a)}</span>`).join('');
@@ -561,6 +571,13 @@ Devimon: https://..."></textarea>
     }
     bar.innerHTML = html;
 
+    bar.querySelectorAll('[data-stage-filter]').forEach(chip=>{
+      chip.onclick = ()=>{
+        const val = chip.getAttribute('data-stage-filter');
+        activeStageFilter = (val==='__clear__' || activeStageFilter===val) ? '' : val;
+        renderFilterBar(); renderGrid();
+      };
+    });
     bar.querySelectorAll('[data-attr-filter]').forEach(chip=>{
       chip.onclick = ()=>{
         const val = chip.getAttribute('data-attr-filter');
@@ -591,6 +608,14 @@ Devimon: https://..."></textarea>
 
   const STAGE_ORDER = ['Fresh','Baby','Rookie','Champion','Ultimate','Mega'];
 
+  function stageGroupKey(e){
+    if(e.origin_type==='armor') return '🛡️ Armor';
+    if(e.origin_type==='jogress') return '🤝 Jogress/Fusione';
+    if(e.origin_type==='spirit') return '✨ Spirito';
+    if(e.origin_type==='burst') return '🔥 Burst Mode';
+    return STAGE_ORDER.includes(e.stage) ? e.stage : 'Altro';
+  }
+
   function renderGrid(){
     const grid = document.getElementById('dex-grid');
     if(!grid) return;
@@ -599,6 +624,7 @@ Devimon: https://..."></textarea>
     if(activeFilters.length>0) filtered = filtered.filter(e=>(e.categories||[]).some(c=>activeFilters.includes(c)));
     if(activeAttrFilter) filtered = filtered.filter(e=>e.attribute===activeAttrFilter);
     if(activeFamilyFilter) filtered = filtered.filter(e=>e.family===activeFamilyFilter);
+    if(activeStageFilter) filtered = filtered.filter(e=>stageGroupKey(e)===activeStageFilter);
     if(searchQuery.trim()) filtered = filtered.filter(e=>e.name.toLowerCase().includes(searchQuery.trim().toLowerCase()));
     if(filtered.length===0){ grid.innerHTML = '<div class="muted">Nessun Digimon trovato.</div>'; return; }
 
@@ -628,12 +654,7 @@ Devimon: https://..."></textarea>
 
     const groups = {};
     filtered.forEach(e=>{
-      let st;
-      if(e.origin_type==='armor') st = '🛡️ Armor';
-      else if(e.origin_type==='jogress') st = '🤝 Jogress/Fusione';
-      else if(e.origin_type==='spirit') st = '✨ Spirito';
-      else if(e.origin_type==='burst') st = '🔥 Burst Mode';
-      else st = STAGE_ORDER.includes(e.stage) ? e.stage : 'Altro';
+      const st = stageGroupKey(e);
       if(!groups[st]) groups[st] = [];
       groups[st].push(e);
     });
