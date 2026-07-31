@@ -244,9 +244,11 @@
       // ma anche il semplice Omnimon -> Omnimon Merciful Mode, o una Burst Mode) non è una "prossima evoluzione"
       // normale: è un salto ulteriore che merita il proprio quadrato laterale, non va impilato nella colonna
       // dello Stage insieme alle evoluzioni sequenziali vere e proprie. Vale per Jogress, Burst Mode o qualunque
-      // altra origine: l'unico criterio è che lo Stage non cambi rispetto al genitore.
+      // altra origine — TRANNE gli Spirit (Digimon Frontier): la loro Slide Evolution è un meccanismo a parte,
+      // resta stesso Stage per definizione e va mostrata con la linea verticale nella colonna di Stage normale,
+      // non spostata in una colonna laterale.
       const parents = n.evolves_from || n.evolvesFrom || [];
-      const isSameTierLeap = parents.some(p=>{
+      const isSameTierLeap = n.origin_type!=='spirit' && parents.some(p=>{
         const parent = p.id!=null ? byIdFull[String(p.id)] : null;
         return parent && parent.stage === n.stage;
       });
@@ -296,6 +298,7 @@
               `).join('')}
             </div>
           </div>` : ''}
+          <div style="min-width:34px;flex-shrink:0;" aria-hidden="true"></div>
         </div>
       </div>`;
   }
@@ -696,8 +699,7 @@ Devimon: https://..."></textarea>
           <div class="stat-box"><div class="v">${bs.baseHealth||0}</div><div class="l">HP</div></div>
         </div>` : ''}
         ${(()=>{ const graph = evolutionFamilyGraph(entry); const chart = evolutionChartHTML(entry, graph);
-          const debugLine = `<div class="muted" style="font-size:10px;opacity:0.6;">[debug: nodi grafo=${graph.nodes.length}, entry.evolutions grezzo=${JSON.stringify(entry.evolutions||[])}, entry.evolves_from grezzo=${JSON.stringify(entry.evolves_from||entry.evolvesFrom||[])}]</div>`;
-          return debugLine + (chart || (evolutionsHTML(entry.evolvesFrom || entry.evolves_from, 'Pre-Evoluzioni (da cosa evolve)') + evolutionsHTML(entry.evolutions, 'Possibili Evoluzioni (in cosa evolve)')));
+          return chart || (evolutionsHTML(entry.evolvesFrom || entry.evolves_from, 'Pre-Evoluzioni (da cosa evolve)') + evolutionsHTML(entry.evolutions, 'Possibili Evoluzioni (in cosa evolve)'));
         })()}
         ${armorEvolutionsHTML(evolutionFamilyGraph(entry).armorNodes)}
         ${qualitiesHTML(entry.qualities, entry.dp_total)}
