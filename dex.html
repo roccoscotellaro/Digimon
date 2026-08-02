@@ -294,7 +294,8 @@
   function evolutionChartHTML(entry, graph){
     if(!graph || graph.nodes.length<=1) return '';
     const byIdFull = {};
-    cachedDex.forEach(e=>{ byIdFull[String(e.id)] = e; }); // tutto il dex, non solo i nodi già raccolti nel grafo:
+    const byNameFull = {};
+    cachedDex.forEach(e=>{ byIdFull[String(e.id)] = e; byNameFull[String(e.name||'').trim().toLowerCase()] = e; }); // tutto il dex, non solo i nodi già raccolti nel grafo:
     // serve per controllare lo Stage del genitore anche quando il genitore stesso non compare in QUESTO albero
     // (es. guardando Paildramon, "Omnimon" non è nel grafo ma serve comunque per capire che Omnimon Merciful
     // Mode è un salto di livello e non una sua evoluzione diretta).
@@ -303,7 +304,16 @@
     const extra = [];
     const leaps = []; // ogni salto di livello: {node, depth}, uno per colonna propria, MAI impilati insieme
     function parentsOf(n){
-      return (n.evolves_from || n.evolvesFrom || []).map(p=>p.id!=null?byIdFull[String(p.id)]:null).filter(Boolean);
+      // BUGFIX: prima risolveva SOLO per id. Un collegamento evolvesFrom salvato senza id valido (caso noto
+      // per vecchi import) veniva quindi ignorato qui — anche se la linea/il grafo lo mostrava comunque
+      // (perché resolveRef ha il fallback per nome) — con il risultato che due "fratelli" nella stessa
+      // situazione (es. Omnimon e Imperialdramon Fighter Mode, entrambi un passo oltre un Mega base)
+      // finivano classificati diversamente: uno correttamente Mega+, l'altro no.
+      return (n.evolves_from || n.evolvesFrom || []).map(p=>{
+        if(p.id!=null && byIdFull[String(p.id)]) return byIdFull[String(p.id)];
+        if(p.name) return byNameFull[String(p.name).trim().toLowerCase()] || null;
+        return null;
+      }).filter(Boolean);
     }
     function leapDepth(n, seen){
       if(seen.has(String(n.id))) return 0; // guardia anti-ciclo
@@ -447,8 +457,14 @@
       if(colGap > 1){
         // Colonne NON adiacenti: una curva diretta taglierebbe dritta attraverso i riquadri delle
         // colonne di mezzo. Si passa invece "sopra", con una corsia dedicata più in alto del box più
-        // alto di tutto il grafico, così non attraversa mai nessuna casella.
-        const x1 = (ar.left+ar.right)/2 - wrapRect.left + wrap.scrollLeft, y1 = ar.top - wrapRect.top + wrap.scrollTop;
+        // alto di tutto il grafico. La salita parte dal BORDO del riquadro (non dal centro, con un
+        // piccolo scarto per ogni collegamento in quella colonna): partire dal centro avrebbe fatto
+        // passare la salita dritta attraverso gli altri Digimon impilati sopra nella stessa colonna,
+        // dando la falsa impressione di un collegamento tra loro.
+        const riserKey = 'riser'+colA;
+        const rn = columnLineCount[riserKey] || 0;
+        columnLineCount[riserKey] = rn + 1;
+        const x1 = (ar.right - wrapRect.left + wrap.scrollLeft) + 6 + rn*5, y1 = ar.top + ar.height/2 - wrapRect.top + wrap.scrollTop;
         const x2 = (br.left+br.right)/2 - wrapRect.left + wrap.scrollLeft, y2 = br.top - wrapRect.top + wrap.scrollTop;
         const laneY = Math.max(4, topMostY - 12 - skipLaneCount*6);
         skipLaneCount++;
