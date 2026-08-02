@@ -213,7 +213,45 @@
     ascend(entry, new Set());
     const edgeKeys = new Set();
     const uniqueEdges = edges.filter(ed=>{ const k=ed.from+'>'+ed.to; if(edgeKeys.has(k)) return false; edgeKeys.add(k); return true; });
-    return { nodes: Array.from(nodes.values()), edges: uniqueEdges, armorNodes: Array.from(armorNodes.values()) };
+
+    // Slide Evolution: collegamento A PARTE, mai mescolato con evolutions/evolvesFrom (quelle restano
+    // vere Pre-Evoluzioni/Evoluzioni). Uno Slide Target aggiunge comunque il Digimon collegato all'albero
+    // (così si vede, come richiesto), ma con una linea propria e senza contare come antenato/discendente
+    // reale, quindi non interferisce mai con la logica dei salti di Stage (Mega+/++).
+    const slideEdges = [];
+    const slideEdgeKeys = new Set();
+    function addSlideEdge(fromNode, toNode){
+      if(!fromNode || !toNode || fromNode.id==null || toNode.id==null) return;
+      if(String(fromNode.id)===String(toNode.id)) return;
+      const key = [String(fromNode.id), String(toNode.id)].sort().join('~');
+      if(slideEdgeKeys.has(key)) return;
+      slideEdgeKeys.add(key);
+      slideEdges.push({ from:String(fromNode.id), to:String(toNode.id) });
+    }
+    const baseNodeNames = new Map(); // istantanea PRIMA di aggiungere nodi di Slide Evolution
+    nodes.forEach(n=> baseNodeNames.set(String(n.name||'').trim().toLowerCase(), n));
+    // Verso "in avanti": i Digimon già nell'albero che dichiarano un proprio Slide Target.
+    Array.from(nodes.values()).forEach(nd=>{
+      (nd.slide_targets||[]).forEach(tn=>{
+        const t = byName[String(tn).trim().toLowerCase()];
+        if(!t || isArmor(t)) return;
+        if(!nodes.has(String(t.id))) nodes.set(String(t.id), t);
+        addSlideEdge(nd, t);
+      });
+    });
+    // Verso "inverso": un altro Digimon del Dex indica uno dei nodi già nell'albero come proprio Slide
+    // Target, anche se il collegamento non è stato aggiunto anche dall'altra parte.
+    cachedDex.forEach(other=>{
+      if(isArmor(other) || !other.slide_targets || !other.slide_targets.length) return;
+      other.slide_targets.forEach(tn=>{
+        const match = baseNodeNames.get(String(tn).trim().toLowerCase());
+        if(!match) return;
+        if(!nodes.has(String(other.id))) nodes.set(String(other.id), other);
+        addSlideEdge(other, match);
+      });
+    });
+
+    return { nodes: Array.from(nodes.values()), edges: uniqueEdges, armorNodes: Array.from(armorNodes.values()), slideEdges };
   }
 
   function armorEvolutionsHTML(armorNodes){
@@ -305,10 +343,12 @@
       </div>`;
   }
 
-  function drawEvoChartLines(edges){
+  function drawEvoChartLines(edges, slideEdges){
     const wrap = document.getElementById('evo-chart-wrap');
     const svg = document.getElementById('evo-chart-svg');
-    if(!wrap || !svg || !edges || !edges.length) return;
+    const allEdges = (edges||[]).map(e=>({ from:e.from, to:e.to, kind:'evo' }))
+      .concat((slideEdges||[]).map(e=>({ from:e.from, to:e.to, kind:'slide' })));
+    if(!wrap || !svg || !allEdges.length) return;
     const wrapRect = wrap.getBoundingClientRect();
     const w = Math.max(wrap.scrollWidth, wrap.clientWidth);
     const h = Math.max(wrap.scrollHeight, wrap.clientHeight);
@@ -336,12 +376,17 @@
       if(y < topMostY) topMostY = y;
     });
     if(!isFinite(topMostY)) topMostY = 40;
-    svg.innerHTML = edges.map((ed,i)=>{
+    svg.innerHTML = allEdges.map((ed,i)=>{
       const a = document.getElementById('chart-node-'+ed.from);
       const b = document.getElementById('chart-node-'+ed.to);
       if(!a || !b) return '';
       const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
-      const color = i%2===0 ? 'rgba(255,150,60,0.85)' : 'rgba(110,220,140,0.85)';
+      // Le Slide Evolution hanno uno stile proprio, tratteggiato e ben distinto: NON sono una vera
+      // evoluzione (non c'è un "prima" e un "dopo"), quindi non devono sembrare identiche a una linea
+      // di Jogress/discendenza normale.
+      const isSlide = ed.kind==='slide';
+      const color = isSlide ? 'rgba(127,214,201,0.9)' : (i%2===0 ? 'rgba(255,150,60,0.85)' : 'rgba(110,220,140,0.85)');
+      const dash = isSlide ? ' stroke-dasharray="5,4"' : '';
       const sameColumn = Math.abs(((ar.left+ar.right)/2) - ((br.left+br.right)/2)) < 8;
       if(sameColumn){
         // Stessa colonna (es. Slide Evolution tra forme dello stesso Stage): basta una linea verticale
@@ -353,7 +398,7 @@
         const sideX = edgeX + 10 + n*7;
         const y1 = (ar.top < br.top ? ar.top + ar.height/2 : br.top + br.height/2) - wrapRect.top + wrap.scrollTop;
         const y2 = (ar.top < br.top ? br.top + br.height/2 : ar.top + ar.height/2) - wrapRect.top + wrap.scrollTop;
-        return `<path d="M ${edgeX} ${y1} L ${sideX} ${y1} L ${sideX} ${y2} L ${edgeX} ${y2}" stroke="${color}" stroke-width="1.6" fill="none"/>`;
+        return `<path d="M ${edgeX} ${y1} L ${sideX} ${y1} L ${sideX} ${y2} L ${edgeX} ${y2}" stroke="${color}" stroke-width="1.6" fill="none"${dash}/>`;
       }
       const colA = colIndexOf(a), colB = colIndexOf(b);
       const colGap = (colA!=null && colB!=null) ? Math.abs(colB-colA) : 1;
@@ -365,12 +410,12 @@
         const x2 = (br.left+br.right)/2 - wrapRect.left + wrap.scrollLeft, y2 = br.top - wrapRect.top + wrap.scrollTop;
         const laneY = Math.max(4, topMostY - 12 - skipLaneCount*6);
         skipLaneCount++;
-        return `<path d="M ${x1} ${y1} L ${x1} ${laneY} L ${x2} ${laneY} L ${x2} ${y2}" stroke="${color}" stroke-width="1.6" fill="none"/>`;
+        return `<path d="M ${x1} ${y1} L ${x1} ${laneY} L ${x2} ${laneY} L ${x2} ${y2}" stroke="${color}" stroke-width="1.6" fill="none"${dash}/>`;
       }
       const x1 = ar.right - wrapRect.left + wrap.scrollLeft, y1 = ar.top + ar.height/2 - wrapRect.top + wrap.scrollTop;
       const x2 = br.left - wrapRect.left + wrap.scrollLeft, y2 = br.top + br.height/2 - wrapRect.top + wrap.scrollTop;
       const midX = (x1+x2)/2;
-      return `<path d="M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}" stroke="${color}" stroke-width="1.6" fill="none"/>`;
+      return `<path d="M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}" stroke="${color}" stroke-width="1.6" fill="none"${dash}/>`;
     }).join('');
   }
 
@@ -759,7 +804,7 @@ Devimon: https://..."></textarea>
       </div>
     `;
     document.body.appendChild(overlay);
-    { const _g = evolutionFamilyGraph(entry); if(_g.nodes.length>1) setTimeout(()=>drawEvoChartLines(_g.edges), 0); }
+    { const _g = evolutionFamilyGraph(entry); if(_g.nodes.length>1) setTimeout(()=>drawEvoChartLines(_g.edges, _g.slideEdges), 0); }
     overlay.onclick = (e)=>{ if(e.target===overlay) closeModal(); };
     overlay.querySelectorAll('[data-zoom-img]').forEach(img=>{
       img.onclick = (e)=>{
@@ -1294,19 +1339,8 @@ Devimon: https://..."></textarea>
       const n = document.getElementById('ed-slide-name').value.trim();
       if(!n) return;
       draft.slideTargets.push(n);
-      // BUGFIX: prima uno Slide Target restava solo testo decorativo e non compariva mai nell'albero
-      // evolutivo sotto. Ora si collega anche come evoluzione vera e propria (stesso Stage, quindi
-      // isSameTierLeap la lascia nella colonna normale) così appare con la linea verticale che la
-      // unisce al Digimon di partenza, e al salvataggio si crea anche il collegamento reciproco.
-      const link = resolveSpeciesLink(n, '');
-      const alreadyLinked = draft.evolutions.some(ev=>
-        (ev.id!=null && link.id!=null && String(ev.id)===String(link.id)) ||
-        (!ev.id && !link.id && ev.name.trim().toLowerCase()===link.name.trim().toLowerCase())
-      );
-      if(!alreadyLinked) draft.evolutions.push(link);
       document.getElementById('ed-slide-name').value='';
       renderSlideList();
-      renderEvoList();
     };
     document.getElementById('btn-attack-add').onclick = ()=>{
       const move = document.getElementById('ed-attack-move').value.trim();
