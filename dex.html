@@ -161,8 +161,14 @@
 
   const STAGE_COLORS = { 'Fresh':'#9a9a9a', 'Baby':'#e6564f', 'Rookie':'#e8c14a', 'Champion':'#57c76b', 'Ultimate':'#4fa9e8', 'Mega':'#b48ce8' };
 
+  // Diramazioni dell'albero evolutivo aperte manualmente dall'utente (bottone "Espandi" su un nodo
+  // "bloccato"). Si azzera quando si naviga verso un Digimon diverso, resta invariato quando si
+  // ri-renderizza lo stesso (es. dopo aver cliccato "Espandi").
+  let expandedEvoNodes = new Set();
+  let lastDetailEntryId = null;
+
   function evolutionFamilyGraph(entry){
-    if(!entry || entry.id==null) return { nodes:[], edges:[], armorNodes:[] };
+    if(!entry || entry.id==null) return { nodes:[], edges:[], armorNodes:[], slideEdges:[], collapsedNodeIds:new Set(), hiddenChildCounts:new Map() };
     const byId = {};
     const byName = {};
     cachedDex.forEach(e=>{ byId[String(e.id)] = e; byName[String(e.name||'').trim().toLowerCase()] = e; });
@@ -180,19 +186,37 @@
     const edges = [];
     const armorNodes = new Map();
     const isArmor = e => e && e.origin_type === 'armor';
+    // Nodi "bloccati" alla prima evoluzione (con diramazioni ulteriori nascoste) e quante evoluzioni
+    // nasconde ciascuno, per mostrare il pulsante "Espandi" con il relativo conteggio.
+    const collapsedNodeIds = new Set();
+    const hiddenChildCounts = new Map();
 
     // Discendenti: SOLO seguendo "evolutions" in avanti (mai a ritroso da un discendente).
     // Così non si "incrociano" mai altre linee che condividono un antenato comune.
+    // Se un Digimon ha PIÙ evoluzioni, si segue per intero solo la prima diramazione: le altre restano
+    // visibili (compare il Digimon) ma "bloccate" a quel livello, con un pulsante per aprirle su
+    // richiesta — altrimenti un albero con molte diramazioni (es. Koromon) diventa illeggibile.
     function descend(e, seen){
       if(!e || e.id==null || seen.has(String(e.id))) return;
       seen.add(String(e.id));
       if(!isArmor(e)) nodes.set(String(e.id), e);
-      (e.evolutions||[]).forEach(ev=>{
-        const t = resolveRef(ev);
-        if(!t) return;
-        if(isArmor(t)){ armorNodes.set(String(t.id), t); return; } // le Armor si vedono a parte, non nel grafo principale
+      const resolved = (e.evolutions||[]).map(ev=>resolveRef(ev)).filter(Boolean);
+      const normalChildren = resolved.filter(t=>!isArmor(t));
+      // Le Armor si vedono a parte, non nel grafo principale, e SOLO quando chi evolve è un Rookie:
+      // è l'unico Stage che può davvero Armor Evolvere, quindi collegamenti Armor su altri Stage
+      // (probabili errori di inserimento dati) non vanno mostrati come possibilità reale.
+      resolved.filter(t=>isArmor(t)).forEach(t=>{ if(e.stage==='Rookie') armorNodes.set(String(t.id), t); });
+      normalChildren.forEach((t, idx)=>{
+        nodes.set(String(t.id), t);
         edges.push({ from:String(e.id), to:String(t.id) });
-        descend(t, seen);
+        const shouldExpand = idx===0 || expandedEvoNodes.has(String(t.id));
+        if(shouldExpand){
+          descend(t, seen);
+        } else {
+          seen.add(String(t.id));
+          const hiddenCount = (t.evolutions||[]).filter(ev=>{ const r=resolveRef(ev); return r && !isArmor(r); }).length;
+          if(hiddenCount>0){ collapsedNodeIds.add(String(t.id)); hiddenChildCounts.set(String(t.id), hiddenCount); }
+        }
       });
     }
     // Antenati: SOLO seguendo "evolvesFrom" a ritroso (mai in avanti da un antenato,
@@ -251,7 +275,7 @@
       });
     });
 
-    return { nodes: Array.from(nodes.values()), edges: uniqueEdges, armorNodes: Array.from(armorNodes.values()), slideEdges };
+    return { nodes: Array.from(nodes.values()), edges: uniqueEdges, armorNodes: Array.from(armorNodes.values()), slideEdges, collapsedNodeIds, hiddenChildCounts };
   }
 
   function armorEvolutionsHTML(armorNodes){
@@ -304,10 +328,28 @@
     });
     leaps.sort((a,b)=>a.depth-b.depth || a.node.name.localeCompare(b.node.name));
     const stagesPresent = STAGE_ORDER.filter(s=>columns[s].length);
+    // Riordina le righe di ogni colonna in base alla posizione dei genitori nella colonna precedente
+    // (tecnica "barycenter", standard per i diagrammi ad albero): così i rami restano il più possibile
+    // vicini a chi li genera, invece di ritrovarsi sparsi a caso — è quello che rende una diramazione
+    // ampia come quella di Koromon molto più leggibile da seguire con l'occhio.
+    for(let i=1;i<stagesPresent.length;i++){
+      const prevOrder = new Map(columns[stagesPresent[i-1]].map((n,idx)=>[String(n.id), idx]));
+      columns[stagesPresent[i]].sort((a,b)=>{
+        const posA = parentsOf(a).map(p=>prevOrder.has(String(p.id)) ? prevOrder.get(String(p.id)) : Infinity);
+        const posB = parentsOf(b).map(p=>prevOrder.has(String(p.id)) ? prevOrder.get(String(p.id)) : Infinity);
+        const baryA = posA.length ? Math.min(...posA) : Infinity;
+        const baryB = posB.length ? Math.min(...posB) : Infinity;
+        if(baryA!==baryB) return baryA-baryB;
+        return a.name.localeCompare(b.name);
+      });
+    }
     function nodeBoxHTML(n, borderColor, icon){
-      return `<div id="chart-node-${n.id}" data-nav-evo="${n.id}" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;width:68px;padding:4px;border-radius:6px;background:${String(n.id)===String(entry.id)?'rgba(255,193,74,0.18)':'transparent'};border:1px solid ${String(n.id)===String(entry.id)?'var(--amber)':borderColor};">
+      const isCollapsed = graph.collapsedNodeIds && graph.collapsedNodeIds.has(String(n.id));
+      const hiddenCount = graph.hiddenChildCounts ? (graph.hiddenChildCounts.get(String(n.id))||0) : 0;
+      return `<div id="chart-node-${n.id}" data-nav-evo="${n.id}" style="position:relative;cursor:pointer;display:flex;flex-direction:column;align-items:center;width:68px;padding:4px;border-radius:6px;background:${String(n.id)===String(entry.id)?'rgba(255,193,74,0.18)':'transparent'};border:1px solid ${String(n.id)===String(entry.id)?'var(--amber)':borderColor};">
         ${n.image_url ? `<img src="${escapeAttr(n.image_url)}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;" onerror="this.style.visibility='hidden'"/>` : `<div style="width:38px;height:38px;border-radius:50%;background:var(--panel);border:1px solid ${borderColor};"></div>`}
         <div class="muted" style="font-size:8px;text-align:center;margin-top:3px;line-height:1.2;">${icon?icon+' ':''}${escapeHTML(n.name)}</div>
+        ${isCollapsed ? `<div data-expand-evo="${n.id}" title="Mostra le evoluzioni successive di ${escapeAttr(n.name)}" style="position:absolute;bottom:-7px;right:-7px;background:var(--panel);border:1px solid var(--cyan);color:var(--cyan);border-radius:9px;font-size:9px;line-height:1;padding:3px 5px;cursor:pointer;font-weight:bold;">+${hiddenCount}</div>` : ''}
       </div>`;
     }
     return `<div class="muted" style="margin:10px 0 4px;">Linea Evolutiva Completa (con diramazioni)</div>
@@ -389,16 +431,16 @@
       const dash = isSlide ? ' stroke-dasharray="5,4"' : '';
       const sameColumn = Math.abs(((ar.left+ar.right)/2) - ((br.left+br.right)/2)) < 8;
       if(sameColumn){
-        // Stessa colonna (es. Slide Evolution tra forme dello stesso Stage): basta una linea verticale
-        // a lato del riquadro, così non attraversa mai i nodi intermedi né taglia dentro le icone.
+        // Stessa colonna (es. una catena allo stesso Stage): SOLO una linea verticale dritta, a fianco
+        // del riquadro — niente più gomiti orizzontali all'inizio/fine, che creavano confusione visiva.
         const edgeX = Math.max(ar.right, br.right) - wrapRect.left + wrap.scrollLeft;
         const key = Math.round((ar.left+ar.right)/2);
         const n = columnLineCount[key] || 0;
         columnLineCount[key] = n + 1;
-        const sideX = edgeX + 10 + n*7;
+        const lineX = edgeX + 6 + n*5;
         const y1 = (ar.top < br.top ? ar.top + ar.height/2 : br.top + br.height/2) - wrapRect.top + wrap.scrollTop;
         const y2 = (ar.top < br.top ? br.top + br.height/2 : ar.top + ar.height/2) - wrapRect.top + wrap.scrollTop;
-        return `<path d="M ${edgeX} ${y1} L ${sideX} ${y1} L ${sideX} ${y2} L ${edgeX} ${y2}" stroke="${color}" stroke-width="1.6" fill="none"${dash}/>`;
+        return `<path d="M ${lineX} ${y1} L ${lineX} ${y2}" stroke="${color}" stroke-width="1.6" fill="none"${dash}/>`;
       }
       const colA = colIndexOf(a), colB = colIndexOf(b);
       const colGap = (colA!=null && colB!=null) ? Math.abs(colB-colA) : 1;
@@ -761,6 +803,8 @@ Devimon: https://..."></textarea>
   }
 
   function openDetailModal(entry){
+    if(String(entry.id) !== String(lastDetailEntryId)) expandedEvoNodes = new Set();
+    lastDetailEntryId = entry.id;
     const isMaster = session.role==='master';
     const bs = entry.base_stats || {};
     const hasStats = bs.baseAccuracy || bs.baseDamage || bs.baseDodge || bs.baseArmor || bs.baseHealth;
@@ -823,6 +867,14 @@ Devimon: https://..."></textarea>
         const targetId = el.getAttribute('data-nav-evo');
         const targetEntry = cachedDex.find(e=>String(e.id)===String(targetId));
         if(targetEntry){ closeModal(); openDetailModal(targetEntry); }
+      };
+    });
+    overlay.querySelectorAll('[data-expand-evo]').forEach(el=>{
+      el.onclick = (e)=>{
+        e.stopPropagation(); // non deve attivare anche la navigazione del riquadro sotto
+        expandedEvoNodes.add(String(el.getAttribute('data-expand-evo')));
+        closeModal();
+        openDetailModal(entry);
       };
     });
     document.getElementById('btn-close-modal').onclick = closeModal;
