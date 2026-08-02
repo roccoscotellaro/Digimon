@@ -244,22 +244,22 @@
       return (n.evolves_from || n.evolvesFrom || []).map(p=>p.id!=null?byIdFull[String(p.id)]:null).filter(Boolean);
     }
     function leapDepth(n, seen){
-      if(seen.has(String(n.id))) return 1; // guardia anti-ciclo
+      if(seen.has(String(n.id))) return 0; // guardia anti-ciclo
       seen.add(String(n.id));
       const sameTierParents = parentsOf(n).filter(p=>p.stage===n.stage);
-      if(!sameTierParents.length) return 1;
+      if(!sameTierParents.length) return 0; // Mega "base" (raggiunto da Ultimate): zero passi extra
       return 1 + Math.max(...sameTierParents.map(p=>leapDepth(p, seen)));
     }
     graph.nodes.forEach(n=>{
-      // Se anche un solo genitore è già allo stesso Stage del risultato (Fighter Mode+Omnimon -> Paladin Mode,
-      // ma anche il semplice Omnimon -> Omnimon Merciful Mode, o una Burst Mode) non è una "prossima evoluzione"
-      // normale: è un salto ulteriore che merita il proprio quadrato SEPARATO — MAI impilato con altri salti,
-      // perché due salti diversi dallo stesso Stage (es. Paladin Mode e Merciful Mode, entrambi da Omnimon) non
-      // hanno nulla a che vedere l'uno con l'altro e impilarli insieme dà la falsa impressione che siano collegati.
-      // Vale per Jogress, Burst Mode o qualunque altra origine — TRANNE gli Spirit (Digimon Frontier): la loro
-      // Slide Evolution è un meccanismo a parte, resta stesso Stage per definizione e va mostrata con la linea
-      // verticale nella colonna di Stage normale, non spostata lateralmente.
-      const isSameTierLeap = n.origin_type!=='spirit' && parentsOf(n).some(p=>p.stage===n.stage);
+      // Il meccanismo "+"/"++" esiste SOLO per il Mega: Rocco non vuole Champion+/Rookie+/Ultimate+.
+      // Un Digimon che resta allo stesso Stage del proprio genitore, per QUALSIASI motivo (Jogress,
+      // Burst Mode, Slide Evolution, ecc.), a qualunque Stage diverso da Mega, va semplicemente nella
+      // colonna normale di quello Stage (impilato, collegato da linea verticale) — non è un "salto".
+      // Solo al Mega un passo ulteriore rappresenta davvero un nuovo livello di potere: Mega+ è il
+      // livello raggiunto da una fusione (es. Omnimon = fusione di due Mega) o da un'ulteriore
+      // evoluzione di un Mega (es. Diaboromon -> Armageddemon, o una Burst Mode). Un'evoluzione
+      // ulteriore di un Mega+ (es. Omnimon -> Omnimon Merciful Mode) è un Mega++, e così via.
+      const isSameTierLeap = n.stage==='Mega' && parentsOf(n).some(p=>p.stage===n.stage);
       if(isSameTierLeap){ leaps.push({ node:n, depth: leapDepth(n, new Set()) }); }
       else if(columns[n.stage]) columns[n.stage].push(n);
       else extra.push(n);
@@ -276,25 +276,25 @@
       <div id="evo-chart-wrap" style="position:relative;overflow-x:auto;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:14px;">
         <svg id="evo-chart-svg" style="position:absolute;top:0;left:0;pointer-events:none;"></svg>
         <div style="display:flex;gap:22px;position:relative;z-index:1;">
-          ${stagesPresent.map(s=>`
-            <div style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
+          ${stagesPresent.map((s,colIdx)=>`
+            <div data-col-idx="${colIdx}" style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
               <div style="font-size:9px;font-weight:bold;color:${STAGE_COLORS[s]||'#ccc'};margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px;">${s}</div>
               <div style="display:flex;flex-direction:column;gap:16px;">
                 ${columns[s].map(n=>nodeBoxHTML(n, STAGE_COLORS[s]||'#666')).join('')}
               </div>
             </div>
           `).join('')}
-          ${leaps.map(({node:n, depth})=>{
+          ${leaps.map(({node:n, depth}, leapIdx)=>{
             const icon = n.origin_type==='jogress' ? '🤝' : (n.origin_type==='burst' ? '🔥' : '⚡');
             const label = `${(n.stage||'').toUpperCase()}${'+'.repeat(depth)}`;
-            return `<div style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
+            return `<div data-col-idx="${stagesPresent.length+leapIdx}" style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
               <div style="font-size:9px;font-weight:bold;color:#e07fe0;margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px;">${label}</div>
               <div style="display:flex;flex-direction:column;gap:16px;">
                 ${nodeBoxHTML(n, '#e07fe0', icon)}
               </div>
             </div>`;
           }).join('')}
-          ${extra.length ? `<div style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
+          ${extra.length ? `<div data-col-idx="${stagesPresent.length+leaps.length}" style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
             <div style="font-size:9px;font-weight:bold;color:#ccc;margin-bottom:10px;text-transform:uppercase;">Altro</div>
             <div style="display:flex;flex-direction:column;gap:16px;">
               ${extra.map(n=>nodeBoxHTML(n, '#666')).join('')}
@@ -318,6 +318,24 @@
     // Contiamo quante volte ogni colonna (stessa X, cioè stesso Stage) ha già un collegamento verticale,
     // per scostare leggermente le linee successive ed evitare che si sovrappongano esattamente.
     const columnLineCount = {};
+    // Quante linee "by-pass" (che saltano più di una colonna) sono già state disegnate, per impilarle
+    // una sopra l'altra nella corsia in alto invece di sovrapporle esattamente.
+    let skipLaneCount = 0;
+    // Trova l'indice di colonna (data-col-idx) del contenitore che ospita il nodo, per sapere se due nodi
+    // sono in colonne adiacenti (curva diretta nel gap, sempre sicura) o separate da altre colonne (in tal
+    // caso una curva diretta taglierebbe dritta attraverso i riquadri delle colonne di mezzo).
+    function colIndexOf(nodeEl){
+      const col = nodeEl.closest('[data-col-idx]');
+      return col ? Number(col.getAttribute('data-col-idx')) : null;
+    }
+    // Cima più alta di TUTTI i riquadri del grafico, per tracciare la corsia di by-pass sempre sopra ogni box.
+    let topMostY = Infinity;
+    document.querySelectorAll('#evo-chart-wrap [id^="chart-node-"]').forEach(el=>{
+      const r = el.getBoundingClientRect();
+      const y = r.top - wrapRect.top + wrap.scrollTop;
+      if(y < topMostY) topMostY = y;
+    });
+    if(!isFinite(topMostY)) topMostY = 40;
     svg.innerHTML = edges.map((ed,i)=>{
       const a = document.getElementById('chart-node-'+ed.from);
       const b = document.getElementById('chart-node-'+ed.to);
@@ -336,6 +354,18 @@
         const y1 = (ar.top < br.top ? ar.top + ar.height/2 : br.top + br.height/2) - wrapRect.top + wrap.scrollTop;
         const y2 = (ar.top < br.top ? br.top + br.height/2 : ar.top + ar.height/2) - wrapRect.top + wrap.scrollTop;
         return `<path d="M ${edgeX} ${y1} L ${sideX} ${y1} L ${sideX} ${y2} L ${edgeX} ${y2}" stroke="${color}" stroke-width="1.6" fill="none"/>`;
+      }
+      const colA = colIndexOf(a), colB = colIndexOf(b);
+      const colGap = (colA!=null && colB!=null) ? Math.abs(colB-colA) : 1;
+      if(colGap > 1){
+        // Colonne NON adiacenti: una curva diretta taglierebbe dritta attraverso i riquadri delle
+        // colonne di mezzo. Si passa invece "sopra", con una corsia dedicata più in alto del box più
+        // alto di tutto il grafico, così non attraversa mai nessuna casella.
+        const x1 = (ar.left+ar.right)/2 - wrapRect.left + wrap.scrollLeft, y1 = ar.top - wrapRect.top + wrap.scrollTop;
+        const x2 = (br.left+br.right)/2 - wrapRect.left + wrap.scrollLeft, y2 = br.top - wrapRect.top + wrap.scrollTop;
+        const laneY = Math.max(4, topMostY - 12 - skipLaneCount*6);
+        skipLaneCount++;
+        return `<path d="M ${x1} ${y1} L ${x1} ${laneY} L ${x2} ${laneY} L ${x2} ${y2}" stroke="${color}" stroke-width="1.6" fill="none"/>`;
       }
       const x1 = ar.right - wrapRect.left + wrap.scrollLeft, y1 = ar.top + ar.height/2 - wrapRect.top + wrap.scrollTop;
       const x2 = br.left - wrapRect.left + wrap.scrollLeft, y2 = br.top + br.height/2 - wrapRect.top + wrap.scrollTop;
@@ -1065,7 +1095,9 @@ Devimon: https://..."></textarea>
       name:'', stage:'Rookie', description:'', signature_move:'', image_url:'', categories:[], base_stats:{}, evolutions:[], qualities:[], dp_total:0, discovered:false
     };
     if(!draft.evolutions) draft.evolutions = [];
-    if(!draft.evolvesFrom) draft.evolvesFrom = [];
+    // BUGFIX: un entry letto dal DB ha il campo "evolves_from" (snake_case), non "evolvesFrom".
+    // Prima questo fallback mancava e la Pre-Evoluzione veniva sempre azzerata all'apertura della scheda.
+    if(!draft.evolvesFrom) draft.evolvesFrom = draft.evolves_from || [];
     if(!draft.qualities) draft.qualities = [];
     if(!draft.categories) draft.categories = [];
     if(!draft.extraAttacks) draft.extraAttacks = draft.extra_attacks || [];
@@ -1262,8 +1294,19 @@ Devimon: https://..."></textarea>
       const n = document.getElementById('ed-slide-name').value.trim();
       if(!n) return;
       draft.slideTargets.push(n);
+      // BUGFIX: prima uno Slide Target restava solo testo decorativo e non compariva mai nell'albero
+      // evolutivo sotto. Ora si collega anche come evoluzione vera e propria (stesso Stage, quindi
+      // isSameTierLeap la lascia nella colonna normale) così appare con la linea verticale che la
+      // unisce al Digimon di partenza, e al salvataggio si crea anche il collegamento reciproco.
+      const link = resolveSpeciesLink(n, '');
+      const alreadyLinked = draft.evolutions.some(ev=>
+        (ev.id!=null && link.id!=null && String(ev.id)===String(link.id)) ||
+        (!ev.id && !link.id && ev.name.trim().toLowerCase()===link.name.trim().toLowerCase())
+      );
+      if(!alreadyLinked) draft.evolutions.push(link);
       document.getElementById('ed-slide-name').value='';
       renderSlideList();
+      renderEvoList();
     };
     document.getElementById('btn-attack-add').onclick = ()=>{
       const move = document.getElementById('ed-attack-move').value.trim();
