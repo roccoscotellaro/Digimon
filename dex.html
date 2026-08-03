@@ -365,11 +365,11 @@
     return `<div class="muted" style="margin:10px 0 4px;">Linea Evolutiva Completa (con diramazioni)</div>
       <div id="evo-chart-wrap" style="position:relative;overflow-x:auto;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:14px;">
         <svg id="evo-chart-svg" style="position:absolute;top:0;left:0;pointer-events:none;"></svg>
-        <div style="display:flex;gap:22px;position:relative;z-index:1;">
+        <div style="display:flex;gap:22px;position:relative;z-index:1;align-items:stretch;">
           ${stagesPresent.map((s,colIdx)=>`
             <div data-col-idx="${colIdx}" style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
               <div style="font-size:9px;font-weight:bold;color:${STAGE_COLORS[s]||'#ccc'};margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px;">${s}</div>
-              <div style="display:flex;flex-direction:column;gap:28px;">
+              <div style="display:flex;flex-direction:column;gap:28px;justify-content:center;flex:1;">
                 ${columns[s].map(n=>nodeBoxHTML(n, STAGE_COLORS[s]||'#666')).join('')}
               </div>
             </div>
@@ -379,14 +379,14 @@
             const label = `${(n.stage||'').toUpperCase()}${'+'.repeat(depth)}`;
             return `<div data-col-idx="${stagesPresent.length+leapIdx}" style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
               <div style="font-size:9px;font-weight:bold;color:#e07fe0;margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px;">${label}</div>
-              <div style="display:flex;flex-direction:column;gap:28px;">
+              <div style="display:flex;flex-direction:column;gap:28px;justify-content:center;flex:1;">
                 ${nodeBoxHTML(n, '#e07fe0', icon)}
               </div>
             </div>`;
           }).join('')}
           ${extra.length ? `<div data-col-idx="${stagesPresent.length+leaps.length}" style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
             <div style="font-size:9px;font-weight:bold;color:#ccc;margin-bottom:10px;text-transform:uppercase;">Altro</div>
-            <div style="display:flex;flex-direction:column;gap:28px;">
+            <div style="display:flex;flex-direction:column;gap:28px;justify-content:center;flex:1;">
               ${extra.map(n=>nodeBoxHTML(n, '#666')).join('')}
             </div>
           </div>` : ''}
@@ -442,11 +442,17 @@
     // collegamento (sopra o sotto), invece di passare sempre dalla cima anche quando i due Digimon
     // sono già in fondo alla tabella — che farebbe fare un giro enorme senza motivo.
     let topMostY = Infinity, bottomMostY = -Infinity;
-    document.querySelectorAll('#evo-chart-wrap [id^="chart-node-"]').forEach(el=>{
+    // Usiamo il contenitore di colonna (che include anche l'etichetta di testo dello Stage sopra i
+    // riquadri), non solo i riquadri stessi — altrimenti la corsia "in alto" restava troppo vicina al
+    // box ma finiva comunque per tagliare dentro la scritta MEGA+/MEGA++ sopra di esso.
+    document.querySelectorAll('#evo-chart-wrap [data-col-idx]').forEach(el=>{
       const r = el.getBoundingClientRect();
       const yTop = r.top - wrapRect.top + wrap.scrollTop;
-      const yBottom = r.bottom - wrapRect.top + wrap.scrollTop;
       if(yTop < topMostY) topMostY = yTop;
+    });
+    document.querySelectorAll('#evo-chart-wrap [id^="chart-node-"]').forEach(el=>{
+      const r = el.getBoundingClientRect();
+      const yBottom = r.bottom - wrapRect.top + wrap.scrollTop;
       if(yBottom > bottomMostY) bottomMostY = yBottom;
     });
     if(!isFinite(topMostY)) topMostY = 40;
