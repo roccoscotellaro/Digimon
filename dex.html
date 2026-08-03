@@ -367,7 +367,7 @@
       const isCurrent = String(n.id)===String(entry.id);
       const expandAttrs = isCollapsed ? `data-expand-evo="${n.id}" title="Mostra le evoluzioni successive di ${escapeAttr(n.name)}"` : '';
       const cursorStyle = isCollapsed ? 'cursor:pointer;' : '';
-      return `<div id="chart-node-${n.id}" style="position:relative;display:flex;flex-direction:column;align-items:center;width:68px;padding:4px;border-radius:6px;background:${isCurrent?'rgba(255,193,74,0.18)':'transparent'};border:1px solid ${isCurrent?'var(--amber)':borderColor};">
+      return `<div id="chart-node-${n.id}" data-collapsed="${isCollapsed?'1':'0'}" style="position:relative;display:flex;flex-direction:column;align-items:center;width:68px;padding:4px;border-radius:6px;background:${isCurrent?'rgba(255,193,74,0.18)':'transparent'};border:1px solid ${isCurrent?'var(--amber)':borderColor};">
         ${n.image_url ? `<img src="${escapeAttr(n.image_url)}" ${expandAttrs} style="width:38px;height:38px;border-radius:50%;object-fit:cover;${cursorStyle}" onerror="this.style.visibility='hidden'"/>` : `<div ${expandAttrs} style="width:38px;height:38px;border-radius:50%;background:var(--panel);border:1px solid ${borderColor};${cursorStyle}"></div>`}
         <div class="muted" style="font-size:8px;text-align:center;margin-top:3px;line-height:1.2;">${icon?icon+' ':''}${escapeHTML(n.name)}</div>
         ${isCurrent ? '' : `<button data-nav-evo="${n.id}" title="Apri la scheda di ${escapeAttr(n.name)}" style="margin-top:3px;font-size:8px;line-height:1;padding:2px 5px;border-radius:4px;border:1px solid ${borderColor};background:transparent;color:${borderColor};cursor:pointer;">Apri ↗</button>`}
@@ -483,7 +483,11 @@
       // evoluzione (non c'è un "prima" e un "dopo"), quindi non devono sembrare identiche a una linea
       // di Jogress/discendenza normale.
       const isSlide = ed.kind==='slide';
-      const color = isSlide ? 'rgba(127,214,201,0.9)' : (i%2===0 ? 'rgba(255,150,60,0.85)' : 'rgba(110,220,140,0.85)');
+      // Un ramo ancora "bloccato" (non espanso) ha un colore spento e uniforme, per distinguerlo a
+      // colpo d'occhio da un ramo attivo — prima invece il colore alternava arancione/verde in modo
+      // puramente casuale (in base alla posizione nell'array), senza alcun significato reale.
+      const targetBlocked = !isSlide && b.getAttribute('data-collapsed')==='1';
+      const color = isSlide ? 'rgba(127,214,201,0.9)' : (targetBlocked ? 'rgba(150,150,160,0.55)' : (i%2===0 ? 'rgba(255,150,60,0.85)' : 'rgba(110,220,140,0.85)'));
       const dash = isSlide ? ' stroke-dasharray="5,4"' : '';
       const sameColumn = Math.abs(((ar.left+ar.right)/2) - ((br.left+br.right)/2)) < 8;
       if(sameColumn){
@@ -912,9 +916,9 @@ Devimon: https://..."></textarea>
           <div class="stat-box"><div class="v">${bs.baseArmor||0}</div><div class="l">ARM</div></div>
           <div class="stat-box"><div class="v">${bs.baseHealth||0}</div><div class="l">HP</div></div>
         </div>` : ''}
-        ${(()=>{ const graph = evolutionFamilyGraph(entry); const chart = evolutionChartHTML(entry, graph);
+        <div id="evo-chart-section">${(()=>{ const graph = evolutionFamilyGraph(entry); const chart = evolutionChartHTML(entry, graph);
           return chart || (evolutionsHTML(entry.evolvesFrom || entry.evolves_from, 'Pre-Evoluzioni (da cosa evolve)') + evolutionsHTML(entry.evolutions, 'Possibili Evoluzioni (in cosa evolve)'));
-        })()}
+        })()}</div>
         ${armorEvolutionsHTML(evolutionFamilyGraph(entry).armorNodes)}
         ${qualitiesHTML(entry.qualities, entry.dp_total)}
         ${entry.added_by ? `<div class="muted" style="margin-top:8px;">Aggiunto da ${escapeHTML(entry.added_by)}</div>` : ''}
@@ -936,22 +940,35 @@ Devimon: https://..."></textarea>
         document.body.appendChild(lightbox);
       };
     });
-    overlay.querySelectorAll('[data-nav-evo]').forEach(el=>{
-      el.onclick = ()=>{
-        const targetId = el.getAttribute('data-nav-evo');
-        const targetEntry = cachedDex.find(e=>String(e.id)===String(targetId));
-        if(targetEntry){ closeModal(); openDetailModal(targetEntry); }
-      };
-    });
-    overlay.querySelectorAll('[data-expand-evo]').forEach(el=>{
-      el.onclick = (e)=>{
-        e.stopPropagation(); // non deve attivare anche il pulsante "Apri" sotto
-        // Fisarmonica: aprire un ramo richiude tutti gli altri già aperti, invece di accumularsi.
-        expandedEvoNodes = new Set([String(el.getAttribute('data-expand-evo'))]);
-        closeModal();
-        openDetailModal(entry);
-      };
-    });
+    function wireEvoChartHandlers(container){
+      container.querySelectorAll('[data-nav-evo]').forEach(el=>{
+        el.onclick = ()=>{
+          const targetId = el.getAttribute('data-nav-evo');
+          const targetEntry = cachedDex.find(e=>String(e.id)===String(targetId));
+          if(targetEntry){ closeModal(); openDetailModal(targetEntry); }
+        };
+      });
+      container.querySelectorAll('[data-expand-evo]').forEach(el=>{
+        el.onclick = (e)=>{
+          e.stopPropagation(); // non deve attivare anche il pulsante "Apri" sotto
+          // Fisarmonica: aprire un ramo richiude tutti gli altri già aperti, invece di accumularsi.
+          expandedEvoNodes = new Set([String(el.getAttribute('data-expand-evo'))]);
+          refreshEvoChartSection();
+        };
+      });
+    }
+    // Aggiorna SOLO l'albero evolutivo dentro la scheda già aperta, invece di richiudere e riaprire
+    // tutta la scheda da zero (che dava una fastidiosa sensazione di "refresh" completo).
+    function refreshEvoChartSection(){
+      const container = document.getElementById('evo-chart-section');
+      if(!container) return;
+      const graph = evolutionFamilyGraph(entry);
+      const chart = evolutionChartHTML(entry, graph);
+      container.innerHTML = chart || (evolutionsHTML(entry.evolvesFrom || entry.evolves_from, 'Pre-Evoluzioni (da cosa evolve)') + evolutionsHTML(entry.evolutions, 'Possibili Evoluzioni (in cosa evolve)'));
+      wireEvoChartHandlers(container);
+      if(graph.nodes.length>1) setTimeout(()=>drawEvoChartLines(graph.edges, graph.slideEdges), 0);
+    }
+    wireEvoChartHandlers(overlay);
     document.getElementById('btn-close-modal').onclick = closeModal;
     const editBtn = document.getElementById('btn-edit-entry');
     if(editBtn) editBtn.onclick = ()=>{ closeModal(); openEditModal(entry); };
