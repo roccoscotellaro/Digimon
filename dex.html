@@ -377,7 +377,9 @@
       return `<div id="chart-node-${n.id}" data-collapsed="${isCollapsed?'1':'0'}" style="position:relative;display:flex;flex-direction:column;align-items:center;width:68px;padding:4px;border-radius:6px;background:${isCurrent?'rgba(255,193,74,0.18)':'transparent'};border:1px solid ${isCurrent?'var(--amber)':borderColor};">
         ${n.image_url ? `<img src="${escapeAttr(n.image_url)}" ${expandAttrs} style="width:38px;height:38px;border-radius:50%;object-fit:cover;${cursorStyle}" onerror="this.style.visibility='hidden'"/>` : `<div ${expandAttrs} style="width:38px;height:38px;border-radius:50%;background:var(--panel);border:1px solid ${borderColor};${cursorStyle}"></div>`}
         <div class="muted" style="font-size:8px;text-align:center;margin-top:3px;line-height:1.2;">${icon?icon+' ':''}${escapeHTML(n.name)}</div>
-        ${isCurrent ? '' : `<button data-nav-evo="${n.id}" title="Apri la scheda di ${escapeAttr(n.name)}" style="margin-top:3px;font-size:8px;line-height:1;padding:2px 5px;border-radius:4px;border:1px solid ${borderColor};background:transparent;color:${borderColor};cursor:pointer;">Apri ↗</button>`}
+        ${isCurrent ? '' : (n.id!=null
+          ? `<button data-nav-evo="${n.id}" title="Apri la scheda di ${escapeAttr(n.name)}" style="margin-top:3px;font-size:8px;line-height:1;padding:2px 5px;border-radius:4px;border:1px solid ${borderColor};background:transparent;color:${borderColor};cursor:pointer;">Apri ↗</button>`
+          : `<span class="muted" title="${escapeAttr(n.name)} è citato come evoluzione ma non esiste ancora come scheda nel Dex" style="margin-top:3px;font-size:8px;line-height:1;padding:2px 5px;border-radius:4px;border:1px dashed ${borderColor};opacity:0.6;">Non nel Dex</span>`)}
         ${isCollapsed ? `<div title="Ha altre ${hiddenCount} evoluzioni — clicca l'immagine per mostrarle" style="position:absolute;top:-7px;right:-7px;background:var(--panel);border:1px solid var(--cyan);color:var(--cyan);border-radius:9px;font-size:9px;line-height:1;padding:3px 5px;font-weight:bold;pointer-events:none;">+${hiddenCount}</div>` : ''}
       </div>`;
     }
@@ -1697,6 +1699,11 @@ Devimon: https://..."></textarea>
         // Crea in automatico il collegamento reciproco sull'altro Digimon coinvolto, così non serve
         // più aprirlo a mano e aggiungerlo anche lì. Le due entry restano sincronizzate su entrambi i lati.
         statusEl.style.color='var(--text-mute)'; statusEl.textContent='Salvato, sincronizzo collegamenti reciproci...';
+        // BUGFIX: prima si usava il cachedDex di prima dell'apertura di questa scheda per costruire il
+        // payload completo dell'ALTRO Digimon coinvolto — se nel frattempo quell'altro Digimon aveva
+        // ricevuto modifiche proprie (es. un suo Slide Target), venivano sovrascritte con la versione
+        // vecchia. Aggiorniamo prima di leggere/scrivere i collegamenti reciproci.
+        cachedDex = await getDex(session.code);
         const savedId = isNew ? (result.entry && result.entry.id) : entry.id;
         const savedRef = { id: savedId, name, imageUrl: payload.imageUrl || '' };
         function resolveTarget(link){
