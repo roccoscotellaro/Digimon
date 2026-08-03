@@ -356,9 +356,11 @@
     function nodeBoxHTML(n, borderColor, icon){
       const isCollapsed = graph.collapsedNodeIds && graph.collapsedNodeIds.has(String(n.id));
       const hiddenCount = graph.hiddenChildCounts ? (graph.hiddenChildCounts.get(String(n.id))||0) : 0;
-      return `<div id="chart-node-${n.id}" data-nav-evo="${n.id}" style="position:relative;cursor:pointer;display:flex;flex-direction:column;align-items:center;width:68px;padding:4px;border-radius:6px;background:${String(n.id)===String(entry.id)?'rgba(255,193,74,0.18)':'transparent'};border:1px solid ${String(n.id)===String(entry.id)?'var(--amber)':borderColor};">
+      const isCurrent = String(n.id)===String(entry.id);
+      return `<div id="chart-node-${n.id}" style="position:relative;display:flex;flex-direction:column;align-items:center;width:68px;padding:4px;border-radius:6px;background:${isCurrent?'rgba(255,193,74,0.18)':'transparent'};border:1px solid ${isCurrent?'var(--amber)':borderColor};">
         ${n.image_url ? `<img src="${escapeAttr(n.image_url)}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;" onerror="this.style.visibility='hidden'"/>` : `<div style="width:38px;height:38px;border-radius:50%;background:var(--panel);border:1px solid ${borderColor};"></div>`}
         <div class="muted" style="font-size:8px;text-align:center;margin-top:3px;line-height:1.2;">${icon?icon+' ':''}${escapeHTML(n.name)}</div>
+        ${isCurrent ? '' : `<button data-nav-evo="${n.id}" title="Apri la scheda di ${escapeAttr(n.name)}" style="margin-top:3px;font-size:8px;line-height:1;padding:2px 5px;border-radius:4px;border:1px solid ${borderColor};background:transparent;color:${borderColor};cursor:pointer;">Apri ↗</button>`}
         ${isCollapsed ? `<div data-expand-evo="${n.id}" title="Mostra le evoluzioni successive di ${escapeAttr(n.name)}" style="position:absolute;top:-7px;right:-7px;background:var(--panel);border:1px solid var(--cyan);color:var(--cyan);border-radius:9px;font-size:9px;line-height:1;padding:3px 5px;cursor:pointer;font-weight:bold;">+${hiddenCount}</div>` : ''}
       </div>`;
     }
@@ -633,7 +635,7 @@
       <div class="hud-frame card">
         <div class="flex-between" style="margin-bottom:10px;">
           <div class="section-title" style="margin:0;border:none;padding:0;">Digimon Registrati (${cachedDex.length})</div>
-          ${isMaster ? `<span><button class="btn ghost small" id="btn-import-seed2" style="margin-right:6px;color:var(--cyan);">🎴 Importa/Correggi Famosi</button><button class="btn ghost small" id="btn-force-sync" style="margin-right:6px;color:var(--amber);">⚠️ Forza Sync Attr/Famiglia/Mossa</button><button class="btn ghost small" id="btn-bulk-images" style="margin-right:6px;">🖼️ Incolla Immagini</button><button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button></span>` : ''}
+          ${isMaster ? `<span><button class="btn ghost small" id="btn-import-seed2" style="margin-right:6px;color:var(--cyan);">🎴 Importa/Correggi Famosi</button><button class="btn ghost small" id="btn-force-sync" style="margin-right:6px;color:var(--amber);">⚠️ Forza Sync Attr/Famiglia/Mossa</button><button class="btn ghost small" id="btn-sync-spirit-slides" style="margin-right:6px;color:var(--cyan);">✨ Sincronizza Slide Spirit</button><button class="btn ghost small" id="btn-bulk-images" style="margin-right:6px;">🖼️ Incolla Immagini</button><button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button></span>` : ''}
         </div>
         <input type="text" id="dex-search" placeholder="🔍 Cerca per nome..." style="margin-bottom:14px;" />
         <div id="filter-bar" class="filter-bar"></div>
@@ -647,6 +649,8 @@
     if(importSeed2Btn) importSeed2Btn.onclick = ()=> openImportModal(SPECIES_SEED.concat(SPECIES_SEED_VILLAINS, SPECIES_SEED_2, SPECIES_SEED_3, SPECIES_SEED_4), 'Importa/Correggi Digimon Famosi');
     const forceSyncBtn = document.getElementById('btn-force-sync');
     if(forceSyncBtn) forceSyncBtn.onclick = ()=> runForceSync();
+    const syncSpiritBtn = document.getElementById('btn-sync-spirit-slides');
+    if(syncSpiritBtn) syncSpiritBtn.onclick = ()=> runSpiritSlideSync();
     const bulkImagesBtn = document.getElementById('btn-bulk-images');
     if(bulkImagesBtn) bulkImagesBtn.onclick = ()=> openBulkImageModal();
     const searchInput = document.getElementById('dex-search');
@@ -931,8 +935,9 @@ Devimon: https://..."></textarea>
     });
     overlay.querySelectorAll('[data-expand-evo]').forEach(el=>{
       el.onclick = (e)=>{
-        e.stopPropagation(); // non deve attivare anche la navigazione del riquadro sotto
-        expandedEvoNodes.add(String(el.getAttribute('data-expand-evo')));
+        e.stopPropagation(); // non deve attivare anche il pulsante "Apri" sotto
+        // Fisarmonica: aprire un ramo richiude tutti gli altri già aperti, invece di accumularsi.
+        expandedEvoNodes = new Set([String(el.getAttribute('data-expand-evo'))]);
         closeModal();
         openDetailModal(entry);
       };
@@ -1241,6 +1246,90 @@ Devimon: https://..."></textarea>
       }
       statusEl.style.color = 'var(--cyan)';
       statusEl.textContent = `Fatto: ${done} voci sincronizzate.`;
+      cachedDex = await getDex(session.code);
+      setTimeout(()=>{ close(); renderDexPage(); }, 1200);
+    };
+  }
+
+  // Coppie canoniche Spirito Umano <-> Spirito Bestia di Digimon Frontier (fonte: Wikimon).
+  // Servono SOLO per collegare la Slide Evolution — non toccano stadio/attributo/famiglia/altro.
+  const FRONTIER_SPIRIT_PAIRS = [
+    ['Agunimon', 'BurningGreymon'],       // Fuoco
+    ['Lobomon', 'KendoGarurumon'],        // Luce
+    ['Kazemon', 'Zephyrmon'],             // Vento
+    ['Beetlemon', 'MetalKabuterimon'],    // Tuono
+    ['Kumamon', 'Korikakumon'],           // Ghiaccio
+    ['Loweemon', 'JagerLoweemon'],        // Oscurità
+    ['Grumblemon', 'Gigasmon'],           // Terra
+    ['Arbormon', 'Petaldramon'],          // Legno
+    ['Ranamon', 'Calmaramon'],            // Acqua
+    ['Mercurymon', 'Sakkakumon'],         // Acciaio
+  ];
+
+  function runSpiritSlideSync(){
+    const byNameLower = {};
+    cachedDex.forEach(e=>{ byNameLower[e.name.trim().toLowerCase()] = e; });
+    const found = [], missing = [];
+    FRONTIER_SPIRIT_PAIRS.forEach(([h, b])=>{
+      const eh = byNameLower[h.toLowerCase()], eb = byNameLower[b.toLowerCase()];
+      if(eh && eb) found.push([eh, eb]); else missing.push(`${h} / ${b}`);
+    });
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="hud-frame modal-box card" style="max-width:560px;">
+        <div class="flex-between" style="margin-bottom:10px;">
+          <h3 style="margin:0;color:var(--cyan);">✨ Sincronizza Slide Evolution Spirit</h3>
+          <button class="btn ghost small" id="ss-close">✕</button>
+        </div>
+        <div class="muted" style="margin-bottom:10px;">
+          Collega ogni coppia Spirito Umano ↔ Spirito Bestia di Digimon Frontier già presente nel tuo Digidex, impostando <b>Ha Slide Evolution</b> e aggiungendo il collegamento reciproco. Non tocca stadio, attributo, famiglia, stats, immagine o altro — solo lo Slide Target.
+        </div>
+        <div style="margin-bottom:10px;">Coppie trovate nel Digidex: <b>${found.length}</b> su ${FRONTIER_SPIRIT_PAIRS.length} totali.</div>
+        ${found.length ? `<div class="muted" style="font-size:12px;margin-bottom:10px;">${found.map(([h,b])=>`${escapeHTML(h.name)} ↔ ${escapeHTML(b.name)}`).join(' · ')}</div>` : ''}
+        ${missing.length ? `<div class="hud-frame" style="padding:8px 10px;margin-bottom:10px;">
+          <div class="muted" style="font-size:12px;margin-bottom:4px;">Non trovate nel Digidex (nessuna delle due o solo una presente — non verranno toccate):</div>
+          <div style="font-size:12px;">${missing.map(escapeHTML).join(', ')}</div>
+        </div>` : ''}
+        <div id="ss-status" class="muted" style="margin-bottom:10px;"></div>
+        <div class="flex-between">
+          <button class="btn ghost" id="ss-cancel">Annulla</button>
+          <button class="btn solid" id="ss-confirm" ${found.length ? '' : 'disabled'}>Collega ${found.length} coppie</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = ()=> overlay.remove();
+    document.getElementById('ss-close').onclick = close;
+    document.getElementById('ss-cancel').onclick = close;
+    overlay.onclick = (e)=>{ if(e.target===overlay) close(); };
+    const statusEl = document.getElementById('ss-status');
+    document.getElementById('ss-confirm').onclick = async ()=>{
+      document.getElementById('ss-confirm').disabled = true;
+      let done = 0;
+      for(const [eh, eb] of found){
+        statusEl.textContent = `Collegamento ${done+1}/${found.length}: ${eh.name} ↔ ${eb.name}...`;
+        for(const [entry, other] of [[eh, eb], [eb, eh]]){
+          const existingTargets = entry.slide_targets || [];
+          const alreadyLinked = existingTargets.some(t=>String(t).trim().toLowerCase()===other.name.trim().toLowerCase());
+          const newTargets = alreadyLinked ? existingTargets : existingTargets.concat([other.name]);
+          if(alreadyLinked && entry.slide_evolution) continue; // già sincronizzato, nessuna chiamata inutile
+          try{
+            await updateDexEntry(session.code, entry.id, {
+              name: entry.name, stage: entry.stage, description: entry.description, imageUrl: entry.image_url,
+              baseStats: entry.base_stats, categories: entry.categories, qualities: entry.qualities,
+              dpTotal: entry.dp_total, discovered: entry.discovered, evolutions: entry.evolutions, evolvesFrom: entry.evolves_from,
+              attribute: entry.attribute, family: entry.family, signatureMove: entry.signature_move, originType: entry.origin_type,
+              attackDesc: entry.attack_desc || '', digimental: entry.digimental || '', extraAttacks: entry.extra_attacks || [],
+              slideEvolution: true, slideTargets: newTargets
+            });
+          }catch(err){ console.error('spirit slide sync failed for', entry.name, err); }
+        }
+        done++;
+      }
+      statusEl.style.color = 'var(--cyan)';
+      statusEl.textContent = `Fatto: ${done} coppie sincronizzate.`;
       cachedDex = await getDex(session.code);
       setTimeout(()=>{ close(); renderDexPage(); }, 1200);
     };
