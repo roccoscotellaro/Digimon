@@ -438,25 +438,30 @@
       }
       return false;
     }
-    // Cima e fondo di TUTTI i riquadri del grafico, per scegliere la corsia di by-pass più vicina al
-    // collegamento (sopra o sotto), invece di passare sempre dalla cima anche quando i due Digimon
-    // sono già in fondo alla tabella — che farebbe fare un giro enorme senza motivo.
-    let topMostY = Infinity, bottomMostY = -Infinity;
-    // Usiamo il contenitore di colonna (che include anche l'etichetta di testo dello Stage sopra i
-    // riquadri), non solo i riquadri stessi — altrimenti la corsia "in alto" restava troppo vicina al
-    // box ma finiva comunque per tagliare dentro la scritta MEGA+/MEGA++ sopra di esso.
-    document.querySelectorAll('#evo-chart-wrap [data-col-idx]').forEach(el=>{
-      const r = el.getBoundingClientRect();
-      const yTop = r.top - wrapRect.top + wrap.scrollTop;
-      if(yTop < topMostY) topMostY = yTop;
-    });
-    document.querySelectorAll('#evo-chart-wrap [id^="chart-node-"]').forEach(el=>{
-      const r = el.getBoundingClientRect();
-      const yBottom = r.bottom - wrapRect.top + wrap.scrollTop;
-      if(yBottom > bottomMostY) bottomMostY = yBottom;
-    });
-    if(!isFinite(topMostY)) topMostY = 40;
-    if(!isFinite(bottomMostY)) bottomMostY = topMostY + 40;
+    // Cima e fondo SOLO delle colonne effettivamente coinvolte nel salto (da colA a colB compresi),
+    // non dell'intero grafico: un albero può avere una sezione altissima (es. Fresh→Champion) e una
+    // cortissima (es. Mega+/Mega++) fianco a fianco — usare gli estremi di TUTTO il grafico avrebbe
+    // fatto fare alle linee della zona corta un giro enorme per raggiungere il fondo di una sezione
+    // completamente diversa e lontana.
+    function localYBounds(colA, colB){
+      const lo = Math.min(colA, colB), hi = Math.max(colA, colB);
+      let top = Infinity, bottom = -Infinity;
+      for(let c=lo; c<=hi; c++){
+        const colEl = document.querySelector(`[data-col-idx="${c}"]`);
+        if(!colEl) continue;
+        const hr = colEl.getBoundingClientRect();
+        const hTop = hr.top - wrapRect.top + wrap.scrollTop;
+        if(hTop < top) top = hTop;
+        colEl.querySelectorAll('[id^="chart-node-"]').forEach(box=>{
+          const br2 = box.getBoundingClientRect();
+          const bBottom = br2.bottom - wrapRect.top + wrap.scrollTop;
+          if(bBottom > bottom) bottom = bBottom;
+        });
+      }
+      if(!isFinite(top)) top = 40;
+      if(!isFinite(bottom)) bottom = top + 40;
+      return { top, bottom };
+    }
     svg.innerHTML = allEdges.map((ed,i)=>{
       const a = document.getElementById('chart-node-'+ed.from);
       const b = document.getElementById('chart-node-'+ed.to);
@@ -490,20 +495,21 @@
         const riserKey = 'riser'+colA;
         const rn = columnLineCount[riserKey] || 0;
         columnLineCount[riserKey] = rn + 1;
+        const { top: localTop, bottom: localBottom } = localYBounds(colA, colB);
         const avgY = (aMidY+bMidY)/2;
-        const useBottom = Math.abs(avgY - bottomMostY) < Math.abs(avgY - topMostY);
+        const useBottom = Math.abs(avgY - localBottom) < Math.abs(avgY - localTop);
         const x1 = (ar.right - wrapRect.left + wrap.scrollLeft) + 6 + rn*5;
         const x2 = (br.left+br.right)/2 - wrapRect.left + wrap.scrollLeft;
         let y1, y2, laneY;
         if(useBottom){
           y1 = ar.top + ar.height - wrapRect.top + wrap.scrollTop; // esce dal basso del box A
           y2 = br.top + br.height - wrapRect.top + wrap.scrollTop; // entra dal basso del box B
-          laneY = bottomMostY + 12 + skipLaneCountBottom*6;
+          laneY = localBottom + 12 + skipLaneCountBottom*6;
           skipLaneCountBottom++;
         } else {
           y1 = aMidY; // esce dal fianco del box A
           y2 = br.top - wrapRect.top + wrap.scrollTop; // entra dalla cima del box B
-          laneY = Math.max(4, topMostY - 12 - skipLaneCountTop*6);
+          laneY = Math.max(4, localTop - 12 - skipLaneCountTop*6);
           skipLaneCountTop++;
         }
         return `<path d="M ${x1} ${y1} L ${x1} ${laneY} L ${x2} ${laneY} L ${x2} ${y2}" stroke="${color}" stroke-width="1.6" fill="none"${dash}/>`;
