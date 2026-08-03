@@ -369,7 +369,7 @@
           ${stagesPresent.map((s,colIdx)=>`
             <div data-col-idx="${colIdx}" style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
               <div style="font-size:9px;font-weight:bold;color:${STAGE_COLORS[s]||'#ccc'};margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px;">${s}</div>
-              <div style="display:flex;flex-direction:column;gap:16px;">
+              <div style="display:flex;flex-direction:column;gap:28px;">
                 ${columns[s].map(n=>nodeBoxHTML(n, STAGE_COLORS[s]||'#666')).join('')}
               </div>
             </div>
@@ -379,14 +379,14 @@
             const label = `${(n.stage||'').toUpperCase()}${'+'.repeat(depth)}`;
             return `<div data-col-idx="${stagesPresent.length+leapIdx}" style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
               <div style="font-size:9px;font-weight:bold;color:#e07fe0;margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px;">${label}</div>
-              <div style="display:flex;flex-direction:column;gap:16px;">
+              <div style="display:flex;flex-direction:column;gap:28px;">
                 ${nodeBoxHTML(n, '#e07fe0', icon)}
               </div>
             </div>`;
           }).join('')}
           ${extra.length ? `<div data-col-idx="${stagesPresent.length+leaps.length}" style="display:flex;flex-direction:column;align-items:center;min-width:76px;">
             <div style="font-size:9px;font-weight:bold;color:#ccc;margin-bottom:10px;text-transform:uppercase;">Altro</div>
-            <div style="display:flex;flex-direction:column;gap:16px;">
+            <div style="display:flex;flex-direction:column;gap:28px;">
               ${extra.map(n=>nodeBoxHTML(n, '#666')).join('')}
             </div>
           </div>` : ''}
@@ -441,15 +441,13 @@
       const dash = isSlide ? ' stroke-dasharray="5,4"' : '';
       const sameColumn = Math.abs(((ar.left+ar.right)/2) - ((br.left+br.right)/2)) < 8;
       if(sameColumn){
-        // Stessa colonna (es. una catena allo stesso Stage): SOLO una linea verticale dritta, a fianco
-        // del riquadro — niente più gomiti orizzontali all'inizio/fine, che creavano confusione visiva.
-        const edgeX = Math.max(ar.right, br.right) - wrapRect.left + wrap.scrollLeft;
-        const key = Math.round((ar.left+ar.right)/2);
-        const n = columnLineCount[key] || 0;
-        columnLineCount[key] = n + 1;
-        const lineX = edgeX + 6 + n*5;
-        const y1 = (ar.top < br.top ? ar.top + ar.height/2 : br.top + br.height/2) - wrapRect.top + wrap.scrollTop;
-        const y2 = (ar.top < br.top ? br.top + br.height/2 : ar.top + ar.height/2) - wrapRect.top + wrap.scrollTop;
+        // Stessa colonna (es. una Slide Evolution): linea verticale dritta e CENTRATA sul riquadro,
+        // che passa nello spazio vuoto tra una riga e l'altra (ora più ampio apposta) invece che a
+        // fianco dei box.
+        const lineX = (ar.left+ar.right)/2 - wrapRect.left + wrap.scrollLeft;
+        const top = ar.top < br.top ? ar : br, bottom = ar.top < br.top ? br : ar;
+        const y1 = top.top + top.height - wrapRect.top + wrap.scrollTop;
+        const y2 = bottom.top - wrapRect.top + wrap.scrollTop;
         return `<path d="M ${lineX} ${y1} L ${lineX} ${y2}" stroke="${color}" stroke-width="1.6" fill="none"${dash}/>`;
       }
       const colA = colIndexOf(a), colB = colIndexOf(b);
