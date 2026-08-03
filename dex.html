@@ -410,9 +410,9 @@
     // Contiamo quante volte ogni colonna (stessa X, cioè stesso Stage) ha già un collegamento verticale,
     // per scostare leggermente le linee successive ed evitare che si sovrappongano esattamente.
     const columnLineCount = {};
-    // Quante linee "by-pass" (che saltano più di una colonna) sono già state disegnate, per impilarle
-    // una sopra l'altra nella corsia in alto invece di sovrapporle esattamente.
-    let skipLaneCount = 0;
+    // Quante linee "by-pass" sono già state disegnate per ciascuna delle due corsie (sopra/sotto),
+    // per impilarle una sopra l'altra invece di sovrapporle esattamente.
+    let skipLaneCountTop = 0, skipLaneCountBottom = 0;
     // Trova l'indice di colonna (data-col-idx) del contenitore che ospita il nodo, per sapere se due nodi
     // sono in colonne adiacenti (curva diretta nel gap, sempre sicura) o separate da altre colonne (in tal
     // caso una curva diretta taglierebbe dritta attraverso i riquadri delle colonne di mezzo).
@@ -420,14 +420,19 @@
       const col = nodeEl.closest('[data-col-idx]');
       return col ? Number(col.getAttribute('data-col-idx')) : null;
     }
-    // Cima più alta di TUTTI i riquadri del grafico, per tracciare la corsia di by-pass sempre sopra ogni box.
-    let topMostY = Infinity;
+    // Cima e fondo di TUTTI i riquadri del grafico, per scegliere la corsia di by-pass più vicina al
+    // collegamento (sopra o sotto), invece di passare sempre dalla cima anche quando i due Digimon
+    // sono già in fondo alla tabella — che farebbe fare un giro enorme senza motivo.
+    let topMostY = Infinity, bottomMostY = -Infinity;
     document.querySelectorAll('#evo-chart-wrap [id^="chart-node-"]').forEach(el=>{
       const r = el.getBoundingClientRect();
-      const y = r.top - wrapRect.top + wrap.scrollTop;
-      if(y < topMostY) topMostY = y;
+      const yTop = r.top - wrapRect.top + wrap.scrollTop;
+      const yBottom = r.bottom - wrapRect.top + wrap.scrollTop;
+      if(yTop < topMostY) topMostY = yTop;
+      if(yBottom > bottomMostY) bottomMostY = yBottom;
     });
     if(!isFinite(topMostY)) topMostY = 40;
+    if(!isFinite(bottomMostY)) bottomMostY = topMostY + 40;
     svg.innerHTML = allEdges.map((ed,i)=>{
       const a = document.getElementById('chart-node-'+ed.from);
       const b = document.getElementById('chart-node-'+ed.to);
@@ -454,18 +459,30 @@
       const colGap = (colA!=null && colB!=null) ? Math.abs(colB-colA) : 1;
       if(colGap > 1){
         // Colonne NON adiacenti: una curva diretta taglierebbe dritta attraverso i riquadri delle
-        // colonne di mezzo. Si passa invece "sopra", con una corsia dedicata più in alto del box più
-        // alto di tutto il grafico. La salita parte dal BORDO del riquadro (non dal centro, con un
-        // piccolo scarto per ogni collegamento in quella colonna): partire dal centro avrebbe fatto
-        // passare la salita dritta attraverso gli altri Digimon impilati sopra nella stessa colonna,
-        // dando la falsa impressione di un collegamento tra loro.
+        // colonne di mezzo. Si passa invece "sopra o sotto" (qualunque sia più vicina ai due Digimon
+        // in questione), con una corsia dedicata oltre l'ultimo box in quella direzione — così non
+        // attraversa mai nessuna casella, e non fa un giro assurdo se i due nodi sono già in fondo.
         const riserKey = 'riser'+colA;
         const rn = columnLineCount[riserKey] || 0;
         columnLineCount[riserKey] = rn + 1;
-        const x1 = (ar.right - wrapRect.left + wrap.scrollLeft) + 6 + rn*5, y1 = ar.top + ar.height/2 - wrapRect.top + wrap.scrollTop;
-        const x2 = (br.left+br.right)/2 - wrapRect.left + wrap.scrollLeft, y2 = br.top - wrapRect.top + wrap.scrollTop;
-        const laneY = Math.max(4, topMostY - 12 - skipLaneCount*6);
-        skipLaneCount++;
+        const aMidY = ar.top + ar.height/2 - wrapRect.top + wrap.scrollTop;
+        const bMidY = br.top + br.height/2 - wrapRect.top + wrap.scrollTop;
+        const avgY = (aMidY+bMidY)/2;
+        const useBottom = Math.abs(avgY - bottomMostY) < Math.abs(avgY - topMostY);
+        const x1 = (ar.right - wrapRect.left + wrap.scrollLeft) + 6 + rn*5;
+        const x2 = (br.left+br.right)/2 - wrapRect.left + wrap.scrollLeft;
+        let y1, y2, laneY;
+        if(useBottom){
+          y1 = ar.top + ar.height - wrapRect.top + wrap.scrollTop; // esce dal basso del box A
+          y2 = br.top + br.height - wrapRect.top + wrap.scrollTop; // entra dal basso del box B
+          laneY = bottomMostY + 12 + skipLaneCountBottom*6;
+          skipLaneCountBottom++;
+        } else {
+          y1 = aMidY; // esce dal fianco del box A
+          y2 = br.top - wrapRect.top + wrap.scrollTop; // entra dalla cima del box B
+          laneY = Math.max(4, topMostY - 12 - skipLaneCountTop*6);
+          skipLaneCountTop++;
+        }
         return `<path d="M ${x1} ${y1} L ${x1} ${laneY} L ${x2} ${laneY} L ${x2} ${y2}" stroke="${color}" stroke-width="1.6" fill="none"${dash}/>`;
       }
       const x1 = ar.right - wrapRect.left + wrap.scrollLeft, y1 = ar.top + ar.height/2 - wrapRect.top + wrap.scrollTop;
