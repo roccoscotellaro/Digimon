@@ -1737,6 +1737,20 @@ Devimon: https://..."></textarea>
         }
         for(const link of (draft.evolutions||[])) await ensureReciprocal(link, 'evolves_from');
         for(const link of (draft.evolvesFrom||[])) await ensureReciprocal(link, 'evolutions');
+        // Auto-verifica: rileggiamo l'entry appena salvata dal server e controlliamo che lo Slide
+        // Target inviato sia davvero lì. Se non lo è, lo mostriamo a schermo invece di dire "Salvato"
+        // e basta — così si vede subito, senza bisogno di aprire Console o Network.
+        const freshCheck = await getDex(session.code);
+        const savedEntryCheck = freshCheck.find(e=>String(e.id)===String(savedId));
+        const expected = (payload.slideTargets||[]).map(s=>String(s).trim().toLowerCase()).sort();
+        const actual = (savedEntryCheck ? (savedEntryCheck.slide_targets||[]) : []).map(s=>String(s).trim().toLowerCase()).sort();
+        const slideMismatch = JSON.stringify(expected) !== JSON.stringify(actual);
+        if(slideMismatch){
+          statusEl.style.color='var(--danger)';
+          statusEl.textContent = `Salvato, ma la verifica mostra un problema: hai inviato Slide Target [${(payload.slideTargets||[]).join(', ')||'nessuno'}] ma il server ora ha [${(savedEntryCheck&&savedEntryCheck.slide_targets||[]).join(', ')||'nessuno'}]. Copia questo messaggio e mandalo a Claude.`;
+          cachedDex = freshCheck;
+          return;
+        }
         statusEl.textContent='Salvato.';
         closeModal();
         renderDexPage();
