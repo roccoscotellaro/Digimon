@@ -1,7 +1,7 @@
 const { supabase, cleanCode } = require('../lib/db');
 
-const BUCKET = 'campaign-images';
-const MAX_BYTES = 3 * 1024 * 1024; // 3MB decoded (~4MB as base64) — stays under typical serverless body limits
+const BUCKET = 'chat-uploads';
+const MAX_BYTES = 3 * 1024 * 1024; // 3MB decoded (~4MB come base64) — resta sotto i limiti tipici del body delle funzioni serverless
 
 module.exports = async (req, res) => {
   try {
@@ -10,7 +10,7 @@ module.exports = async (req, res) => {
       return res.status(405).json({ error: 'method not allowed' });
     }
 
-    const { code, dataUrl } = req.body || {};
+    const { code, dataUrl, folder } = req.body || {};
     const campaignCode = cleanCode(code);
     if (!campaignCode) return res.status(400).json({ error: 'missing code' });
 
@@ -28,8 +28,12 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'immagine troppo grande (limite 3MB), comprimila e riprova' });
     }
 
+    // "folder" distingue tra chat (registro) e avviso (post del Master), es. 'chat' o 'avviso'.
+    // Viene sanificato per evitare path traversal o segmenti indesiderati.
+    const safeFolder = String(folder || 'chat').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32) || 'chat';
+
     const ext = (mime.split('/')[1] || 'png').split('+')[0].toLowerCase();
-    const path = `${campaignCode}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const path = `${campaignCode}/${safeFolder}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
     const { error: uploadError } = await supabase.storage
       .from(BUCKET)
