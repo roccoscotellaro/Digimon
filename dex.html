@@ -359,7 +359,7 @@
       return `<div id="chart-node-${n.id}" data-nav-evo="${n.id}" style="position:relative;cursor:pointer;display:flex;flex-direction:column;align-items:center;width:68px;padding:4px;border-radius:6px;background:${String(n.id)===String(entry.id)?'rgba(255,193,74,0.18)':'transparent'};border:1px solid ${String(n.id)===String(entry.id)?'var(--amber)':borderColor};">
         ${n.image_url ? `<img src="${escapeAttr(n.image_url)}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;" onerror="this.style.visibility='hidden'"/>` : `<div style="width:38px;height:38px;border-radius:50%;background:var(--panel);border:1px solid ${borderColor};"></div>`}
         <div class="muted" style="font-size:8px;text-align:center;margin-top:3px;line-height:1.2;">${icon?icon+' ':''}${escapeHTML(n.name)}</div>
-        ${isCollapsed ? `<div data-expand-evo="${n.id}" title="Mostra le evoluzioni successive di ${escapeAttr(n.name)}" style="position:absolute;bottom:-7px;right:-7px;background:var(--panel);border:1px solid var(--cyan);color:var(--cyan);border-radius:9px;font-size:9px;line-height:1;padding:3px 5px;cursor:pointer;font-weight:bold;">+${hiddenCount}</div>` : ''}
+        ${isCollapsed ? `<div data-expand-evo="${n.id}" title="Mostra le evoluzioni successive di ${escapeAttr(n.name)}" style="position:absolute;top:-7px;right:-7px;background:var(--panel);border:1px solid var(--cyan);color:var(--cyan);border-radius:9px;font-size:9px;line-height:1;padding:3px 5px;cursor:pointer;font-weight:bold;">+${hiddenCount}</div>` : ''}
       </div>`;
     }
     return `<div class="muted" style="margin:10px 0 4px;">Linea Evolutiva Completa (con diramazioni)</div>
@@ -420,6 +420,24 @@
       const col = nodeEl.closest('[data-col-idx]');
       return col ? Number(col.getAttribute('data-col-idx')) : null;
     }
+    // Controlla se, nelle colonne di mezzo tra colA e colB, c'è REALMENTE un riquadro che occupa
+    // l'intervallo verticale [yMin,yMax] — solo in quel caso serve davvero il giro largo; altrimenti
+    // una curva diretta (come tra colonne adiacenti) è più corta e altrettanto sicura.
+    function pathBlocked(colA, colB, yMin, yMax){
+      const lo = Math.min(colA, colB), hi = Math.max(colA, colB);
+      for(let c=lo+1; c<hi; c++){
+        const colEl = document.querySelector(`[data-col-idx="${c}"]`);
+        if(!colEl) continue;
+        const boxes = colEl.querySelectorAll('[id^="chart-node-"]');
+        for(const box of boxes){
+          const br2 = box.getBoundingClientRect();
+          const bTop = br2.top - wrapRect.top + wrap.scrollTop;
+          const bBottom = br2.bottom - wrapRect.top + wrap.scrollTop;
+          if(bBottom > yMin && bTop < yMax) return true;
+        }
+      }
+      return false;
+    }
     // Cima e fondo di TUTTI i riquadri del grafico, per scegliere la corsia di by-pass più vicina al
     // collegamento (sopra o sotto), invece di passare sempre dalla cima anche quando i due Digimon
     // sono già in fondo alla tabella — che farebbe fare un giro enorme senza motivo.
@@ -457,16 +475,15 @@
       }
       const colA = colIndexOf(a), colB = colIndexOf(b);
       const colGap = (colA!=null && colB!=null) ? Math.abs(colB-colA) : 1;
-      if(colGap > 1){
-        // Colonne NON adiacenti: una curva diretta taglierebbe dritta attraverso i riquadri delle
-        // colonne di mezzo. Si passa invece "sopra o sotto" (qualunque sia più vicina ai due Digimon
-        // in questione), con una corsia dedicata oltre l'ultimo box in quella direzione — così non
-        // attraversa mai nessuna casella, e non fa un giro assurdo se i due nodi sono già in fondo.
+      const aMidY = ar.top + ar.height/2 - wrapRect.top + wrap.scrollTop;
+      const bMidY = br.top + br.height/2 - wrapRect.top + wrap.scrollTop;
+      if(colGap > 1 && pathBlocked(colA, colB, Math.min(aMidY,bMidY), Math.max(aMidY,bMidY))){
+        // Colonne NON adiacenti E c'è davvero un riquadro nel mezzo: una curva diretta lo taglierebbe.
+        // Si passa "sopra o sotto" (qualunque sia più vicina ai due Digimon in questione), con una
+        // corsia dedicata oltre l'ultimo box in quella direzione.
         const riserKey = 'riser'+colA;
         const rn = columnLineCount[riserKey] || 0;
         columnLineCount[riserKey] = rn + 1;
-        const aMidY = ar.top + ar.height/2 - wrapRect.top + wrap.scrollTop;
-        const bMidY = br.top + br.height/2 - wrapRect.top + wrap.scrollTop;
         const avgY = (aMidY+bMidY)/2;
         const useBottom = Math.abs(avgY - bottomMostY) < Math.abs(avgY - topMostY);
         const x1 = (ar.right - wrapRect.left + wrap.scrollLeft) + 6 + rn*5;
