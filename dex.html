@@ -211,19 +211,26 @@
       // è l'unico Stage che può davvero Armor Evolvere, quindi collegamenti Armor su altri Stage
       // (probabili errori di inserimento dati) non vanno mostrati come possibilità reale.
       resolved.filter(t=>isArmor(t)).forEach(t=>{ if(e.stage==='Rookie') armorNodes.set(String(t.id), t); });
+      // Fisarmonica "locale", per gruppo di fratelli (stessi figli di uno stesso genitore): finché
+      // nessuno di questi fratelli è stato aperto esplicitamente, il primo resta aperto di default
+      // (la "linea principale"). Il default viene comunque registrato in expandedEvoNodes (seeding),
+      // così quando l'utente apre un fratello diverso il click-handler può ritrovarlo e richiuderlo
+      // — SENZA toccare l'espansione degli antenati, che deve restare intatta per poter arrivare fin
+      // qui (prima veniva azzerata anche quella, e l'albero collassava fino all'antenato più vicino).
+      const siblingIds = normalChildren.map(t=>String(t.id));
+      const anyExplicit = siblingIds.some(sid=>expandedEvoNodes.has(sid));
       normalChildren.forEach((t, idx)=>{
-        nodes.set(String(t.id), t);
-        edges.push({ from:String(e.id), to:String(t.id) });
-        // Finché non è stato ancora aperto nulla a mano, il primo ramo resta aperto di default (la
-        // "linea principale" completa). Appena l'utente apre un ramo diverso col pulsante "+N", si
-        // passa alla modalità fisarmonica pura: resta aperto SOLO quello cliccato, anche se è il primo.
-        const shouldExpand = expandedEvoNodes.size===0 ? idx===0 : expandedEvoNodes.has(String(t.id));
+        const tid = String(t.id);
+        nodes.set(tid, t);
+        edges.push({ from:String(e.id), to:tid });
+        const shouldExpand = anyExplicit ? expandedEvoNodes.has(tid) : idx===0;
         if(shouldExpand){
+          if(!expandedEvoNodes.has(tid)) expandedEvoNodes.add(tid);
           descend(t, seen);
         } else {
-          seen.add(String(t.id));
+          seen.add(tid);
           const hiddenCount = (t.evolutions||[]).filter(ev=>{ const r=resolveRef(ev); return r && !isArmor(r); }).length;
-          if(hiddenCount>0){ collapsedNodeIds.add(String(t.id)); hiddenChildCounts.set(String(t.id), hiddenCount); }
+          if(hiddenCount>0){ collapsedNodeIds.add(tid); hiddenChildCounts.set(tid, hiddenCount); }
         }
       });
     }
@@ -951,8 +958,21 @@ Devimon: https://..."></textarea>
       container.querySelectorAll('[data-expand-evo]').forEach(el=>{
         el.onclick = (e)=>{
           e.stopPropagation(); // non deve attivare anche il pulsante "Apri" sotto
-          // Fisarmonica: aprire un ramo richiude tutti gli altri già aperti, invece di accumularsi.
-          expandedEvoNodes = new Set([String(el.getAttribute('data-expand-evo'))]);
+          const clickedId = String(el.getAttribute('data-expand-evo'));
+          // Fisarmonica LOCALE: chiude solo i fratelli (stessi genitori) del nodo cliccato, lasciando
+          // intatta l'espansione degli antenati necessaria per arrivare fin qui nell'albero.
+          const clickedEntry = cachedDex.find(x=>String(x.id)===clickedId);
+          if(clickedEntry){
+            (clickedEntry.evolves_from||[]).forEach(p=>{
+              if(p.id==null) return;
+              const parentEntry = cachedDex.find(x=>String(x.id)===String(p.id));
+              if(!parentEntry) return;
+              (parentEntry.evolutions||[]).forEach(ev=>{
+                if(ev.id!=null && String(ev.id)!==clickedId) expandedEvoNodes.delete(String(ev.id));
+              });
+            });
+          }
+          expandedEvoNodes.add(clickedId);
           refreshEvoChartSection();
         };
       });
