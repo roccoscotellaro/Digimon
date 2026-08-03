@@ -1267,11 +1267,26 @@ Devimon: https://..."></textarea>
   ];
 
   function runSpiritSlideSync(){
-    const byNameLower = {};
-    cachedDex.forEach(e=>{ byNameLower[e.name.trim().toLowerCase()] = e; });
+    // Match più permissivo: prova prima il nome esatto, poi lo stesso nome ripulito da eventuali
+    // qualificatori tra parentesi (es. "MetalKabuterimon (Beetlemon)" deve comunque combaciare con
+    // "MetalKabuterimon"), così piccole differenze di come sono stati salvati non fanno fallire tutto.
+    function normName(s){ return String(s||'').trim().toLowerCase().replace(/\s*\([^)]*\)\s*/g,'').trim(); }
+    const byExact = {}, byNorm = {};
+    cachedDex.forEach(e=>{
+      byExact[e.name.trim().toLowerCase()] = e;
+      const n = normName(e.name);
+      if(!byNorm[n]) byNorm[n] = e; // se ci sono più corrispondenze normalizzate, tiene la prima
+    });
+    function lookup(name){ return byExact[name.trim().toLowerCase()] || byNorm[normName(name)] || null; }
+    function refMatches(ref, other){
+      if(!ref) return false;
+      if(ref.id!=null && other.id!=null && String(ref.id)===String(other.id)) return true;
+      if(ref.name && normName(ref.name)===normName(other.name)) return true;
+      return false;
+    }
     const found = [], missing = [];
     FRONTIER_SPIRIT_PAIRS.forEach(([h, b])=>{
-      const eh = byNameLower[h.toLowerCase()], eb = byNameLower[b.toLowerCase()];
+      const eh = lookup(h), eb = lookup(b);
       if(eh && eb) found.push([eh, eb]); else missing.push(`${h} / ${b}`);
     });
     const overlay = document.createElement('div');
@@ -1284,15 +1299,15 @@ Devimon: https://..."></textarea>
           <button class="btn ghost small" id="ss-close">✕</button>
         </div>
         <div class="muted" style="margin-bottom:10px;">
-          Collega ogni coppia Spirito Umano ↔ Spirito Bestia di Digimon Frontier già presente nel tuo Digidex, impostando <b>Ha Slide Evolution</b> e aggiungendo il collegamento reciproco. Non tocca stadio, attributo, famiglia, stats, immagine o altro — solo lo Slide Target.
+          Collega ogni coppia Spirito Umano ↔ Spirito Bestia di Digimon Frontier già presente nel tuo Digidex, impostando <b>Ha Slide Evolution</b> e aggiungendo il collegamento reciproco. Rimuove anche eventuali vecchi collegamenti errati tra le due forme nelle Pre-Evoluzioni/Evoluzioni normali (una Slide Evolution non deve mai essere anche un'evoluzione sequenziale). Non tocca stadio, attributo, famiglia, stats, immagine o altro.
         </div>
         <div style="margin-bottom:10px;">Coppie trovate nel Digidex: <b>${found.length}</b> su ${FRONTIER_SPIRIT_PAIRS.length} totali.</div>
         ${found.length ? `<div class="muted" style="font-size:12px;margin-bottom:10px;">${found.map(([h,b])=>`${escapeHTML(h.name)} ↔ ${escapeHTML(b.name)}`).join(' · ')}</div>` : ''}
         ${missing.length ? `<div class="hud-frame" style="padding:8px 10px;margin-bottom:10px;">
-          <div class="muted" style="font-size:12px;margin-bottom:4px;">Non trovate nel Digidex (nessuna delle due o solo una presente — non verranno toccate):</div>
+          <div class="muted" style="font-size:12px;margin-bottom:4px;">Non trovate nel Digidex (nessuna delle due o solo una presente, anche provando senza eventuale testo tra parentesi — non verranno toccate):</div>
           <div style="font-size:12px;">${missing.map(escapeHTML).join(', ')}</div>
         </div>` : ''}
-        <div id="ss-status" class="muted" style="margin-bottom:10px;"></div>
+        <div id="ss-status" class="muted" style="margin-bottom:10px;max-height:160px;overflow-y:auto;"></div>
         <div class="flex-between">
           <button class="btn ghost" id="ss-cancel">Annulla</button>
           <button class="btn solid" id="ss-confirm" ${found.length ? '' : 'disabled'}>Collega ${found.length} coppie</button>
@@ -1307,31 +1322,39 @@ Devimon: https://..."></textarea>
     const statusEl = document.getElementById('ss-status');
     document.getElementById('ss-confirm').onclick = async ()=>{
       document.getElementById('ss-confirm').disabled = true;
-      let done = 0;
+      const log = [];
       for(const [eh, eb] of found){
-        statusEl.textContent = `Collegamento ${done+1}/${found.length}: ${eh.name} ↔ ${eb.name}...`;
+        let pairOk = true, pairNote = [];
         for(const [entry, other] of [[eh, eb], [eb, eh]]){
           const existingTargets = entry.slide_targets || [];
           const alreadyLinked = existingTargets.some(t=>String(t).trim().toLowerCase()===other.name.trim().toLowerCase());
           const newTargets = alreadyLinked ? existingTargets : existingTargets.concat([other.name]);
-          if(alreadyLinked && entry.slide_evolution) continue; // già sincronizzato, nessuna chiamata inutile
+          const cleanedEvolutions = (entry.evolutions||[]).filter(ev=>!refMatches(ev, other));
+          const cleanedEvolvesFrom = (entry.evolves_from||[]).filter(ev=>!refMatches(ev, other));
+          const hadStrayLink = cleanedEvolutions.length !== (entry.evolutions||[]).length || cleanedEvolvesFrom.length !== (entry.evolves_from||[]).length;
+          if(hadStrayLink) pairNote.push(`rimosso vecchio collegamento errato su ${entry.name}`);
+          if(alreadyLinked && entry.slide_evolution && !hadStrayLink) continue; // già a posto, nessuna chiamata inutile
+          statusEl.textContent += `Aggiorno ${entry.name}...\n`;
           try{
             await updateDexEntry(session.code, entry.id, {
               name: entry.name, stage: entry.stage, description: entry.description, imageUrl: entry.image_url,
               baseStats: entry.base_stats, categories: entry.categories, qualities: entry.qualities,
-              dpTotal: entry.dp_total, discovered: entry.discovered, evolutions: entry.evolutions, evolvesFrom: entry.evolves_from,
+              dpTotal: entry.dp_total, discovered: entry.discovered, evolutions: cleanedEvolutions, evolvesFrom: cleanedEvolvesFrom,
               attribute: entry.attribute, family: entry.family, signatureMove: entry.signature_move, originType: entry.origin_type,
               attackDesc: entry.attack_desc || '', digimental: entry.digimental || '', extraAttacks: entry.extra_attacks || [],
               slideEvolution: true, slideTargets: newTargets
             });
-          }catch(err){ console.error('spirit slide sync failed for', entry.name, err); }
+          }catch(err){
+            pairOk = false;
+            log.push(`❌ ${entry.name}: ${err && err.message ? err.message : 'errore sconosciuto'}`);
+          }
         }
-        done++;
+        if(pairOk) log.push(`✅ ${eh.name} ↔ ${eb.name}${pairNote.length ? ' (' + pairNote.join(', ') + ')' : ''}`);
+        statusEl.innerHTML = log.map(escapeHTML).join('<br>');
       }
-      statusEl.style.color = 'var(--cyan)';
-      statusEl.textContent = `Fatto: ${done} coppie sincronizzate.`;
       cachedDex = await getDex(session.code);
-      setTimeout(()=>{ close(); renderDexPage(); }, 1200);
+      renderDexPage();
+      statusEl.innerHTML += '<br><b style="color:var(--cyan);">Fatto.</b>';
     };
   }
 
