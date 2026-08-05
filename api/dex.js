@@ -15,7 +15,7 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'POST') {
-      const { code, name, stage, description, imageUrl, addedBy, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered, attribute, family, originType, signatureMove, slideEvolution, digimental, attackDesc, extraAttacks, slideTargets } = req.body || {};
+      const { code, name, stage, description, imageUrl, addedBy, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered, attribute, family, originType, signatureMove, signatureMove2, slideEvolution, digimental, attackDesc, attackDesc2, extraAttacks, slideTargets } = req.body || {};
       const campaignCode = cleanCode(code);
       if (!campaignCode || !name) return res.status(400).json({ error: 'missing code or name' });
       await supabase.from('campaigns').upsert({ code: campaignCode }, { onConflict: 'code' });
@@ -37,10 +37,14 @@ module.exports = async (req, res) => {
         family: family || '',
         origin_type: originType || '',
         signature_move: String(signatureMove || '').slice(0, 300),
+        // Seconda Signature Move: solo per Jogress/Fusioni con due Digimon di origine, ciascuno con
+        // la propria Signature Move che consuma Battery in modo indipendente.
+        signature_move_2: String(signatureMove2 || '').slice(0, 300),
         slide_evolution: !!slideEvolution,
         slide_targets: Array.isArray(slideTargets) ? slideTargets.slice(0, 20).map(s => String(s).slice(0, 80)) : [],
         digimental: String(digimental || '').slice(0, 80),
         attack_desc: String(attackDesc || '').slice(0, 500),
+        attack_desc_2: String(attackDesc2 || '').slice(0, 500),
         extra_attacks: Array.isArray(extraAttacks)
           ? extraAttacks.slice(0, 10).map(a => ({
               move: String((a && a.move) || '').slice(0, 300),
@@ -53,7 +57,7 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'PUT') {
-      const { code, id, name, stage, description, imageUrl, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered, attribute, family, originType, signatureMove, slideEvolution, digimental, attackDesc, extraAttacks, slideTargets } = req.body || {};
+      const { code, id, name, stage, description, imageUrl, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered, attribute, family, originType, signatureMove, signatureMove2, slideEvolution, digimental, attackDesc, attackDesc2, extraAttacks, slideTargets } = req.body || {};
       const campaignCode = cleanCode(code);
       if (!campaignCode || !id) return res.status(400).json({ error: 'missing code or id' });
       const { error } = await supabase.from('dex_entries').update({
@@ -72,10 +76,12 @@ module.exports = async (req, res) => {
         family: family || '',
         origin_type: originType || '',
         signature_move: String(signatureMove || '').slice(0, 300),
+        signature_move_2: String(signatureMove2 || '').slice(0, 300),
         slide_evolution: !!slideEvolution,
         slide_targets: Array.isArray(slideTargets) ? slideTargets.slice(0, 20).map(s => String(s).slice(0, 80)) : [],
         digimental: String(digimental || '').slice(0, 80),
         attack_desc: String(attackDesc || '').slice(0, 500),
+        attack_desc_2: String(attackDesc2 || '').slice(0, 500),
         extra_attacks: Array.isArray(extraAttacks)
           ? extraAttacks.slice(0, 10).map(a => ({
               move: String((a && a.move) || '').slice(0, 300),

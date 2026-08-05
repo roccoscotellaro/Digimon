@@ -921,6 +921,7 @@ Devimon: https://..."></textarea>
         ${entry.categories && entry.categories.length ? `<div style="margin-bottom:8px;">${entry.categories.map(c=>`<span class="tag" style="margin-right:4px;">${escapeHTML(c)}</span>`).join('')}</div>` : ''}
         ${entry.description ? `<div class="muted" style="margin-bottom:10px;">${escapeHTML(entry.description)}</div>` : ''}
         ${entry.signature_move ? `<div class="hud-frame" style="padding:8px 10px;margin-bottom:10px;border-color:var(--amber);"><div class="muted" style="font-size:10px;margin-bottom:2px;">⭐ SIGNATURE MOVE</div><div style="color:var(--amber);font-family:'Share Tech Mono',monospace;font-size:13px;margin-bottom:${entry.attack_desc?'6px':'0'};">${escapeHTML(entry.signature_move)}</div>${entry.attack_desc ? `<div class="muted" style="font-size:12px;font-style:italic;line-height:1.4;">${escapeHTML(entry.attack_desc)}</div>` : ''}</div>` : ''}
+        ${entry.signature_move_2 ? `<div class="hud-frame" style="padding:8px 10px;margin-bottom:10px;border-color:var(--amber);"><div class="muted" style="font-size:10px;margin-bottom:2px;">⭐ SIGNATURE MOVE 2 (Jogress)</div><div style="color:var(--amber);font-family:'Share Tech Mono',monospace;font-size:13px;margin-bottom:${entry.attack_desc_2?'6px':'0'};">${escapeHTML(entry.signature_move_2)}</div>${entry.attack_desc_2 ? `<div class="muted" style="font-size:12px;font-style:italic;line-height:1.4;">${escapeHTML(entry.attack_desc_2)}</div>` : ''}</div>` : ''}
         ${(entry.extra_attacks||[]).map(a=>`<div class="hud-frame" style="padding:8px 10px;margin-bottom:10px;border-color:var(--amber);"><div class="muted" style="font-size:10px;margin-bottom:2px;">⭐ ATTACCO SECONDARIO</div><div style="color:var(--amber);font-family:'Share Tech Mono',monospace;font-size:13px;margin-bottom:${a.desc?'6px':'0'};">${escapeHTML(a.move||'')}</div>${a.desc ? `<div class="muted" style="font-size:12px;font-style:italic;line-height:1.4;">${escapeHTML(a.desc)}</div>` : ''}</div>`).join('')}
         ${entry.slide_evolution && entry.slide_targets && entry.slide_targets.length ? `<div class="hud-frame" style="padding:8px 10px;margin-bottom:10px;border-color:#7fd6c9;"><div class="muted" style="font-size:10px;margin-bottom:2px;">🔄 PUÒ SLIDE EVOLVERE IN</div><div style="color:#7fd6c9;font-size:13px;">${entry.slide_targets.map(escapeHTML).join(', ')}</div></div>` : ''}
         ${hasStats ? `<div class="grid-stats">
@@ -1310,6 +1311,7 @@ Devimon: https://..."></textarea>
             dpTotal: e.dp_total, discovered: e.discovered, evolutions: e.evolutions, evolvesFrom: e.evolves_from,
             slideEvolution: r.slideEvolution,
             attribute: r.attribute, family: r.family, signatureMove: r.signatureMove, originType: r.originType,
+            signatureMove2: e.signature_move_2 || '', attackDesc2: e.attack_desc_2 || '',
             attackDesc: includeDesc && r.attackDesc ? r.attackDesc : (e.attack_desc || ''),
             digimental: includeDesc && r.digimental ? r.digimental : (e.digimental || ''),
             extraAttacks: includeDesc && r.extraAttacks && r.extraAttacks.length ? r.extraAttacks : (e.extra_attacks || []),
@@ -1415,6 +1417,7 @@ Devimon: https://..."></textarea>
               baseStats: entry.base_stats, categories: entry.categories, qualities: entry.qualities,
               dpTotal: entry.dp_total, discovered: entry.discovered, evolutions: cleanedEvolutions, evolvesFrom: cleanedEvolvesFrom,
               attribute: entry.attribute, family: entry.family, signatureMove: entry.signature_move, originType: entry.origin_type,
+              signatureMove2: entry.signature_move_2 || '', attackDesc2: entry.attack_desc_2 || '',
               attackDesc: entry.attack_desc || '', digimental: entry.digimental || '', extraAttacks: entry.extra_attacks || [],
               slideEvolution: true, slideTargets: newTargets
             });
@@ -1469,8 +1472,10 @@ Devimon: https://..."></textarea>
         <div class="field"><label>Descrizione</label><textarea id="ed-desc" rows="2">${escapeHTML(draft.description)}</textarea></div>
         <div class="field"><label>⭐ Signature Move (nome + Tag meccanico, es. "Fire Rocket — [MELEE][DAMAGE 8-10]")</label><input type="text" id="ed-sigmove" value="${escapeAttr(draft.signature_move||'')}" placeholder="Nome — [TAG valore]" /></div>
         <div class="field"><label>💬 Descrizione narrativa dell'Attacco (mostrata quando l'attacco viene lanciato)</label><textarea id="ed-attackdesc" rows="2" placeholder="Es. Sputa una sfera di fuoco concentrato dalla bocca.">${escapeHTML(draft.attack_desc||'')}</textarea></div>
+        <div class="field"><label>⭐ Signature Move 2 (solo Jogress/Fusioni — il Digimon di origine ha la propria Signature indipendente, con Battery separata)</label><input type="text" id="ed-sigmove2" value="${escapeAttr(draft.signature_move_2||'')}" placeholder="Nome — [TAG valore] (lascia vuoto se non è una Jogress)" /></div>
+        <div class="field"><label>💬 Descrizione narrativa della Signature Move 2</label><textarea id="ed-attackdesc2" rows="2" placeholder="Es. Scarica un fendente carico dell'energia dell'altro Digimon di origine.">${escapeHTML(draft.attack_desc_2||'')}</textarea></div>
         <div class="divider"></div>
-        <div class="muted" style="margin-bottom:6px;">⭐⭐ Attacchi Aggiuntivi (es. per Digimon Jogress/Fusione, uno per ciascun Digimon di origine)</div>
+        <div class="muted" style="margin-bottom:6px;">⭐⭐ Attacchi Aggiuntivi (NON usano Battery — per la Signature Move di un secondo Digimon di origine in una Jogress, usa il campo dedicato sopra, non questa sezione)</div>
         <div id="ed-attacklist"></div>
         <div class="row">
           <input type="text" id="ed-attack-move" placeholder="Nome — [TAG][DAMAGE X-Y]" style="flex:2;" />
@@ -1669,6 +1674,8 @@ Devimon: https://..."></textarea>
         description: document.getElementById('ed-desc').value.trim(),
         signatureMove: document.getElementById('ed-sigmove').value.trim(),
         attackDesc: document.getElementById('ed-attackdesc').value.trim(),
+        signatureMove2: document.getElementById('ed-sigmove2').value.trim(),
+        attackDesc2: document.getElementById('ed-attackdesc2').value.trim(),
         extraAttacks: draft.extraAttacks,
         digimental: document.getElementById('ed-digimental').value.trim(),
         imageUrl: document.getElementById('ed-img').value.trim(),
@@ -1722,6 +1729,7 @@ Devimon: https://..."></textarea>
             dpTotal: targetEntry.dp_total, discovered: targetEntry.discovered,
             attribute: targetEntry.attribute, family: targetEntry.family, originType: targetEntry.origin_type,
             signatureMove: targetEntry.signature_move, slideEvolution: targetEntry.slide_evolution,
+            signatureMove2: targetEntry.signature_move_2, attackDesc2: targetEntry.attack_desc_2,
             digimental: targetEntry.digimental, attackDesc: targetEntry.attack_desc,
             extraAttacks: targetEntry.extra_attacks, slideTargets: targetEntry.slide_targets
           };
