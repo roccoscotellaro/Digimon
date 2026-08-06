@@ -117,6 +117,27 @@
   .talent-card .treq { color: var(--text-mute); font-size: 12px; float: right; }
   .talent-card .order-title { color: var(--cyan); font-weight: 600; font-size: 13px; margin-top: 6px; }
   .order-cost { color: var(--text-mute); font-size: 11.5px; }
+  .quality-card {
+    background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--cyan-dim);
+    border-radius: var(--radius); padding: 10px 14px; margin: 10px 0;
+  }
+  .quality-card .qname {
+    color: var(--amber); font-weight: 600; font-size: 15px;
+    display: inline-block; margin-right: 8px;
+  }
+  .quality-card .qcost {
+    color: var(--bg); background: var(--cyan); font-weight: 600; font-size: 11.5px;
+    padding: 2px 8px; border-radius: 10px; float: right; white-space: nowrap;
+  }
+  .quality-card p {
+    margin: 6px 0 0; clear: both; font-size: 14px; line-height: 1.55;
+  }
+  .quality-card p b { color: var(--cyan); }
+  .quality-card ul {
+    margin: 6px 0 0; padding-left: 20px; font-size: 14px; line-height: 1.5;
+  }
+  .quality-card ul li { margin: 3px 0; }
+  .quality-card ul li b { color: var(--cyan); }
   .placeholder {
     margin-top: 60px; text-align:center; color: var(--text-mute); font-size: 14px;
     border: 1px dashed var(--line); padding: 40px; border-radius: var(--radius);
@@ -518,11 +539,35 @@
   <p>Le Core Qualities stabiliscono la base su cui ottimizzare il ruolo del Digimon. <b>Ogni Digimon parte con uno Sconto Core pari al proprio SV</b>, uno sconto collettivo utilizzabile su una o più Core Qualities (si consuma man mano che lo si spende).</p>
   <p>Le fondamenta di una build partono da: una <b>Data Optimization</b> (specializza il ruolo), un <b>Naturewalk</b> (lega il Digimon a un elemento), <b>Instinct</b> o <b>Weapon</b> (potenti ma reciprocamente esclusive), opzioni di movimento extra (<b>Extra Movement</b>, <b>Accelerate</b>, <b>Advanced Mobility</b>), fino ad <b>Algorithm</b>, <b>Sprint</b> e le <b>Data Specialization</b> agli Stage successivi.</p>
 
-  <div class="quality-card"><span class="qname">Data Optimization</span><span class="qcost">1 DP</span><p>Static/Trigger. Necessaria per Data Specialization e Hybrid Drive. Scegline <b>una</b> tra: <b>Close Combat</b> (+1 Accuracy [MELEE], +3 se il bersaglio non è a Wound Box piene), <b>Ranged Striker</b> (+1 Accuracy [RANGE], estende il Reach a 2 zone), <b>Warden</b> (+1 Armor, 1 Interrupt Action a costo -1 Azione una volta a combattimento), <b>Brawler</b> (+1 ai Check di Clash, +1 Danno contro chi si sta clashando), <b>Speedster</b> (+1 Movement, ignora la prima penalità di Dodge da un attacco subito dopo il proprio turno), <b>Effect Warrior</b> (+1 Potenza a tutti gli Effetti dei propri Attacchi), <b>Variable</b> (ritira un Check/Pool una volta a round, tenendo il nuovo risultato).</p></div>
-  <div class="quality-card"><span class="qname">Naturewalk</span><span class="qcost">1 DP/Rank — max 2 Ranks</span><p>Static. Necessaria per Element Master, Elemental Force, Illusionary Overlay. Scegli un Elemento (Fuoco, Acqua, Vento, Terra, Ghiaccio, Legno, Acciaio, Fulmine, Oscurità, Luce): +1 a una Stat Core a scelta, riduzione di danno associata (es. Fuoco: -1 da [BURN]; Acqua/Ghiaccio: -1 da [FREEZE]; Vento/Fulmine: -1 al Crash Damage; Terra/Legno: -1 da [POISON]; Oscurità/Luce: vede nel buio, +1 Awareness), nessuna penalità di movimento sul Terreno Difficile del proprio elemento, e resistenza agli Attacchi Elemental Force.</p></div>
+  <div class="quality-card"><span class="qname">Data Optimization</span><span class="qcost">1 DP</span><p>Static/Trigger. Necessaria per Data Specialization e Hybrid Drive. Scegline <b>una</b>:</p>
+  <ul>
+    <li><b>Close Combat</b> — +1 Accuracy [MELEE], +3 se il bersaglio non è a Wound Box piene</li>
+    <li><b>Ranged Striker</b> — +1 Accuracy [RANGE], estende il Reach a 2 zone</li>
+    <li><b>Warden</b> — +1 Armor, 1 Interrupt Action a costo -1 Azione una volta a combattimento</li>
+    <li><b>Brawler</b> — +1 ai Check di Clash, +1 Danno contro chi si sta clashando</li>
+    <li><b>Speedster</b> — +1 Movement, ignora la prima penalità di Dodge da un attacco subito dopo il proprio turno</li>
+    <li><b>Effect Warrior</b> — +1 Potenza a tutti gli Effetti dei propri Attacchi</li>
+    <li><b>Variable</b> — ritira un Check/Pool una volta a round, tenendo il nuovo risultato</li>
+  </ul></div>
+  <div class="quality-card"><span class="qname">Naturewalk</span><span class="qcost">1 DP/Rank — max 2 Ranks</span><p>Static. Necessaria per Element Master, Elemental Force, Illusionary Overlay. Scegli un Elemento: +1 a una Stat Core a scelta, nessuna penalità di movimento sul Terreno Difficile del proprio elemento, resistenza agli Attacchi Elemental Force, e una riduzione di danno associata:</p>
+  <ul>
+    <li><b>Fuoco</b> — -1 da [BURN]</li>
+    <li><b>Acqua / Ghiaccio</b> — -1 da [FREEZE]</li>
+    <li><b>Vento / Fulmine</b> — -1 al Crash Damage</li>
+    <li><b>Terra / Legno</b> — -1 da [POISON]</li>
+    <li><b>Acciaio</b> — -1 da [BURN]</li>
+    <li><b>Oscurità / Luce</b> — vede nel buio, +1 Awareness</li>
+  </ul></div>
   <div class="quality-card"><span class="qname">Instinct</span><span class="qcost">1 DP/Rank — max 3 Ranks (Limited)</span><p>Static. Incompatibile con Weapon. Necessaria per Gain Force e Anticipate Assault. +1 Dodge/Health/Movement per Rank. Rank massimi per Stage: Rookie 1, Champion 2, Ultimate 3.</p></div>
   <div class="quality-card"><span class="qname">Weapon</span><span class="qcost">1 DP/Rank — max 3 Ranks (Limited)</span><p>Attack. Incompatibile con Instinct. Necessaria per Digizoid Weaponry e Martial Strikes. Applica il Tag [WEAPON] a un numero di Attacchi pari ai Rank: +Accuracy e +Danno pari ai Rank; su [RANGE] estende il Reach a 2 zone (1+ Rank); su [MELEE] i 4 tirati (fino ai Rank) contano come Successi.</p></div>
-  <div class="quality-card"><span class="qname">Extra Movement</span><span class="qcost">1 DP/Rank — max 5 Ranks</span><p>Static. Necessaria per 1 Rank di Advanced Mobility. Scegli un tipo di movimento (non ripetibile): <b>Flight</b> (-1 Movement, vola, perde il beneficio a metà Wound Box), <b>Digger</b> (scava; sottoterra non tratta i vicini come Obscured, e non tratta come Obscured i Digimon sottoterra se si trova in superficie), <b>Swimmer</b> (nuota a Movement pieno, Hold Breath illimitato), <b>Wallclimber</b> (scala pareti verticali), <b>Jumper</b> (salto a Movement pieno).</p></div>
+  <div class="quality-card"><span class="qname">Extra Movement</span><span class="qcost">1 DP/Rank — max 5 Ranks</span><p>Static. Necessaria per 1 Rank di Advanced Mobility. Scegli un tipo di movimento (non ripetibile):</p>
+  <ul>
+    <li><b>Flight</b> — -1 Movement, vola, perde il beneficio a metà Wound Box</li>
+    <li><b>Digger</b> — scava; sottoterra non tratta i vicini come Obscured, e non tratta come Obscured i Digimon sottoterra se si trova in superficie</li>
+    <li><b>Swimmer</b> — nuota a Movement pieno, Hold Breath illimitato</li>
+    <li><b>Wallclimber</b> — scala pareti verticali</li>
+    <li><b>Jumper</b> — salto a Movement pieno</li>
+  </ul></div>
   <div class="quality-card"><span class="qname">Accelerate</span><span class="qcost">1 DP/Rank (Limited, max = RAM)</span><p>Static. +1 Movement per Rank.</p></div>
   <div class="quality-card"><span class="qname">Prodigious Skill</span><span class="qcost">1 DP/Rank — max 4 Ranks (Limited)</span><p>Static. Scegli una Skill del Tamer: +3 ai Check di quella Skill, sommato alla Stat Derivata corrispondente (CPU=Body, RAM=Agility, BIT=Intelligence/Charisma, DOS=Willpower). Rank massimi per Stage: Rookie 1, Champion 2, Ultimate 3, Mega 4.</p></div>
 
@@ -543,9 +588,28 @@
   <div class="quality-card"><span class="qname">Battle Cry</span><span class="qcost">3 DP</span><p>Trigger. 1 Azione, Check DOS (Bravery) TN 10+SV più alto nemici+numero nemici. Concede [BASTION] (bonus ad Accuracy/Danno/Dodge/Armor) a sé e agli alleati entro il proprio Reach (in zone) per 1 round: Fallimento Critico = come Fallimento, ma non più utilizzabile per il resto del Combattimento; Fallimento = [BASTION 1]; Successo = [BASTION 2]; Successo Critico = come Successo, recuperi anche l'Azione spesa. TN +6 a ogni uso successivo.</p></div>
   <div class="quality-card"><span class="qname">Watchful Hunter</span><span class="qcost">1 DP</span><p>Trigger/Static. Check DOS (Awareness) gratuito una volta a round, ignora penalità di vista da Obscured. Con azione extra, contro un bersaglio: successo = +2 Accuracy [MELEE] fino al prossimo turno (Critico anche su [RANGE]).</p></div>
   <div class="quality-card"><span class="qname">Venomous</span><span class="qcost">1 DP</span><p>Attack. [VENOM] su un [DAMAGE] (non su Area Attack, non combinabile con [POISON] sullo stesso Attacco): se colpisce, Check BIT (Survival) TN 10+RAM bersaglio; Fallimento Critico = -1 Danno; Successo = applica [POISON] 1 round (o +1 Potenza se già presente); Successo Critico = come Successo con +1 Potenza extra. Su Signature Move, la Battery si aggiunge alla Potenza del [POISON] applicato.</p></div>
-  <div class="quality-card"><span class="qname">Reach</span><span class="qcost">2 DP/Rank — max 3</span><p>Static. Scegli una sola opzione: <b>Wide Swings</b> (il [MELEE] e l'Area Attack colpiscono anche la zona adiacente con 1+ Rank, ma bloccato da barriere/alleati), <b>Long Arms</b> (il [MELEE] colpisce anche la zona adiacente ignorando ostruzioni, ma penalità di Accuracy scalare più vicino si è), <b>Extended Grapple</b> (il Clash raggiunge anche la zona adiacente, nuova Azione di Clash "Pull").</p></div>
-  <div class="quality-card"><span class="qname">Area Attack</span><span class="qcost">1 DP/Rank</span><p>Attack/Trigger. Necessaria per Zoner. Applica un Tag Area per Rank (6 tipi disponibili): <b>[T:BLAST]</b> (cerchio, solo [RANGE], base 1 raggio), <b>[T:BURST]</b> (attorno all'attaccante, base 1), <b>[T:CONE]</b> (cono 90°, base 3), <b>[T:LINE]</b> (pilastro, base 3, rimbalza sui muri), <b>[T:PASS]</b> (carica in linea retta, solo [MELEE]), <b>[T:WAVE]</b> (cubo adiacente all'attaccante, base 2 di larghezza). Attivandola, si dichiara se colpisce solo Alleati o solo Nemici nell'area. Danno [DAMAGE] dimezzato dopo Armor; Effetti [SUPPORT] ridotti di 1 Potenza/Durata.</p></div>
-  <div class="quality-card"><span class="qname">Zoner</span><span class="qcost">1 DP</span><p>Trigger/Static. Richiede 1 Rank di Area Attack. Scegli: <b>Friendly Fire</b> (un'Area [SUPPORT] diventa [DAMAGE] per i nemici e [SUPPORT] per gli alleati nella stessa Attacco) o <b>Bombardment</b> (il danno di un'Area [DAMAGE] non scende sotto la Stat Derivata usata per calcolarla) o <b>Firewall Bypass</b> (Potenza/Durata degli Effetti [SUPPORT] in Area non vengono ridotte).</p></div>
+  <div class="quality-card"><span class="qname">Reach</span><span class="qcost">2 DP/Rank — max 3</span><p>Static. Scegli una sola opzione:</p>
+  <ul>
+    <li><b>Wide Swings</b> — il [MELEE] e l'Area Attack colpiscono anche la zona adiacente con 1+ Rank, ma bloccato da barriere/alleati</li>
+    <li><b>Long Arms</b> — il [MELEE] colpisce anche la zona adiacente ignorando ostruzioni, ma penalità di Accuracy scalare più vicino si è</li>
+    <li><b>Extended Grapple</b> — il Clash raggiunge anche la zona adiacente, nuova Azione di Clash "Pull"</li>
+  </ul></div>
+  <div class="quality-card"><span class="qname">Area Attack</span><span class="qcost">1 DP/Rank</span><p>Attack/Trigger. Necessaria per Zoner. Applica un Tag Area per Rank (6 tipi disponibili):</p>
+  <ul>
+    <li><b>[T:BLAST]</b> — cerchio, solo [RANGE], base 1 raggio</li>
+    <li><b>[T:BURST]</b> — attorno all'attaccante, base 1</li>
+    <li><b>[T:CONE]</b> — cono 90°, base 3</li>
+    <li><b>[T:LINE]</b> — pilastro, base 3, rimbalza sui muri</li>
+    <li><b>[T:PASS]</b> — carica in linea retta, solo [MELEE]</li>
+    <li><b>[T:WAVE]</b> — cubo adiacente all'attaccante, base 2 di larghezza</li>
+  </ul>
+  <p>Attivandola, si dichiara se colpisce solo Alleati o solo Nemici nell'area. Danno [DAMAGE] dimezzato dopo Armor; Effetti [SUPPORT] ridotti di 1 Potenza/Durata.</p></div>
+  <div class="quality-card"><span class="qname">Zoner</span><span class="qcost">1 DP</span><p>Trigger/Static. Richiede 1 Rank di Area Attack. Scegli:</p>
+  <ul>
+    <li><b>Friendly Fire</b> — un'Area [SUPPORT] diventa [DAMAGE] per i nemici e [SUPPORT] per gli alleati nella stessa Attacco</li>
+    <li><b>Bombardment</b> — il danno di un'Area [DAMAGE] non scende sotto la Stat Derivata usata per calcolarla</li>
+    <li><b>Firewall Bypass</b> — Potenza/Durata degli Effetti [SUPPORT] in Area non vengono ridotte</li>
+  </ul></div>
 
   <h2 class="rule-h2" id="pc-4-03">4.03 — Defensive Qualities</h2>
   <div class="quality-card"><span class="qname">Absolute Evasion</span><span class="qcost">2 DP/Rank — max 3 (Limited)</span><p>Static. Successi automatici sul Dodge pari ai Rank, che si consumano a ogni penalità da Dodge consecutivo (si rigenerano a fine turno). Richiede Total Dodge 4/8/12 per 1/2/3 Rank.</p></div>
@@ -626,14 +690,33 @@
 
   <h2 class="rule-h2" id="pc-5-01">5.01 — Core Qualities</h2>
   <div class="quality-card"><span class="qname">Algorithm</span><span class="qcost">1 DP/Rank — max 3 (Limited)</span><p>Static. Richiede Champion. Necessaria per Pure Digizoid Weaponry e Pure Overwrite (che richiedono 3 Rank). Rimuove l'incompatibilità tra Weapon e Instinct: puoi avere Rank in entrambe pari ai Rank di Algorithm + 1. Rank max: Champion 1, Ultimate 2, Mega 3.</p></div>
-  <div class="quality-card"><span class="qname">Advanced Mobility</span><span class="qcost">1 DP/Rank — max 5</span><p>Static. Richiede Champion e 1 Rank di Extra Movement. Potenzia un tipo di Movimento già posseduto: <b>Flight</b> (ignora venti forti, perde il volo solo a 1/4 Wound Box), <b>Digger</b> (scava anche materiali duri come Terreno Difficile, vista tremore potenziata), <b>Swimmer</b> (respira sott'acqua, nessuna penalità da correnti/oscurità, può muoversi anche in altri liquidi come lava o metallo fuso con restrizioni del Master), <b>Wallclimber</b> (cammina sui soffitti, immune a [ROOT]), <b>Jumper</b> (salto curvo, riduzione danno da caduta, entra/esce dal Terreno Difficile come Move Action solo se non è a metà Wound Box o meno).</p></div>
+  <div class="quality-card"><span class="qname">Advanced Mobility</span><span class="qcost">1 DP/Rank — max 5</span><p>Static. Richiede Champion e 1 Rank di Extra Movement. Potenzia un tipo di Movimento già posseduto:</p>
+  <ul>
+    <li><b>Flight</b> — ignora venti forti, perde il volo solo a 1/4 Wound Box</li>
+    <li><b>Digger</b> — scava anche materiali duri come Terreno Difficile, vista tremore potenziata</li>
+    <li><b>Swimmer</b> — respira sott'acqua, nessuna penalità da correnti/oscurità, può muoversi anche in altri liquidi come lava o metallo fuso con restrizioni del Master</li>
+    <li><b>Wallclimber</b> — cammina sui soffitti, immune a [ROOT]</li>
+    <li><b>Jumper</b> — salto curvo, riduzione danno da caduta, entra/esce dal Terreno Difficile come Move Action solo se non è a metà Wound Box o meno</li>
+  </ul></div>
   <div class="quality-card"><span class="qname">Sprint</span><span class="qcost">1 DP</span><p>Trigger. Richiede Champion e Accelerate. Raddoppia il Movement per un'Azione che lo coinvolge (Move, Difficult Move, Intercede, [CHARGE]). Una volta a combattimento.</p></div>
 
   <h2 class="rule-h2" id="pc-5-06">5.06 — Evoker Qualities</h2>
   <div class="quality-card"><span class="qname">Showstopper</span><span class="qcost">2 DP</span><p>Trigger/Static. Richiede Champion; incompatibile con Combat Monster, Conjurer, Summoner. Necessaria per Boasting Heel. Genera <b>Hype</b> (max 3) in combattimento: 1 Azione una volta a turno, Check BIT (Performance) TN 10+numero di alleati e nemici in combattimento (Successo = +1 Hype, non lo perde a inizio turno successivo; Successo Critico = recupera anche l'Azione spesa), oppure colpendo un nemico con Successi Accuracy sopra la sua Dodge pari o superiori al suo Stage. Perde 1 Hype a inizio turno, tutto a fine combattimento (o perdendo la Quality/venendo Sconfitto). Benefici in base all'Hype attuale: 1 = +Hype ad Accuracy; 2 = anche ai Check di Skill; 3 = anche a Danno.</p></div>
   <div class="quality-card"><span class="qname">Boasting Heel</span><span class="qcost">1 DP</span><p>Trigger. Richiede Showstopper. A fine turno, "Boast" come Azione Libera: fino al proprio turno successivo, ogni volta che subisce un Attacco che manca ma con almeno 1 Successo Accuracy, guadagna 1 Hype. Se viene colpito dopo aver fatto Boast, perde il beneficio fino al turno successivo.</p></div>
-  <div class="quality-card"><span class="qname">Conjurer</span><span class="qcost">1 DP/Rank — max 3</span><p>Trigger/Static. Richiede Champion; incompatibile con Combat Monster, Positive Reinforcement, Showstopper. Genera <b>Mastery</b> (BIT + 2×Rank in questa Quality e in Summoner se posseduta — pool condiviso), usata con l'Azione <b>Conjure</b> (1 Azione = metà Mastery, 2 Azioni = Mastery piena) per creare Strutture in spazi liberi entro il proprio Reach (in zone): <b>Walls and Pillars</b> (1 Mastery, 1 Wound Box per Pillar, un Wall può arrivare a 4 Pillar), <b>Platforms</b> (2 Mastery, 2 Wound Box, terreno calpestabile anche a mezz'aria), <b>Terrain</b> (richiede Element Master; converte il terreno in Difficile a 2 Mastery, o solo 1 se il terreno ha già quell'Elemento; +1 Mastery extra per renderlo Pericoloso). Le Strutture non tirano Dodge e hanno una Soglia di Danno pari al DOS del Digimon; distruggerle restituisce la Mastery spesa. Cooldown di 1 round dopo l'uso dell'Azione Conjure; le Strutture spariscono se il Digimon la riusa (sostituendole), va a 0 Wound Box o perde la Quality.</p></div>
-  <div class="quality-card"><span class="qname">Summoner</span><span class="qcost">1 DP/Rank — max 3</span><p>Trigger/Static. Richiede Champion; incompatibile con Combat Monster, Positive Reinforcement, Showstopper. Genera <b>Mastery</b> (BIT + 2×Rank in questa Quality e in Conjurer se posseduta — pool condiviso). Azione <b>Summon</b> (1 Azione = metà Mastery, 2 Azioni = Mastery piena) crea Minion in spazi liberi entro il proprio Reach (in zone); distruggerli restituisce la Mastery spesa. Stat base di un Minion: Accuracy/Danno/Movement dal BIT del Summoner, Wound Box = DOS×2 del Summoner, Extra Movement: Flight senza penalità, niente Armor/Dodge (non tira Dodge), solo Attacchi [MELEE], nessuna Stat Derivata propria; ignora tutti gli Effetti tranne quelli di Danno (usa il CPU del Summoner per [POISON]), Movimento o [ROOT]/[PARALYZE]. Si può spendere Mastery extra alla creazione: +2 Wound Box o +1 a una stat ogni 2 Mastery aggiuntiva. Numero di Minion = Rank in questa Quality. <b>Command Minion</b> (1 Azione per dirigerne 1, 2 Azioni per tutti): un Minion comandato può fare Move, Attack o Aid (solo Move ripetibile); se 2+ Minion attaccano insieme conta come l'Attacco a round del Summoner, che tira Accuracy una volta sola per tutti; con Aid il Minion usa il Reach del Summoner ma dà sempre solo +2. Cooldown di 1 round dopo l'uso di Summon; i Minion spariscono se il Digimon la riusa (rimborsando il costo, salvo tenerli), va a 0 Wound Box o perde la Quality. Scegli un tipo alla presa della Quality: <b>Infantry</b> (4 Mastery, Large, +Movement pari allo Stage; Command Minion costa 1 Azione in meno — Azione Libera per 1, 1 Azione per tutti, una volta a turno, ma quei Minion non possono usare Aid), <b>Protector</b> (3 Mastery, Huge, +Wound Box pari al doppio dello Stage, può Intercedere con le Azioni del Digimon e ignora il Terreno Difficile), <b>Recon</b> (2 Mastery, Medium, +Accuracy pari allo Stage, Attacchi [RANGE] col Reach del Summoner, vista condivisa), <b>Volatile</b> (richiede Element Master; 1 Mastery, Large, +Danno pari allo Stage; esplode a 0 Wound Box con un Attacco [RANGE][DAMAGE][BURST] gratuito al Reach minimo, nullo contro chi ha Element Master dello stesso Elemento).</p></div>
+  <div class="quality-card"><span class="qname">Conjurer</span><span class="qcost">1 DP/Rank — max 3</span><p>Trigger/Static. Richiede Champion; incompatibile con Combat Monster, Positive Reinforcement, Showstopper. Genera <b>Mastery</b> (BIT + 2×Rank in questa Quality e in Summoner se posseduta — pool condiviso), usata con l'Azione <b>Conjure</b> (1 Azione = metà Mastery, 2 Azioni = Mastery piena) per creare Strutture in spazi liberi entro il proprio Reach (in zone):</p>
+  <ul>
+    <li><b>Walls and Pillars</b> — 1 Mastery, 1 Wound Box per Pillar, un Wall può arrivare a 4 Pillar</li>
+    <li><b>Platforms</b> — 2 Mastery, 2 Wound Box, terreno calpestabile anche a mezz'aria</li>
+    <li><b>Terrain</b> — richiede Element Master; converte il terreno in Difficile a 2 Mastery, o solo 1 se il terreno ha già quell'Elemento; +1 Mastery extra per renderlo Pericoloso</li>
+  </ul>
+  <p>Le Strutture non tirano Dodge e hanno una Soglia di Danno pari al DOS del Digimon; distruggerle restituisce la Mastery spesa. Cooldown di 1 round dopo l'uso dell'Azione Conjure; le Strutture spariscono se il Digimon la riusa (sostituendole), va a 0 Wound Box o perde la Quality.</p></div>
+  <div class="quality-card"><span class="qname">Summoner</span><span class="qcost">1 DP/Rank — max 3</span><p>Trigger/Static. Richiede Champion; incompatibile con Combat Monster, Positive Reinforcement, Showstopper. Genera <b>Mastery</b> (BIT + 2×Rank in questa Quality e in Conjurer se posseduta — pool condiviso). Azione <b>Summon</b> (1 Azione = metà Mastery, 2 Azioni = Mastery piena) crea Minion in spazi liberi entro il proprio Reach (in zone); distruggerli restituisce la Mastery spesa. Stat base di un Minion: Accuracy/Danno/Movement dal BIT del Summoner, Wound Box = DOS×2 del Summoner, Extra Movement: Flight senza penalità, niente Armor/Dodge (non tira Dodge), solo Attacchi [MELEE], nessuna Stat Derivata propria; ignora tutti gli Effetti tranne quelli di Danno (usa il CPU del Summoner per [POISON]), Movimento o [ROOT]/[PARALYZE]. Si può spendere Mastery extra alla creazione: +2 Wound Box o +1 a una stat ogni 2 Mastery aggiuntiva. Numero di Minion = Rank in questa Quality. <b>Command Minion</b> (1 Azione per dirigerne 1, 2 Azioni per tutti): un Minion comandato può fare Move, Attack o Aid (solo Move ripetibile); se 2+ Minion attaccano insieme conta come l'Attacco a round del Summoner, che tira Accuracy una volta sola per tutti; con Aid il Minion usa il Reach del Summoner ma dà sempre solo +2. Cooldown di 1 round dopo l'uso di Summon; i Minion spariscono se il Digimon la riusa (rimborsando il costo, salvo tenerli), va a 0 Wound Box o perde la Quality. Scegli un tipo alla presa della Quality:</p>
+  <ul>
+    <li><b>Infantry</b> — 4 Mastery, Large, +Movement pari allo Stage; Command Minion costa 1 Azione in meno (Azione Libera per 1, 1 Azione per tutti, una volta a turno), ma quei Minion non possono usare Aid</li>
+    <li><b>Protector</b> — 3 Mastery, Huge, +Wound Box pari al doppio dello Stage, può Intercedere con le Azioni del Digimon e ignora il Terreno Difficile</li>
+    <li><b>Recon</b> — 2 Mastery, Medium, +Accuracy pari allo Stage, Attacchi [RANGE] col Reach del Summoner, vista condivisa</li>
+    <li><b>Volatile</b> — richiede Element Master; 1 Mastery, Large, +Danno pari allo Stage; esplode a 0 Wound Box con un Attacco [RANGE][DAMAGE][BURST] gratuito al Reach minimo, nullo contro chi ha Element Master dello stesso Elemento</li>
+  </ul></div>
   <div class="quality-card"><span class="qname">Omnievoker</span><span class="qcost">1 DP</span><p>Static. Richiede almeno 1 Rank di Conjurer o Summoner. Le Azioni Conjure e Summon condividono lo stesso costo in Azioni.</p></div>
   <h2 class="rule-h2" id="pc-5-02">5.02 — Offensive Qualities</h2>
   <div class="quality-card"><span class="qname">Elemental Force</span><span class="qcost">1 DP/Rank (Limited)</span><p>Attack/Trigger. Richiede Champion e 1+ Rank di Naturewalk. Applica un Tag elementale (es. [FIRE]) a un [DAMAGE] (non più di un Tag elementale per Attacco): attivandolo, +Danno pari a 1+Rank — ma nessun bonus (o Attacco nullo con Element Master) contro chi condivide lo stesso Naturewalk.</p></div>
@@ -1371,7 +1454,22 @@
     <tr><td>Jogress / DNA Digivolving / DigiXros</td><td>Due Tamer spendono 2 Azioni (1 come Interrupt) per un Jogress Check (3d6+Willpower, TN 15, entrambi devono superarlo). Se riuscito, i due Digimon diventano uno solo con 2 Azioni condivise; entrambi i Tamer agiscono sull'Iniziativa più bassa dei due. Il nuovo Digimon somma i Bonus DP di entrambi i componenti. Riutilizzabile spendendo Evolution Point pari allo Stage risultante per ciascun Tamer.</td></tr>
     <tr><td>Hybrid/Bio-Merge/Mind Link</td><td>Tamer e Digimon diventano un solo personaggio con 3 Azioni a turno (ma sempre "un Attacco a round"). Fuori Combattimento usa gli Attributi/Aspects/Talent del Tamer; in Combattimento le Stat/Qualities/Derivate del Digimon (a scelta per i bonus alle Skill).</td></tr>
   </table>
-  <p><b>Esempi di Digimental</b> (Stage 2, salvo indicato): Coraggio (Naturewalk/Elemental Force: Fuoco, Prodigious Skill: Bravery, Weapon 3, Chrome Digizoid Weaponry — 8 DP); Amicizia (Fulmine, Persuasion, Instinct 3, Overwrite — 8 DP); Amore (Vento, Persuasion, Instinct 3, Chrome Digizoid Armor — 8 DP); Sincerità (Legno, Decipher Intent, Anticipate Assault — 6 DP); Conoscenza (Terra, Knowledge, Armor Piercing 3 — 7 DP); Affidabilità (Acqua, Endurance, Second Wind 3, Chrome Digizoid Armor — 8 DP); Speranza (Luce, Fortitude, Aggressive Flank, Coordinated Assault — 8 DP); Luce (Luce, 1 Effetto Positivo, Holy Ward — 6-8 DP); Gentilezza (1 Master Effect Positivo — 3 DP); Miracoli (Stage 3: Data Optimization Variable, Luce, Weapon 1, Shining Digizoid Weaponry — 8 DP); Destino (Stage 3: Luce, Shining Digizoid Armor — 6 DP); Oscurità (Stage 3: Oscurità, Instinct 1, Digital Hazard — 7 DP).</p>
+
+  <h3 class="rule-h3" id="gm-2-02a-digimental">Template di Digimental</h3>
+  <div class="note">Se un oggetto evolutivo viene condiviso tra i giocatori, dategli un'identità elementale dedicata (es. tramite Naturewalk) per renderlo unico e riconoscibile. Avvisate sempre i giocatori in anticipo se userete questa versione di Armor Evolution, ed è consigliato offrire in parallelo altre opzioni di evoluzione alternativa. Esempio guida: Chrome Digizoid Armor + Chrome Digizoid Weaponry gratis è la build più comune, dato che insieme costano solo 2 DP.</div>
+
+  <div class="quality-card"><span class="qname">Digimental of Courage</span><span class="qcost">Stage 2 — 8 DP</span><p>Naturewalk: Fuoco, Elemental Force: Fuoco, Prodigious Skill: Bravery, <b>Weapon 3</b>, <b>Chrome Digizoid Weaponry</b>.</p></div>
+  <div class="quality-card"><span class="qname">Digimental of Friendship</span><span class="qcost">Stage 2 — 8 DP</span><p>Naturewalk: Fulmine, Elemental Force: Fulmine, Prodigious Skill: Persuasion, <b>Instinct 3</b>, <b>Overwrite</b>.</p></div>
+  <div class="quality-card"><span class="qname">Digimental of Love</span><span class="qcost">Stage 2 — 8 DP</span><p>Naturewalk: Vento, Elemental Force: Vento, Prodigious Skill: Persuasion, <b>Instinct 3</b>, <b>Chrome Digizoid Armor</b>.</p></div>
+  <div class="quality-card"><span class="qname">Digimental of Sincerity</span><span class="qcost">Stage 2 — 6 DP</span><p>Naturewalk: Legno, Elemental Force: Legno, Prodigious Skill: Decipher Intent, <b>Anticipate Assault</b>.</p></div>
+  <div class="quality-card"><span class="qname">Digimental of Knowledge</span><span class="qcost">Stage 2 — 7 DP</span><p>Naturewalk: Terra, Elemental Force: Terra, Prodigious Skill: Knowledge, <b>Armor Piercing 3</b>.</p></div>
+  <div class="quality-card"><span class="qname">Digimental of Reliability</span><span class="qcost">Stage 2 — 8 DP</span><p>Naturewalk: Acqua, Elemental Force: Acqua, Prodigious Skill: Endurance, <b>Second Wind 3</b>, <b>Chrome Digizoid Armor</b>.</p></div>
+  <div class="quality-card"><span class="qname">Digimental of Hope</span><span class="qcost">Stage 2 — 8 DP</span><p>Naturewalk: Luce, Elemental Force: Luce, Prodigious Skill: Fortitude, Aggressive Flank, <b>Coordinated Assault</b>.</p></div>
+  <div class="quality-card"><span class="qname">Digimental of Light</span><span class="qcost">Stage 2 — 6-8 DP</span><p>Naturewalk: Luce, Elemental Force: Luce, 1 Effetto Positivo da Attacco, <b>Holy Ward</b>.</p></div>
+  <div class="quality-card"><span class="qname">Digimental of Kindness</span><span class="qcost">Stage 2 — 3 DP</span><p>1 Master Effect Positivo da Attacco.</p></div>
+  <div class="quality-card"><span class="qname">Digimental of Miracles</span><span class="qcost">Stage 3 — 8 DP</span><p>Data Optimization: Variable, Naturewalk: Luce, Elemental Force: Luce, Weapon 1, <b>Shining Digizoid Weaponry</b>.</p></div>
+  <div class="quality-card"><span class="qname">Digimental of Destiny</span><span class="qcost">Stage 3 — 6 DP</span><p>Naturewalk: Luce, Elemental Force: Luce, <b>Shining Digizoid Armor</b>.</p></div>
+  <div class="quality-card"><span class="qname">Digimental of Darkness</span><span class="qcost">Stage 3 — 7 DP</span><p>Naturewalk: Oscurità, Elemental Force: Oscurità, Instinct 1, <b>Digital Hazard</b>.</p></div>
 
   <h3 class="rule-h3" id="gm-2-02b">2.02b — Burst Power</h3>
   <p>Potenziamento riservato al fine campagna (Stage 4+), tipicamente in sostituzione dell'ultima Milestone. Alla creazione del Digimon, i DP spesi in Stat possono essere ri-allocati in una build separata ("Burst Mode") — decisione permanente una volta finalizzata. Dichiarare Burst Power richiede un Check di Bravery del Tamer (TN 18/20/22 per Classic/Standard/Extreme): se riuscito, dura <b>3 turni</b> e il Digimon recupera 5 Wound Box extra (limitate dal nuovo massimo).</p>
