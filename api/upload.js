@@ -15,6 +15,33 @@ const TARGETS = {
 // letta qui direttamente.
 const SCAN_TABLE = 'scan_log';
 const SCAN_MAX_ATTEMPTS = 2;
+const CREST_IMG_TABLE = 'crest_images';
+
+async function handleCrestImagesGet(req, res) {
+  const code = cleanCode((req.query || {}).code);
+  if (!code) return res.status(400).json({ error: 'code è obbligatorio' });
+  const { data: rows, error } = await supabase
+    .from(CREST_IMG_TABLE)
+    .select('crest_name, image_url')
+    .eq('code', code);
+  if (error) return res.status(500).json({ error: error.message });
+  const images = {};
+  (rows || []).forEach(r => { images[r.crest_name] = r.image_url; });
+  return res.status(200).json({ images });
+}
+
+async function handleCrestImagesPost(req, res) {
+  const body = req.body || {};
+  const code = cleanCode(body.code);
+  const { crestName, imageUrl } = body;
+  if (!code || !crestName) return res.status(400).json({ error: 'code e crestName sono obbligatori' });
+  // imageUrl vuota = "rimuovi l'immagine impostata" (torna al placeholder), non un errore.
+  const { error } = await supabase
+    .from(CREST_IMG_TABLE)
+    .upsert({ code, crest_name: crestName, image_url: imageUrl || '', updated_at: new Date().toISOString() }, { onConflict: 'code,crest_name' });
+  if (error) return res.status(500).json({ error: error.message });
+  return res.status(200).json({ ok: true });
+}
 
 async function handleScanGet(req, res) {
   const code = cleanCode((req.query || {}).code);
@@ -147,15 +174,20 @@ async function handleImageUpload(req, res) {
 // ---------- ROUTER ----------
 module.exports = async (req, res) => {
   try {
-    const isScan = req.method === 'POST'
-      ? ((req.body && req.body.resource === 'scan'))
-      : (req.query && req.query.resource === 'scan'); // GET e DELETE passano resource in query string
+    const resourceGet = req.method === 'POST' ? (req.body && req.body.resource) : (req.query && req.query.resource);
 
-    if (isScan) {
+    if (resourceGet === 'scan') {
       if (req.method === 'GET') return await handleScanGet(req, res);
       if (req.method === 'POST') return await handleScanPost(req, res);
       if (req.method === 'DELETE') return await handleScanDelete(req, res);
       res.setHeader('Allow', 'GET, POST, DELETE');
+      return res.status(405).json({ error: 'method not allowed' });
+    }
+
+    if (resourceGet === 'crestImages') {
+      if (req.method === 'GET') return await handleCrestImagesGet(req, res);
+      if (req.method === 'POST') return await handleCrestImagesPost(req, res);
+      res.setHeader('Allow', 'GET, POST');
       return res.status(405).json({ error: 'method not allowed' });
     }
 

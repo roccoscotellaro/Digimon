@@ -145,6 +145,37 @@
   .crest-card .h{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#ffd76a; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:6px; }
   .crest-card .name{ font-size:18px; font-weight:800; color:#ffd76a; margin-bottom:6px; }
   .crest-card .b{ font-size:13.5px; line-height:1.55; color:var(--text); }
+  .crest-portrait{ width:84px; height:84px; margin:4px auto 10px auto; border-radius:16px; overflow:hidden; border:2px solid #6b5a1f; box-shadow:0 0 16px rgba(255,215,106,0.25); background:var(--panel-2); display:flex; align-items:center; justify-content:center; }
+  .crest-portrait img{ width:100%; height:100%; object-fit:contain; }
+  .crest-portrait .placeholder{ font-family:'JetBrains Mono',monospace; font-size:30px; color:#6b5a1f; }
+  .crest-reasoning{ margin-top:12px; border-top:1px solid #6b5a1f; padding-top:8px; }
+  .crest-reasoning summary{ cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#ffd76a; text-transform:uppercase; letter-spacing:0.05em; }
+  .crest-reasoning-item{ display:flex; gap:8px; align-items:flex-start; font-size:12px; line-height:1.5; padding:6px 0; border-bottom:1px solid rgba(107,90,31,0.4); }
+  .crest-reasoning-item .mark{ font-family:'JetBrains Mono',monospace; font-size:13px; flex-shrink:0; width:16px; text-align:center; }
+  .crest-reasoning-item .mark.yes{ color:#ffd76a; }
+  .crest-reasoning-item .mark.no{ color:var(--text-mute); }
+  .crest-reasoning-item .q{ color:var(--text-mute); }
+  .crest-reasoning-item .a{ color:var(--text); }
+
+  .gm-panel{ margin-top:22px; padding-top:16px; border-top:2px dashed #6b5a1f; }
+  .gm-panel .gm-title{ font-family:'JetBrains Mono',monospace; font-size:11px; color:#ffd76a; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:10px; }
+  .gm-section{ background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:14px; margin-bottom:14px; }
+  .gm-section .gm-section-h{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--cyan-dim); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:10px; }
+  .gm-crest-row{ display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+  .gm-crest-row label{ width:96px; flex-shrink:0; font-size:12px; color:var(--text); }
+  .gm-crest-row input{ flex:1; background:var(--bg); border:1px solid var(--line); border-radius:6px; color:var(--text); padding:8px 10px; font-size:12.5px; }
+  .gm-crest-row button{ background:var(--cyan-dim); color:#04110d; border:none; border-radius:6px; padding:8px 12px; font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:700; cursor:pointer; }
+  .gm-crest-row .gm-thumb{ width:28px; height:28px; border-radius:6px; object-fit:cover; border:1px solid var(--line); flex-shrink:0; }
+  .gm-status{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--text-mute); margin-top:4px; }
+  .gm-ref-table{ font-size:11.5px; }
+  .gm-ref-crest{ margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid var(--line); }
+  .gm-ref-crest:last-child{ border-bottom:none; margin-bottom:0; padding-bottom:0; }
+  .gm-ref-crest .gm-ref-name{ font-weight:800; color:#ffd76a; margin-bottom:4px; }
+  .gm-ref-crest .gm-ref-line{ color:var(--text-mute); padding:2px 0; }
+  .gm-ref-crest .gm-ref-line b{ color:var(--text); font-weight:600; }
+  .gm-test-row{ display:flex; justify-content:space-between; gap:10px; align-items:center; padding:6px 0; border-bottom:1px solid var(--line); font-size:12px; }
+  .gm-test-row select{ background:var(--bg); border:1px solid var(--line); border-radius:6px; color:var(--text); padding:6px 8px; font-size:12px; }
+  .gm-test-result{ margin-top:12px; padding:10px; background:rgba(255,215,106,0.08); border:1px solid #6b5a1f; border-radius:8px; font-size:13px; }
 </style>
 </head>
 <body>
@@ -177,6 +208,8 @@
     </div>
 
     <button class="btn hidden" id="startBtn">Avvia la Scansione</button>
+
+    <div class="hidden" id="gmPanel"></div>
   </div>
 
   <!-- QUESTION -->
@@ -207,8 +240,13 @@
 
     <div class="crest-card hidden" id="crestCard">
       <div class="h">🔶 Risonanza del Digimedaglione</div>
+      <div class="crest-portrait" id="crestPortrait"></div>
       <div class="name" id="crestName"></div>
       <div class="b" id="crestDesc"></div>
+      <details class="crest-reasoning" id="crestReasoningWrap">
+        <summary>Perché questo Crest? Le domande che l'hanno determinato</summary>
+        <div id="crestReasoning"></div>
+      </details>
     </div>
 
     <div class="runner-up" id="runnerUp"></div>
@@ -454,6 +492,128 @@ const ALL_NAMES = Object.keys(DIGIMON);
 const CAMPAIGN_CODE = 'FRONTIER1'; // aggiorna qui se cambia il codice della campagna
 let DEX_IMAGES = {};
 
+// Immagini dei Crest: NON le genero/scarico io, sono asset ufficiali della serie (copyright
+// Toei/Bandai) e non posso riprodurli. Il Master le imposta dal pannello GM (?gm=1 nell'URL),
+// che le salva sul server (tabella crest_images) così sono visibili a TUTTI i Tamer della
+// campagna, non solo nel browser di chi le ha caricate. Se un nome resta senza URL, viene
+// mostrato un placeholder con l'iniziale.
+let CREST_IMAGES = {
+  Coraggio: '', Amicizia: '', Amore: '', Conoscenza: '',
+  Sincerità: '', Affidabilità: '', Speranza: '', Luce: ''
+};
+async function loadCrestImages(){
+  try{
+    const res = await fetch('/api/upload?resource=crestImages&code=' + encodeURIComponent(CAMPAIGN_CODE));
+    if(!res.ok) return;
+    const data = await res.json();
+    Object.assign(CREST_IMAGES, data.images || {});
+  }catch(e){ /* nessuna immagine disponibile, si userà il placeholder */ }
+}
+loadCrestImages();
+
+async function apiPostCrestImage(crestName, imageUrl){
+  try{
+    const r = await fetch('/api/upload', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ resource:'crestImages', code: CAMPAIGN_CODE, crestName, imageUrl }) });
+    const data = await r.json();
+    if(!r.ok) return { error: data.error || ('Errore ' + r.status) };
+    return data;
+  }catch(e){ return { error: 'Errore di rete: ' + e.message }; }
+}
+
+// ---------- PANNELLO MASTER (visibile solo con ?gm=1 nell'URL) ----------
+// Tre strumenti in uno, tutti pensati per non dover rifare l'intero quiz per verificare qualcosa:
+//  1) Editor immagini Crest — salva sul server, visibile subito a tutti i Tamer.
+//  2) Tabella di riferimento — per ogni Crest, quale risposta di ogni domanda lo allinea.
+//  3) Test rapido — scegli le risposte da dei menu a tendina e vedi subito il Crest risultante,
+//     con lo stesso dettaglio "domanda per domanda" che vede il giocatore a fine scan.
+const isGmMode = new URLSearchParams(location.search).get('gm') === '1';
+
+function recomputeGmTest(host){
+  const axisMap = {};
+  host.querySelectorAll('[data-test-axis]').forEach(sel=>{
+    const axis = Number(sel.getAttribute('data-test-axis'));
+    if(sel.value) axisMap[axis] = sel.value;
+  });
+  const resultEl = document.getElementById('gmTestResult');
+  if(Object.keys(axisMap).length === 0){
+    resultEl.innerHTML = 'Seleziona qualche risposta per vedere il Crest risultante.';
+    return;
+  }
+  const crest = bestCrestMatch(axisMap);
+  resultEl.innerHTML = 'Crest risultante: <b style="color:#ffd76a;">' + crest + '</b><div id="gmTestReasoning" style="margin-top:8px;"></div>';
+  buildCrestReasoning(crest, axisMap, 'gmTestReasoning');
+}
+
+async function renderGmPanel(){
+  if(!isGmMode) return;
+  await loadCrestImages();
+  const host = document.getElementById('gmPanel');
+  host.classList.remove('hidden');
+  const crestNames = Object.keys(CRESTS);
+
+  const imagesHTML = '<div class="gm-section"><div class="gm-section-h">🖼 Immagini Crest — salvate qui sono visibili a tutti i Tamer della campagna</div>'
+    + crestNames.map(name => (
+        '<div class="gm-crest-row">'
+        + '<label>' + name + '</label>'
+        + (CREST_IMAGES[name] ? ('<img class="gm-thumb" src="' + CREST_IMAGES[name].replace(/"/g,'&quot;') + '" onerror="this.style.visibility=\'hidden\'" />') : '<div class="gm-thumb"></div>')
+        + '<input type="text" data-crest-img="' + name + '" value="' + (CREST_IMAGES[name]||'').replace(/"/g,'&quot;') + '" placeholder="https://..." />'
+        + '<button data-save-crest-img="' + name + '">Salva</button>'
+        + '</div>'
+      )).join('')
+    + '<div class="gm-status" id="gmImgStatus"></div>'
+    + '</div>';
+
+  const refHTML = '<div class="gm-section"><div class="gm-section-h">📋 Riferimento — quale risposta allinea a quale Crest</div><div class="gm-ref-table">'
+    + crestNames.map(name=>{
+        const tags = CRESTS[name].tags;
+        const lines = QUESTIONS.map(q =>
+          '<div class="gm-ref-line">' + q.text + ' → <b>' + (tags[q.axis]==='A'?q.a:q.b) + '</b></div>'
+        ).join('');
+        return '<div class="gm-ref-crest"><div class="gm-ref-name">' + name + '</div>' + lines + '</div>';
+      }).join('')
+    + '</div></div>';
+
+  const testHTML = '<div class="gm-section"><div class="gm-section-h">🧪 Test rapido — senza rifare tutto il quiz</div>'
+    + QUESTIONS.map(q=>(
+        '<div class="gm-test-row"><span>' + q.text + '</span>'
+        + '<select data-test-axis="' + q.axis + '"><option value="">—</option><option value="A">' + q.a + '</option><option value="B">' + q.b + '</option></select></div>'
+      )).join('')
+    + '<div class="gm-test-result" id="gmTestResult">Seleziona qualche risposta per vedere il Crest risultante.</div>'
+    + '</div>';
+
+  host.innerHTML = '<div class="gm-title">⚙ Pannello Master (?gm=1 — non visibile ai giocatori)</div>' + imagesHTML + refHTML + testHTML;
+
+  host.querySelectorAll('[data-save-crest-img]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const name = btn.getAttribute('data-save-crest-img');
+      const input = host.querySelector('[data-crest-img="' + name + '"]');
+      const url = input.value.trim();
+      const statusEl = document.getElementById('gmImgStatus');
+      statusEl.textContent = 'Salvataggio "' + name + '"...';
+      const res = await apiPostCrestImage(name, url);
+      if(res && !res.error){
+        CREST_IMAGES[name] = url;
+        statusEl.textContent = '✓ "' + name + '" salvato — visibile a tutti i Tamer da ora.';
+        renderGmPanel();
+      } else {
+        statusEl.textContent = '⚠ Errore salvando "' + name + '": ' + (res && res.error);
+      }
+    };
+  });
+
+  host.querySelectorAll('[data-test-axis]').forEach(sel=>{ sel.onchange = ()=> recomputeGmTest(host); });
+}
+renderGmPanel();
+function renderCrestPortrait(name){
+  const host = document.getElementById('crestPortrait');
+  const url = CREST_IMAGES[name];
+  if(url){
+    host.innerHTML = '<img src="' + url.replace(/"/g,'&quot;') + '" alt="' + name + '" onerror="this.parentNode.innerHTML=\'<span class=&quot;placeholder&quot;>' + name.charAt(0) + '</span>\'" />';
+  } else {
+    host.innerHTML = '<span class="placeholder">' + name.charAt(0) + '</span>';
+  }
+}
+
 async function loadDexImages(){
   try{
     const res = await fetch('/api/dex?code=' + encodeURIComponent(CAMPAIGN_CODE));
@@ -608,20 +768,43 @@ const CRESTS = {
   Luce:          { tags:'BAAAAABABB', desc:'Sei riflessivo/a ma caloroso/a, empatico/a e gentile — non cerchi l\'attenzione, ma la tua presenza discreta cambia le cose per chi ti circonda.' }
 };
 
-function bestCrestMatch(){
+function bestCrestMatch(axisMapOverride){
+  const axisMap = axisMapOverride || answersByAxis;
   const names = Object.keys(CRESTS);
   const mismatch = {};
   names.forEach(name=>{
     const tags = CRESTS[name].tags;
     let m = 0;
     for(let axis=0; axis<QUESTIONS.length; axis++){
-      const given = answersByAxis[axis];
+      const given = axisMap[axis];
       if(given === undefined) continue;
       if(given !== tags[axis]) m++;
     }
     mismatch[name] = m;
   });
   return names.slice().sort((a,b)=> mismatch[a]-mismatch[b])[0];
+}
+
+// Elenca, per il Crest assegnato, tutte le domande a cui il giocatore ha effettivamente
+// risposto: mostra la domanda, la risposta data, e se quella risposta è allineata (✔) o meno
+// (·) col profilo del Crest — così chi ha il Digimedaglione può vedere "perché" gli è uscito
+// quel Crest, non solo il nome.
+function buildCrestReasoning(crestName, axisMapOverride, targetId){
+  const tags = CRESTS[crestName].tags;
+  const axisMap = axisMapOverride || answersByAxis;
+  const wrap = document.getElementById(targetId || 'crestReasoning');
+  const rows = QUESTIONS
+    .filter(q => axisMap[q.axis] !== undefined)
+    .map(q=>{
+      const given = axisMap[q.axis];
+      const aligned = given === tags[q.axis];
+      const answerText = given === 'A' ? q.a : q.b;
+      return '<div class="crest-reasoning-item">'
+        + '<span class="mark ' + (aligned ? 'yes' : 'no') + '">' + (aligned ? '✔' : '·') + '</span>'
+        + '<span><span class="q">' + q.text + '</span><br/><span class="a">' + answerText + '</span></span>'
+        + '</div>';
+    });
+  wrap.innerHTML = rows.join('') || '<div class="muted" style="font-size:11px;">Nessuna domanda registrata per questo scan.</div>';
 }
 
 let current = 0;
@@ -817,8 +1000,10 @@ function renderResult(wasEarly, forcedBest){
   let matchedCrest = null;
   if(hasMedaglione){
     matchedCrest = bestCrestMatch();
+    renderCrestPortrait(matchedCrest);
     document.getElementById('crestName').textContent = matchedCrest;
     document.getElementById('crestDesc').textContent = CRESTS[matchedCrest].desc;
+    buildCrestReasoning(matchedCrest);
     crestCard.classList.remove('hidden');
   } else {
     crestCard.classList.add('hidden');
