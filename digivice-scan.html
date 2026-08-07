@@ -125,6 +125,26 @@
 
   .hidden{ display:none !important; }
   .footer-note{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-mute); text-align:center; margin-top:6px; letter-spacing:0.05em; }
+
+  .id-block{ background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:16px; }
+  .id-label{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--cyan-dim); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:8px; }
+  .id-row{ display:flex; gap:8px; }
+  .id-input{ flex:1; background:var(--bg); border:1px solid var(--line); border-radius:var(--radius); color:var(--text); padding:11px 12px; font-family:'Manrope',sans-serif; font-size:14px; }
+  .id-input:focus{ outline:none; border-color:var(--cyan-dim); }
+  .id-verify-btn{ background:var(--cyan-dim); color:#04110d; border:none; border-radius:var(--radius); padding:0 16px; font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; cursor:pointer; }
+  .id-verify-btn:hover{ filter:brightness(1.15); }
+  .id-status{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-mute); margin-top:10px; line-height:1.6; }
+  .id-status.err{ color:var(--danger); }
+  .id-status.ok{ color:var(--cyan); }
+  .medaglione-badge{ display:inline-flex; align-items:center; gap:6px; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#ffd76a; border:1px solid #6b5a1f; background:rgba(255,215,106,0.08); border-radius:20px; padding:5px 10px; margin-top:10px; }
+  .attempts-pill{ display:inline-block; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--cyan); border:1px solid var(--cyan-dim); border-radius:20px; padding:5px 10px; margin-top:10px; margin-right:6px; }
+  .log-list{ margin-top:12px; border-top:1px solid var(--line); padding-top:10px; }
+  .log-item{ display:flex; justify-content:space-between; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-mute); padding:5px 0; }
+  .log-item b{ color:var(--text); }
+  .crest-card{ background:linear-gradient(180deg, rgba(255,215,106,0.08), transparent); border:1px solid #6b5a1f; border-radius:var(--radius); padding:16px 18px; margin-bottom:16px; }
+  .crest-card .h{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#ffd76a; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:6px; }
+  .crest-card .name{ font-size:18px; font-weight:800; color:#ffd76a; margin-bottom:6px; }
+  .crest-card .b{ font-size:13.5px; line-height:1.55; color:var(--text); }
 </style>
 </head>
 <body>
@@ -146,7 +166,17 @@
       <br><br>
       Fino a 10 domande, ma se il Digivice trova un match chiaro prima, si ferma subito. Percorsi diversi per persone diverse — nessun risultato "vince" solo perché appare più spesso.
     </div>
-    <button class="btn" id="startBtn">Avvia la Scansione</button>
+
+    <div class="id-block">
+      <div class="id-label">Identificazione Tamer</div>
+      <div class="id-row">
+        <input class="id-input" id="usernameInput" type="text" placeholder="Il tuo nome utente nella campagna..." autocomplete="off" />
+        <button class="id-verify-btn" id="verifyBtn">Verifica</button>
+      </div>
+      <div class="id-status" id="idStatus">Inserisci il tuo nome utente e premi Verifica per sbloccare la scansione — massimo 2 tentativi a testa, e ogni Digimon può uscire ad un solo Tamer per campagna.</div>
+    </div>
+
+    <button class="btn hidden" id="startBtn">Avvia la Scansione</button>
   </div>
 
   <!-- QUESTION -->
@@ -174,6 +204,13 @@
       <div class="b" id="resWhy"></div>
     </div>
     <div class="traits-row" id="resTraits"></div>
+
+    <div class="crest-card hidden" id="crestCard">
+      <div class="h">🔶 Risonanza del Digimedaglione</div>
+      <div class="name" id="crestName"></div>
+      <div class="b" id="crestDesc"></div>
+    </div>
+
     <div class="runner-up" id="runnerUp"></div>
     <button class="btn" id="addStarterBtn" style="margin-bottom:10px;">🧬 Aggiungi come Starter</button>
     <button class="btn ghost" id="restartBtn">Ripeti la Scansione</button>
@@ -440,15 +477,149 @@ function renderPortrait(name){
 }
 const PRIMARY_NAMES = ALL_NAMES.filter(n=>!SECONDARY_ONLY.includes(n));
 
+// ---------- IDENTIFICAZIONE TAMER, TENTATIVI, LOG E ANTI-DOPPIONE ----------
+// Lo scan ora richiede il nome utente (lo stesso della campagna in Digivice OS) prima di poter
+// partire. Il backend (/api/scan) tiene traccia di: quanti tentativi ha già usato quel Tamer
+// (max 2), quali Digimon sono già stati assegnati a QUALSIASI Tamer della campagna (per non
+// avere doppioni), e viene interrogato anche /api/roster per controllare se il Tamer possiede
+// il Digimedaglione in inventario (sblocca la rivelazione del Crest).
+const MAX_ATTEMPTS = 2;
+let currentUsername = '';
+let attemptsUsed = 0;
+let myLog = [];
+let takenNames = [];      // nomi già assegnati a QUALSIASI Tamer della campagna (esclusi dal pool)
+let hasMedaglione = false;
+let identityVerified = false;
+
+async function apiGetScan(qs){
+  try{
+    const r = await fetch('/api/scan?' + qs);
+    const data = await r.json();
+    if(!r.ok) return { error: data.error || ('Errore ' + r.status) };
+    return data;
+  }catch(e){ return { error: 'Errore di rete: ' + e.message }; }
+}
+async function apiPostScan(body){
+  try{
+    const r = await fetch('/api/scan', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const data = await r.json();
+    if(!r.ok) return { error: data.error || ('Errore ' + r.status) };
+    return data;
+  }catch(e){ return { error: 'Errore di rete: ' + e.message }; }
+}
+
+async function checkMedaglione(username){
+  try{
+    const r = await fetch('/api/roster?code=' + encodeURIComponent(CAMPAIGN_CODE));
+    if(!r.ok) return false;
+    const data = await r.json();
+    const member = (data.members || []).find(m => m.username === username);
+    const inv = member && member.tamer && Array.isArray(member.tamer.inventory) ? member.tamer.inventory : [];
+    return inv.some(it => (it.name || '').toLowerCase().includes('digimedaglione') && Number(it.qty||0) > 0);
+  }catch(e){ return false; }
+}
+
+function renderIdStatus(){
+  const el = document.getElementById('idStatus');
+  const remaining = Math.max(0, MAX_ATTEMPTS - attemptsUsed);
+  let html = '';
+  if(remaining > 0){
+    html += '<span class="attempts-pill">Tentativi disponibili: ' + remaining + '/' + MAX_ATTEMPTS + '</span>';
+  } else {
+    html += '<span class="attempts-pill" style="color:var(--danger);border-color:var(--danger);">Tentativi esauriti (0/' + MAX_ATTEMPTS + ')</span>';
+  }
+  if(hasMedaglione){
+    html += '<span class="medaglione-badge">🔶 Digimedaglione rilevato — sblocca la rivelazione del Crest</span>';
+  }
+  if(myLog.length){
+    html += '<div class="log-list">' + myLog.map(l =>
+      '<div class="log-item"><span>Tentativo ' + l.attempt_number + '</span><b>' + l.digimon_name + (l.crest_name ? ' · Crest: ' + l.crest_name : '') + '</b></div>'
+    ).join('') + '</div>';
+  }
+  el.className = 'id-status ' + (remaining > 0 ? 'ok' : 'err');
+  el.innerHTML = html;
+}
+
+document.getElementById('verifyBtn').onclick = async ()=>{
+  const uname = document.getElementById('usernameInput').value.trim();
+  const statusEl = document.getElementById('idStatus');
+  if(!uname){ statusEl.className='id-status err'; statusEl.textContent='Inserisci un nome utente prima di verificare.'; return; }
+  statusEl.className = 'id-status';
+  statusEl.textContent = 'Sincronizzazione con Digivice OS in corso...';
+  const [scanData, medaglione] = await Promise.all([
+    apiGetScan('code=' + encodeURIComponent(CAMPAIGN_CODE) + '&username=' + encodeURIComponent(uname)),
+    checkMedaglione(uname)
+  ]);
+  if(scanData.error){
+    statusEl.className = 'id-status err';
+    statusEl.textContent = '⚠ ' + scanData.error + ' — riprova, oppure avvisa il GM se il problema persiste.';
+    document.getElementById('startBtn').classList.add('hidden');
+    return;
+  }
+  currentUsername = uname;
+  attemptsUsed = scanData.attemptsUsed || 0;
+  myLog = scanData.myLog || [];
+  takenNames = scanData.takenNames || [];
+  hasMedaglione = medaglione;
+  identityVerified = true;
+  renderIdStatus();
+  const startBtn = document.getElementById('startBtn');
+  if(attemptsUsed >= MAX_ATTEMPTS){
+    startBtn.classList.add('hidden');
+  } else {
+    startBtn.classList.remove('hidden');
+    startBtn.textContent = 'Avvia la Scansione (tentativo ' + (attemptsUsed+1) + '/' + MAX_ATTEMPTS + ')';
+  }
+};
+
+// Pool di candidati realmente disponibili: esclude chi è già stato assegnato a un altro Tamer
+// della campagna. Se per qualche motivo il pool si svuotasse del tutto (praticamente impossibile
+// con 40 candidati), si ricade sul pool completo piuttosto che bloccare lo scan.
+function availableNames(){
+  const filtered = PRIMARY_NAMES.filter(n => !takenNames.includes(n));
+  return filtered.length ? filtered : PRIMARY_NAMES.slice();
+}
+
 function findTiebreakForTop(ranked, mismatch){
   const best = ranked[0];
   return TIEBREAK_QUESTIONS.find(tb=>{
     if(!tb.group.includes(best)) return false;
-    const others = tb.group.filter(n=>n!==best);
-    // Trigger se ALMENO un altro membro del gruppo è entro 1 mismatch dal migliore attuale:
-    // non serve che siano esattamente i primi due, basta che siano vicinissimi tra loro.
+    // Le "controparti" di spareggio proposte devono anch'esse essere ancora disponibili
+    // (non già assegnate a un altro Tamer), altrimenti non ha senso proporle come opzione.
+    const others = tb.group.filter(n=> n!==best && !takenNames.includes(n));
     return others.some(o => (mismatch[o] - mismatch[best]) <= 1);
   });
+}
+
+// ---------- CREST (sbloccato solo con il Digimedaglione in inventario) ----------
+// Stesso principio di matching a mismatch minimo usato per i Digimon, ma su un set indipendente
+// di 8 profili (i Crest classici). Non c'è vincolo di unicità tra Tamer: più persone possono
+// convergere sullo stesso Crest, è narrativamente corretto.
+const CRESTS = {
+  Coraggio:      { tags:'AAAAAAAAAA', desc:'Agisci d\'istinto per chi ami, ti butti al centro della scena e non hai paura di sbagliare in pubblico. La tua è una spinta pura, diretta, quasi mai calcolata.' },
+  Amicizia:      { tags:'BBBBAABBBB', desc:'Ti fidi lentamente ma quando lo fai è per sempre — proteggi chi ti sta vicino piegando anche le regole, restando però riservato/a su come lo vivi davvero.' },
+  Amore:         { tags:'BABABABABB', desc:'Ti prendi cura degli altri con calore e fiducia immediata, ma tieni le tue emozioni più profonde per te, dimostrandole con la presenza più che con le parole.' },
+  Conoscenza:    { tags:'BBBBBBBBBB', desc:'Osservi, rifletti, analizzi prima di agire. Preferisci capire davvero una situazione piuttosto che reagire d\'istinto, e agisci meglio lontano dai riflettori.' },
+  Sincerità:     { tags:'AAAAAABAAA', desc:'Dici quello che pensi, ti fidi facilmente e vivi le emozioni apertamente. Il tuo ottimismo e la tua spontaneità sono la tua forma più onesta di affetto.' },
+  Affidabilità:  { tags:'BBBBBABBBB', desc:'Sei prudente, rispetti le regole e ti prepari sempre al peggio — non per pessimismo, ma perché qualcuno deve pensare a tutto. Su di te si può sempre contare.' },
+  Speranza:      { tags:'AAAAAABABA', desc:'Credi che le cose si risolveranno anche quando le prove dicono il contrario, e lo dici apertamente per sostenere chi ti sta vicino. Il tuo ottimismo è contagioso, non ingenuo.' },
+  Luce:          { tags:'BAAAAABABB', desc:'Sei riflessivo/a ma caloroso/a, empatico/a e gentile — non cerchi l\'attenzione, ma la tua presenza discreta cambia le cose per chi ti circonda.' }
+};
+
+function bestCrestMatch(){
+  const names = Object.keys(CRESTS);
+  const mismatch = {};
+  names.forEach(name=>{
+    const tags = CRESTS[name].tags;
+    let m = 0;
+    for(let axis=0; axis<QUESTIONS.length; axis++){
+      const given = answersByAxis[axis];
+      if(given === undefined) continue;
+      if(given !== tags[axis]) m++;
+    }
+    mismatch[name] = m;
+  });
+  return names.slice().sort((a,b)=> mismatch[a]-mismatch[b])[0];
 }
 
 let current = 0;
@@ -508,7 +679,7 @@ function computeMismatches(){
 
 function remainingPerfectMatches(){
   const mismatch = computeMismatches();
-  return PRIMARY_NAMES.filter(n=>mismatch[n]===0);
+  return availableNames().filter(n=>mismatch[n]===0);
 }
 
 function updateProgress(){
@@ -567,7 +738,7 @@ function selectOption(letter, axis){
 // se sì e non abbiamo già usato la domanda di spareggio in questa scansione, la mostra prima del risultato.
 function proceedToResult(wasEarly){
   const mismatch = computeMismatches();
-  const ranked = PRIMARY_NAMES.slice().sort((a,b)=> mismatch[a]-mismatch[b]);
+  const ranked = availableNames().sort((a,b)=> mismatch[a]-mismatch[b]);
   const tb = (!tiebreakUsed && ranked.length>=1) ? findTiebreakForTop(ranked, mismatch) : null;
   if(tb){
     tiebreakUsed = true;
@@ -584,7 +755,12 @@ function renderTiebreak(tb, wasEarly){
   document.getElementById('qtext').textContent = tb.text;
   const wrap = document.getElementById('optsWrap');
   wrap.innerHTML = '';
-  tb.options.forEach(opt=>{
+  // Non propone come opzione una "controparte" già assegnata a un altro Tamer della campagna
+  // (a meno che, per un pool quasi esaurito, non resti nessuna opzione disponibile: in quel
+  // caso mostra comunque tutte le opzioni piuttosto che bloccare lo spareggio).
+  const availableOpts = tb.options.filter(opt => !takenNames.includes(opt.forName));
+  const opts = availableOpts.length ? availableOpts : tb.options;
+  opts.forEach(opt=>{
     const btn = document.createElement('button');
     btn.className = 'opt';
     btn.innerHTML = '<span class="k">'+opt.letter+'</span>' + opt.text;
@@ -601,9 +777,10 @@ function renderTiebreak(tb, wasEarly){
 
 function renderResult(wasEarly, forcedBest){
   const mismatch = computeMismatches();
-  // Ordina per minor numero di mismatch tra i soli candidati primari; a parità, ordine di inserimento (stabile).
-  const ranked = PRIMARY_NAMES.slice().sort((a,b)=> mismatch[a]-mismatch[b]);
-  const best = forcedBest || ranked[0];
+  // Ordina per minor numero di mismatch tra i soli candidati ANCORA DISPONIBILI (esclude chi
+  // è già stato assegnato a un altro Tamer della campagna); a parità, ordine di inserimento (stabile).
+  const ranked = availableNames().sort((a,b)=> mismatch[a]-mismatch[b]);
+  const best = (forcedBest && !takenNames.includes(forcedBest)) ? forcedBest : (forcedBest && takenNames.includes(forcedBest) ? ranked[0] : (forcedBest || ranked[0]));
   const second = ranked.find(n=>n!==best) || ranked[1];
   const d = DIGIMON[best];
 
@@ -632,9 +809,39 @@ function renderResult(wasEarly, forcedBest){
       document.getElementById('runnerUp').innerHTML = '';
     }
   }
+
+  // ---- Crest (solo se il Tamer ha il Digimedaglione in inventario) ----
+  const crestCard = document.getElementById('crestCard');
+  let matchedCrest = null;
+  if(hasMedaglione){
+    matchedCrest = bestCrestMatch();
+    document.getElementById('crestName').textContent = matchedCrest;
+    document.getElementById('crestDesc').textContent = CRESTS[matchedCrest].desc;
+    crestCard.classList.remove('hidden');
+  } else {
+    crestCard.classList.add('hidden');
+  }
+
   stepLabel.textContent = 'MATCH';
   document.getElementById('starterNote').style.display = 'block';
   showScreen('result');
+
+  // Registra il tentativo sul backend: aggiorna il conteggio tentativi, il log e la lista
+  // dei nomi presi, così il prossimo giocatore (o un secondo tentativo dello stesso) non può
+  // più ricevere questo stesso Digimon.
+  if(identityVerified && currentUsername){
+    const nextAttempt = attemptsUsed + 1;
+    apiPostScan({ code: CAMPAIGN_CODE, username: currentUsername, digimonName: best, crestName: matchedCrest, attemptNumber: nextAttempt })
+      .then(res=>{
+        if(res && !res.error){
+          attemptsUsed = nextAttempt;
+          takenNames.push(best);
+          myLog.push({ attempt_number: nextAttempt, digimon_name: best, crest_name: matchedCrest });
+        }
+        // Se il salvataggio fallisce (rete assente, race condition su un doppione), il risultato
+        // resta comunque visibile al giocatore: è il GM a dover risolvere manualmente il conflitto.
+      });
+  }
 }
 
 document.getElementById('addStarterBtn').onclick = ()=>{
@@ -658,6 +865,10 @@ document.getElementById('addStarterBtn').onclick = ()=>{
 };
 
 document.getElementById('startBtn').onclick = ()=>{
+  if(!identityVerified || attemptsUsed >= MAX_ATTEMPTS){
+    renderIdStatus();
+    return;
+  }
   current = 0;
   answersByAxis = {};
   sessionOrder = shuffledIndices(QUESTIONS.length);
@@ -665,13 +876,31 @@ document.getElementById('startBtn').onclick = ()=>{
   renderQuestion();
 };
 
-document.getElementById('restartBtn').onclick = ()=>{
+document.getElementById('restartBtn').onclick = async ()=>{
   current = 0;
   answersByAxis = {};
   sessionOrder = shuffledIndices(QUESTIONS.length);
   tiebreakUsed = false;
   stepLabel.textContent = 'INIT';
   showScreen('intro');
+  // Ri-sincronizza tentativi/log/nomi presi (nel frattempo potrebbero essere cambiati, es. un
+  // altro giocatore ha completato uno scan) prima di lasciare che riprovi.
+  if(identityVerified && currentUsername){
+    const scanData = await apiGetScan('code=' + encodeURIComponent(CAMPAIGN_CODE) + '&username=' + encodeURIComponent(currentUsername));
+    if(!scanData.error){
+      attemptsUsed = scanData.attemptsUsed || 0;
+      myLog = scanData.myLog || [];
+      takenNames = scanData.takenNames || [];
+    }
+    renderIdStatus();
+    const startBtn = document.getElementById('startBtn');
+    if(attemptsUsed >= MAX_ATTEMPTS){
+      startBtn.classList.add('hidden');
+    } else {
+      startBtn.classList.remove('hidden');
+      startBtn.textContent = 'Avvia la Scansione (tentativo ' + (attemptsUsed+1) + '/' + MAX_ATTEMPTS + ')';
+    }
+  }
 };
 </script>
 

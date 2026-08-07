@@ -280,6 +280,7 @@
   let sectorMapSelectedId = null; // which Settore is expanded in the compact Mappa panel
   let encounterDraft = null; // pending Digimon (from Dex or homebrew) being reviewed before adding to the scene
   let cachedMe = null;
+  const ACTION_HINT_DEFAULT_TEXT = 'Scorciatoia: scrivi <code>/tira NomeSkill [TN] [major|minor]</code> (es. <code>/tira awareness 15 major</code>) per tirare in chat, opzionalmente usando un Aspect.';
   let animatedLogIds = new Set();
   let cachedCombat = null;
   let cachedProgression = null;
@@ -363,7 +364,18 @@
   }
 
   function defaultCombat(){
-    return { active:false, round:1, currentIndex:0, participants:[], order:[] };
+    return { active:false, round:1, currentIndex:0, participants:[], order:[], startZone:'Medio' };
+  }
+
+  // ---------- turn gating helpers (self-service player actions) ----------
+  function currentTurnParticipant(combat){
+    if(!combat || !combat.active || !combat.order || combat.order.length===0) return null;
+    const id = combat.order[combat.currentIndex];
+    return (combat.participants||[]).find(x=>x.id===id) || null;
+  }
+  function isMyCombatTurn(combat, username){
+    const p = currentTurnParticipant(combat);
+    return !!(p && p.isPC && p.username===username);
   }
 
   function recalcCombatOrder(combat){
@@ -377,19 +389,24 @@
     });
   }
 
+  // 'move' e 'attack' hanno ora un pannello dedicato (movimento relativo + attacco con Dodge automatico);
+  // qui restano solo le altre Azioni narrative/di supporto.
+  const SELF_ACTION_DEFS = ACTION_DEFS.filter(a=>a.key!=='move' && a.key!=='attack');
+
   function combatSelfActionHTML(combat, username){
     if(!combat || !combat.active) return '';
     const p = (combat.participants||[]).find(x=>x.username===username);
     if(!p) return '';
     const acts = p.actions===undefined?2:p.actions;
+    const myTurn = isMyCombatTurn(combat, username);
     return `
       <div class="divider"></div>
       <div class="muted" style="margin-bottom:6px;">Le tue Azioni: <span class="mono" style="color:var(--cyan);">${acts}/2</span></div>
       <div class="row">
-        <select id="self-action-select" style="flex:2;">${ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost})</option>`).join('')}</select>
-        <button class="btn small" id="btn-self-action-use" style="flex:1;">Usa</button>
+        <select id="self-action-select" style="flex:2;" ${myTurn?'':'disabled'}>${SELF_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost})</option>`).join('')}</select>
+        <button class="btn small" id="btn-self-action-use" style="flex:1;" ${myTurn?'':'disabled'}>Usa</button>
       </div>
-      <div class="muted" id="self-action-status" style="margin-top:4px;"></div>
+      <div class="muted" id="self-action-status" style="margin-top:4px;">${myTurn?'':'Disponibile solo durante il tuo turno.'}</div>
     `;
   }
 
@@ -400,18 +417,143 @@
       if(!cachedCombat || !cachedCombat.active) return;
       const p = cachedCombat.participants.find(x=>x.username===username);
       if(!p) return;
+      const statusEl = document.getElementById('self-action-status');
+      if(!isMyCombatTurn(cachedCombat, username)){
+        if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Non è il tuo turno.'; }
+        return;
+      }
       const sel = document.getElementById('self-action-select');
       const result = trySpendAction(p, sel.value);
-      const statusEl = document.getElementById('self-action-status');
       if(!result.ok){
-        statusEl.style.color = 'var(--danger)';
-        statusEl.textContent = result.msg;
+        if(statusEl){ statusEl.style.color = 'var(--danger)'; statusEl.textContent = result.msg; }
         return;
       }
       await saveCombat(code, cachedCombat);
       await pushLog(code, { who: p.name, role:'player', text: `${p.name} usa ${result.def.label} (${result.def.cost} Azione/i) — restano ${p.actions}/2 Azioni.` });
       refreshLiveParts();
     };
+  }
+
+  // ---------- pannello Attacco/Movimento self-service del giocatore (solo nel proprio turno) ----------
+  function turnBannerHTML(combat, username){
+    if(!combat || !combat.active) return '';
+    const cur = currentTurnParticipant(combat);
+    if(!cur) return '<div class="muted" style="margin-bottom:8px;">Ordine non ancora calcolato dal Master.</div>';
+    const mine = cur.isPC && cur.username===username;
+    return mine
+      ? `<div class="hud-frame" style="padding:6px 10px;margin-bottom:8px;border-color:var(--cyan);background:rgba(53,232,201,0.08);"><b style="color:var(--cyan);">▶ È il tuo turno!</b></div>`
+      : `<div class="muted" style="margin-bottom:8px;">Turno di <b>${escapeHTML(cur.name)}</b> — attendi il tuo turno.</div>`;
+  }
+
+  function attacksCardHTML(me, combat, username){
+    if(!combat || !combat.active) return '';
+    const myTurn = isMyCombatTurn(combat, username);
+    const p = (combat.participants||[]).find(x=>x.username===username);
+    const alreadyAttacked = !!(p && p.attackedThisRound);
+    const actsLeft = p ? (p.actions===undefined?2:p.actions) : 0;
+    const others = (combat.participants||[]).filter(x=>!p || x.id!==p.id);
+    const targetOptions = others.map(x=>`<option value="${x.id}">${escapeHTML(x.name)} ${x.side==='enemy'?'(Nemico)':'(Alleato)'} — ${escapeHTML(x.zone||'Medio')}</option>`).join('');
+    const canAct = myTurn && !!p;
+    return `
+      ${turnBannerHTML(combat, username)}
+      ${p ? `<div class="muted" style="margin-bottom:8px;">Zona attuale: <b style="color:var(--amber);">${escapeHTML(p.zone||'Medio')}</b> · Azioni: <span class="mono">${actsLeft}/2</span></div>` : ''}
+      <div class="field"><label>Bersaglio / riferimento</label>
+        <select id="self-target-select" ${canAct?'':'disabled'}>${targetOptions || '<option value="">(nessun altro partecipante)</option>'}</select>
+      </div>
+      <div class="row" style="margin-top:6px;">
+        <button class="btn small" id="btn-self-move-closer" style="flex:1;" ${canAct?'':'disabled'}>⬅ Avvicinati (1 Az.)</button>
+        <button class="btn ghost small" id="btn-self-move-away" style="flex:1;" ${canAct?'':'disabled'}>Allontanati ➡ (1 Az.)</button>
+      </div>
+      <div class="muted" id="self-move-status" style="margin-top:4px;"></div>
+      <div class="divider"></div>
+      <div class="moves-grid">
+        ${(me.digimon.attacks||[]).map((a,i)=>{
+          const enabled = canAct && !alreadyAttacked;
+          return `
+          <button class="move-btn" data-self-attack-idx="${i}" ${enabled?'':'disabled'} style="${enabled?'':'opacity:0.45;cursor:not-allowed;'}">
+            <div class="name mono">${a.signature?'⭐ ':''}${escapeHTML(a.name)}</div>
+            <div class="desc">${attackTagsHTML(a)}</div>
+            ${a.desc ? `<div class="desc" style="margin-top:3px;">${escapeHTML(a.desc)}</div>` : ''}
+          </button>
+        `;}).join('')}
+      </div>
+      ${alreadyAttacked ? '<div class="muted" style="margin-top:6px;">Hai già attaccato in questo round.</div>' : ''}
+      <div id="self-attack-result" style="margin-top:8px;"></div>
+    `;
+  }
+
+  function bindAttacksCard(code, me){
+    const targetSel = document.getElementById('self-target-select');
+    const moveCloserBtn = document.getElementById('btn-self-move-closer');
+    const moveAwayBtn = document.getElementById('btn-self-move-away');
+    const moveStatus = document.getElementById('self-move-status');
+    const resEl = document.getElementById('self-attack-result');
+
+    async function doMove(closer){
+      if(!cachedCombat || !cachedCombat.active) return;
+      const p = cachedCombat.participants.find(x=>x.username===session.username);
+      if(!p) return;
+      if(!isMyCombatTurn(cachedCombat, session.username)){
+        if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent='Non è il tuo turno.'; }
+        return;
+      }
+      const refId = targetSel ? targetSel.value : '';
+      const ref = cachedCombat.participants.find(x=>x.id===refId);
+      if(!ref){
+        if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent='Scegli un Digimon di riferimento.'; }
+        return;
+      }
+      const newZone = closer ? zoneStepToward(p.zone||'Medio', ref.zone||'Medio') : zoneStepAway(p.zone||'Medio', ref.zone||'Medio');
+      if(!newZone){
+        if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent = closer ? 'Sei già alla stessa zona di questo bersaglio.' : 'Non puoi allontanarti oltre così.'; }
+        return;
+      }
+      const spend = trySpendAction(p, 'move');
+      if(!spend.ok){
+        if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent = spend.msg; }
+        return;
+      }
+      const from = p.zone||'Medio';
+      p.zone = newZone;
+      await saveCombat(code, cachedCombat);
+      await pushLog(code, { who: p.name, role:'player', text: `${p.name} si ${closer?'avvicina a':'allontana da'} ${ref.name}: ${from} → ${newZone} (1 Azione) — restano ${p.actions}/2 Azioni.` });
+      refreshLiveParts();
+    }
+    if(moveCloserBtn) moveCloserBtn.onclick = ()=>doMove(true);
+    if(moveAwayBtn) moveAwayBtn.onclick = ()=>doMove(false);
+
+    document.querySelectorAll('[data-self-attack-idx]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        if(!cachedCombat || !cachedCombat.active) return;
+        const p = cachedCombat.participants.find(x=>x.username===session.username);
+        if(!p) return;
+        if(!isMyCombatTurn(cachedCombat, session.username)){
+          if(resEl) resEl.innerHTML = '<div class="err">Non è il tuo turno.</div>';
+          return;
+        }
+        const idx = Number(btn.getAttribute('data-self-attack-idx'));
+        const atk = me.digimon.attacks[idx];
+        const targetId = targetSel ? targetSel.value : '';
+        const target = cachedCombat.participants.find(x=>x.id===targetId);
+        const validation = validateAttackTargeting(p, target, atk);
+        if(!validation.ok){
+          if(resEl) resEl.innerHTML = `<div class="err">${validation.error}</div>`;
+          return;
+        }
+        const spend = trySpendAction(p, 'attack');
+        if(!spend.ok){
+          if(resEl) resEl.innerHTML = `<div class="err">${spend.msg}</div>`;
+          return;
+        }
+        const { logText, dealt, accRoll, dodgeRoll } = await performAttackRoll(code, cachedCombat, p, target, atk);
+        if(resEl){
+          resEl.innerHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">vs</span>${diceRowHTML(dodgeRoll.dice)}${dealt>0?`<span class="roll-total">${dealt} danno</span>`:''}`;
+        }
+        await saveCombat(code, cachedCombat);
+        await pushLog(code, { who: p.name, role:'roll', text: logText, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
+        refreshLiveParts();
+      };
+    });
   }
 
   let mountingTNState = { modifier: 0, step: 0, log: [] };
@@ -1066,10 +1208,33 @@
     if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
     const attacksCard = document.getElementById('attacks-card');
     if(attacksCard) attacksCard.style.display = (cachedCombat && cachedCombat.active) ? '' : 'none';
+    if(session.role==='player'){
+      cachedMe = cachedRoster.find(m=>m.username===session.username) || cachedMe;
+      const attacksCardInner = document.getElementById('attacks-card-inner');
+      if(attacksCardInner && cachedMe){
+        attacksCardInner.innerHTML = attacksCardHTML(cachedMe, cachedCombat, session.username);
+        bindAttacksCard(session.code, cachedMe);
+      }
+    }
     const combatSelf = document.getElementById('combat-self-actions');
     if(combatSelf && session.role==='player'){
       combatSelf.innerHTML = combatSelfActionHTML(cachedCombat, session.username);
       bindCombatSelfActions(session.code, session.username);
+    }
+    // Blocca la chat pubblica (non quella privata col Master) fuori dal proprio turno, se in combattimento.
+    if(session.role==='player'){
+      const myTurnNow = isMyCombatTurn(cachedCombat, session.username);
+      const lockPublicChat = !!(cachedCombat && cachedCombat.active) && playerChatMode!=='private' && !myTurnNow;
+      ['action-text','btn-send-action','btn-correct','action-img-btn'].forEach(id=>{
+        const el = document.getElementById(id);
+        if(el) el.disabled = lockPublicChat;
+      });
+      const actionHintEl = document.getElementById('action-hint');
+      if(actionHintEl){
+        actionHintEl.innerHTML = lockPublicChat
+          ? '<span style="color:var(--danger);">⛔ Sei in combattimento: la chat pubblica è bloccata fuori dal tuo turno. Puoi comunque scrivere in privato al Master.</span>'
+          : ACTION_HINT_DEFAULT_TEXT;
+      }
     }
     const privateLogLiveMaster = document.getElementById('private-log-live-master');
     if(privateLogLiveMaster && session.role==='master' && masterPrivateThread){
@@ -1492,7 +1657,7 @@
             </div>
             <div class="log" id="log-live" style="height:220px;">${logHTML(sceneLog(), session.role==='master')}</div>
             <textarea id="action-text" rows="3" placeholder="Scrivi cosa fa il tuo Tamer o il tuo Digimon..." style="margin-top:10px;"></textarea>
-            <div class="muted" id="action-hint" style="margin-top:4px;">Scorciatoia: scrivi <code>/tira NomeSkill [TN] [major|minor]</code> (es. <code>/tira awareness 15 major</code>) per tirare in chat, opzionalmente usando un Aspect.</div>
+            <div class="muted" id="action-hint" style="margin-top:4px;">${ACTION_HINT_DEFAULT_TEXT}</div>
             <div id="action-roll-result" style="margin-top:8px;"></div>
             ${chatAttachHTML('action')}
             <div class="row" style="margin-top:8px;">
@@ -1504,15 +1669,7 @@
 
           <div class="hud-frame card" id="attacks-card" style="${(cachedCombat && cachedCombat.active) ? '' : 'display:none;'}">
             <div class="section-title">Attacchi di ${escapeHTML(me.digimon.name || 'Digimon')}</div>
-            <div class="moves-grid">
-              ${me.digimon.attacks.map((a,i)=>`
-                <button class="move-btn" data-move-idx="${i}">
-                  <div class="name mono">${a.signature?'⭐ ':''}${escapeHTML(a.name)}</div>
-                  <div class="desc">${attackTagsHTML(a)}</div>
-                  ${a.desc ? `<div class="desc" style="margin-top:3px;">${escapeHTML(a.desc)}</div>` : ''}
-                </button>
-              `).join('')}
-            </div>
+            <div id="attacks-card-inner">${attacksCardHTML(me, cachedCombat, session.username)}</div>
           </div>
 
           <div class="hud-frame card">
@@ -1578,14 +1735,7 @@
       if(actionPreview) actionPreview.innerHTML = '';
       refreshLiveParts();
     };
-    document.querySelectorAll('[data-move-idx]').forEach(btn=>{
-      btn.onclick = async ()=>{
-        const idx = Number(btn.getAttribute('data-move-idx'));
-        const atk = me.digimon.attacks[idx];
-        await pushLog(code, { who: session.username, role:'player', text: `${me.digimon.name || 'Il Digimon'} dichiara ${atk.name}! (${attackTagsPlain(atk)}) — il Master lo risolve dal Combat Manager.` });
-        refreshLiveParts();
-      };
-    });
+    bindAttacksCard(code, me);
     attachLogModeration(document.getElementById('log-live'), code, me);
     bindCombatSelfActions(code, session.username);
     updateChatModeButtons();
@@ -4139,6 +4289,99 @@
     }
   }
 
+  // ---------- shared attack resolution (usato sia dal Combat Manager del Master sia dall'attacco in self-service del giocatore) ----------
+  function validateAttackTargeting(attacker, target, atk){
+    if(!attacker || !target || attacker.id===target.id){
+      return { ok:false, error:'Scegli attaccante e bersaglio diversi.' };
+    }
+    const zDist = zoneDistance(attacker.zone||'Medio', target.zone||'Medio');
+    if(atk && atk.shape==='Melee' && zDist>0){
+      return { ok:false, error:`${atk.name} è [MELEE]: serve la stessa zona di ${target.name} (ora: ${attacker.zone||'Medio'}→${target.zone||'Medio'}). Avvicinati prima di attaccare.` };
+    }
+    if(atk && atk.shape==='Range' && zDist > (atk.reach||1)){
+      return { ok:false, error:`${atk.name} è [RANGE ${atk.reach||1}]: ${target.name} è troppo lontano (distanza ${zDist} zone, ${attacker.zone||'Medio'}→${target.zone||'Medio'}).` };
+    }
+    return { ok:true };
+  }
+
+  // Esegue i tiri Accuracy (attaccante) vs Dodge (bersaglio, automatico) e applica il danno se colpito.
+  // Assume che validateAttackTargeting sia già stato chiamato con esito positivo.
+  async function performAttackRoll(code, combat, attacker, target, atk){
+    const aStats = getParticipantCombatStats(attacker);
+    const tStats = getParticipantCombatStats(target);
+    const zDist = zoneDistance(attacker.zone||'Medio', target.zone||'Medio');
+    const zPenalty = zonePenalty(zDist);
+    const effAccuracy = Math.max(0, aStats.accuracy + zPenalty);
+    const overpowerUsed = !!attacker.overpowerActive;
+    const accRoll = rollPool(effAccuracy, overpowerUsed);
+    if(overpowerUsed) attacker.overpowerActive = false;
+    if(aStats.certainStrike>0) accRoll.successes += aStats.certainStrike;
+    let attrAdvNote = '';
+    const attrRule = cachedProgression && cachedProgression.attributeAdvantage;
+    if(attrRule && hasAttributeAdvantage(getParticipantAttribute(attacker), getParticipantAttribute(target))){
+      if(attrRule==='minor'){
+        const bonusDie = rollD6();
+        accRoll.dice.push(bonusDie);
+        if(bonusDie>=4) accRoll.successes += 1;
+        attrAdvNote = ` [Attribute Advantage (Minor): +1d6(${bonusDie})]`;
+      } else if(attrRule==='major'){
+        accRoll.successes += 1;
+        attrAdvNote = ' [Attribute Advantage (Major): +1 Successo automatico]';
+      }
+    }
+    const dodgeRoll = rollPool(tStats.dodge);
+    if(tStats.absoluteEvasion>0) dodgeRoll.successes += tStats.absoluteEvasion;
+    const zoneNote = (zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza: ${attacker.zone||'Medio'}→${target.zone||'Medio'})` : '') + (overpowerUsed ? ' [Overpower: 4 conta come Successo]' : '');
+    const certainNote = (aStats.certainStrike>0 ? ` +${aStats.certainStrike} [CERTAIN]` : '') + attrAdvNote;
+    const atkLabel = atk ? `${atk.name} ${attackTagsPlain(atk)}` : 'Attacco generico';
+    let logText, dealt = 0;
+
+    if(atk && atk.type==='Support'){
+      if(accRoll.successes <= dodgeRoll.successes){
+        logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO, nessun Effetto applicato.`;
+      } else if(atk.effectKey){
+        const def = EFFECT_DEFS.find(d=>d.key===atk.effectKey);
+        const potencyStr = window.prompt(`Potenza di ${def?def.label:atk.effectKey} da applicare a ${target.name}:`, '1');
+        const potency = Math.max(1, Number(potencyStr)||1);
+        if(def && def.instant){
+          const msg = await applyInstantEffect(code, target, atk.effectKey, potency);
+          logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! ${msg}`;
+        } else {
+          const durationStr = window.prompt('Durata (round, max 3):', '3');
+          const duration = Math.min(3, Math.max(1, Number(durationStr)||3));
+          if(!target.effects) target.effects = [];
+          target.effects.push({ key: atk.effectKey, potency, duration });
+          logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! Applica ${def?def.label:atk.effectKey} (Potenza ${potency}, Durata ${duration}).`;
+        }
+      } else {
+        logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: colpisce, ma non ha un Effetto collegato da applicare.`;
+      }
+    } else {
+      if(accRoll.successes <= dodgeRoll.successes){
+        logText = `⚔ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO (schivato)`;
+      } else {
+        const excess = accRoll.successes - dodgeRoll.successes;
+        let raw = excess + aStats.damage;
+        let combatMonsterNote = '';
+        if(attacker.isPC){
+          const aMember = cachedRoster.find(m=>m.username===attacker.username);
+          if(aMember && Number(aMember.digimon.resolveCurrent||0)>0 && computeQualityMechanics(aMember.digimon.qualities).combatMonster>0){
+            const resolveSpent = Number(aMember.digimon.resolveCurrent||0);
+            raw += resolveSpent;
+            aMember.digimon.resolveCurrent = 0;
+            await saveMember(code, aMember);
+            combatMonsterNote = ` +${resolveSpent} Resolve (Combat Monster, azzerato)`;
+          }
+        }
+        dealt = Math.max(0, raw - tStats.armor);
+        await applyDamageToParticipant(code, combat, target, dealt);
+        const w = getParticipantWounds(target);
+        logText = `⚔ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! (${excess}+DMG ${aStats.damage})${combatMonsterNote}-ARM ${tStats.armor} = ${dealt} danno → ${target.name} ${w.current}/${w.max} Ferite`;
+      }
+    }
+    return { logText, dealt, accRoll, dodgeRoll, atkLabel };
+  }
+
   let masterPrivateThread = null;
 
   async function grantMilestoneRewards(code){
@@ -4378,6 +4621,19 @@
   function zoneIndex(z){ const i = ZONES.indexOf(z); return i<0?1:i; }
   function zoneDistance(a,b){ return Math.abs(zoneIndex(a)-zoneIndex(b)); }
   function zonePenalty(distance){ if(distance<=0) return 0; if(distance===1) return -2; return -4; }
+  // Muovi di un solo passo lungo l'asse Corto/Medio/Lungo, in riferimento a un altro partecipante.
+  function zoneStepToward(fromZone, refZone){
+    const fi = zoneIndex(fromZone), ri = zoneIndex(refZone);
+    if(fi===ri) return null; // già alla stessa distanza, "avvicinati" non ha effetto
+    return ZONES[fi + (ri>fi?1:-1)];
+  }
+  function zoneStepAway(fromZone, refZone){
+    const fi = zoneIndex(fromZone), ri = zoneIndex(refZone);
+    const dir = (ri>=fi) ? -1 : 1; // se pari, per default ci si allontana verso "Corto"
+    const ni = fi + dir;
+    if(ni<0 || ni>ZONES.length-1) return null; // già al limite (non si può allontanare oltre)
+    return ZONES[ni];
+  }
 
   function renderCombatManager(code, players){
     const cardEl = document.getElementById('combat-mgr-card');
@@ -4389,11 +4645,16 @@
       cardEl.innerHTML = `
         <div class="section-title">Gestione Combattimento</div>
         <div class="muted" style="margin-bottom:10px;">Nessun combattimento attivo.</div>
-        <button class="btn solid" id="btn-combat-start" style="width:100%;">Inizia Combattimento</button>
+        <div class="field"><label>Zona di partenza (default per tutti i partecipanti)</label>
+          <select id="combat-start-zone">${ZONES.map(z=>`<option ${z==='Medio'?'selected':''}>${z}</option>`).join('')}</select>
+        </div>
+        <button class="btn solid" id="btn-combat-start" style="width:100%;margin-top:6px;">Inizia Combattimento</button>
       `;
       document.getElementById('btn-combat-start').onclick = async ()=>{
+        const startZoneSel = document.getElementById('combat-start-zone');
         cachedCombat = defaultCombat();
         cachedCombat.active = true;
+        cachedCombat.startZone = (startZoneSel && startZoneSel.value) || 'Medio';
         await saveCombat(code, cachedCombat);
         for(const p of players){
           const orderKeys = TALENT_DEFS.filter(t=>t.once==='combat').map(t=>t.order);
@@ -4410,6 +4671,10 @@
 
     cardEl.innerHTML = `
       <div class="section-title">Gestione Combattimento</div>
+      <div class="row" style="margin-bottom:8px;align-items:center;">
+        <span class="muted" style="flex:1;">Zona di partenza per i nuovi arrivati</span>
+        <select id="combat-startzone-live" style="flex:1;">${ZONES.map(z=>`<option ${(combat.startZone||'Medio')===z?'selected':''}>${z}</option>`).join('')}</select>
+      </div>
       <div id="combat-participants-list">
         ${combat.participants.length===0 ? '<div class="muted" style="margin-bottom:8px;">Nessun partecipante ancora aggiunto.</div>' : combat.participants.map((p,i)=>{
           const w = getParticipantWounds(p);
@@ -4533,6 +4798,14 @@
       const combatLive = document.getElementById('combat-live');
       if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
     };
+
+    const startZoneLiveSel = document.getElementById('combat-startzone-live');
+    if(startZoneLiveSel){
+      startZoneLiveSel.onchange = async ()=>{
+        combat.startZone = startZoneLiveSel.value;
+        await saveCombat(code, combat);
+      };
+    }
 
     function populateAttackChoice(){
       const attackerId = document.getElementById('combat-attacker').value;
@@ -4746,96 +5019,18 @@
         const attacker = combat.participants.find(p=>p.id===attackerId);
         const target = combat.participants.find(p=>p.id===targetId);
         const resEl = document.getElementById('combat-attack-result');
-        if(!attacker || !target || attacker.id===target.id){
-          if(resEl) resEl.innerHTML = '<div class="err">Scegli attaccante e bersaglio diversi.</div>';
-          return;
-        }
         let atk = null;
         const atkChoiceEl = document.getElementById('combat-attack-choice');
-        if(attacker.isPC && atkChoiceEl && atkChoiceEl.value !== ''){
+        if(attacker && attacker.isPC && atkChoiceEl && atkChoiceEl.value !== ''){
           const member = cachedRoster.find(m=>m.username===attacker.username);
           if(member) atk = (member.digimon.attacks||[])[Number(atkChoiceEl.value)];
         }
-        const zDist = zoneDistance(attacker.zone||'Medio', target.zone||'Medio');
-        if(atk && atk.shape==='Melee' && zDist>0){
-          if(resEl) resEl.innerHTML = `<div class="err">${atk.name} è [MELEE]: serve la stessa zona di ${target.name} (ora: ${attacker.zone||'Medio'}→${target.zone||'Medio'}). Usa "🏃 Muovi" per avvicinarti.</div>`;
+        const validation = validateAttackTargeting(attacker, target, atk);
+        if(!validation.ok){
+          if(resEl) resEl.innerHTML = `<div class="err">${validation.error}</div>`;
           return;
         }
-        if(atk && atk.shape==='Range' && zDist > (atk.reach||1)){
-          if(resEl) resEl.innerHTML = `<div class="err">${atk.name} è [RANGE ${atk.reach||1}]: ${target.name} è troppo lontano (distanza ${zDist} zone, ${attacker.zone||'Medio'}→${target.zone||'Medio'}).</div>`;
-          return;
-        }
-        const aStats = getParticipantCombatStats(attacker);
-        const tStats = getParticipantCombatStats(target);
-        const zPenalty = zonePenalty(zDist);
-        const effAccuracy = Math.max(0, aStats.accuracy + zPenalty);
-        const overpowerUsed = !!attacker.overpowerActive;
-        const accRoll = rollPool(effAccuracy, overpowerUsed);
-        if(overpowerUsed) attacker.overpowerActive = false;
-        if(aStats.certainStrike>0) accRoll.successes += aStats.certainStrike;
-        let attrAdvNote = '';
-        const attrRule = cachedProgression && cachedProgression.attributeAdvantage;
-        if(attrRule && hasAttributeAdvantage(getParticipantAttribute(attacker), getParticipantAttribute(target))){
-          if(attrRule==='minor'){
-            const bonusDie = rollD6();
-            accRoll.dice.push(bonusDie);
-            if(bonusDie>=4) accRoll.successes += 1;
-            attrAdvNote = ` [Attribute Advantage (Minor): +1d6(${bonusDie})]`;
-          } else if(attrRule==='major'){
-            accRoll.successes += 1;
-            attrAdvNote = ' [Attribute Advantage (Major): +1 Successo automatico]';
-          }
-        }
-        const dodgeRoll = rollPool(tStats.dodge);
-        if(tStats.absoluteEvasion>0) dodgeRoll.successes += tStats.absoluteEvasion;
-        const zoneNote = (zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza: ${attacker.zone||'Medio'}→${target.zone||'Medio'})` : '') + (overpowerUsed ? ' [Overpower: 4 conta come Successo]' : '');
-        const certainNote = (aStats.certainStrike>0 ? ` +${aStats.certainStrike} [CERTAIN]` : '') + attrAdvNote;
-        const atkLabel = atk ? `${atk.name} ${attackTagsPlain(atk)}` : 'Attacco generico';
-        let logText, dealt = 0;
-
-        if(atk && atk.type==='Support'){
-          if(accRoll.successes <= dodgeRoll.successes){
-            logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO, nessun Effetto applicato.`;
-          } else if(atk.effectKey){
-            const def = EFFECT_DEFS.find(d=>d.key===atk.effectKey);
-            const potencyStr = window.prompt(`Potenza di ${def?def.label:atk.effectKey} da applicare a ${target.name}:`, '1');
-            const potency = Math.max(1, Number(potencyStr)||1);
-            if(def && def.instant){
-              const msg = await applyInstantEffect(code, target, atk.effectKey, potency);
-              logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! ${msg}`;
-            } else {
-              const durationStr = window.prompt('Durata (round, max 3):', '3');
-              const duration = Math.min(3, Math.max(1, Number(durationStr)||3));
-              if(!target.effects) target.effects = [];
-              target.effects.push({ key: atk.effectKey, potency, duration });
-              logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! Applica ${def?def.label:atk.effectKey} (Potenza ${potency}, Durata ${duration}).`;
-            }
-          } else {
-            logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: colpisce, ma non ha un Effetto collegato da applicare.`;
-          }
-        } else {
-          if(accRoll.successes <= dodgeRoll.successes){
-            logText = `⚔ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO`;
-          } else {
-            const excess = accRoll.successes - dodgeRoll.successes;
-            let raw = excess + aStats.damage;
-            let combatMonsterNote = '';
-            if(attacker.isPC){
-              const aMember = cachedRoster.find(m=>m.username===attacker.username);
-              if(aMember && Number(aMember.digimon.resolveCurrent||0)>0 && computeQualityMechanics(aMember.digimon.qualities).combatMonster>0){
-                const resolveSpent = Number(aMember.digimon.resolveCurrent||0);
-                raw += resolveSpent;
-                aMember.digimon.resolveCurrent = 0;
-                await saveMember(code, aMember);
-                combatMonsterNote = ` +${resolveSpent} Resolve (Combat Monster, azzerato)`;
-              }
-            }
-            dealt = Math.max(0, raw - tStats.armor);
-            await applyDamageToParticipant(code, combat, target, dealt);
-            const w = getParticipantWounds(target);
-            logText = `⚔ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! (${excess}+DMG ${aStats.damage})${combatMonsterNote}-ARM ${tStats.armor} = ${dealt} danno → ${target.name} ${w.current}/${w.max} Ferite`;
-          }
-        }
+        const { logText, dealt, accRoll, dodgeRoll } = await performAttackRoll(code, combat, attacker, target, atk);
         if(resEl){
           resEl.innerHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">vs</span>${diceRowHTML(dodgeRoll.dice)}${dealt>0?`<span class="roll-total">${dealt} danno</span>`:''}`;
         }
@@ -5257,7 +5452,7 @@
       const member = cachedRoster.find(m=>m.username===username);
       const ram = member ? computeDerivedStats(member.digimon).ram : 0;
       const startActions = (member && member.digimon.hybridMode) ? 3 : 2;
-      combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:username, side:'ally', ram, initiative:0, actions:startActions, attackedThisRound:false, effects:[], zone:'Medio', clashPinned:false, clashComebackBonus:0, isPC:true, username });
+      combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:username, side:'ally', ram, initiative:0, actions:startActions, attackedThisRound:false, effects:[], zone: combat.startZone||'Medio', clashPinned:false, clashComebackBonus:0, isPC:true, username });
       await persistAndRefresh();
     };
     const dexFillSelect = document.getElementById('combat-enemy-fromdex');
@@ -5286,7 +5481,7 @@
       const maxWounds = Number(document.getElementById('combat-enemy-hp').value)||1;
       const attribute = document.getElementById('combat-enemy-attribute').value;
       combat.participants.push({
-        id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name, side:'enemy', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], zone:'Medio', clashPinned:false, clashComebackBonus:0, isPC:false,
+        id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name, side:'enemy', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], zone: combat.startZone||'Medio', clashPinned:false, clashComebackBonus:0, isPC:false,
         accuracy, damage, dodge, armor, maxWounds, currentWounds: maxWounds, attribute
       });
       await persistAndRefresh();
