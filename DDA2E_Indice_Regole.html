@@ -117,27 +117,6 @@
   .talent-card .treq { color: var(--text-mute); font-size: 12px; float: right; }
   .talent-card .order-title { color: var(--cyan); font-weight: 600; font-size: 13px; margin-top: 6px; }
   .order-cost { color: var(--text-mute); font-size: 11.5px; }
-  .quality-card {
-    background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--cyan-dim);
-    border-radius: var(--radius); padding: 10px 14px; margin: 10px 0;
-  }
-  .quality-card .qname {
-    color: var(--amber); font-weight: 600; font-size: 15px;
-    display: inline-block; margin-right: 8px;
-  }
-  .quality-card .qcost {
-    color: var(--bg); background: var(--cyan); font-weight: 600; font-size: 11.5px;
-    padding: 2px 8px; border-radius: 10px; float: right; white-space: nowrap;
-  }
-  .quality-card p {
-    margin: 6px 0 0; clear: both; font-size: 14px; line-height: 1.55;
-  }
-  .quality-card p b { color: var(--cyan); }
-  .quality-card ul {
-    margin: 6px 0 0; padding-left: 20px; font-size: 14px; line-height: 1.5;
-  }
-  .quality-card ul li { margin: 3px 0; }
-  .quality-card ul li b { color: var(--cyan); }
   .placeholder {
     margin-top: 60px; text-align:center; color: var(--text-mute); font-size: 14px;
     border: 1px dashed var(--line); padding: 40px; border-radius: var(--radius);
@@ -275,9 +254,9 @@
   <p>Spendendo IP un giocatore può attivare (anche combinando più IP per effetti più costosi):</p>
   <table class="rules-table">
     <tr><th>Effetto</th><th>Costo</th><th>Descrizione</th></tr>
-    <tr><td>Reroll</td><td>1 IP</td><td>Ritira completamente un Check o Pool (se su un alleato, deve essere consenziente). Puoi scegliere il nuovo o il vecchio risultato. Se usato su un risultato ottenuto con una meccanica di ritiro come Huge Power o Variable, quella Quality riottiene il suo utilizzo; queste Qualities non possono ritirare un risultato già ritirato così.</td></tr>
+    <tr><td>Reroll</td><td>1 IP</td><td>Ritira completamente un Check o Pool (se su un alleato, deve essere consenziente). Puoi scegliere il nuovo o il vecchio risultato.</td></tr>
     <tr><td>Check Bonus</td><td>1 IP</td><td>+1 al risultato di un Check o Torment Check, dopo aver visto l'esito.</td></tr>
-    <tr><td>Double Dice</td><td>1 IP per +2 dadi</td><td>+2 dadi a un Pool Check per ogni IP speso, dopo aver visto l'esito.</td></tr>
+    <tr><td>Double Dice</td><td>2 IP per dado</td><td>+2 dadi a un Pool Check, dopo aver visto l'esito.</td></tr>
     <tr><td>Success Bonus</td><td>multipli di 2 IP</td><td>+1 Successo a un Pool, dopo l'esito; ripetibile.</td></tr>
     <tr><td>Fate's Protection</td><td>Gratis la 1ª volta a sessione, poi 2 IP</td><td>Interrupt Action: annulla il danno di un Attacco subito, anche dopo aver fallito la Evade. Non usabile mentre si Intercede per un alleato.</td></tr>
     <tr><td>Act of Inspiration</td><td>4 IP</td><td>+5/-5 al risultato di un Check, o +3/-3 Successi a un Pool, dopo l'esito (su un alleato solo se consenziente).</td></tr>
@@ -328,7 +307,7 @@
   <div class="talent-card"><span class="tname">Bulk Up</span><span class="treq">Richiede 3 Body</span><p>Quando il Tamer usa l'Azione Reinforce, guadagna +1 Successo al risultato finale.</p></div>
   <div class="talent-card"><span class="tname">Energy Burst</span><span class="treq">Richiede 5 Body</span><div class="order-title">"DON'T WORRY YOU'LL HEAL" <span class="order-cost">— 1 Azione</span></div><p>Il Digimon recupera 1 Wound Box (2 se ha Wound Box Temporanee).</p></div>
   <div class="talent-card"><span class="tname">Direct Team</span><span class="treq">Richiede 3 Charisma</span><p>La penalità di -2 nel Dirigere Digimon diversi dal proprio si riduce a -1.</p></div>
-  <div class="talent-card"><span class="tname">Swagger</span><span class="treq">Richiede 5 Charisma</span><div class="order-title">"HEY YOU" <span class="order-cost">— 1 Azione</span></div><p>Applica [TAUNT 3] (Durata 3) a un nemico visibile, insieme a un Digimon alleato consenziente. Usabile una volta a turno, e non riutilizzabile finché il [TAUNT] applicato non termina; il bersaglio non può usare DOS (Bravery) per terminarlo.</p></div>
+  <div class="talent-card"><span class="tname">Swagger</span><span class="treq">Richiede 5 Charisma</span><div class="order-title">"HEY YOU" <span class="order-cost">— 1 Azione</span></div><p>Applica [TAUNT 3] (Durata 3) a un nemico visibile, insieme a un Digimon alleato consenziente. Usabile una volta a turno; il bersaglio non può usare DOS (Bravery) per terminarlo.</p></div>
   <div class="talent-card"><span class="tname">Experienced</span><span class="treq">Richiede 3 Intelligence</span><p>+1 Skill Point extra da spendere (in creazione, può portare una Skill a 5 anche superando il limite di una sola Skill al massimo).</p></div>
   <div class="talent-card"><span class="tname">Calculated</span><span class="treq">Richiede 5 Intelligence</span><div class="order-title">"I'VE CALCULATED THE ODDS" <span class="order-cost">— Passivo</span></div><p>L'Azione Bolster può dare +1 Successo invece di +2 dadi. Non riutilizzabile fino a fine turno di Tamer e Digimon.</p></div>
   <div class="talent-card"><span class="tname">Potential</span><span class="treq">Richiede 3 Willpower</span><p>1 IP Temporaneo a inizio sessione (svanisce se non usato entro fine sessione).</p></div>
@@ -339,37 +318,20 @@
   <div class="talent-card"><span class="tname">Aim Assist</span><span class="treq">Richiede 5 Precision</span><p>Dirigendo il Digimon per migliorare l'Accuracy con 2 Azioni (Highest Attribute), il bonus al Direct sale di +2.</p></div>
   <div class="talent-card"><span class="tname">Overlooked</span><span class="treq">Richiede 3 Stealth</span><p>Si mimetizza senza tiro; in combattimento può muoversi/agire senza essere notato finché non colpisce un nemico. Individuabile con Awareness TN 9 + punti in Stealth.</p></div>
   <div class="talent-card"><span class="tname">Silent Movement</span><span class="treq">Richiede 5 Stealth</span><p>Tamer e Digimon non fanno rumore né lasciano impronte camminando.</p></div>
-  <div class="talent-card"><span class="tname">Natural Explorer</span><span class="treq">Richiede 3 Athletics</span><p>Usa Athletics o Agility (il più alto) per il Movement; ottiene Climb/Swim/Jump pari al Movement e ignora il Terreno Difficile. Può guidare alleati (numero = punti in Athletics) attraverso terreno ostile usando la propria Athletics, a patto che restino dietro di lui: non possono superarlo né staccarsi dal gruppo per mantenere il beneficio.</p></div>
+  <div class="talent-card"><span class="tname">Natural Explorer</span><span class="treq">Richiede 3 Athletics</span><p>Usa Athletics o Agility (il più alto) per il Movement; ottiene Climb/Swim/Jump pari al Movement e ignora il Terreno Difficile. Può guidare alleati (numero = punti in Athletics) attraverso terreno ostile usando la propria Athletics.</p></div>
   <div class="talent-card"><span class="tname">Experienced Step</span><span class="treq">Richiede 5 Athletics</span><p>Reposition da 2 Azioni: +1 Successo al risultato finale.</p></div>
   <div class="talent-card"><span class="tname">No Pain, No Gain</span><span class="treq">Richiede 3 Endurance</span><p>Un Check fallito (non Torment) può essere ritirato come Check di Endurance con l'Attributo pertinente, un numero di volte pari ai punti in Endurance sopra 2 (si ricarica a ogni Rest).</p></div>
   <div class="talent-card"><span class="tname">Grit</span><span class="treq">Richiede 5 Endurance</span><p>Può schivare gli attacchi con Endurance invece di Evade (subisce comunque min. 1 danno anche se supera il Check); se ridotto a 0 Wound Box resta a 1. Una volta a Rest.</p></div>
   <div class="talent-card"><span class="tname">Heavy Force</span><span class="treq">Richiede 3 Feats of Strength</span><p>Usa Feats of Strength al posto di Precision per attaccare in combattimento. Una volta a Rest, può aggiungere ai Check di Body/Agility un bonus pari ai punti in Feats of Strength.</p></div>
   <div class="talent-card"><span class="tname">Joint Effort</span><span class="treq">Richiede 5 Feats of Strength</span><p>In un Check di squadra (Feats of Strength) col proprio Digimon, il Tamer aggiunge l'SV del Digimon al tiro.</p></div>
-  <div class="talent-card"><span class="tname">Planted Idea</span><span class="treq">Richiede 3 Manipulate</span><p>Se il Tamer supera un Check di Manipulate in una situazione di Roleplay, può impiantare un'idea minore e ragionevole (non un'azione autolesionista) in un PNG, che si sentirà spinto a portarla avanti per una durata in minuti pari ai propri punti in Manipulate. Non lo rende amichevole verso il Tamer (anzi, spesso l'opposto). Una volta a Rest; un PNG può subirlo una sola volta tra un Rest e l'altro (anche da Tamer diversi).</p></div>
-  <div class="talent-card"><span class="tname">Fakeout</span><span class="treq">Richiede 5 Manipulate</span><p>Se il Tamer usa 2 Azioni per Dirigere il proprio Digimon (Highest Attribute o Bolster) migliorandone l'Accuracy, e l'Attacco con quel bonus manca, il bersaglio subisce -2 al Dodge invece di -1 da quell'Attacco.</p></div>
-  <div class="talent-card"><span class="tname">Endless Dream</span><span class="treq">Richiede 3 Performance</span><p>Senza tirare nulla, un'esibizione del Tamer dà IP Temporanei agli alleati, pari ai propri punti in Performance sopra 2, da dividere come preferisce (non può darne a se stesso). Max 2 IP Temporanei a testa, può superare il cap di IP ma non portare il totale (IP incluso Temporaneo) oltre 7; si perdono al Rest. Una volta a Rest.</p></div>
-  <div class="talent-card"><span class="tname">Personal Cheerleader</span><span class="treq">Richiede 5 Performance</span><p>Un Digimon che beneficia del Direct del Tamer, tirando un Accuracy o Dodge Pool, può ritirare fino a 2 dadi (deve tenere il nuovo risultato).</p></div>
-  <div class="talent-card"><span class="tname">Charming Influence</span><span class="treq">Richiede 3 Persuasion</span><p>Se il Tamer supera un Check di Persuasion in Roleplay, può "usare il fascino": i PNG bersaglio diventano amichevoli e depongono l'ostilità per una durata in minuti pari ai propri punti in Persuasion, poi si comportano di conseguenza a come sono stati trattati nel frattempo. Non garantisce che rivelino segreti o piani, ma apre un dialogo. Una volta a Rest; un PNG può subirlo una sola volta tra un Rest e l'altro (anche da Tamer diversi).</p></div>
-  <div class="talent-card"><span class="tname">Be the Winners</span><span class="treq">Richiede 5 Persuasion</span><p>Con 1 Azione extra, il Tamer può dividere il bonus del Direct fra il proprio Digimon e un altro Digimon consenziente, senza penalità per Dirigere il Digimon altrui (il proprio Digimon deve sempre ricevere almeno +2).</p></div>
-  <div class="talent-card"><span class="tname">Cyber Sleuth</span><span class="treq">Richiede 3 Decipher Intent</span><p>Il giocatore può fare una domanda al GM su un'azione immediatamente disponibile, e il GM deve rispondere se avrà esiti buoni, cattivi o entrambi. Usi pari ai punti in Decipher Intent sopra 2, recuperati a ogni Rest.</p></div>
-  <div class="talent-card"><span class="tname">Best Laid Plans</span><span class="treq">Richiede 5 Decipher Intent</span><p>Usando Hold Action per sommare Intelligence all'Accuracy/Dodge del Digimon, +1 Successo al risultato finale. Inoltre, se il Tamer entra in Combattimento contro un nemico che stava investigando/interrogando o che gli stava chiaramente mentendo (anche poco prima), quel nemico è considerato Sorpreso (perde il primo round).</p></div>
-  <div class="talent-card"><span class="tname">Glorious World</span><span class="treq">Richiede 3 Survival</span><p>Senza tirare nulla, il Tamer cucina un pasto che dà Wound Box Temporanee a chi lo mangia, pari ai propri punti in Survival sopra 2, fino al prossimo Rest. Si sommano ad altre fonti (rimosse per prime), ma un personaggio ne beneficia una sola volta tra un Rest e l'altro.</p></div>
-  <div class="talent-card"><span class="tname">Trailblazer</span><span class="treq">Richiede 5 Survival</span><p>Il Tamer ha un innato senso dell'orientamento: sa sempre dov'è il nord e la strada esatta per tornare all'ultimo insediamento civilizzato visitato.</p></div>
-  <div class="talent-card"><span class="tname">Academic Advice</span><span class="treq">Richiede 3 Knowledge</span><p>Aiutando in un Check di Teamwork, il Tamer può usare un Check di Knowledge al posto di quello richiesto. Su Successo, il bonus dato aumenta per ogni punto in Knowledge sopra 2.</p></div>
-  <div class="talent-card"><span class="tname">Living Encyclopedia</span><span class="treq">Richiede 5 Knowledge</span><p>Se un Check di Knowledge per ricordare informazioni avrebbe TN 15 o meno, il Tamer può Riuscire Criticamente in automatico. Una volta a Rest.</p></div>
-  <div class="talent-card"><span class="tname">Hyper Alert</span><span class="treq">Richiede 3 Awareness</span><p>Senza tirare, il Tamer può usare un Check di Awareness al posto del Check normale per evitare pericoli a sorpresa (trappole, imboscate). Inoltre il Digimon del Tamer ottiene un bonus all'Iniziativa per ogni punto in Awareness sopra 2.</p></div>
-  <div class="talent-card"><span class="tname">Danger Sense</span><span class="treq">Richiede 5 Awareness</span><p>Quando il Digimon userebbe un'Interrupt Action, il Tamer può spendere 1 Azione propria al posto del Digimon. Una volta a Rest.</p></div>
-  <div class="talent-card"><span class="tname">Calming Influence</span><span class="treq">Richiede 3 Fortitude</span><p>Se un altro Tamer fallisce un Torment Check, questo Tamer può fargli ritirare il Check con un bonus pari ai propri punti in Fortitude. Se diventa un Successo, entrambi i Tamer guadagnano 1 IP. Una volta a Rest; non utilizzabile due volte sullo stesso Torment Check se più Tamer hanno questo Talent.</p></div>
-  <div class="talent-card"><span class="tname">Team Player</span><span class="treq">Richiede 5 Fortitude</span><p>Partecipando in Teamwork con alleati: se aiuta, l'alleato può ritirare gli 1 del Check (tenendo il nuovo risultato); se è chi inizia il Check, può ignorare il Fallimento Critico di un alleato.</p></div>
-  <div class="talent-card"><span class="tname">Break the Chain</span><span class="treq">Richiede 3 Bravery</span><p>Il Tamer ottiene un bonus ai Torment Check pari ai propri punti in Bravery. Se Calming Influence viene usato per ritirare un Torment Check con questo bonus, si prende il bonus più alto invece di sommarli.</p></div>
-  <div class="talent-card"><span class="tname">With the Will</span><span class="treq">Richiede 5 Bravery</span><p>Se il Tamer dovrebbe fare un Torment Check, il proprio Digimon può usare un'Interrupt Action per trasformarlo in un Teamwork Check, tirando un Check di Bravery (usando DOS) per aiutare. Il Tamer deve poter sentire il Digimon ed essere entro il suo raggio di Intercede. Una volta a Rest.</p></div>
+  <div class="talent-card"><span class="tname">Realization / Awareness, Fortitude, Bravery, ecc.</span><span class="treq">Soglia 3/5</span><p>Il Player's Companion elenca un Talent iniziale per ciascuna delle 15 Skill (Manipulate, Perform, Persuasion, Decipher Intent, Survival, Knowledge, Awareness, Fortitude, Bravery inclusi), seguendo lo stesso schema: un beneficio passivo a soglia 3 e uno Special Order più potente a soglia 5.</p></div>
 
   <h3 class="rule-h3" id="pc-2-09b">2.09b — Tamer Talent Avanzati (soglia 6 o 7)</h3>
   <p>Sbloccati superando lo Starting Cap durante la campagna. Alcuni Special Order sono utilizzabili <b>Una volta per Combattimento</b> o <b>Una volta per Rest</b> (indicato accanto al costo in Azioni).</p>
   <div class="talent-card"><span class="tname">Evasive Maneuvers</span><span class="treq">Richiede 6 Agility</span><div class="order-title">"DON'T LEAVE ANY OPENINGS" <span class="order-cost">— Passivo · 1 volta a Combattimento</span></div><p>All'Iniziativa, il Digimon guadagna un Pool speciale di dadi Dodge pari a SV + Agility del Tamer, utilizzabile nel corso del combattimento (i dadi non usati svaniscono a fine scontro).</p></div>
   <div class="talent-card"><span class="tname">Speed Surge</span><span class="treq">Richiede 7 Agility</span><div class="order-title">"FINISH IT NOW" <span class="order-cost">— 2 Azioni · 1 volta a Rest</span></div><p>Il Digimon ottiene 2 Azioni extra, come se fosse un round diverso (bypassa il limite di un Attacco a round): di fatto un secondo turno nello stesso round.</p></div>
   <div class="talent-card"><span class="tname">Undefeated Endurance</span><span class="treq">Richiede 6 Body</span><div class="order-title">"YOU CAN TAKE IT" <span class="order-cost">— Passivo · 1 volta a Combattimento</span></div><p>Quando il Digimon arriva a 0 Wound Box, il Tamer tira un Pool di Body: il Digimon recupera Wound Box pari ai successi + il proprio SV e non viene Sconfitto.</p></div>
-  <div class="talent-card"><span class="tname">Overpower</span><span class="treq">Richiede 7 Body</span><div class="order-title">"I'M WITH YOU" <span class="order-cost">— 1 Azione · 1 volta a Rest</span></div><p>Dopo il tiro Accuracy di un Attacco, ogni 4 ottenuto conta come Successo aggiuntivo. Utilizzabile come Interrupt Action se anche l'Attacco è fatto come Interrupt Action (es. Counterattack).</p></div>
+  <div class="talent-card"><span class="tname">Overpower</span><span class="treq">Richiede 7 Body</span><div class="order-title">"I'M WITH YOU" <span class="order-cost">— 1 Azione · 1 volta a Rest</span></div><p>Dopo il tiro Accuracy di un Attacco, ogni 4 ottenuto conta come Successo aggiuntivo.</p></div>
   <div class="talent-card"><span class="tname">Peak Performance</span><span class="treq">Richiede 6 Charisma</span><div class="order-title">"I BELIEVE IN YOU" <span class="order-cost">— 2 Azioni · 1 volta a Combattimento</span></div><p>Un Digimon alleato consenziente ottiene [BASTION 2] dal Tamer fino all'inizio del prossimo turno del Tamer.</p></div>
   <div class="talent-card"><span class="tname">Revitalize</span><span class="treq">Richiede 7 Charisma</span><div class="order-title">"WAKE UP, DON'T QUIT NOW" <span class="order-cost">— 2 Azioni · 1 volta a Rest</span></div><p>Attivabile solo quando il Digimon è a 0 Wound Box o Sconfitto: torna allo Stage in cui è stato sconfitto e recupera 7 Wound Box, terminando Effetti/Qualities attive prima della sconfitta.</p></div>
   <div class="talent-card"><span class="tname">Signature Versatility</span><span class="treq">Richiede 6 Intelligence</span><div class="order-title">"TIME FOR PLAN B" <span class="order-cost">— Azione Gratuita · 1 volta a Combattimento</span></div><p>Un Attacco qualsiasi del Digimon viene trattato come Signature Move per quell'unica occasione (consuma Battery normalmente).</p></div>
@@ -378,11 +340,11 @@
   <div class="talent-card"><span class="tname">Miracle</span><span class="treq">Richiede 7 Willpower</span><p>Spendendo 9 IP (anche in gruppo), il Tamer può aggiungere/sottrarre +12 a un Check o Pool e decidere il risultato di ogni dado tirato. Non si possono usare IP Temporanei per questo Talent.</p></div>
   <div class="talent-card"><span class="tname">Quickening</span><span class="treq">Richiede 7 Evade</span><div class="order-title">"YOU'RE ONE STEP BEHIND" <span class="order-cost">— Interrupt · 1 volta a Combattimento</span></div><p>Il Digimon schiva automaticamente un Attacco in arrivo, senza tirare (nessuna Quality che richieda una Evade riuscita si attiva).</p></div>
   <div class="talent-card"><span class="tname">Auto Hit</span><span class="treq">Richiede 7 Precision</span><div class="order-title">"PUT 100% INTO THIS" <span class="order-cost">— 2 Azioni · 1 volta a Combattimento</span></div><p>Un Attacco (non Signature Move) colpisce automaticamente con successi pari all'SV dell'attaccante, senza tirare Accuracy né Dodge.</p></div>
-  <div class="talent-card"><span class="tname">Vanish</span><span class="treq">Richiede 7 Stealth</span><div class="order-title">"NOW YOU SEE US" <span class="order-cost">— 1 Azione · 1 volta a Combattimento</span></div><p>Tamer e Digimon spariscono dalla vista di un nemico scelto ([BLIND] fino al prossimo turno del Tamer, durata non riducibile). Non dichiarabile se sono già state usate altre azioni quel turno; il turno in cui la si usa, il Digimon può solo Move o Reposition.</p></div>
+  <div class="talent-card"><span class="tname">Vanish</span><span class="treq">Richiede 7 Stealth</span><div class="order-title">"NOW YOU SEE US" <span class="order-cost">— 1 Azione · 1 volta a Combattimento</span></div><p>Tamer e Digimon spariscono dalla vista di un nemico scelto ([BLIND] fino al prossimo turno del Tamer, durata non riducibile). Il turno in cui la si usa, il Digimon può solo Move o Reposition.</p></div>
   <div class="talent-card"><span class="tname">Bullrush</span><span class="treq">Richiede 7 Athletics</span><div class="order-title">"THIS TRAIN WON'T STOP" <span class="order-cost">— 1 Azione · 1 volta a Combattimento</span></div><p>Il Digimon ottiene Difficult Move come Azione Gratuita, e fino a fine turno lo stesso Difficult Move costa 1 Azione in meno (min. 1).</p></div>
   <div class="talent-card"><span class="tname">Thick Skin</span><span class="treq">Richiede 7 Endurance</span><div class="order-title">"NO, YOU MOVE" <span class="order-cost">— Interrupt · 1 volta a Combattimento</span></div><p>Il Digimon ignora uno spostamento forzato subito. Con 1 Azione extra, la fonte dello spostamento lo subisce a sua volta (es. un [PUSH 5] subito torna al mittente).</p></div>
   <div class="talent-card"><span class="tname">Adrenaline Hit</span><span class="treq">Richiede 7 Feats of Strength</span><div class="order-title">"HAVE SOME OF THIS" <span class="order-cost">— 2 Azioni · 1 volta a Combattimento</span></div><p>Il Tamer lancia un oggetto (approvato dal GM) infliggendo Danno Unalterable pari al proprio SV e [STUN] fino al prossimo turno del Tamer.</p></div>
-  <div class="talent-card"><span class="tname">Hacking Pride</span><span class="treq">Richiede 7 Manipulate</span><div class="order-title">"YOU'VE ALREADY LOST" <span class="order-cost">— 1 Azione · 1 volta a Combattimento</span></div><p>Un Direct negativo contro un nemico: penalità al prossimo Pool di Accuracy o Dodge (a scelta del Tamer). Non si può usare Direct lo stesso turno. Come per il Direct normale, si può potenziare con l'Attributo più alto (1 Azione extra) o con Bolster.</p></div>
+  <div class="talent-card"><span class="tname">Hacking Pride</span><span class="treq">Richiede 7 Manipulate</span><div class="order-title">"YOU'VE ALREADY LOST" <span class="order-cost">— 1 Azione · 1 volta a Combattimento</span></div><p>Un Direct negativo contro un nemico: penalità al prossimo Pool di Accuracy o Dodge (a scelta del Tamer). Non si può usare Direct lo stesso turno.</p></div>
   <div class="talent-card"><span class="tname">Distracting Gesture</span><span class="treq">Richiede 7 Performance</span><div class="order-title">"HEY, OVER HERE" <span class="order-cost">— Interrupt · 1 volta a Combattimento</span></div><p>Quando un nemico attacca un alleato, dimezza i dadi tirati dal nemico per l'Attacco.</p></div>
   <div class="talent-card"><span class="tname">Next Order</span><span class="treq">Richiede 7 Persuasion</span><div class="order-title">"WE CAN DO THIS, TOGETHER" <span class="order-cost">— 1 Azione · 1 volta a Combattimento</span></div><p>Concede i benefici di un Direct a 2 alleati consenzienti (proprio Digimon incluso), senza penalità per Digimon altrui.</p></div>
   <div class="talent-card"><span class="tname">Predictable</span><span class="treq">Richiede 7 Decipher Intent</span><div class="order-title">"I ALREADY KNOW YOUR NEXT MOVE" <span class="order-cost">— 2 Azioni · 1 volta a Combattimento</span></div><p>Dichiara un Hold Action con Trigger su qualsiasi Azione (Intercede incluse) del nemico bersaglio.</p></div>
@@ -426,7 +388,7 @@
   <h2 class="rule-h2" id="pc-3-01">3.01 — Stat Principali</h2>
   <p>I Digimon hanno cinque Stat principali: <b>Accuracy, Damage, Dodge, Armor, Health</b>.</p>
   <ul>
-    <li><b>Accuracy</b> — quanti dadi si tirano attaccando; influenza anche l'efficacia dei tag di Effetto Negativo e la penalità di zona in Reach.</li>
+    <li><b>Accuracy</b> — quanti dadi si tirano attaccando; influenza anche l'efficacia dei tag di Effetto Negativo e il Range.</li>
     <li><b>Damage</b> — quanto colpisce forte ogni Attacco; rappresenta anche la forza di volontà del Digimon.</li>
     <li><b>Dodge</b> — l'opposto dell'Accuracy: quanti dadi si tirano per schivare; rappresenta anche la velocità di reazione e la capacità di evitare Effetti Negativi.</li>
     <li><b>Armor</b> — riduce direttamente il danno subito (minimo 1); influenza anche il peso e altri aspetti del Digimon.</li>
@@ -449,57 +411,16 @@
   <p>I Digimon hanno quattro Stat Derivate: <b>CPU</b> (peso e resilienza, per Body), <b>RAM</b> (velocità e flessibilità, per Agility), <b>BIT</b> (pensiero e comprensione, per Intelligence e Charisma), <b>DOS</b> (identità e potere, per Willpower).</p>
   <p>Ogni Stat Derivata = <b>1 + un terzo di una Main Stat Base</b> (arrotondato per difetto), modificata dalla Size. Si calcolano sempre con le Stat Base (non le Total). Non possono scendere sotto 0.</p>
   <h3 class="rule-h3" id="pc-3-02b">3.02b — Stat Varie</h3>
-  <p>Oltre alle Derivate: <b>Movement, Wound Box, Reach, Resistance, Initiative</b> e <b>Clash</b>. Wound Box rappresenta quanto dolore può assorbire il Digimon prima di cadere in combattimento; Resistance riguarda il funzionamento degli Effetti; Initiative determina quanto rapidamente il Digimon reagisce in combattimento.</p>
-  <table class="rules-table">
-    <tr><th>Stat</th><th>Formula</th></tr>
-    <tr><td>Movement</td><td>SV + 1</td></tr>
-    <tr><td>Wound Box</td><td>SV + (Total Health × 2)</td></tr>
-    <tr><td>Initiative</td><td>RAM</td></tr>
-    <tr><td>Resistance</td><td>DOS / 2</td></tr>
-    <tr><td>Clash</td><td>CPU + RAM</td></tr>
-  </table>
-  <h3 class="rule-h3" id="pc-3-02e">3.02e — Size</h3>
-  <p>Ogni Stage ha una Size associata, scelta entro il massimo consentito da quello Stage (vedi tabella 3.0). La Size modifica le Stat Derivate e determina quanti spazi 1x1 occupa il Digimon (che ne determina anche l'altezza). Digimon di Size Gigantic o Colossal subiscono <b>-1 Movement</b>. I Digimon Small e Medium possono condividere lo spazio di un altro Digimon o Tamer (i Tamer, essendo Medium di default, ne beneficiano sempre).</p>
-  <table class="rules-table">
-    <tr><th>Size</th><th>Spazio</th><th>Modificatori</th></tr>
-    <tr><td>Small</td><td>1x1</td><td>+2 BIT, +1 DOS, +3 RAM</td></tr>
-    <tr><td>Medium</td><td>1x1</td><td>+2 BIT, +1 DOS, +2 RAM, +1 CPU</td></tr>
-    <tr><td>Large</td><td>1x1</td><td>+2 BIT, +1 DOS, +1 RAM, +2 CPU</td></tr>
-    <tr><td>Huge</td><td>2x2</td><td>+1 BIT, +2 DOS, +1 RAM, +2 CPU</td></tr>
-    <tr><td>Gigantic</td><td>3x3</td><td>+1 BIT, +2 DOS, +3 CPU, -1 Movement</td></tr>
-    <tr><td>Colossal</td><td>4x4 o più</td><td>+1 BIT, +2 DOS, +3 CPU, -1 Movement</td></tr>
-  </table>
+  <p>Oltre alle Derivate: <b>Movement, Wound Box, Range, Effective Limit, Resistance, Initiative</b> e <b>Clash</b>. Wound Box rappresenta quanto dolore può assorbire il Digimon prima di cadere in combattimento; Resistance riguarda il funzionamento degli Effetti; Initiative determina quanto rapidamente il Digimon reagisce in combattimento.</p>
 
   <h2 class="rule-h2" id="pc-3-03">3.03 — Attacchi del Digimon</h2>
-  <p>Ogni Attacco deve avere esattamente uno tra <b>[DAMAGE]</b> (infligge danno normale) e <b>[SUPPORT]</b> (non infligge danno, ma richiede un Tag di Effetto da una Quality di Effetto acquistata — è quindi tipicamente meno frequente). Deve anche avere esattamente uno tra <b>[MELEE]</b> (colpisce solo un nemico adiacente/nella stessa zona) e <b>[RANGE]</b> (colpisce a distanza, regole in 9.03). Questi 4 Tag sono gratuiti e non richiedono Qualities.</p>
-  <p>Un Attacco non può avere più di <b>3 Tag da Quality</b> (es. non puoi avere [WEAPON], [CHARGE], [MIGHTY] e [T:PASS] tutti insieme: massimo 3 di questi). Se un Attacco ha sia [DAMAGE] che un Tag di Effetto, serve infliggere <b>almeno 2 Danno</b> perché l'Effetto scatti, indipendentemente dai Successi di Accuracy ottenuti (il Danno Unalterable non conta ai fini di questa soglia). Un Effetto ha una Durata massima di 3: gli Effetti Negativi devono colpire per avere Durata, gli Effetti Positivi hanno sempre almeno 1 round di Durata di base. Gli <b>Effetti Positivi possono stare solo su Attacchi [SUPPORT]</b>. Un Attacco con <b>[MELEE][SUPPORT]</b> ottiene gratuitamente <b>+1 Potenza</b>. Un Attacco non può essere usato più di una volta nello stesso round (si azzera a fine turno, vedi 9.02).</p>
+  <p>Gli Attacchi sono costruiti con Tag che ne definiscono le proprietà meccaniche ([DAMAGE], [MELEE], [RANGE], [SUPPORT], effetti come [POISON], [STUN], ecc.). Il numero di dadi tirati per l'Accuracy Pool dipende dalla Total Accuracy del Digimon; il Danno inflitto usa il valore indicato dal Tag [DAMAGE].</p>
 
   <h2 class="rule-h2" id="pc-3-04">3.04 — Signature Move</h2>
-  <p>Dallo Stage Rookie in su, ogni Digimon ha un Attacco speciale detto <b>Signature Move</b>: più efficace, ma limitato dalla risorsa <b>Battery</b>.</p>
-  <ul>
-    <li>Il Digimon guadagna 1 Battery a fine turno, <b>a meno che</b> non abbia usato la Signature Move in quel turno (se l'ha usata fuori dal proprio turno, non guadagna Battery nemmeno a fine del turno successivo).</li>
-    <li>La Battery ha una capacità massima di <b>3</b>; oltre quel limite, non se ne guadagna altra.</li>
-    <li>Usare la Signature Move consuma <b>tutta</b> la Battery.</li>
-    <li>La Battery si azzera a fine combattimento.</li>
-    <li>Serve almeno <b>1 Battery</b> per poter usare la Signature Move.</li>
-  </ul>
-  <p>Per ogni punto di Battery al momento dell'uso: una Signature Move <b>[DAMAGE]</b> aggiunge la Battery sia ad Accuracy che a Danno; una Signature Move <b>[SUPPORT]</b> la aggiunge sia ad Accuracy che alla Potenza dell'Effetto.</p>
-  <p>Molti Tag ottengono benefici extra se posti su una Signature Move:</p>
-  <ul>
-    <li><b>[PIERCING]/[CERTAIN]</b>: possono stare entrambi sullo stesso Attacco.</li>
-    <li><b>[CHARGE]/[RECOIL]</b>: Movement aumentato in base alla Battery.</li>
-    <li><b>[SNEAK]</b>: non interrompibile, né il costo in Azioni riducibile.</li>
-    <li><b>Area Attack</b>: Base Size aumentata di 1.</li>
-    <li><b>Effetti</b>: Potenza aumentata, riduzione di Azioni, o compatibilità con Area Attack.</li>
-    <li><b>[GUIDING]</b>: dadi extra concessi.</li>
-    <li><b>[MIGHTY]/[FEINT]</b>: la TN non sale con l'uso.</li>
-    <li><b>[FOCUS]</b>: aumenta il Reach.</li>
-    <li><b>[DRAIN]</b>: aumenta la cura potenziale.</li>
-    <li><b>[HAZARD]</b>: nessun costo aggiuntivo in Wound Box.</li>
-  </ul>
+  <p>Ogni Digimon ha una <b>Signature Move</b>: il suo attacco caratteristico, potenziato consumando <b>Battery</b> (fino a 3 punti), che ne aumenta progressivamente Accuracy e Danno rispetto a un Attacco standard. È il "colpo iconico" che identifica il Digimon (es. la Fire Rocket di Fladramon, la Flower Cannon di Lilymon).</p>
 
   <h2 class="rule-h2" id="pc-3-05">3.05 — Come Formattare un Attacco</h2>
-  <p>Un Attacco si presenta come: nome, dadi da tirare (Accuracy Pool), Tag tra parentesi quadre, e una breve descrizione narrativa. Esempio di formattazione dei Tag con valore variabile: <b>[DAMAGE 6]</b> per un Digimon con Damage 6; se possiede la Quality Weapon (+1), diventa <b>[DAMAGE 7]</b>. Il Reach di un Attacco [RANGE] si scrive come <b>[RANGE 1]</b> o <b>[RANGE 2]</b> a seconda delle zone che può colpire. Per un Attacco che aumenta consumando Battery (fino a 3 punti), es. Damage 7, si scrive <b>[DAMAGE 8-10]</b>. Per un Tag con soglia doppia, come l'Area Attack [T:CONE] con BIT 4, si scrive <b>[T:CONE 2/6]</b>. Il prefisso <b>[T:</b> indica un effetto attivabile a scelta alla dichiarazione dell'Attacco (es. scegliere se usare l'Area Attack o restare su singolo bersaglio).</p>
+  <p>Un Attacco si presenta come: nome, dadi da tirare (Accuracy Pool), Tag tra parentesi quadre, e una breve descrizione narrativa. Esempio di formattazione dei Tag con valore variabile: <b>[DAMAGE 6]</b> per un Digimon con Damage 6; se possiede la Quality Weapon (+1), diventa <b>[DAMAGE 7]</b>. Per un valore che varia in un intervallo (es. Range + Effective Limit = 4 e 6), si scrive <b>[RANGE 4-6]</b>. Per un Attacco che aumenta consumando Battery (fino a 3 punti), es. Damage 7, si scrive <b>[DAMAGE 8-10]</b>. Per un Tag con soglia doppia, come l'Area Attack [T:CONE] con BIT 4, si scrive <b>[T:CONE 2/6]</b>. Il prefisso <b>[T:</b> indica un effetto attivabile a scelta alla dichiarazione dell'Attacco (es. scegliere se usare l'Area Attack o restare su singolo bersaglio).</p>
   <h3 class="rule-h3" id="pc-3-05a">3.05a — Esempi di Attacchi</h3>
   <table class="rules-table">
     <tr><th>Digimon</th><th>Attacco</th><th>Formato</th></tr>
@@ -520,7 +441,7 @@
 
   <h2 class="rule-h2" id="pc-3-07">3.07 — Esempi di Build</h2>
   <p>Il manuale propone quattordici archetipi di build usando solo i DP Base, utili come punto di partenza: <b>Melee Damage Dealer, Ranged Damage Dealer, Area Control, Defender, Counter Attacker, Berserker, Evasive Dodger, Hyper Mobile, Clasher, Support Debuffer, Support Buffer, Rapid Attacker, Well-Rounded, Gambler.</b> Ognuno privilegia una diversa combinazione di Stat e Qualities per riflettere un ruolo di combattimento specifico — dal danno puro in mischia, al controllo d'area, al supporto della squadra, fino a stili più rischiosi e situazionali come il Gambler.</p>
-  <div class="note">I template dettagliati con Stat e Qualities specifiche per ciascun archetipo verranno aggiunti in una prossima parte.</div>
+  <div class="note">I template dettagliati con Stat e Qualities specifiche per ciascun archetipo verranno aggiunti in una prossima parte, insieme al catalogo completo delle Qualities (Sezioni 4.0–7.0).</div>
 </section>
 
 <section class="content" id="pc-4">
@@ -539,44 +460,20 @@
   <p>Le Core Qualities stabiliscono la base su cui ottimizzare il ruolo del Digimon. <b>Ogni Digimon parte con uno Sconto Core pari al proprio SV</b>, uno sconto collettivo utilizzabile su una o più Core Qualities (si consuma man mano che lo si spende).</p>
   <p>Le fondamenta di una build partono da: una <b>Data Optimization</b> (specializza il ruolo), un <b>Naturewalk</b> (lega il Digimon a un elemento), <b>Instinct</b> o <b>Weapon</b> (potenti ma reciprocamente esclusive), opzioni di movimento extra (<b>Extra Movement</b>, <b>Accelerate</b>, <b>Advanced Mobility</b>), fino ad <b>Algorithm</b>, <b>Sprint</b> e le <b>Data Specialization</b> agli Stage successivi.</p>
 
-  <div class="quality-card"><span class="qname">Data Optimization</span><span class="qcost">1 DP</span><p>Static/Trigger. Necessaria per Data Specialization e Hybrid Drive. Scegline <b>una</b>:</p>
-  <ul>
-    <li><b>Close Combat</b> — +1 Accuracy [MELEE], +3 se il bersaglio non è a Wound Box piene</li>
-    <li><b>Ranged Striker</b> — +1 Accuracy [RANGE], estende il Reach a 2 zone</li>
-    <li><b>Warden</b> — +1 Armor, 1 Interrupt Action a costo -1 Azione una volta a combattimento</li>
-    <li><b>Brawler</b> — +1 ai Check di Clash, +1 Danno contro chi si sta clashando</li>
-    <li><b>Speedster</b> — +1 Movement, ignora la prima penalità di Dodge da un attacco subito dopo il proprio turno</li>
-    <li><b>Effect Warrior</b> — +1 Potenza a tutti gli Effetti dei propri Attacchi</li>
-    <li><b>Variable</b> — ritira un Check/Pool una volta a round, tenendo il nuovo risultato</li>
-  </ul></div>
-  <div class="quality-card"><span class="qname">Naturewalk</span><span class="qcost">1 DP/Rank — max 2 Ranks</span><p>Static. Necessaria per Element Master, Elemental Force, Illusionary Overlay. Scegli un Elemento: +1 a una Stat Core a scelta, nessuna penalità di movimento sul Terreno Difficile del proprio elemento, resistenza agli Attacchi Elemental Force, e una riduzione di danno associata:</p>
-  <ul>
-    <li><b>Fuoco</b> — -1 da [BURN]</li>
-    <li><b>Acqua / Ghiaccio</b> — -1 da [FREEZE]</li>
-    <li><b>Vento / Fulmine</b> — -1 al Crash Damage</li>
-    <li><b>Terra / Legno</b> — -1 da [POISON]</li>
-    <li><b>Acciaio</b> — -1 da [BURN]</li>
-    <li><b>Oscurità / Luce</b> — vede nel buio, +1 Awareness</li>
-  </ul></div>
+  <div class="quality-card"><span class="qname">Data Optimization</span><span class="qcost">1 DP</span><p>Static/Trigger. Necessaria per Data Specialization e Hybrid Drive. Scegline <b>una</b> tra: <b>Close Combat</b> (+1 Accuracy [MELEE], +3 se il bersaglio non è a Wound Box piene), <b>Ranged Striker</b> (+1 Accuracy [RANGE], +2 Range/Effective Limit), <b>Warden</b> (+1 Armor, 1 Interrupt Action a costo -1 Azione una volta a combattimento), <b>Brawler</b> (+1 ai Check di Clash, +1 Danno contro chi si sta clashando), <b>Speedster</b> (+1 Movement, ignora la prima penalità di Dodge da attacco fuori turno), <b>Effect Warrior</b> (+1 Potenza a tutti gli Effetti dei propri Attacchi), <b>Variable</b> (ritira un Check/Pool una volta a round, tenendo il nuovo risultato).</p></div>
+  <div class="quality-card"><span class="qname">Naturewalk</span><span class="qcost">1 DP/Rank — max 2 Ranks</span><p>Static. Necessaria per Element Master, Elemental Force, Illusionary Overlay. Scegli un Elemento (Fuoco, Acqua, Vento, Terra, Ghiaccio, Legno, Acciaio, Fulmine, Oscurità, Luce): +1 a una Stat Core a scelta, riduzione di danno associata (es. Fuoco: -1 da [BURN]; Acqua/Ghiaccio: -1 da [FREEZE]; Vento/Fulmine: -1 al Crash Damage; Terra/Legno: -1 da [POISON]; Oscurità/Luce: vede nel buio, +1 Awareness), nessuna penalità di movimento sul Terreno Difficile del proprio elemento, e resistenza agli Attacchi Elemental Force.</p></div>
   <div class="quality-card"><span class="qname">Instinct</span><span class="qcost">1 DP/Rank — max 3 Ranks (Limited)</span><p>Static. Incompatibile con Weapon. Necessaria per Gain Force e Anticipate Assault. +1 Dodge/Health/Movement per Rank. Rank massimi per Stage: Rookie 1, Champion 2, Ultimate 3.</p></div>
-  <div class="quality-card"><span class="qname">Weapon</span><span class="qcost">1 DP/Rank — max 3 Ranks (Limited)</span><p>Attack. Incompatibile con Instinct. Necessaria per Digizoid Weaponry e Martial Strikes. Applica il Tag [WEAPON] a un numero di Attacchi pari ai Rank: +Accuracy e +Danno pari ai Rank; su [RANGE] estende il Reach a 2 zone (1+ Rank); su [MELEE] i 4 tirati (fino ai Rank) contano come Successi.</p></div>
-  <div class="quality-card"><span class="qname">Extra Movement</span><span class="qcost">1 DP/Rank — max 5 Ranks</span><p>Static. Necessaria per 1 Rank di Advanced Mobility. Scegli un tipo di movimento (non ripetibile):</p>
-  <ul>
-    <li><b>Flight</b> — -1 Movement, vola, perde il beneficio a metà Wound Box</li>
-    <li><b>Digger</b> — scava; sottoterra non tratta i vicini come Obscured, e non tratta come Obscured i Digimon sottoterra se si trova in superficie</li>
-    <li><b>Swimmer</b> — nuota a Movement pieno, Hold Breath illimitato</li>
-    <li><b>Wallclimber</b> — scala pareti verticali</li>
-    <li><b>Jumper</b> — salto a Movement pieno</li>
-  </ul></div>
+  <div class="quality-card"><span class="qname">Weapon</span><span class="qcost">1 DP/Rank — max 3 Ranks (Limited)</span><p>Attack. Incompatibile con Instinct. Necessaria per Digizoid Weaponry e Martial Strikes. Applica il Tag [WEAPON] a un numero di Attacchi pari ai Rank: +Accuracy e +Danno pari ai Rank; su [RANGE] anche +Range/Effective Limit pari; su [MELEE] i 4 tirati (fino ai Rank) contano come Successi.</p></div>
+  <div class="quality-card"><span class="qname">Extra Movement</span><span class="qcost">1 DP/Rank — max 5 Ranks</span><p>Static. Necessaria per 1 Rank di Advanced Mobility. Scegli un tipo di movimento (non ripetibile): <b>Flight</b> (-1 Movement, vola, perde il beneficio a metà Wound Box), <b>Digger</b> (scava; sottoterra non tratta i vicini come Obscured), <b>Swimmer</b> (nuota a Movement pieno, Hold Breath illimitato), <b>Wallclimber</b> (scala pareti verticali), <b>Jumper</b> (salto a Movement pieno).</p></div>
   <div class="quality-card"><span class="qname">Accelerate</span><span class="qcost">1 DP/Rank (Limited, max = RAM)</span><p>Static. +1 Movement per Rank.</p></div>
   <div class="quality-card"><span class="qname">Prodigious Skill</span><span class="qcost">1 DP/Rank — max 4 Ranks (Limited)</span><p>Static. Scegli una Skill del Tamer: +3 ai Check di quella Skill, sommato alla Stat Derivata corrispondente (CPU=Body, RAM=Agility, BIT=Intelligence/Charisma, DOS=Willpower). Rank massimi per Stage: Rookie 1, Champion 2, Ultimate 3, Mega 4.</p></div>
 
   <h2 class="rule-h2" id="pc-4-02">4.02 — Offensive Qualities</h2>
-  <div class="quality-card"><span class="qname">Armor Piercing</span><span class="qcost">2 DP/Rank — max 3 (Limited)</span><p>Attack. Applica [PIERCING] a un Attacco [DAMAGE]: Danno Unalterable extra pari a Rank×2 (o solo Rank su Area Attack). Richiede Total Damage 4/8/12 per 1/2/3 Rank. Su Signature Move, il Danno Unalterable extra sale fino a Rank×3 (stima dal Changelog: +9 a Rank massimo — da confermare la formula esatta).</p></div>
-  <div class="quality-card"><span class="qname">Certain Strike</span><span class="qcost">2 DP/Rank — max 3 (Limited)</span><p>Attack. Applica [CERTAIN] a un Attacco [DAMAGE]: Successi automatici pari ai Rank. Richiede Total Accuracy 4/8/12 per 1/2/3 Rank. Su Signature Move, con 2+ Battery, i Successi automatici salgono fino a +4 a Rank massimo (stima dal Changelog — da confermare la formula esatta).</p></div>
+  <div class="quality-card"><span class="qname">Armor Piercing</span><span class="qcost">2 DP/Rank — max 3 (Limited)</span><p>Attack. Applica [PIERCING] a un Attacco [DAMAGE]: Danno Unalterable extra pari a Rank×2 (o solo Rank su Area Attack). Richiede Total Damage 4/8/12 per 1/2/3 Rank.</p></div>
+  <div class="quality-card"><span class="qname">Certain Strike</span><span class="qcost">2 DP/Rank — max 3 (Limited)</span><p>Attack. Applica [CERTAIN] a un Attacco [DAMAGE]: Successi automatici pari ai Rank. Richiede Total Accuracy 4/8/12 per 1/2/3 Rank.</p></div>
   <div class="quality-card"><span class="qname">Charge Attack</span><span class="qcost">1 DP</span><p>Attack. Applica [CHARGE] a un Attacco [MELEE]: Attacco + Movimento in linea retta con 1 sola Azione.</p></div>
   <div class="quality-card"><span class="qname">Ammo</span><span class="qcost">1 DP</span><p>Attack. Necessaria per Reload. [AMMO]: ignora la regola "un Attacco a round", ma utilizzabile solo una volta a combattimento; non su Signature Move.</p></div>
-  <div class="quality-card"><span class="qname">Heavy Recoil</span><span class="qcost">1 DP</span><p>Attack. [RECOIL] su un [RANGE]: il Reach non può superare 1 zona, ignora la penalità da nemico nella stessa zona; il Digimon (e il bersaglio, se colpito) subiscono [PUSH] pari allo Stage.</p></div>
+  <div class="quality-card"><span class="qname">Heavy Recoil</span><span class="qcost">1 DP</span><p>Attack. [RECOIL] su un [RANGE]: Range/Effective Limit dimezzati, ignora la penalità da nemico adiacente; il Digimon (e il bersaglio, se colpito) vengono spinti indietro pari allo Stage.</p></div>
   <div class="quality-card"><span class="qname">Huge Power</span><span class="qcost">1 DP/Rank — max 2</span><p>Trigger. Rank 1: ritira gli 1 su un Pool Accuracy una volta a round. Rank 2: ritira anche i 2.</p></div>
   <div class="quality-card"><span class="qname">Aggressive Flank</span><span class="qcost">1 DP</span><p>Static. Necessaria per Coordinated Assault; incompatibile con Horde Duelist. +Accuracy pari al RAM quando un alleato è adiacente al bersaglio.</p></div>
   <div class="quality-card"><span class="qname">Counterattack</span><span class="qcost">1 DP/Rank — max 2</span><p>Trigger. Se un nemico manca un Attacco contro di te, Interrupt Action per contrattaccare (bersaglio -penalità Dodge pari allo Stage); solo Attacchi da 1 Azione, non come Area Attack. Usi a combattimento pari ai Rank.</p></div>
@@ -585,45 +482,26 @@
   <div class="quality-card"><span class="qname">Shade Cloak</span><span class="qcost">1 DP</span><p>Trigger. Richiede Hide in Plain Sight. Con 1 Azione extra, estende il risultato del proprio Check Stealth agli alleati entro il proprio RAM.</p></div>
   <div class="quality-card"><span class="qname">Sneak Attack</span><span class="qcost">1 DP</span><p>Attack. Richiede Hide in Plain Sight. [SNEAK]: +Accuracy pari al RAM contro un nemico da cui si è nascosti; su Signature Move [MELEE] il bersaglio non può usare Interrupt Action né Substitute.</p></div>
   <div class="quality-card"><span class="qname">Simplified Strike</span><span class="qcost">2 DP</span><p>Attack. [SIMPLE]: l'Attacco costa 1 Azione in meno (minimo 1), incluse Called Shot e simili.</p></div>
-  <div class="quality-card"><span class="qname">Battle Cry</span><span class="qcost">3 DP</span><p>Trigger. 1 Azione, Check DOS (Bravery) TN 10+SV più alto nemici+numero nemici. Concede [BASTION] (bonus ad Accuracy/Danno/Dodge/Armor) a sé e agli alleati entro il proprio Reach (in zone) per 1 round: Fallimento Critico = come Fallimento, ma non più utilizzabile per il resto del Combattimento; Fallimento = [BASTION 1]; Successo = [BASTION 2]; Successo Critico = come Successo, recuperi anche l'Azione spesa. TN +6 a ogni uso successivo.</p></div>
+  <div class="quality-card"><span class="qname">Battle Cry</span><span class="qcost">3 DP</span><p>Trigger. 1 Azione, Check DOS (Bravery) TN 10+Stage più alto nemici+numero nemici. Concede [BASTION] (bonus ad Accuracy/Danno/Dodge/Armor) a sé e agli alleati entro il proprio DOS: Fallimento = [BASTION 1], Successo = [BASTION 2].</p></div>
   <div class="quality-card"><span class="qname">Watchful Hunter</span><span class="qcost">1 DP</span><p>Trigger/Static. Check DOS (Awareness) gratuito una volta a round, ignora penalità di vista da Obscured. Con azione extra, contro un bersaglio: successo = +2 Accuracy [MELEE] fino al prossimo turno (Critico anche su [RANGE]).</p></div>
-  <div class="quality-card"><span class="qname">Venomous</span><span class="qcost">1 DP</span><p>Attack. [VENOM] su un [DAMAGE] (non su Area Attack, non combinabile con [POISON] sullo stesso Attacco): se colpisce, Check BIT (Survival) TN 10+RAM bersaglio; Fallimento Critico = -1 Danno; Successo = applica [POISON] 1 round (o +1 Potenza se già presente); Successo Critico = come Successo con +1 Potenza extra. Su Signature Move, la Battery si aggiunge alla Potenza del [POISON] applicato.</p></div>
-  <div class="quality-card"><span class="qname">Reach</span><span class="qcost">2 DP/Rank — max 3</span><p>Static. Scegli una sola opzione:</p>
-  <ul>
-    <li><b>Wide Swings</b> — il [MELEE] e l'Area Attack colpiscono anche la zona adiacente con 1+ Rank, ma bloccato da barriere/alleati</li>
-    <li><b>Long Arms</b> — il [MELEE] colpisce anche la zona adiacente ignorando ostruzioni, ma penalità di Accuracy scalare più vicino si è</li>
-    <li><b>Extended Grapple</b> — il Clash raggiunge anche la zona adiacente, nuova Azione di Clash "Pull"</li>
-  </ul></div>
-  <div class="quality-card"><span class="qname">Area Attack</span><span class="qcost">1 DP/Rank</span><p>Attack/Trigger. Necessaria per Zoner. Applica un Tag Area per Rank (6 tipi disponibili):</p>
-  <ul>
-    <li><b>[T:BLAST]</b> — cerchio, solo [RANGE], base 1 raggio</li>
-    <li><b>[T:BURST]</b> — attorno all'attaccante, base 1</li>
-    <li><b>[T:CONE]</b> — cono 90°, base 3</li>
-    <li><b>[T:LINE]</b> — pilastro, base 3, rimbalza sui muri</li>
-    <li><b>[T:PASS]</b> — carica in linea retta, solo [MELEE]</li>
-    <li><b>[T:WAVE]</b> — cubo adiacente all'attaccante, base 2 di larghezza</li>
-  </ul>
-  <p>Attivandola, si dichiara se colpisce solo Alleati o solo Nemici nell'area. Danno [DAMAGE] dimezzato dopo Armor; Effetti [SUPPORT] ridotti di 1 Potenza/Durata.</p></div>
-  <div class="quality-card"><span class="qname">Zoner</span><span class="qcost">1 DP</span><p>Trigger/Static. Richiede 1 Rank di Area Attack. Scegli:</p>
-  <ul>
-    <li><b>Friendly Fire</b> — un'Area [SUPPORT] diventa [DAMAGE] per i nemici e [SUPPORT] per gli alleati nella stessa Attacco</li>
-    <li><b>Bombardment</b> — il danno di un'Area [DAMAGE] non scende sotto la Stat Derivata usata per calcolarla</li>
-    <li><b>Firewall Bypass</b> — Potenza/Durata degli Effetti [SUPPORT] in Area non vengono ridotte</li>
-  </ul></div>
+  <div class="quality-card"><span class="qname">Venomous</span><span class="qcost">1 DP</span><p>Attack. [VENOM] su un [DAMAGE]: se colpisce, Check BIT (Survival) TN 10+RAM bersaglio; successo = applica [POISON] 1 round (o +1 Potenza se già presente).</p></div>
+  <div class="quality-card"><span class="qname">Reach</span><span class="qcost">2 DP/Rank — max 3</span><p>Static. Scegli una sola opzione: <b>Wide Swings</b> (+Reach [MELEE] e Area Attack pari ai Rank, ma bloccato da barriere/alleati), <b>Long Arms</b> (+Reach [MELEE] che ignora ostruzioni, ma penalità di Accuracy scalare più vicino si è), <b>Extended Grapple</b> (+Reach di Clash, nuova Azione di Clash "Pull").</p></div>
+  <div class="quality-card"><span class="qname">Area Attack</span><span class="qcost">1 DP/Rank</span><p>Attack/Trigger. Necessaria per Zoner. Applica un Tag Area per Rank: <b>[T:BLAST]</b> (cerchio, solo [RANGE], base 1 raggio), <b>[T:BURST]</b> (attorno all'attaccante, base 1), <b>[T:CONE]</b> (cono 90°, base 3), <b>[T:LINE]</b> (pilastro, base 3, rimbalza sui muri), <b>[T:PASS]</b> (carica in linea retta, solo [MELEE]). Danno [DAMAGE] dimezzato dopo Armor; Effetti [SUPPORT] ridotti di 1 Potenza/Durata.</p></div>
+  <div class="quality-card"><span class="qname">Zoner</span><span class="qcost">1 DP</span><p>Trigger/Static. Richiede 1 Rank di Area Attack. Scegli: <b>Friendly Fire</b> (un'Area [SUPPORT] diventa [DAMAGE] per i nemici e [SUPPORT] per gli alleati nella stessa Attacco) o <b>Bombardment</b> (il danno di un'Area [DAMAGE] non scende sotto la Stat Derivata usata per calcolarla) o <b>Firewall Bypass</b> (Potenza/Durata degli Effetti [SUPPORT] in Area non vengono ridotte).</p></div>
 
   <h2 class="rule-h2" id="pc-4-03">4.03 — Defensive Qualities</h2>
   <div class="quality-card"><span class="qname">Absolute Evasion</span><span class="qcost">2 DP/Rank — max 3 (Limited)</span><p>Static. Successi automatici sul Dodge pari ai Rank, che si consumano a ogni penalità da Dodge consecutivo (si rigenerano a fine turno). Richiede Total Dodge 4/8/12 per 1/2/3 Rank.</p></div>
   <div class="quality-card"><span class="qname">Avoidance</span><span class="qcost">2 DP/Rank — max 2</span><p>Trigger. Rank 1: ritira gli 1 su un Pool Dodge una volta a round. Rank 2: ritira anche i 2.</p></div>
   <div class="quality-card"><span class="qname">Combat Monster</span><span class="qcost">2 DP</span><p>Static. Necessaria per Savagery/Berserker; incompatibile con Cross Counter, Summoner, Conjurer, Positive Reinforcement. Subendo danno guadagna <b>Resolve</b> (max 4) pari al danno; quando colpisce con un Attacco, tutto il Resolve si aggiunge al Danno e si azzera. Solo danno alle Wound Box (non Temporanee, non da fonti proprie/alleate).</p></div>
-  <div class="quality-card"><span class="qname">Bullet Proof</span><span class="qcost">1 DP</span><p>Static. Attacchi ripetuti dello stesso attaccante nello stesso round subiscono penalità crescente pari all'SV sia ad Accuracy che a Danno (Armor può ridurre il danno a 0); si azzera a fine turno.</p></div>
-  <div class="quality-card"><span class="qname">Substitute</span><span class="qcost">2 DP</span><p>Trigger. Se colpito, Check RAM (Evasion) gratuito TN 10+BIT attaccante (non attivabile se lascerebbe il Digimon a 0 Wound Box o meno): Fallimento Critico = colpito normalmente, non più utilizzabile fino a fine Combattimento; Successo = perde Wound Box pari a SV+1 ma l'Attacco è considerato riuscito comunque (per Fierce Stance/Resolve); Successo Critico = perde solo la metà. TN +3 a ogni uso (anche su fallimento). Non usabile in Clash per evitare un Attacco (ma sì per Fuggire da un Clash iniziato come Attacco).</p></div>
+  <div class="quality-card"><span class="qname">Bullet Proof</span><span class="qcost">1 DP</span><p>Static. Attacchi ripetuti dello stesso attaccante nello stesso round subiscono penalità crescente pari all'SV (Armor può ridurre il danno a 0); si azzera a fine turno.</p></div>
+  <div class="quality-card"><span class="qname">Substitute</span><span class="qcost">2 DP</span><p>Trigger. Se colpito, Check RAM (Evasion) gratuito TN 10+BIT attaccante: successo = perde Wound Box pari a SV+1 ma l'Attacco è considerato riuscito comunque (per Fierce Stance/Resolve); critico = perde solo la metà. TN +3 a ogni uso. Non usabile in Clash per evitare un Attacco (ma sì per Fuggire da un Clash iniziato come Attacco).</p></div>
 
   <h2 class="rule-h2" id="pc-4-04">4.04 — Stance Qualities</h2>
-  <div class="quality-card"><span class="qname">Fierce Soul</span><span class="qcost">2 DP</span><p>Attack/Trigger. Sblocca <b>Fierce Stance</b>: +Danno pari all'SV, -Movement pari all'SV e il Reach non può superare 1 zona. In questa Stance, un Attacco mancato può essere ripetuto gratis sullo stesso bersaglio (una volta a turno), mantenendo la Battery se era una Signature Move. Su Area Attack, utilizzabile solo se ha mancato tutti i bersagli.</p></div>
+  <div class="quality-card"><span class="qname">Fierce Soul</span><span class="qcost">2 DP</span><p>Attack/Trigger. Sblocca <b>Fierce Stance</b>: +Danno pari all'SV, -Movement/Range pari all'SV. In questa Stance, un Attacco mancato può essere ripetuto gratis sullo stesso bersaglio (una volta a turno).</p></div>
   <div class="quality-card"><span class="qname">Brave Heart</span><span class="qcost">2 DP</span><p>Attack/Trigger. Sblocca <b>Brave Stance</b>: +Armor pari all'SV, -Movement pari all'SV. Se Intercede in questa Stance e sopravvive, +1 Danno temporaneo per alleato entro il proprio CPU.</p></div>
 
   <h2 class="rule-h2" id="pc-4-05">4.05 — Preservation Qualities</h2>
-  <div class="quality-card"><span class="qname">Second Wind</span><span class="qcost">1 DP</span><p>Trigger/Static. 1 Azione in combattimento: Recovery Check tirando Health come Pool, recupera Wound Box pari al risultato; quel turno non si può usare un'Attack Action. Una volta a combattimento; se non usata, +3 Successi al Recovery Check di fine combattimento.</p></div>
+  <div class="quality-card"><span class="qname">Second Wind</span><span class="qcost">1 DP</span><p>Trigger/Static. 1 Azione in combattimento: Recovery Check tirando Health come Pool, recupera Wound Box pari al risultato. Una volta a combattimento; se non usata, +3 Successi al Recovery Check di fine combattimento.</p></div>
   <div class="quality-card"><span class="qname">Pack Master</span><span class="qcost">2 DP</span><p>Trigger. Un alleato adiacente può Intercede come Azione Gratuita una volta a round.</p></div>
   <div class="quality-card"><span class="qname">Vital Energy</span><span class="qcost">1 DP/Rank — max 2</span><p>Trigger. Necessaria per Illness. Rank 1: ritira gli 1 su un Health Check una volta a round. Rank 2: ritira anche i 2.</p></div>
   <div class="quality-card"><span class="qname">Tumbler</span><span class="qcost">1 DP</span><p>Static. Riduzione danno da Crash pari al RAM; con Advanced Mobility: Jumper, annulla tutto il danno da caduta.</p></div>
@@ -631,20 +509,20 @@
   <h2 class="rule-h2" id="pc-4-06">4.06 — Utility Qualities</h2>
   <div class="quality-card"><span class="qname">System Boost</span><span class="qcost">2 DP/Rank — max 4 (Limited)</span><p>Static. +1 a una Stat Derivata a scelta (non ripetibile), Rank max = Stage. Sconto di 1 DP al primo acquisto.</p></div>
   <div class="quality-card"><span class="qname">Combat Awareness</span><span class="qcost">1 DP</span><p>Static. +3 Initiative; tratta i Surprise Round come round normali.</p></div>
-  <div class="quality-card"><span class="qname">Teleport</span><span class="qcost">3 DP</span><p>Trigger/Static. Necessaria per Transporter. Azione Teleport: si sposta istantaneamente di 1 zona (2 zone con 1+ Rank di Instinct o con Data Optimization: Speedster), ignora Terreno Difficile. Una volta a combattimento, come Interrupt per far mancare un Attacco o fuggire da un Clash; questo non attiva Qualities/effetti che richiedono un Attacco mancato (es. Fierce Soul, Counterattack).</p></div>
-  <div class="quality-card"><span class="qname">Glamor</span><span class="qcost">1 DP</span><p>Trigger. 2 Azioni, Check BIT (Performance) TN 10 (penalità per bersaglio extra): crea un'illusione d'aspetto su alleati entro il proprio Reach (in zone), anche cambiando taglia percepita entro i limiti dello Stage.</p></div>
-  <div class="quality-card"><span class="qname">Illusionary Overlay</span><span class="qcost">2 DP</span><p>Trigger. Richiede Naturewalk per l'opzione Shroud. 2 Azioni entro il proprio Reach (in zone), Check BIT (Manipulate) TN 8+numero nemici: crea un <b>Illusionary Shroud</b> (nasconde chi è dentro, chi non condivide il Naturewalk scelto è Blinded dentro, Obscured da fuori) o <b>Illusionary Barriers</b> (muri illusori che bloccano movimento/attacco finché ci si crede). L'illusione finisce se: viene colpita con un Called Shot; il Digimon ne crea una nuova (2 Azioni); il Digimon si allontana oltre il proprio Reach dal punto di creazione. Chiunque dubiti può fare un Check DOS (Awareness) TN = Successi ottenuti alla creazione: Fallimento Critico = niente; Fallimento = può attaccare i muri o vede chi è dentro come Obscured; Successo = l'illusione finisce per lui; Successo Critico = come Successo, e la TN per crearne altre sale di 3 (con 1 Azione può avvisare gli alleati, terminandola anche per loro). La TN sale di 3 a ogni uso successivo nello stesso Combattimento.</p></div>
+  <div class="quality-card"><span class="qname">Teleport</span><span class="qcost">3 DP</span><p>Trigger/Static. Necessaria per Transporter. Azione Teleport: si sposta istantaneamente entro Stage+2 spazi, ignora Terreno Difficile. Una volta a combattimento, come Interrupt per far mancare un Attacco o fuggire da un Clash.</p></div>
+  <div class="quality-card"><span class="qname">Glamor</span><span class="qcost">1 DP</span><p>Trigger. 2 Azioni, Check BIT (Performance) TN 10 (penalità per bersaglio extra): crea un'illusione d'aspetto su alleati entro il proprio Range, anche cambiando taglia percepita entro i limiti dello Stage.</p></div>
+  <div class="quality-card"><span class="qname">Illusionary Overlay</span><span class="qcost">2 DP</span><p>Trigger. Richiede Naturewalk per l'opzione Shroud. 2 Azioni, Check BIT (Manipulate) TN 8+numero nemici: crea un <b>Illusionary Shroud</b> (nasconde chi è dentro) o <b>Illusionary Barriers</b> (muri illusori che bloccano movimento/attacco finché ci si crede).</p></div>
   <div class="quality-card"><span class="qname">Technician</span><span class="qcost">1 DP</span><p>Static. Necessaria per Firewall, Trojan, Data Scan. +3 ai Check per riparare/decifrare codice o macchinari, capire l'ambiente del Mondo Digitale, ricostruire strutture.</p></div>
   <div class="quality-card"><span class="qname">Firewall</span><span class="qcost">1 DP</span><p>Static. Richiede Technician. +3 aggiuntivi al bonus di Technician; utilizzabile anche per stanare intrusi, proteggere codice, mantenere un Domain Control, resistere a effetti come Suppression.</p></div>
   <div class="quality-card"><span class="qname">Trojan</span><span class="qcost">1 DP</span><p>Static. Richiede Technician. +3 aggiuntivi al bonus di Technician; utilizzabile per infiltrarsi in aree protette, corrompere codice o macchinari (limiti a discrezione del GM).</p></div>
 
   <h2 class="rule-h2" id="pc-4-07">4.07 — Clash Qualities</h2>
-  <div class="quality-card"><span class="qname">Monster Strength</span><span class="qcost">1 DP</span><p>Static. Necessaria per Titan Power. Controlla un Clash normalmente contro qualsiasi Size; può forzare il movimento dell'avversario di pari o minor Size con un Check CPU (Feats of Strength) o Clash: su Successo lo trascina con sé ma subisce una penalità al proprio movimento, su Successo Critico nessuna penalità.</p></div>
-  <div class="quality-card"><span class="qname">Exposing Hold</span><span class="qcost">2 DP</span><p>Static. Dopo aver Controllato un Clash con successo, può attivarla fino al prossimo tentativo di Controllo (quel turno non può usare Pin Clash): l'avversario riduce il danno subito da fonti esterne solo con metà del proprio CPU/RAM (non la media combinata).</p></div>
-  <div class="quality-card"><span class="qname">Point Blank</span><span class="qcost">1 DP</span><p>Static. In Clash, può usare Attacchi [RANGE] senza penalità da adiacenza; con [RECOIL] termina subito il Clash (il bersaglio tira comunque metà Dodge Pool). Può anche usare un Weak Attack come [RANGE] invece che [MELEE].</p></div>
-  <div class="quality-card"><span class="qname">Slippery</span><span class="qcost">1 DP</span><p>Static. Su un tentativo di Clash o Fuga dal Clash contro di lui, tira RAM×2 invece del Check di Clash: se il suo risultato è più alto, il Clash finisce subito e non può essere ritentato quel round; se è più basso, chi ha iniziato il Clash lo controlla immediatamente.</p></div>
-  <div class="quality-card"><span class="qname">Fastball</span><span class="qcost">1 DP</span><p>Trigger. Lancia un alleato consenziente più piccolo entro il proprio Reach di Clash come 1 Azione: subisce danno da lancio normale, salvo abbia Tumbler; su più nemici bersaglio, l'alleato ne colpisce solo uno. Se l'alleato ha [CHARGE], può attaccare in Interrupt (il lanciatore non si muove); in alternativa, il lanciatore può rinunciare al proprio Attacco a round e trattare l'Attacco [CHARGE] dell'alleato come proprio (bypassando il limite "un Attacco a round" di entrambi). Con 2 Azioni, dà all'alleato 1 Azione extra, rendendo l'Interrupt potenzialmente gratuito. Riduce anche l'Area Intercede a 1 Azione invece di 2. Con Monster Strength, ignora i limiti di Size.</p></div>
-  <div class="quality-card"><span class="qname">Giant Hijacker</span><span class="qcost">1 DP</span><p>Trigger. Come 1 Azione mentre è nella stessa zona di un bersaglio di almeno 1 Size più grande, Check CPU (Athletics) TN 10+RAM bersaglio-CPU proprio. Fallimento Critico: subisce [SLOW 2] fino al proprio prossimo turno. Successo: condivide la zona del bersaglio e si muove con lui finché non se ne va (Azione Libera) o il bersaglio non lo scrolla di dosso (1 Azione, Check CPU TN 10+RAM proprio). Successo Critico: come Successo, ma la TN che il bersaglio deve superare per scrollarselo di dosso sale di +3. Non conta come Clash: entrambi mantengono piena libertà di Azione e non subiscono vantaggi/svantaggi da Clash. Non si può Clashare con un Digimon che condivide la propria zona in questo modo.</p></div>
+  <div class="quality-card"><span class="qname">Monster Strength</span><span class="qcost">1 DP</span><p>Static. Necessaria per Titan Power. Controlla un Clash normalmente contro qualsiasi Size; può forzare il movimento dell'avversario di pari o minor Size con un Check CPU (Feats of Strength) o Clash.</p></div>
+  <div class="quality-card"><span class="qname">Exposing Hold</span><span class="qcost">2 DP</span><p>Static. Dopo aver Controllato un Clash con successo, l'avversario riduce il danno subito da fonti esterne solo con metà del proprio CPU/RAM (non la media combinata).</p></div>
+  <div class="quality-card"><span class="qname">Point Blank</span><span class="qcost">1 DP</span><p>Static. In Clash, può usare Attacchi [RANGE] senza penalità da adiacenza; con [RECOIL] termina subito il Clash.</p></div>
+  <div class="quality-card"><span class="qname">Slippery</span><span class="qcost">1 DP</span><p>Static. Su un tentativo di Clash o Fuga dal Clash contro di lui, tira RAM×2 invece del Check di Clash: se vince, il Clash finisce subito e non può essere ritentato quel round.</p></div>
+  <div class="quality-card"><span class="qname">Fastball</span><span class="qcost">1 DP</span><p>Trigger. Lancia un alleato più piccolo entro il proprio Reach di Clash come 1 Azione; se l'alleato ha [CHARGE], può attaccare in Interrupt. Con Monster Strength, ignora i limiti di Size.</p></div>
+  <div class="quality-card"><span class="qname">Giant Hijacker</span><span class="qcost">1 DP</span><p>Trigger. (Dettagli aggiuntivi nella prossima parte.)</p></div>
 
   <h2 class="rule-h2" id="pc-4-08">4.08 — Effect Qualities</h2>
   <p>Le Attack Effect Tag si dividono in <b>Negativi (N)</b>, <b>Positivi (P)</b>, <b>Danno (D)</b> e <b>Unici (U)</b>. Il <b>Caster</b> è chi applica l'Effetto, il <b>Target</b> chi lo subisce — il Caster non può mai bersagliare se stesso con un Tag di Effetto (serve la Quality Overclock per farlo su di sé).</p>
@@ -657,11 +535,11 @@
     <tr><td>[KEEN]</td><td>P</td><td>Aumenta l'Accuracy.</td><td>Sì</td><td>BIT</td></tr>
     <tr><td>[SWIFT]</td><td>P</td><td>Aumenta il Dodge.</td><td>Sì</td><td>RAM</td></tr>
     <tr><td>[TAILWIND]</td><td>P</td><td>Aumenta il Movement.</td><td>Sì</td><td>RAM</td></tr>
-    <tr><td>[CLEANSE]</td><td>U</td><td>Riduce di 1 la Durata di tutti gli Effetti sul bersaglio (+1 ogni 2 Successi extra); può essere mirato a Effetti specifici. Su un alleato, il bersaglio tira Health come Pool e la Durata si riduce ogni 3 Successi combinati. Su Area Attack, i Successi totali sono -1 e va dichiarato se colpisce Alleati o Nemici.</td><td>No</td><td>—</td></tr>
+    <tr><td>[CLEANSE]</td><td>U</td><td>Riduce di 1 la Durata di tutti gli Effetti sul bersaglio (+1 ogni 2 Successi extra); può essere mirato a Effetti specifici.</td><td>No</td><td>—</td></tr>
     <tr><td>[FEAR]</td><td>U</td><td>-Accuracy pari a DOS Caster contro il Caster stesso; il bersaglio non può Clashare col Caster. Termina se il Caster applica [TAUNT].</td><td>Sì</td><td>—</td></tr>
     <tr><td>[DOOM]</td><td>U</td><td>Le Wound Box guadagnate vengono deviate a scalare da un "Valore" pari a DOS Caster; finisce a Valore 0.</td><td>Sì</td><td>—</td></tr>
     <tr><td>[TAUNT]</td><td>U</td><td>-Accuracy pari a CPU Caster su Attacchi contro chiunque non sia il Caster. Termina se subisce [FEAR].</td><td>Sì</td><td>—</td></tr>
-    <tr><td>[PULL] / [PUSH]</td><td>U</td><td>Sposta il bersaglio verso/lontano dal Caster di 1 zona (2 zone se DOS/CPU del Caster ≥5), ridotto di 1 zona dalla Size del bersaglio se molto più grande.</td><td>No</td><td>—</td></tr>
+    <tr><td>[PULL] / [PUSH]</td><td>U</td><td>Sposta il bersaglio verso/lontano dal Caster di spazi pari a DOS/CPU del Caster (ridotto dalla Size del bersaglio).</td><td>No</td><td>—</td></tr>
     <tr><td>[CONFUSE]</td><td>N</td><td>Riduce la Stat associata alla Stat Derivata più alta del bersaglio.</td><td>Sì</td><td>Speciale</td></tr>
     <tr><td>[DISTRACT]</td><td>N</td><td>Riduce Accuracy e Dodge (Attacco richiede 1 Azione extra).</td><td>Sì</td><td>RAM</td></tr>
     <tr><td>[DULL]</td><td>N</td><td>Riduce il Danno.</td><td>Sì</td><td>CPU</td></tr>
@@ -670,7 +548,7 @@
     <tr><td>[NIMBLE]</td><td>P</td><td>Aumenta Accuracy e Dodge (richiede 1 Azione extra).</td><td>Sì</td><td>BIT</td></tr>
     <tr><td>[SHARPEN]</td><td>P</td><td>Aumenta il Danno.</td><td>Sì</td><td>RAM</td></tr>
     <tr><td>[STURDY]</td><td>P</td><td>Aumenta l'Armor.</td><td>Sì</td><td>DOS</td></tr>
-    <tr><td>[BURN]</td><td>D</td><td>Danno Unalterable per ogni zona attraversata (dimezzato se spostamento involontario). Richiede [DAMAGE].</td><td>Sì</td><td>—</td></tr>
+    <tr><td>[BURN]</td><td>D</td><td>Danno Unalterable a ogni spazio mosso (dimezzato se spostamento involontario). Richiede [DAMAGE].</td><td>Sì</td><td>—</td></tr>
     <tr><td>[FREEZE]</td><td>D</td><td>2 Danno Unalterable a fine turno per ogni Azione non di movimento. Richiede [DAMAGE].</td><td>Sì</td><td>—</td></tr>
     <tr><td>[POISON]</td><td>D</td><td>Danno Unalterable pari al CPU a fine turno.</td><td>Sì</td><td>Speciale</td></tr>
     <tr><td>[HASTE]</td><td>U</td><td>+1 Azione extra (solo alleati). Se usata per attaccare, ignora "un Attacco a round".</td><td>Speciale</td><td>—</td></tr>
@@ -678,9 +556,9 @@
   </table>
   <div class="quality-card"><span class="qname">Basic Effect</span><span class="qcost">1 DP/Rank</span><p>Attack. Necessaria per Inspiring Guidance/Overclock. Applica uno degli Effetti Basic della tabella sopra a un Attacco (non ripetibile per lo stesso Effetto).</p></div>
   <div class="quality-card"><span class="qname">Advanced Effect</span><span class="qcost">2 DP/Rank</span><p>Attack. Necessaria per Inspiring Guidance/Overclock. Applica uno degli Effetti Advanced ([CONFUSE], [DISTRACT], [DULL], [FRAIL], [HEAVY], [NIMBLE], [SHARPEN], [STURDY], [BURN], [FREEZE], [POISON], [HASTE], [IMMUNE]).</p></div>
-  <div class="quality-card"><span class="qname">Inspiring Guidance</span><span class="qcost">1 DP/Rank — max = DP dell'Effetto abbinato</span><p>Attack. Richiede almeno 1 Rank di Basic/Advanced/Master Effect. Applica [GUIDING] a un [SUPPORT] con Effetto Positivo (il Rank massimo acquistabile è pari al DP speso sull'Effetto Positivo sullo stesso Attacco, es. 2 con [SHARPEN]/[SHIELD], 1 con [KEEN]): se riuscito, Check BIT (Persuasion) TN 15-DOS; Fallimento Critico = Durata dell'Effetto Positivo -1 (min 1); Successo = il bersaglio riceve dadi "Guiding" temporanei pari ai Rank (aggiungibili a qualsiasi Pool, si consumano con l'uso); Successo Critico = +1 dado extra. Solo un Digimon alla volta può beneficiarne (su Area Attack, si sceglie un bersaglio). Su Signature Move, dà dadi extra pari alla Battery indipendentemente dal risultato del Check.</p></div>
-  <div class="quality-card"><span class="qname">Overclock</span><span class="qcost">1 DP</span><p>Trigger. Acquista un Effetto Positivo che normalmente richiede una Stat Derivata del Caster e applicalo a se stessi con 1 Azione e un Check (TN 10+SV) invece che a un Attacco (se l'Effetto richiede un'Azione extra, anche questa Quality la richiede). Fallimento Critico: non puoi usarla di nuovo fino a fine Combattimento. Successo: effetto attivo fino all'inizio del tuo prossimo turno. Successo Critico: dura 3 round.</p></div>
-  <div class="quality-card"><span class="qname">Protecting Shield</span><span class="qcost">1 DP/Rank — max 3</span><p>Attack. Applica [SHIELD] a un [SUPPORT]: dona Wound Box Temporanee pari a BIT+Stage del Caster (ridotte da Resistance). Non può stare sullo stesso Attacco con un altro Tag di Effetto, né essere presa con Overclock; non può stare con un Tag Area Attack a meno che entrambi non siano su una Signature Move [SUPPORT] (costa 2 Battery). Il Caster non può beneficiare dello Shield che crea lui stesso. Usi limitati ai Rank per combattimento.</p></div>
+  <div class="quality-card"><span class="qname">Inspiring Guidance</span><span class="qcost">1 DP/Rank — max 3</span><p>Attack. Richiede almeno 1 Rank di Effect. Applica [GUIDING] a un [SUPPORT] con Effetto Positivo: se riuscito, Check BIT (Persuasion) TN 15-DOS per dare dadi "Guiding" temporanei al bersaglio.</p></div>
+  <div class="quality-card"><span class="qname">Overclock</span><span class="qcost">1 DP</span><p>Trigger. Acquista un Effetto Positivo che normalmente richiede una Stat Derivata del Caster e applicalo a se stessi con 1 Azione e un Check (TN 10+SV) invece che a un Attacco.</p></div>
+  <div class="quality-card"><span class="qname">Protecting Shield</span><span class="qcost">1 DP/Rank — max 3</span><p>Attack. Applica [SHIELD] a un [SUPPORT]: dona Wound Box Temporanee pari a BIT+Stage del Caster (ridotte da Resistance). Usi limitati ai Rank per combattimento.</p></div>
 </section>
 
 <section class="content" id="pc-5">
@@ -690,52 +568,31 @@
 
   <h2 class="rule-h2" id="pc-5-01">5.01 — Core Qualities</h2>
   <div class="quality-card"><span class="qname">Algorithm</span><span class="qcost">1 DP/Rank — max 3 (Limited)</span><p>Static. Richiede Champion. Necessaria per Pure Digizoid Weaponry e Pure Overwrite (che richiedono 3 Rank). Rimuove l'incompatibilità tra Weapon e Instinct: puoi avere Rank in entrambe pari ai Rank di Algorithm + 1. Rank max: Champion 1, Ultimate 2, Mega 3.</p></div>
-  <div class="quality-card"><span class="qname">Advanced Mobility</span><span class="qcost">1 DP/Rank — max 5</span><p>Static. Richiede Champion e 1 Rank di Extra Movement. Potenzia un tipo di Movimento già posseduto:</p>
-  <ul>
-    <li><b>Flight</b> — ignora venti forti, perde il volo solo a 1/4 Wound Box</li>
-    <li><b>Digger</b> — scava anche materiali duri come Terreno Difficile, vista tremore potenziata</li>
-    <li><b>Swimmer</b> — respira sott'acqua, nessuna penalità da correnti/oscurità, può muoversi anche in altri liquidi come lava o metallo fuso con restrizioni del Master</li>
-    <li><b>Wallclimber</b> — cammina sui soffitti, immune a [ROOT]</li>
-    <li><b>Jumper</b> — salto curvo, riduzione danno da caduta, entra/esce dal Terreno Difficile come Move Action solo se non è a metà Wound Box o meno</li>
-  </ul></div>
+  <div class="quality-card"><span class="qname">Advanced Mobility</span><span class="qcost">1 DP/Rank — max 5</span><p>Static. Richiede Champion e 1 Rank di Extra Movement. Potenzia un tipo di Movimento già posseduto: <b>Flight</b> (ignora venti forti, perde il volo solo a 1/4 Wound Box), <b>Digger</b> (scava anche materiali duri come Terreno Difficile, vista tremore potenziata), <b>Swimmer</b> (respira sott'acqua, nessuna penalità da correnti/oscurità), <b>Wallclimber</b> (cammina sui soffitti, immune a [ROOT]), <b>Jumper</b> (salto curvo, riduzione danno da caduta, entra/esce dal Terreno Difficile come Move Action).</p></div>
   <div class="quality-card"><span class="qname">Sprint</span><span class="qcost">1 DP</span><p>Trigger. Richiede Champion e Accelerate. Raddoppia il Movement per un'Azione che lo coinvolge (Move, Difficult Move, Intercede, [CHARGE]). Una volta a combattimento.</p></div>
 
   <h2 class="rule-h2" id="pc-5-06">5.06 — Evoker Qualities</h2>
-  <div class="quality-card"><span class="qname">Showstopper</span><span class="qcost">2 DP</span><p>Trigger/Static. Richiede Champion; incompatibile con Combat Monster, Conjurer, Summoner. Necessaria per Boasting Heel. Genera <b>Hype</b> (max 3) in combattimento: 1 Azione una volta a turno, Check BIT (Performance) TN 10+numero di alleati e nemici in combattimento (Successo = +1 Hype, non lo perde a inizio turno successivo; Successo Critico = recupera anche l'Azione spesa), oppure colpendo un nemico con Successi Accuracy sopra la sua Dodge pari o superiori al suo Stage. Perde 1 Hype a inizio turno, tutto a fine combattimento (o perdendo la Quality/venendo Sconfitto). Benefici in base all'Hype attuale: 1 = +Hype ad Accuracy; 2 = anche ai Check di Skill; 3 = anche a Danno.</p></div>
-  <div class="quality-card"><span class="qname">Boasting Heel</span><span class="qcost">1 DP</span><p>Trigger. Richiede Showstopper. A fine turno, "Boast" come Azione Libera: fino al proprio turno successivo, ogni volta che subisce un Attacco che manca ma con almeno 1 Successo Accuracy, guadagna 1 Hype. Se viene colpito dopo aver fatto Boast, perde il beneficio fino al turno successivo.</p></div>
-  <div class="quality-card"><span class="qname">Conjurer</span><span class="qcost">1 DP/Rank — max 3</span><p>Trigger/Static. Richiede Champion; incompatibile con Combat Monster, Positive Reinforcement, Showstopper. Genera <b>Mastery</b> (BIT + 2×Rank in questa Quality e in Summoner se posseduta — pool condiviso), usata con l'Azione <b>Conjure</b> (1 Azione = metà Mastery, 2 Azioni = Mastery piena) per creare Strutture in spazi liberi entro il proprio Reach (in zone):</p>
-  <ul>
-    <li><b>Walls and Pillars</b> — 1 Mastery, 1 Wound Box per Pillar, un Wall può arrivare a 4 Pillar</li>
-    <li><b>Platforms</b> — 2 Mastery, 2 Wound Box, terreno calpestabile anche a mezz'aria</li>
-    <li><b>Terrain</b> — richiede Element Master; converte il terreno in Difficile a 2 Mastery, o solo 1 se il terreno ha già quell'Elemento; +1 Mastery extra per renderlo Pericoloso</li>
-  </ul>
-  <p>Le Strutture non tirano Dodge e hanno una Soglia di Danno pari al DOS del Digimon; distruggerle restituisce la Mastery spesa. Cooldown di 1 round dopo l'uso dell'Azione Conjure; le Strutture spariscono se il Digimon la riusa (sostituendole), va a 0 Wound Box o perde la Quality.</p></div>
-  <div class="quality-card"><span class="qname">Summoner</span><span class="qcost">1 DP/Rank — max 3</span><p>Trigger/Static. Richiede Champion; incompatibile con Combat Monster, Positive Reinforcement, Showstopper. Genera <b>Mastery</b> (BIT + 2×Rank in questa Quality e in Conjurer se posseduta — pool condiviso). Azione <b>Summon</b> (1 Azione = metà Mastery, 2 Azioni = Mastery piena) crea Minion in spazi liberi entro il proprio Reach (in zone); distruggerli restituisce la Mastery spesa. Stat base di un Minion: Accuracy/Danno/Movement dal BIT del Summoner, Wound Box = DOS×2 del Summoner, Extra Movement: Flight senza penalità, niente Armor/Dodge (non tira Dodge), solo Attacchi [MELEE], nessuna Stat Derivata propria; ignora tutti gli Effetti tranne quelli di Danno (usa il CPU del Summoner per [POISON]), Movimento o [ROOT]/[PARALYZE]. Si può spendere Mastery extra alla creazione: +2 Wound Box o +1 a una stat ogni 2 Mastery aggiuntiva. Numero di Minion = Rank in questa Quality. <b>Command Minion</b> (1 Azione per dirigerne 1, 2 Azioni per tutti): un Minion comandato può fare Move, Attack o Aid (solo Move ripetibile); se 2+ Minion attaccano insieme conta come l'Attacco a round del Summoner, che tira Accuracy una volta sola per tutti; con Aid il Minion usa il Reach del Summoner ma dà sempre solo +2. Cooldown di 1 round dopo l'uso di Summon; i Minion spariscono se il Digimon la riusa (rimborsando il costo, salvo tenerli), va a 0 Wound Box o perde la Quality. Scegli un tipo alla presa della Quality:</p>
-  <ul>
-    <li><b>Infantry</b> — 4 Mastery, Large, +Movement pari allo Stage; Command Minion costa 1 Azione in meno (Azione Libera per 1, 1 Azione per tutti, una volta a turno), ma quei Minion non possono usare Aid</li>
-    <li><b>Protector</b> — 3 Mastery, Huge, +Wound Box pari al doppio dello Stage, può Intercedere con le Azioni del Digimon e ignora il Terreno Difficile</li>
-    <li><b>Recon</b> — 2 Mastery, Medium, +Accuracy pari allo Stage, Attacchi [RANGE] col Reach del Summoner, vista condivisa</li>
-    <li><b>Volatile</b> — richiede Element Master; 1 Mastery, Large, +Danno pari allo Stage; esplode a 0 Wound Box con un Attacco [RANGE][DAMAGE][BURST] gratuito al Reach minimo, nullo contro chi ha Element Master dello stesso Elemento</li>
-  </ul></div>
+  <div class="quality-card"><span class="qname">Conjurer</span><span class="qcost">1 DP/Rank — max 3</span><p>Trigger/Static. Richiede Champion; incompatibile con Combat Monster, Positive Reinforcement, Showstopper. Genera <b>Mastery</b> (BIT + 2×Rank), usata con l'Azione <b>Conjure</b> per creare Strutture: <b>Walls and Pillars</b> (1 Mastery, 1 Wound Box per Pillar), <b>Platforms</b> (2 Mastery, 2 Wound Box, terreno calpestabile anche a mezz'aria), <b>Terrain</b> (richiede Element Master; converte il terreno in Difficile/Pericoloso). Le Strutture non tirano Dodge e hanno una Soglia di Danno pari al DOS del Digimon.</p></div>
+  <div class="quality-card"><span class="qname">Summoner</span><span class="qcost">1 DP/Rank — max 3</span><p>Trigger/Static. Richiede Champion; incompatibile con Combat Monster, Positive Reinforcement, Showstopper. Genera <b>Mastery</b> (BIT + 2×Rank); Azioni <b>Summon</b> (1 Azione) e <b>Command Minion</b> (2 Azioni) per creare e dirigere Minion: <b>Infantry</b> (4 Mastery, Large, +Movement), <b>Protector</b> (3 Mastery, Huge, +Wound Box, può Intercedere), <b>Recon</b> (2 Mastery, Medium, +Accuracy, Attacchi [RANGE], vista condivisa), <b>Volatile</b> (richiede Element Master; 1 Mastery, Large, +Danno, esplode a 0 Wound Box). Numero di Minion = Rank in questa Quality.</p></div>
   <div class="quality-card"><span class="qname">Omnievoker</span><span class="qcost">1 DP</span><p>Static. Richiede almeno 1 Rank di Conjurer o Summoner. Le Azioni Conjure e Summon condividono lo stesso costo in Azioni.</p></div>
   <h2 class="rule-h2" id="pc-5-02">5.02 — Offensive Qualities</h2>
-  <div class="quality-card"><span class="qname">Elemental Force</span><span class="qcost">1 DP/Rank (Limited)</span><p>Attack/Trigger. Richiede Champion e 1+ Rank di Naturewalk. Applica un Tag elementale (es. [FIRE]) a un [DAMAGE] (non più di un Tag elementale per Attacco): attivandolo, +Danno pari a 1+Rank — ma nessun bonus (o Attacco nullo con Element Master) contro chi condivide lo stesso Naturewalk.</p></div>
-  <div class="quality-card"><span class="qname">Element Master</span><span class="qcost">1 DP</span><p>Static. Richiede Champion e Naturewalk. Necessaria per Elemental Myriad. Check DOS (Fortitude) gratuito una volta a round per manipolare l'ambiente legato al proprio Elemento (di norma senza effetto in combattimento; con più Naturewalk, uno alla volta); nega completamente gli Elemental Force dello stesso elemento e dimezza il danno da Terreno Pericoloso corrispondente.</p></div>
-  <div class="quality-card"><span class="qname">Mighty Blow</span><span class="qcost">3 DP</span><p>Attack/Trigger. Richiede Champion. [T:MIGHTY] su [MELEE][DAMAGE] (compatibile con un altro Tag di Effetto, tranne Effetti di Danno): se fa almeno 2 danno dopo Armor, Check CPU (Feats of Strength) TN 10+CPU bersaglio; Fallimento Critico = -1 Danno (min 1); Successo = [STUN]; Successo Critico = anche +2 Danno extra. TN +3 a ogni uso (salvo Signature Move). Su Area Attack, si applica al bersaglio più vicino.</p></div>
-  <div class="quality-card"><span class="qname">Precise Focus</span><span class="qcost">1 DP</span><p>Attack. Richiede Champion. [FOCUS] su [RANGE]: doppio danno alle Wound Box Temporanee; con 1 Azione extra, Check RAM (Precision) TN 12+RAM bersaglio per bonus Accuracy crescente (Fallimento = +1, Successo = +3, Successo Critico = +5). Su Signature Move estende anche il Reach pari alla Battery. Nessun beneficio su Area Attack.</p></div>
-  <div class="quality-card"><span class="qname">Feint Attack</span><span class="qcost">2 DP</span><p>Attack/Trigger. Richiede Champion; incompatibile con [PIERCING]/[STUN] sullo stesso Attacco, con l'attivazione di Counterattack, e non usabile in Clash. [T:FEINT] su [MELEE]: Check BIT (Manipulate) TN 10+BIT bersaglio; Fallimento Critico = il danno è comunque dimezzato dopo Armor; Successo = il bersaglio tira metà Dodge, il danno è dimezzato dopo Armor ([SUPPORT]: Durata -1); Successo Critico = come Successo ma il danno non è dimezzato. TN +3 a ogni uso (salvo Signature Move). Su Area Attack, si applica al bersaglio più vicino.</p></div>
-  <div class="quality-card"><span class="qname">Punishing Strike</span><span class="qcost">1 DP</span><p>Attack/Trigger. Richiede Champion e Rank di Combat Awareness. Necessaria per There is No Escape. [PUNISH] su [MELEE]: Interrupt Action contro chi si allontana volontariamente dal tuo Reach (non funziona contro il Teleport né contro spostamenti forzati da Effetti). Se un alleato Intercede per il bersaglio, il suo Armor contro questo Danno è dimezzato. Usi = Rank in Combat Awareness.</p></div>
+  <div class="quality-card"><span class="qname">Elemental Force</span><span class="qcost">1 DP/Rank (Limited)</span><p>Attack/Trigger. Richiede Champion e 1+ Rank di Naturewalk. Applica un Tag elementale (es. [FIRE]) a un [DAMAGE]: attivandolo, +Danno pari a 1+Rank — ma nessun bonus (o Attacco nullo con Element Master) contro chi condivide lo stesso Naturewalk.</p></div>
+  <div class="quality-card"><span class="qname">Element Master</span><span class="qcost">1 DP</span><p>Static. Richiede Champion e Naturewalk. Necessaria per Elemental Myriad. Check DOS (Fortitude) gratuito una volta a round per manipolare l'ambiente legato al proprio Elemento (di norma senza effetto in combattimento); nega completamente gli Elemental Force dello stesso elemento e dimezza il danno da Terreno Pericoloso corrispondente.</p></div>
+  <div class="quality-card"><span class="qname">Mighty Blow</span><span class="qcost">3 DP</span><p>Attack/Trigger. Richiede Champion. [T:MIGHTY] su [MELEE][DAMAGE]: se fa almeno 2 danno dopo Armor, Check CPU (Feats of Strength) TN 10+CPU bersaglio; successo = [STUN]. TN +3 a ogni uso (salvo Signature Move).</p></div>
+  <div class="quality-card"><span class="qname">Precise Focus</span><span class="qcost">1 DP</span><p>Attack. Richiede Champion. [FOCUS] su [RANGE]: doppio danno alle Wound Box Temporanee; con 1 Azione extra, Check RAM (Precision) TN 12+RAM bersaglio per bonus Accuracy crescente (+1/+3/+5).</p></div>
+  <div class="quality-card"><span class="qname">Feint Attack</span><span class="qcost">2 DP</span><p>Attack/Trigger. Richiede Champion. [T:FEINT] su [MELEE]: Check BIT (Manipulate) TN 10+BIT bersaglio; successo = il bersaglio tira metà Dodge ma il danno è dimezzato dopo Armor. TN +3 a ogni uso.</p></div>
+  <div class="quality-card"><span class="qname">Punishing Strike</span><span class="qcost">1 DP</span><p>Attack/Trigger. Richiede Champion e Rank di Combat Awareness. Necessaria per There is No Escape. [PUNISH] su [MELEE]: Interrupt Action contro chi si allontana volontariamente dal tuo Reach. Usi = Rank in Combat Awareness.</p></div>
   <div class="quality-card"><span class="qname">There Is No Escape</span><span class="qcost">1 DP</span><p>Static. Richiede Punishing Strike. Con 2+ danno da [PUNISH], dimezza il Movement del bersaglio quel turno (azzerato con [ROOT]); funziona anche contro il Teleport volontario.</p></div>
   <div class="quality-card"><span class="qname">Counterblow</span><span class="qcost">1 DP</span><p>Attack/Trigger. Richiede Champion e 1 Rank di Counterattack; incompatibile con Cross Counter/Return Fire. [COUNTER] su [MELEE]; attivando Counterattack, scegli: dimezza il Dodge del bersaglio, dimezza il suo Armor, o entrambi spendendo 2 usi.</p></div>
-  <div class="quality-card"><span class="qname">Cross Counter</span><span class="qcost">2 DP</span><p>Attack/Trigger. Richiede Champion e Counterattack; incompatibile con Counterblow, Combat Monster, Return Fire, Instant Counter. Se un [MELEE] nemico infligge almeno Stage+1 danno dopo Armor, puoi attivare Counterattack anche fuori dal trigger standard (se attivato durante un'Intercede, il bersaglio non dimezza il Dodge contro il contrattacco).</p></div>
-  <div class="quality-card"><span class="qname">Return Fire</span><span class="qcost">2 DP</span><p>Attack/Trigger. Richiede Champion e Counterattack; incompatibile con Counterblow/Cross Counter. [COUNTER] su [RANGE]; ignora la penalità di zona quando contrattacchi.</p></div>
+  <div class="quality-card"><span class="qname">Cross Counter</span><span class="qcost">2 DP</span><p>Attack/Trigger. Richiede Champion e Counterattack; incompatibile con Counterblow, Combat Monster, Return Fire, Instant Counter. Se un [MELEE] nemico infligge almeno Stage+1 danno dopo Armor, puoi attivare Counterattack anche fuori dal trigger standard.</p></div>
+  <div class="quality-card"><span class="qname">Return Fire</span><span class="qcost">2 DP</span><p>Attack/Trigger. Richiede Champion e Counterattack; incompatibile con Counterblow/Cross Counter. [COUNTER] su [RANGE]; ignora le penalità da Effective Limit quando contrattacchi.</p></div>
   <div class="quality-card"><span class="qname">Instant Counter</span><span class="qcost">1 DP</span><p>Trigger. Richiede Champion e Counterattack; incompatibile con Cross Counter. Counterattack come Azione Gratuita una volta a combattimento.</p></div>
-  <div class="quality-card"><span class="qname">Lifesteal</span><span class="qcost">1 DP</span><p>Attack/Trigger. Richiede Champion. [T:DRAIN] su un Attacco qualsiasi (non può stare con un Tag di Effetto): cura Wound Box pari al danno inflitto (max DOS; su Area Attack usa il danno totale, non quello ai singoli bersagli). Su Signature Move, la cura massima aumenta pari alla Battery.</p></div>
-  <div class="quality-card"><span class="qname">Reload</span><span class="qcost">1 DP</span><p>Trigger. Richiede Champion e Ammo. 2 Azioni, Check BIT (Precision) TN 18-RAM per recuperare l'uso dell'Attacco [AMMO]: Fallimento Critico = non puoi più riprovare per il resto del Combattimento; Successo = recuperi l'uso; Successo Critico = recuperi anche l'Azione spesa. TN +3 a ogni successo.</p></div>
+  <div class="quality-card"><span class="qname">Lifesteal</span><span class="qcost">1 DP</span><p>Attack/Trigger. Richiede Champion. [DRAIN] su un Attacco qualsiasi: cura Wound Box pari al danno inflitto (max DOS).</p></div>
+  <div class="quality-card"><span class="qname">Reload</span><span class="qcost">1 DP</span><p>Trigger. Richiede Champion e Ammo. 2 Azioni, Check BIT (Precision) TN 18-RAM per recuperare l'uso dell'Attacco [AMMO]. TN +3 a ogni successo.</p></div>
 
   <h2 class="rule-h2" id="pc-5-03">5.03 — Defensive Qualities</h2>
-  <div class="quality-card"><span class="qname">Brace</span><span class="qcost">2 DP</span><p>Trigger. Richiede Champion. Interrupt su danno subito (non si applica al Danno Unalterable): Check CPU (Endurance) TN 10+danno dopo Armor; Fallimento Critico = +1 Danno subito; Successo = danno ulteriormente dimezzato; Successo Critico = se questo lo ridurrebbe a 1, diventa 0. TN +3 a ogni uso (+3 extra se era un'Intercede).</p></div>
-  <div class="quality-card"><span class="qname">Savagery</span><span class="qcost">1 DP</span><p>Trigger. Richiede Champion e Combat Monster. Una volta a round, attivando: Check CPU (Endurance) TN 15-DOS (non attivabile senza abbastanza Wound Box per pagarne il costo); Fallimento Critico = come Fallimento ma non più utilizzabile fino a fine Combattimento; Fallimento/Successo = perde Wound Box Unalterable pari a metà Resolve massimo, bypassando le Wound Box Temporanee (contano per Resolve); Successo = guadagna anche Wound Box Temporanee pari al danno subito; Successo Critico = il doppio delle Wound Box Temporanee. TN +3 a ogni uso.</p></div>
+  <div class="quality-card"><span class="qname">Brace</span><span class="qcost">2 DP</span><p>Trigger. Richiede Champion. Interrupt su danno subito: Check CPU (Endurance) TN 10+danno dopo Armor; successo = danno ulteriormente dimezzato. TN +3 a ogni uso (+3 extra se era un'Intercede).</p></div>
+  <div class="quality-card"><span class="qname">Savagery</span><span class="qcost">1 DP</span><p>Trigger. Richiede Champion e Combat Monster. Una volta a round, attivando: Check CPU (Endurance) TN 15-DOS; su fallimento/successo perde Wound Box Unalterable pari a metà Resolve massimo (contano per Resolve), col successo guadagna anche Wound Box Temporanee pari al danno subito.</p></div>
   <div class="quality-card"><span class="qname">Assured Destruction</span><span class="qcost">1 DP</span><p>Trigger. Richiede Champion e Combat Monster. Converte Resolve in dadi Accuracy extra invece che in Danno, per un singolo Attacco.</p></div>
 
   <h2 class="rule-h2" id="pc-5-04">5.04 — Preservation Qualities</h2>
@@ -743,7 +600,7 @@
   <div class="quality-card"><span class="qname">Immunity</span><span class="qcost">2 DP</span><p>Trigger. Richiede Focused Resistance. La Resistance può ridurre la Potenza sotto 2 (annullandola a 0); l'Azione Resist conta come se avesse un'Azione extra.</p></div>
 
   <h2 class="rule-h2" id="pc-5-05">5.05 — Utility Qualities</h2>
-  <div class="quality-card"><span class="qname">Domain Control</span><span class="qcost">1 DP</span><p>Trigger. Richiede Element Master; incompatibile con Elemental Myriad. Con 2 Azioni (e una fonte dell'Elemento, o un Check DOS/Fortitude TN 10+2×Stage con Conjurer), crea un <b>Domain</b> — un'area con Durata e raggio pari a Stage+1 che segue il Digimon, con un effetto costante finché attivo. Se la fonte dell'Elemento non è più presente, va rinnovato ogni round con lo stesso Check DOS (Fortitude) TN 10+2×Stage o il Domain finisce. L'effetto ignora Resistant e Special Order come Tough it Out, ma un Digimon con lo stesso Naturewalk dell'Elemento del Domain può scegliere di ignorarlo. Ogni Elemento ha due varianti di Domain a scelta (vedi tabella).</p></div>
+  <div class="quality-card"><span class="qname">Domain Control</span><span class="qcost">1 DP</span><p>Trigger. Richiede Element Master; incompatibile con Elemental Myriad. Con 2 Azioni (e una fonte dell'Elemento, o un Check DOS/Fortitude con Conjurer), crea un <b>Domain</b> — un'area con Durata e raggio pari a Stage+1 che segue il Digimon, con un effetto costante finché attivo. Ogni Elemento ha due varianti di Domain a scelta (vedi tabella).</p></div>
   <table class="rules-table">
     <tr><th>Elemento</th><th>Domain A</th><th>Domain B</th></tr>
     <tr><td>Fuoco</td><td>Treacherous Fire — Terreno Difficile per i nemici + [BURN]</td><td>Volatile Element — Attacchi trattati come [EXPLOIT] (Potenza = DOS)</td></tr>
@@ -758,9 +615,9 @@
     <tr><td>Oscurità</td><td>Shadow Vale — [FEAR] (Potenza = CPU)</td><td>Nightmare Shroud — Terreno Difficile + 1d6 per bersaglio, 5+ = [RUIN] (Potenza = DOS)</td></tr>
   </table>
   <div class="quality-card"><span class="qname">Adaptive Element</span><span class="qcost">1 DP</span><p>Static. Richiede Element Master; incompatibile con Elemental Myriad/Altered Element. Puoi scegliere tra entrambe le varianti di Domain del tuo Elemento (una attiva alla volta).</p></div>
-  <div class="quality-card"><span class="qname">Altered Element</span><span class="qcost">1 DP</span><p>Static. Richiede Element Master; incompatibile con Elemental Myriad/Adaptive Element. Puoi scegliere qualsiasi Domain, non solo quello del tuo Elemento (resta comunque considerato il "tuo" Elemento: altri Digimon col tuo Naturewalk originale possono ignorarlo, quelli col Naturewalk dell'elemento scelto no).</p></div>
-  <div class="quality-card"><span class="qname">Overdrive</span><span class="qcost">2 DP</span><p>Trigger. Richiede Champion. Azione Gratuita una volta a round: Check CPU (Athletics) TN 15-RAM; Fallimento Critico = non più utilizzabile fino a fine Combattimento; Successo = [HASTE] quel turno ma -3 Dodge il round dopo; Successo Critico = ignora la penalità a Dodge. TN +6 a ogni uso.</p></div>
-  <div class="quality-card"><span class="qname">Data Scan</span><span class="qcost">2 DP</span><p>Trigger. Richiede Champion. 1 Azione, Check BIT (Knowledge) TN 10+DOS bersaglio: Fallimento Critico = non più utilizzabile fino a fine Combattimento; Successo = rivela Wound Box, Stat Core/Derivate, Movement/Reach, lista Core Qualities o un Attacco con i suoi Tag (scegline una); Successo Critico = impari anche un'opzione aggiuntiva.</p></div>
+  <div class="quality-card"><span class="qname">Altered Element</span><span class="qcost">1 DP</span><p>Static. Richiede Element Master; incompatibile con Elemental Myriad/Adaptive Element. Puoi scegliere qualsiasi Domain, non solo quello del tuo Elemento.</p></div>
+  <div class="quality-card"><span class="qname">Overdrive</span><span class="qcost">2 DP</span><p>Trigger. Richiede Champion. Azione Gratuita una volta a round: Check CPU (Athletics) TN 15-RAM; successo = [HASTE] quel turno ma -3 Dodge il round dopo. TN +6 a ogni uso.</p></div>
+  <div class="quality-card"><span class="qname">Data Scan</span><span class="qcost">2 DP</span><p>Trigger. Richiede Champion. 1 Azione, Check BIT (Knowledge) TN 10+DOS bersaglio: rivela Wound Box, Stat Core/Derivate, Movement/Range, lista Core Qualities o un Attacco con i suoi Tag.</p></div>
 
   <div class="note">Fine delle Qualities di Champion. Passiamo ora a quelle di Ultimate e superiori.</div>
 </section>
@@ -775,7 +632,7 @@
     <table class="rules-table">
       <tr><th>Data Optimization</th><th>Opzione A</th><th>Opzione B</th></tr>
       <tr><td>Close Combat</td><td><b>Fistful of Force</b> — 1 Rank gratis di Area Attack; Area [MELEE] usa Maximum Size senza dimezzare il danno nella Base Size</td><td><b>Flurry</b> — [MELEE][DAMAGE] extra una volta a round con 1 Azione, ignora "un Attacco a round"</td></tr>
-      <tr><td>Ranged Striker</td><td><b>Mobile Artillery</b> — 1 Rank gratis di Area Attack, niente dimezzamento in Base Size</td><td><b>Sniper</b> — Reach garantito a 2 zone, Called Shot illimitati (solo Sharpshooter, penalità dimezzata)</td></tr>
+      <tr><td>Ranged Striker</td><td><b>Mobile Artillery</b> — 1 Rank gratis di Area Attack, niente dimezzamento in Base Size</td><td><b>Sniper</b> — +3 Range/Effective Limit, Called Shot illimitati (solo Sharpshooter, penalità dimezzata)</td></tr>
       <tr><td>Warden</td><td><b>Try Something</b> — 1 Rank gratis di Counterattack, +3 Health, Interrupt ignora "un Attacco a round"</td><td><b>True Guardian</b> — bonus Armor quando Intercede, protegge gli alleati dietro di sé nelle Area Attack</td></tr>
       <tr><td>Brawler</td><td><b>Wrestlemania</b> — 1 Rank gratis di Prodigious Skill; danno bonus in Clash con un Check dedicato; sblocca il Finisher Clash Action</td><td><b>Wrangler</b> — Clash Action gratuita una volta a turno; può ririniziare un Clash nello stesso turno</td></tr>
       <tr><td>Speedster</td><td><b>Hit and Run</b> — Charge Attack o Heavy Recoil gratis, movimento non più in linea retta, +Danno = RAM</td><td><b>Uncatchable Target</b> — +3 Dodge, nessuna penalità da attacchi ripetuti (incompatibile con Absolute Evasion)</td></tr>
@@ -783,34 +640,34 @@
       <tr><td>Variable</td><td><b>Tactical Adaptation</b> — Stance Quality gratis o 2 Rank di Mode Change gratis; Stance Change gratuita all'Iniziativa e nel proprio turno</td><td><b>Supreme Code</b> — +1 a tutte le Stat Core</td></tr>
     </table>
   </div>
-  <div class="quality-card"><span class="qname">Hybrid Drive</span><span class="qcost">1 DP</span><p>Static. Richiede Ultimate e Data Optimization. Permette di acquistare una qualsiasi Data Specialization una sola volta, indipendentemente dalla propria Data Optimization.</p></div>
-  <div class="quality-card"><span class="qname">Elemental Myriad</span><span class="qcost">2 DP</span><p>Static. Richiede Ultimate ed Element Master. Fino a 10 Rank di Naturewalk, ma la somma di tutti i Rank può dare al massimo +2 totale a una singola Stat.</p></div>
+  <div class="quality-card"><span class="qname">Hybrid Drive</span><span class="qcost">1 DP</span><p>Static. Richiede Ultimate e Data Optimization. Permette di acquistare qualsiasi Data Specialization, indipendentemente dalla propria Data Optimization.</p></div>
+  <div class="quality-card"><span class="qname">Elemental Myriad</span><span class="qcost">2 DP</span><p>Static. Richiede Ultimate ed Element Master. Fino a 10 Rank di Naturewalk, ma ciascuno può dare al massimo +2 totale a una singola Stat.</p></div>
 
   <h2 class="rule-h2" id="pc-6-02">6.02 — Offensive Qualities</h2>
-  <div class="quality-card"><span class="qname">Coordinated Assault</span><span class="qcost">2 DP</span><p>Trigger. Richiede Ultimate e Aggressive Flank. <i>Riscritta dal Changelog più recente: non è più un Marchio con penalità al nemico, ma un bonus a cascata per gli alleati — il Changelog non specifica formula/costo Azione esatti, quindi questa è una stima da confermare.</i> Quando il Digimon o un alleato colpisce un bersaglio già colpito da un alleato in questo stesso turno, chi colpisce guadagna un bonus Accuracy crescente (stima: +1 per attacco già subito dal bersaglio quel turno). L'accumulo si interrompe se il bersaglio si nasconde/esce di vista, infligge [FEAR] all'iniziatore, o viene Sconfitto — coerentemente con "più metodi per essere negato" citati dal Changelog.</p></div>
+  <div class="quality-card"><span class="qname">Coordinated Assault</span><span class="qcost">2 DP</span><p>Trigger. Richiede Ultimate e Aggressive Flank. 1 Azione, Check BIT (Precision) TN 10+RAM bersaglio per applicare <b>Mark</b>: ogni Attacco subito da quel momento aumenta di +1 l'Accuracy di chi lo colpisce.</p></div>
 
   <h2 class="rule-h2" id="pc-6-03">6.03 — Defensive Qualities</h2>
   <div class="quality-card"><span class="qname">Berserker</span><span class="qcost">1 DP</span><p>Static. Richiede Ultimate e Combat Monster. Necessaria per Boiling Blood. Resolve massimo diventa 6.</p></div>
   <div class="quality-card"><span class="qname">Boiling Blood</span><span class="qcost">1 DP/Rank — max 3</span><p>Static. Richiede Ultimate e Berserker. Inizia il combattimento con Resolve pari ai Rank; genera altro Resolve a inizio turno se non a Wound Box piene.</p></div>
 
   <h2 class="rule-h2" id="pc-6-04">6.04 — Stance Qualities</h2>
-  <div class="quality-card"><span class="qname">Sentry Aim</span><span class="qcost">2 DP</span><p>Trigger. Richiede Ultimate. Sblocca <b>Sentry Stance</b>: crea una Sentry Zone (come [T:BLAST], spostabile con 1 Azione) che attacca gratis (senza Tag extra, fuori dalla regola "un Attacco a round") chi entra/esce — un bersaglio già colpito così quel round non può essere ricolpito, nemmeno da un altro Digimon in Sentry Stance; ignori le penalità di Accuracy sui tuoi [RANGE] (zona, Called Shot, Effetti); -2 Dodge contro [MELEE], niente bersagli nella stessa zona, tratta tutto il terreno come Difficile.</p></div>
-  <div class="quality-card"><span class="qname">Martial Strikes</span><span class="qcost">2 DP</span><p>Trigger. Richiede Ultimate e 1 Rank di Weapon. Sblocca <b>Martial Stance</b>: Azione Libera una volta a round, Check BIT (Decipher Intent) TN 12+DOS bersaglio; Successo = i 6 su [WEAPON] contro di lui contano doppio (fino a 3 volte per tiro) fino al tuo prossimo turno; Successo Critico = raddoppia anche il bonus Accuracy/Danno di Weapon (non i Digizoid). Su Area Attack che include il bersaglio, il beneficio non si applica agli altri colpiti. -Dodge (pari a SV) contro chi non è bersagliato.</p></div>
-  <div class="quality-card"><span class="qname">Anticipate Assault</span><span class="qcost">2 DP</span><p>Trigger. Richiede Ultimate e 1 Rank di Instinct. Sblocca <b>Anticipate Stance</b>: Azione Libera una volta a round, Check RAM (Evasion) TN 12+DOS bersaglio; Successo = i 6 sul Dodge contro i suoi attacchi contano doppio fino al tuo prossimo turno; Successo Critico = raddoppia anche il bonus Dodge di Instinct e i suoi Attacchi non riducono più la tua Dodge Pool (salvo Sniper/Coordinated Assault). -Armor (pari a SV) contro chi non è bersagliato.</p></div>
+  <div class="quality-card"><span class="qname">Sentry Aim</span><span class="qcost">2 DP</span><p>Trigger. Richiede Ultimate. Sblocca <b>Sentry Stance</b>: crea una Sentry Zone (come [T:BLAST]) che attacca gratis chi entra/esce; -2 Dodge contro [MELEE], niente bersagli entro 2 spazi, tratta tutto il terreno come Difficile.</p></div>
+  <div class="quality-card"><span class="qname">Martial Strikes</span><span class="qcost">2 DP</span><p>Trigger. Richiede Ultimate e 1 Rank di Weapon. Sblocca <b>Martial Stance</b>: Check BIT (Decipher Intent) su un bersaglio, successo = i 6 su [WEAPON] contro di lui contano doppio; -Dodge (pari a SV) contro chi non è bersagliato.</p></div>
+  <div class="quality-card"><span class="qname">Anticipate Assault</span><span class="qcost">2 DP</span><p>Trigger. Richiede Ultimate e 1 Rank di Instinct. Sblocca <b>Anticipate Stance</b>: Check RAM (Evasion) su un bersaglio, successo = i 6 sul Dodge contro di lui contano doppio; -Armor (pari a SV) contro chi non è bersagliato.</p></div>
 
   <h2 class="rule-h2" id="pc-6-05">6.05 — Utility Qualities</h2>
-  <div class="quality-card"><span class="qname">Transporter</span><span class="qcost">1 DP</span><p>Trigger/Static. Richiede Ultimate e Teleport. Può teletrasportare alleati adiacenti insieme a sé (costa loro 1 Azione al turno successivo; se un alleato non può pagarla, un altro Digimon partecipante può farlo al posto suo, altrimenti quell'alleato non viene trasportato); estende il Teleport a 2 zone (se non lo è già).</p></div>
+  <div class="quality-card"><span class="qname">Transporter</span><span class="qcost">1 DP</span><p>Trigger/Static. Richiede Ultimate e Teleport. Può teletrasportare alleati adiacenti insieme a sé (costa loro 1 Azione al turno successivo); +1 al raggio del Teleport.</p></div>
   <div class="quality-card"><span class="qname">Holy Ward</span><span class="qcost">2 DP</span><p>Trigger. Richiede Ultimate e un Effetto Positivo; incompatibile con Dark Emblem/Status Warlord. Necessaria per Chaotic Balance. Colpendo con [HASTE], [IMMUNE], [SHIELD] o Effetti Positivi: cura 2 Wound Box a un bersaglio (una volta a round).</p></div>
   <div class="quality-card"><span class="qname">Dark Emblem</span><span class="qcost">2 DP</span><p>Trigger. Richiede Ultimate e un Effetto Negativo; incompatibile con Holy Ward/Status Warlord. Necessaria per Chaotic Balance. Colpendo con [FEAR], [DOOM], [STUN], [BLIND], [DOT] o Effetti Negativi/Danno: 2 Danno Unalterable extra (una volta a round).</p></div>
-  <div class="quality-card"><span class="qname">Chaotic Balance</span><span class="qcost">1 DP</span><p>Static. Richiede Holy Ward o Dark Emblem. Permette di avere entrambe (non attivabili nello stesso round; quella appena usata non è riattivabile il turno successivo, ma l'altra guadagna +1 alla cura/Danno Unalterable se usata quel turno).</p></div>
+  <div class="quality-card"><span class="qname">Chaotic Balance</span><span class="qcost">1 DP</span><p>Static. Richiede Holy Ward o Dark Emblem. Permette di avere entrambe (non attivabili nello stesso round; usarne una dà +1 all'altra al turno successivo).</p></div>
 
   <h2 class="rule-h2" id="pc-6-06">6.06 — Clash Qualities</h2>
   <div class="quality-card"><span class="qname">Titan Power</span><span class="qcost">1 DP</span><p>Static. Richiede Ultimate e Monster Strength. Può muovere Digimon di qualsiasi Size in Clash o con [CHARGE].</p></div>
-  <div class="quality-card"><span class="qname">Distant Force</span><span class="qcost">2 DP</span><p>Trigger. Richiede Ultimate. 1 Azione su un bersaglio entro il proprio Reach (in zone): se consenziente si applica automaticamente, altrimenti Check contrapposto (BIT+DOS vs Clash del bersaglio, conta come Check di Clash per Qualities come Brawler o Slippery): successo = applica [PUSH] o [PULL] usando BIT o DOS per la distanza.</p></div>
-  <div class="quality-card"><span class="qname">Power Throw</span><span class="qcost">2 DP</span><p>Static. Richiede Ultimate e Fastball. +1 zona alla distanza di lancio; lanciando un nemico aggiunge il CPU al danno; lanciando un alleato, niente Crash Damage.</p></div>
+  <div class="quality-card"><span class="qname">Distant Force</span><span class="qcost">2 DP</span><p>Trigger. Richiede Ultimate. 1 Azione, Check contrapposto (BIT+DOS vs Clash del bersaglio): successo = applica [PUSH] o [PULL] usando BIT o DOS per la distanza.</p></div>
+  <div class="quality-card"><span class="qname">Power Throw</span><span class="qcost">2 DP</span><p>Static. Richiede Ultimate e Fastball. +3 Range al lancio; lanciando un nemico aggiunge il CPU al danno; lanciando un alleato, niente Crash Damage.</p></div>
 
   <h2 class="rule-h2" id="pc-6-07">6.07 — Effect Qualities</h2>
-  <div class="quality-card"><span class="qname">Master Effect</span><span class="qcost">3 DP/Rank</span><p>Attack. Richiede Ultimate. Necessaria per Inspiring Guidance/Overclock. Applica uno degli Effetti Master della tabella sotto (non ripetibile per lo stesso Effetto).</p></div>
+  <div class="quality-card"><span class="qname">Master Effect</span><span class="qcost">3 DP/Rank</span><p>Attack. Richiede Ultimate. Necessaria per Inspiring Guidance/Overclock. Applica uno degli Effetti Master della tabella sotto.</p></div>
   <table class="rules-table">
     <tr><th>Effetto</th><th>Tipo</th><th>Effetto meccanico</th><th>Durata</th><th>Potenza</th></tr>
     <tr><td>[EXPLOIT]</td><td>N</td><td>Riduce Dodge e Armor.</td><td>Sì</td><td>BIT</td></tr>
@@ -834,8 +691,8 @@
   </table>
 
   <h2 class="rule-h2" id="pc-6-08">6.08 — Mode Change Qualities</h2>
-  <div class="quality-card"><span class="qname">Mode Change</span><span class="qcost">1 DP/Rank — max 2</span><p>Trigger. Richiede Ultimate. Necessaria per Superior Mode Change. Per ogni Rank, scambia una coppia di Stat Core (non Health) ed eventualmente la Size, tramite l'Azione Mode Change (i bonus da altre Qualities sulle Stat Totali si sommano ai nuovi valori). Si resetta a fine combattimento.</p></div>
-  <div class="quality-card"><span class="qname">Superior Mode Change</span><span class="qcost">3 DP</span><p>Trigger. Richiede 1 Rank di Mode Change. Permette di scambiare un intero pacchetto di Qualities (Mode Change/Superior Mode Change escluse) e lo stesso numero di Attacchi (quelli con Tag da Default Qualities vanno inclusi tra i Default) fino a un valore di DP pari a Stage×3, cambiando drasticamente build tra le due modalità (Default ↔ Mode). Cambiando Mode perdi tutti i benefici delle Qualities non più possedute, incluse le Stat; se le Ferite Massime scendono, devi poter perdere altrettante Ferite Correnti o non puoi cambiare (il Resolve non ne risente). Devi rispettare i requisiti di ogni Quality scelta e non puoi rimuoverne una richiesta da un'altra che tieni.</p></div>
+  <div class="quality-card"><span class="qname">Mode Change</span><span class="qcost">1 DP/Rank — max 2</span><p>Trigger. Richiede Ultimate. Necessaria per Superior Mode Change. Per ogni Rank, scambia una coppia di Stat Core (non Health) ed eventualmente la Size, tramite l'Azione Mode Change. Si resetta a fine combattimento.</p></div>
+  <div class="quality-card"><span class="qname">Superior Mode Change</span><span class="qcost">3 DP</span><p>Trigger. Richiede 1 Rank di Mode Change. Permette di scambiare un intero pacchetto di Qualities e Attacchi (Default ↔ Mode) fino a un valore di DP pari a Stage×3, cambiando drasticamente build tra le due modalità.</p></div>
 
   <h2 class="rule-h2" id="pc-6-09">6.09 — Digizoid Qualities</h2>
   <p>Disponibili solo da Ultimate in su. Gli Ultimate possono acquistare solo <b>Chrome</b> (Armor e Weaponry); le altre varianti richiedono Mega. Si può avere un solo tipo di Digizoid Armor e uno di Digizoid Weaponry.</p>
@@ -847,9 +704,9 @@
     <tr><td>Adaptive</td><td>2 DP</td><td>Mega</td><td>4 punti a inizio round da distribuire tra Dodge e Armor.</td></tr>
     <tr><td>Sharp</td><td>2 DP</td><td>Mega</td><td>+2 Armor, +1 Health; chi colpisce con [DAMAGE] subisce 1 Danno Unalterable.</td></tr>
     <tr><td>Heavy</td><td>3 DP</td><td>Mega</td><td>+5 Armor, -1 Movement, +1 CPU.</td></tr>
-    <tr><td>Flexible</td><td>3 DP</td><td>Mega</td><td>+2 Armor, +2 Dodge, +1 RAM; considerato una Size più piccolo mentre si muove, ignorando eventuali restrizioni di movimento dovute alla presenza di Digimon più grandi nella stessa zona (non può però fermarsi a condividerla, se non lo farebbe già normalmente).</td></tr>
+    <tr><td>Flexible</td><td>3 DP</td><td>Mega</td><td>+2 Armor, +2 Dodge, +1 RAM; considerato una Size più piccolo mentre si muove.</td></tr>
     <tr><td>Light</td><td>3 DP</td><td>Mega</td><td>+3 Dodge, +1 Movement, 1 Successo automatico su ogni Dodge (si somma ad Absolute Evasion).</td></tr>
-    <tr><td>Shining</td><td>3 DP</td><td>Mega</td><td>+2 Armor, +2 Health; -1 Potenza Effetti Negativi in arrivo; contro Danno Unalterable, tira un d6 per ogni punto subito: ogni Successo lo riduce di 1.</td></tr>
+    <tr><td>Shining</td><td>3 DP</td><td>Mega</td><td>+2 Armor, +2 Health; -1 Potenza Effetti Negativi in arrivo; Pool per ridurre il Danno Unalterable subito.</td></tr>
   </table>
   <h3 class="rule-h3" id="pc-6-09b">6.09b — Digizoid Weaponry</h3>
   <table class="rules-table">
@@ -858,22 +715,22 @@
     <tr><td>Cursed</td><td>1 DP</td><td>Mega + Weapon</td><td>+2 Accuracy, +1 Danno; +2 Danno extra sotto metà Wound Box.</td></tr>
     <tr><td>Adaptive</td><td>2 DP</td><td>Mega + Weapon</td><td>4 punti a inizio turno tra Accuracy/Danno; immune a [DISARM].</td></tr>
     <tr><td>Sharp</td><td>2 DP</td><td>Mega + Weapon</td><td>+4 Accuracy; [DAMAGE][WEAPON] infligge 2 Danno Unalterable extra.</td></tr>
-    <tr><td>Flexible</td><td>3 DP</td><td>Mega + Weapon</td><td>+1 BIT, +3 Dodge; su [RANGE][WEAPON] estende il Reach a 2 zone; su [MELEE][WEAPON] colpisce anche la zona adiacente come un Rank di Reach: Wide Swings (si somma a un'eventuale Reach già posseduta); Escape the Clash automatico.</td></tr>
+    <tr><td>Flexible</td><td>3 DP</td><td>Mega + Weapon</td><td>+1 BIT, +3 Dodge; +1 Range o Reach; Escape the Clash automatico.</td></tr>
     <tr><td>Heavy</td><td>3 DP</td><td>Mega + Weapon</td><td>+5 Danno, -1 Movement, +1 DOS; applica [HEAVY] 1 round su [DAMAGE][WEAPON].</td></tr>
     <tr><td>Light</td><td>3 DP</td><td>Mega + Weapon</td><td>+3 Accuracy, +3 Danno, 1 Successo automatico Accuracy (si somma a Certain Strike); +1 Azione extra (Bolster/Move/Difficult Move).</td></tr>
-    <tr><td>Shining</td><td>3 DP</td><td>Mega + Weapon</td><td>+5 Accuracy, +1 Danno; danno minimo 2 su [MELEE], +1 Durata su [SUPPORT]; su [RANGE] estende il Reach a 2 zone (se non lo è già); +1 IP Temporaneo all'Iniziativa.</td></tr>
-    <tr><td>Pure</td><td>3 DP</td><td>Mega + Weapon + 3 Rank Algorithm</td><td>+2 Accuracy/Danno; guadagna il Tag [OFFHAND] (come Weapon Rank 2), combinabile su Signature Move fino a 4+Battery. Chi applica [DISARM] deve scegliere se colpire [WEAPON] o [OFFHAND], non entrambi insieme.</td></tr>
+    <tr><td>Shining</td><td>3 DP</td><td>Mega + Weapon</td><td>+5 Accuracy, +1 Danno; danno minimo 2 su [MELEE], +1 Durata su [SUPPORT]; +1 IP Temporaneo all'Iniziativa.</td></tr>
+    <tr><td>Pure</td><td>3 DP</td><td>Mega + Weapon + 3 Rank Algorithm</td><td>+2 Accuracy/Danno; guadagna il Tag [OFFHAND] (come Weapon Rank 2), combinabile su Signature Move fino a 4+Battery.</td></tr>
   </table>
 
   <h2 class="rule-h2" id="pc-6-10">6.10 — Gain Force Qualities</h2>
   <p>I <b>Gain Force</b> (o "inForce") sono sequenze speciali sbloccate spingendo l'evoluzione al limite. Solo da Ultimate in su; se ne può acquistare solo una. Un Ultimate ha accesso solo a Overwrite.</p>
-  <div class="quality-card"><span class="qname">Overwrite</span><span class="qcost">1 DP</span><p>Trigger. Richiede Ultimate e 1 Rank di Instinct; incompatibile con Algorithm/altri Gain Force. 1 Azione per attivarlo (disattivabile come Azione Libera nel tuo turno): da quel momento, ogni Effetto esterno subito viene negato perdendo Wound Box pari al doppio del suo costo in DP (non può portarti a 0 Ferite: in tal caso l'Effetto non viene negato). Perdere Ferite così dà Resolve per Combat Monster. Non funziona su Effetti senza costo (es. [DEBILITATE]) o auto-inflitti dalle tue Qualities (es. Overclock).</p></div>
-  <div class="quality-card"><span class="qname">Undying inForce</span><span class="qcost">2 DP</span><p>Static. Richiede Mega e Instinct; incompatibile con Algorithm/altri Gain Force. Sotto metà Wound Box, [REGEN] passivo pari ai Rank in Instinct (nessun effetto a 0 Ferite; se subisci [CLEANSE], la riduzione dura solo 1 round). Con Second Wind, ignora il limite "non nello stesso turno" e ottiene Rank in Instinct usi extra. Una volta a round, ritira gli 1 su un Health Check (anche i 2, fino a max 3 valori, con Vital Energy).</p></div>
-  <div class="quality-card"><span class="qname">Temporal inForce</span><span class="qcost">2 DP</span><p>Attack/Trigger. Richiede Mega e Instinct; incompatibile con Algorithm/altri Gain Force. Non si tira più l'Iniziativa: scegli la propria posizione nell'ordine dei turni (nessun Interrupt altrui durante il tuo turno, salvo Hold Action); ogni due turni puoi riaggiustare la tua posizione. Una volta a round, ritira gli 1 su un Accuracy Pool (anche i 2, fino a max 3 valori, con Huge Power).</p></div>
-  <div class="quality-card"><span class="qname">Omniscient inForce</span><span class="qcost">2 DP</span><p>Trigger. Richiede Mega e Instinct; incompatibile con Algorithm/altri Gain Force. Hold Action gratuita una volta a turno, utilizzabile anche su di sé senza Tamer (sommi i Rank in Instinct al Pool Check fatto così); ignora il limite "un Attacco a turno" quando usato con Hold Action. Se combinata con una Hold Action da 2 Azioni, puoi usarla per un'Azione che ne costa 2 (es. Called Shot). Una volta a round, ritira gli 1 su un Dodge Pool (anche i 2, fino a max 3 valori, con Avoidance).</p></div>
-  <div class="quality-card"><span class="qname">Digital Hazard</span><span class="qcost">3 DP</span><p>Attack/Trigger. Richiede Mega e Instinct; incompatibile con Algorithm/altri Gain Force. [HAZARD] sostituisce i Tag [MELEE]/[RANGE]/[DAMAGE]/[SUPPORT]: danno automatico (nessun tiro, dopo Armor) a tutto entro 1 zona, +Danno pari ai Rank in Instinct; non può avere altri Tag oltre a quelli di Effetto, e serve almeno 4 Danno per applicare un Effetto eventualmente presente. Ogni uso oltre il primo costa Wound Box pari all'SV (tranne su Signature Move; non dà Resolve).</p></div>
-  <div class="quality-card"><span class="qname">Zero Unit</span><span class="qcost">3 DP</span><p>Attack/Trigger. Richiede Mega e Instinct; incompatibile con Algorithm/altri Gain Force. [ZERO] su [SUPPORT] (una volta a combattimento, 2 Azioni, non su Area Attack) su tutti gli alleati entro il proprio Reach (in zone): fa evolvere gratis un alleato con uno Stage superiore sbloccato (se richiede Evolution Point, si considera come se ne avesse già spesi pari ai Rank in Instinct, potendone spendere altri se servono), oppure resuscita un alleato Sconfitto con Wound Box pari al doppio dei Rank in Instinct (se era a uno Stage più alto prima di Sconfitta, torna a quello Stage con le Wound Box date; nessun effetto su chi è tornato a Digiuovo). Su Signature Move, il bonus a Evolution Point/Wound Box aumenta anche con la Battery. Se un Effetto Positivo è sullo stesso Attacco, si applica automaticamente senza tiri per un numero di round pari ai Rank in Instinct, a un solo bersaglio.</p></div>
-  <div class="quality-card"><span class="qname">Pure Overwrite</span><span class="qcost">2 DP</span><p>Static. Richiede Mega, Instinct e 3 Rank di Algorithm; incompatibile con altri Gain Force. Immunità a tutti gli Effetti Negativi da 2 DP o meno (non sopprimibile); Second Wind riutilizzabile senza consumare usi (costo 1 Azione extra), anche con 0 usi rimasti.</p></div>
+  <div class="quality-card"><span class="qname">Overwrite</span><span class="qcost">1 DP</span><p>Trigger. Richiede Ultimate e 1 Rank di Instinct; incompatibile con Algorithm/altri Gain Force. 1 Azione per attivarlo: da quel momento, ogni Effetto esterno subito viene negato perdendo Wound Box pari al doppio del suo costo in DP.</p></div>
+  <div class="quality-card"><span class="qname">Undying inForce</span><span class="qcost">2 DP</span><p>Static. Richiede Mega e Instinct. Sotto metà Wound Box, [REGEN] passivo pari ai Rank in Instinct; con Second Wind, ignora il limite "non nello stesso turno" e ottiene usi extra.</p></div>
+  <div class="quality-card"><span class="qname">Temporal inForce</span><span class="qcost">2 DP</span><p>Attack/Trigger. Richiede Mega e Instinct. Non si tira più l'Iniziativa: scegli la propria posizione nell'ordine dei turni (nessun Interrupt altrui durante il tuo turno, salvo Hold Action).</p></div>
+  <div class="quality-card"><span class="qname">Omniscient inForce</span><span class="qcost">2 DP</span><p>Trigger. Richiede Mega e Instinct. Hold Action gratuita una volta a turno, utilizzabile anche su di sé senza Tamer; ignora il limite "un Attacco a turno" quando usato con Hold Action.</p></div>
+  <div class="quality-card"><span class="qname">Digital Hazard</span><span class="qcost">3 DP</span><p>Attack/Trigger. Richiede Mega e Instinct. [HAZARD] sostituisce i Tag [MELEE]/[RANGE]/[DAMAGE]/[SUPPORT]: danno automatico (nessun tiro) a tutto entro metà Range; ogni uso oltre il primo costa Wound Box pari all'SV (tranne su Signature Move).</p></div>
+  <div class="quality-card"><span class="qname">Zero Unit</span><span class="qcost">3 DP</span><p>Attack/Trigger. Richiede Mega e Instinct. [ZERO] su [SUPPORT] (una volta a combattimento, 2 Azioni): fa evolvere gratis un alleato oppure resuscita un alleato Sconfitto con Wound Box pari al doppio dei Rank in Instinct.</p></div>
+  <div class="quality-card"><span class="qname">Pure Overwrite</span><span class="qcost">2 DP</span><p>Static. Richiede Mega, Instinct e 3 Rank di Algorithm. Immunità a tutti gli Effetti Negativi da 2 DP o meno (non sopprimibile); Second Wind riutilizzabile senza consumare usi (costo 1 Azione extra).</p></div>
 </section>
 
 <section class="content" id="pc-7">
@@ -887,33 +744,33 @@
   <div class="quality-card"><span class="qname">Merciful Mode</span><span class="qcost">Gratis</span><p>Static. Gli Attacchi sono non letali di default: solo Hold Back invece di Attack, ma utilizzabile in qualsiasi Stance.</p></div>
   <div class="quality-card"><span class="qname">Slayer</span><span class="qcost">Gratis</span><p>Static. Scegli una Famiglia/Tipo/Elemento: +Accuracy pari al DOS contro quei nemici, ma se manchi un Attacco che ne beneficiava subisci Danno Unalterable pari all'SV.</p></div>
   <div class="quality-card"><span class="qname">Violent Overwrite</span><span class="qcost">Gratis</span><p>Static. A inizio round, 1d6: 1 = 2 Danno Unalterable; 2 = recupera 2 Wound Box.</p></div>
-  <div class="quality-card"><span class="qname">Critical Arms</span><span class="qcost">Gratis</span><p>Attack. Richiede 1+ Rank di Weapon. Tira 2d6 extra ("Critical Dice") su ogni Attacco [WEAPON]: 2 = manca automaticamente e subisce [DISARM] fino a fine Combattimento o finché non spende 2 Azioni per rimuoverlo; 12 = +3 Successi Accuracy, colpisce comunque anche se avrebbe mancato.</p></div>
+  <div class="quality-card"><span class="qname">Critical Arms</span><span class="qcost">Gratis</span><p>Attack. Richiede 1+ Rank di Weapon. Tira 2d6 extra ("Critical Dice") su ogni Attacco [WEAPON]: 2 = manca automaticamente e subisce [DISARM]; 12 = +3 Successi Accuracy, colpisce comunque anche se avrebbe mancato.</p></div>
   <div class="quality-card"><span class="qname">Lucky Miss</span><span class="qcost">Gratis</span><p>Static. Tira 2d6 extra ("Lucky Dice") su ogni Dodge: 2 = Dodge trattato come 0; 12 = +3 Successi Dodge, e se comunque colpito il danno è dimezzato con -1 Potenza/Durata Effetti.</p></div>
   <div class="quality-card"><span class="qname">Innate Talent</span><span class="qcost">Gratis</span><p>Static. -1 a tutte le Stat; in cambio, 2 Skill dello stesso Attributo trattate come Prodigious Skill.</p></div>
   <div class="quality-card"><span class="qname">Vengeful Charge</span><span class="qcost">Gratis</span><p>Static. Non guadagna più Battery a inizio turno; guadagna 3 Battery in un colpo solo quando scende sotto metà Wound Box per la prima volta.</p></div>
-  <div class="quality-card"><span class="qname">Justice Is Blind</span><span class="qcost">Gratis</span><p>Trigger/Static. Il Digimon è sempre cieco di base (oltre a essere immune a [BLIND]), con Prodigious Skill (Awareness) per gli altri sensi, e tratta tutti come Obscured invece che Hidden; ignora le illusioni visive. Contro un singolo bersaglio, può ignorare la penalità da Obscured spendendo 1 Azione extra (o il proprio Tamer può usare la sua).</p></div>
-  <div class="quality-card"><span class="qname">Inconsistent Size</span><span class="qcost">Gratis</span><p>Trigger/Static. Richiede Champion. All'evoluzione a questo Stage (nessun effetto se diventa il suo Stage di Default), tira 1d6 per la Size casuale (1=Small, 2-3=Medium, 4-5=Large, 6=Huge) fino a fine combattimento.</p></div>
+  <div class="quality-card"><span class="qname">Justice Is Blind</span><span class="qcost">Gratis</span><p>Trigger/Static. Il Digimon è cieco: immune a [BLIND], Prodigious Skill (Awareness) per gli altri sensi, tratta tutti come Obscured invece che Hidden; ignora le illusioni visive.</p></div>
+  <div class="quality-card"><span class="qname">Inconsistent Size</span><span class="qcost">Gratis</span><p>Trigger/Static. Richiede Champion. All'evoluzione a questo Stage, tira 1d6 per la Size casuale (1=Small, 2-3=Medium, 4-5=Large, 6=Huge) fino a fine combattimento.</p></div>
   <div class="quality-card"><span class="qname">Sealed Weapon</span><span class="qcost">Gratis</span><p>Static. Richiede 1+ Rank di Weapon. Non può usare Attacchi [WEAPON] finché non scende sotto metà Wound Box; da quel momento [WEAPON] è trattato 1 Rank più alto.</p></div>
   <div class="quality-card"><span class="qname">Awakened Instinct</span><span class="qcost">Gratis</span><p>Static. Richiede 1+ Rank di Instinct. Niente bonus Dodge/Movement da Instinct finché non scende sotto metà Wound Box; da quel momento guadagna Wound Box Temporanee pari al doppio dei Rank in Instinct.</p></div>
-  <div class="quality-card"><span class="qname">Positive Reinforcement</span><span class="qcost">Gratis</span><p>Trigger/Static. Richiede Combat Monster, Conjurer o Summoner. Un "Mood Meter" (parte da 3): +1 colpendo/schivando, -1 mancando/subendo un colpo. Sotto 3 è "Poor": -1 Accuracy/Armor per ogni punto sotto 3 (Mood 1 = -2, Mood 2 = -1). Sopra 4 è "Good": +1 Dodge/Danno per ogni punto sopra 4 (Mood 5 = +1, Mood 6 = +2). Se il Mood scende a 1, il Tamer può spendere 2 Azioni per riportarlo a 4.</p></div>
+  <div class="quality-card"><span class="qname">Positive Reinforcement</span><span class="qcost">Gratis</span><p>Trigger/Static. Richiede Combat Monster, Conjurer o Summoner. Un "Mood Meter" (parte da 3): +1 colpendo/schivando, -1 mancando/subendo un colpo. A 1-2 è "Poor" (-Accuracy/Armor), a 5-6 è "Good" (+Dodge/Danno).</p></div>
 
   <h2 class="rule-h2" id="pc-7-02">7.02 — Qualities Negative</h2>
   <p>Concedono un malus meccanico in cambio di DP bonus. Il totale di DP ottenibile da Qualities Negative è pari all'SV del Digimon. Prenderle è sempre facoltativo — verifica con il GM se sono ammesse nella campagna.</p>
-  <div class="quality-card"><span class="qname">Bulky</span><span class="qcost">-1 DP/Rank — max 3</span><p>Static. Incompatibile con Accelerate. -1 Movement per Rank; con 1+ Rank e Teleport, impedisce l'estensione del Teleport a 2 zone anche con Instinct/Speedster/Transporter.</p></div>
+  <div class="quality-card"><span class="qname">Bulky</span><span class="qcost">-1 DP/Rank — max 3</span><p>Static. Incompatibile con Accelerate. -1 Movement per Rank (e -1 al raggio del Teleport, se presente).</p></div>
   <div class="quality-card"><span class="qname">Low Vitality</span><span class="qcost">-3 DP</span><p>Static. Wound Box massime dimezzate; non può guadagnare Wound Box Temporanee.</p></div>
-  <div class="quality-card"><span class="qname">Complex Signature</span><span class="qcost">-2 DP</span><p>Static. [COMPLEX] sulla Signature Move (che deve già avere 2 Tag non-Negative e non richiedere già 2+ Azioni, es. con [HASTE]): richiede 1 Azione extra.</p></div>
-  <div class="quality-card"><span class="qname">Faulty Battery</span><span class="qcost">-2 DP</span><p>Static. Se inizia il turno con 3 Battery, perde tutta la Battery e Wound Box pari a SV+3 (non dà Resolve).</p></div>
-  <div class="quality-card"><span class="qname">Vulnerable</span><span class="qcost">-1 DP/Rank — max 3</span><p>Static. Incompatibile con Focused Resistance/Immunity; non prendibile se la Resistance è già a 0. -Resistance pari ai Rank; se un Effetto viene rimosso anticipatamente, perde Wound Box pari al costo in DP dell'Effetto (non dà Resolve).</p></div>
-  <div class="quality-card"><span class="qname">Fumbled Piercing</span><span class="qcost">-1 DP/Rank — max 3 (Limited)</span><p>Attack. Richiede Armor Piercing (max Rank = Rank in Certain Strike). [FUMBLE] sullo stesso Attacco: il bersaglio è trattato come se avesse Successi Dodge aggiuntivi pari al doppio dei Rank per calcolare il danno Unalterable; a parità di Successi, l'Attacco è considerato un miss.</p></div>
-  <div class="quality-card"><span class="qname">Weakened Strike</span><span class="qcost">-1 DP/Rank — max 3 (Limited)</span><p>Attack. Richiede Certain Strike (max Rank = Rank in Certain Strike). [FRAGILE] sullo stesso Attacco: -Danno e -Potenza/Durata Effetti pari ai Rank (non su [SUPPORT]).</p></div>
+  <div class="quality-card"><span class="qname">Complex Signature</span><span class="qcost">-2 DP</span><p>Static. [COMPLEX] sulla Signature Move (che deve già avere 2 Tag non-Negative): richiede 1 Azione extra.</p></div>
+  <div class="quality-card"><span class="qname">Faulty Battery</span><span class="qcost">-2 DP</span><p>Static. Se inizia il turno con 3 Battery, perde tutta la Battery e Wound Box pari a SV+3.</p></div>
+  <div class="quality-card"><span class="qname">Vulnerable</span><span class="qcost">-1 DP/Rank — max 3</span><p>Static. Incompatibile con Focused Resistance/Immunity. -Resistance pari ai Rank; se un Effetto viene rimosso anticipatamente, perde Wound Box pari al costo in DP dell'Effetto.</p></div>
+  <div class="quality-card"><span class="qname">Fumbled Piercing</span><span class="qcost">-1 DP/Rank — max 3 (Limited)</span><p>Attack. Richiede Armor Piercing. [FUMBLE] sullo stesso Attacco: il bersaglio è trattato come se avesse Successi Dodge aggiuntivi pari al doppio dei Rank per calcolare il danno Unalterable; a parità di Successi, l'Attacco è considerato un miss.</p></div>
+  <div class="quality-card"><span class="qname">Weakened Strike</span><span class="qcost">-1 DP/Rank — max 3 (Limited)</span><p>Attack. Richiede Certain Strike. [FRAGILE] sullo stesso Attacco: -Danno e -Potenza/Durata Effetti pari ai Rank (non su [SUPPORT]).</p></div>
   <div class="quality-card"><span class="qname">Indiscriminate Targeting</span><span class="qcost">-1 DP</span><p>Static. Richiede Area Attack; incompatibile con Zoner. Le Area Attack non distinguono più alleati da nemici.</p></div>
-  <div class="quality-card"><span class="qname">Underwhelming</span><span class="qcost">-1 DP/Rank — max 2 (Limited)</span><p>Static. Richiede Huge Power (max Rank = Rank in Huge Power). Ogni uso di Huge Power riduce i Successi finali di 1 per Rank; non più utilizzabile su [CERTAIN].</p></div>
-  <div class="quality-card"><span class="qname">Broadside</span><span class="qcost">-1 DP/Rank — max 2 (Limited)</span><p>Static. Richiede Avoidance (max Rank = Rank in Avoidance). Ogni uso di Avoidance riduce i Successi Dodge finali di 1 per Rank.</p></div>
-  <div class="quality-card"><span class="qname">Illness</span><span class="qcost">-1 DP/Rank — max 2 (Limited)</span><p>Static. Richiede Vital Energy (max Rank = Rank in Vital Energy). Ogni uso riduce i Successi Health finali di 1 per Rank.</p></div>
-  <div class="quality-card"><span class="qname">System Error</span><span class="qcost">-1 DP/Rank — max 2</span><p>Static. Richiede System Boost (max Rank = Rank in System Boost). -1 a una Stat Derivata non potenziata da System Boost, per Rank.</p></div>
-  <div class="quality-card"><span class="qname">Natural Weakness</span><span class="qcost">-1 DP/Rank — max 2 (Limited)</span><p>Static. Richiede Naturewalk (max Rank = Rank in Naturewalk); incompatibile con Elemental Myriad. Scegli 2 Elementi non posseduti per Rank: gli Elemental Force di quei tipi infliggono danno doppio.</p></div>
+  <div class="quality-card"><span class="qname">Underwhelming</span><span class="qcost">-1 DP/Rank — max 2 (Limited)</span><p>Static. Richiede Huge Power. Ogni uso di Huge Power riduce i Successi finali di 1 per Rank; non più utilizzabile su [CERTAIN].</p></div>
+  <div class="quality-card"><span class="qname">Broadside</span><span class="qcost">-1 DP/Rank — max 2 (Limited)</span><p>Static. Richiede Avoidance. Ogni uso di Avoidance riduce i Successi Dodge finali di 1 per Rank.</p></div>
+  <div class="quality-card"><span class="qname">Illness</span><span class="qcost">-1 DP/Rank — max 2 (Limited)</span><p>Static. Richiede Vital Energy. Ogni uso riduce i Successi Health finali di 1 per Rank.</p></div>
+  <div class="quality-card"><span class="qname">System Error</span><span class="qcost">-1 DP/Rank — max 2</span><p>Static. Richiede System Boost. -1 a una Stat Derivata non potenziata da System Boost, per Rank.</p></div>
+  <div class="quality-card"><span class="qname">Natural Weakness</span><span class="qcost">-1 DP/Rank — max 2 (Limited)</span><p>Static. Richiede Naturewalk; incompatibile con Elemental Myriad. Scegli 2 Elementi non posseduti: gli Elemental Force di quei tipi infliggono danno doppio.</p></div>
   <div class="quality-card"><span class="qname">Exploitable Program</span><span class="qcost">-1 DP</span><p>Static. La TN di ogni Quality nemica che richiede una tua Stat Derivata (es. Mighty Blow, Substitute) è ridotta di 3.</p></div>
-  <div class="quality-card"><span class="qname">Boiling Point</span><span class="qcost">-2 DP</span><p>Static. Richiede Combat Monster. A Resolve massimo a inizio turno, Check CPU (Endurance) TN 15-DOS: Fallimento Critico = perde Wound Box pari al Resolve attuale (invece di metà) e lo azzera; Fallimento = perde Wound Box pari a metà Resolve e lo azzera; Successo = la TN sale del Resolve massimo fino a fine Combattimento; Successo Critico = come Successo ma la TN sale solo di metà del Resolve massimo.</p></div>
+  <div class="quality-card"><span class="qname">Boiling Point</span><span class="qcost">-2 DP</span><p>Static. Richiede Combat Monster. A Resolve massimo a inizio turno, Check CPU (Endurance) TN 15-DOS: fallimento = perde Wound Box pari a metà Resolve (o tutto il Resolve su Critico) e lo azzera.</p></div>
 </section>
 
 
@@ -985,7 +842,7 @@
     <tr><td>Ultimate</td><td>3 Punti</td></tr>
     <tr><td>Mega o oltre</td><td>5 Punti</td></tr>
   </table>
-  <p>Evolvere subito prima dell'Iniziativa richiede 1 Azione extra (come Interrupt), il che significa non avere alcuna Azione nel primo turno di Combattimento. Non serve spendere punti per restare nel <b>Default Range</b>. Si possono spendere IP al posto degli Evolution Point (1 IP per punto).</p>
+  <p>Evolvere subito prima dell'Iniziativa richiede 1 Azione extra (come Interrupt). Non serve spendere punti per restare nel <b>Default Range</b>. Si possono spendere IP al posto degli Evolution Point (1 IP per punto).</p>
   <h3 class="rule-h3" id="pc-8-05b">8.05b — Default Range</h3>
   <p>Il Default Range determina gli Stage in cui il Digimon può stare comodamente (di norma pari al proprio SV). Si parte da Range 2 (Rookie). Il GM sceglie quando aumenta, con due template di riferimento:</p>
   <table class="rules-table">
@@ -994,7 +851,7 @@
     <tr><td>Complete (stile videogioco)</td><td>Milestone 3</td><td>Milestone 6</td><td>Milestone 9</td></tr>
   </table>
   <h3 class="rule-h3" id="pc-8-05c">8.05c — Default Stage e Forzare l'Evoluzione</h3>
-  <p>Durante un Rest, il Digimon può cambiare il proprio Default Stage a uno Stage nel proprio Default Range (il GM decide se può restarci permanentemente). Un Tamer può anche <b>forzare l'Evoluzione</b> con 2 Azioni: Check di Willpower, TN 18 + Evolution Point normalmente richiesti (gli IP non sono utilizzabili su questo Check). Su Successo, il Digimon evolve per 3 round (incluso quello in cui evolve) poi torna sotto il Default Stage; su Critico, torna esattamente al Default Stage. Il fallimento può avere <b>conseguenze gravi</b>.</p>
+  <p>Durante un Rest, il Digimon può cambiare il proprio Default Stage a uno Stage nel proprio Default Range (il GM decide se può restarci permanentemente). Un Tamer può anche <b>forzare l'Evoluzione</b> con 2 Azioni: Check di Willpower, TN 18 + Evolution Point normalmente richiesti (gli IP non sono utilizzabili su questo Check). Su Successo, il Digimon evolve per 3 round poi torna sotto il Default Stage; su Critico, torna esattamente al Default Stage. Il fallimento può avere <b>conseguenze gravi</b>.</p>
 </section>
 
 <section class="content" id="pc-9">
@@ -1026,10 +883,10 @@
   <p>Il <b>Danno Unalterable</b> ignora l'Armor, colpendo direttamente Wound Box (anche Temporanee). Solo <b>Shining Digizoid Armor</b> può ridurlo. Non conta come "danno inflitto" ai fini di attivare Qualities/Effetti dell'attaccante.</p>
 
   <h2 class="rule-h2" id="pc-9-03">9.03 — Range</h2>
-  <p>Il campo di battaglia è diviso in <b>3 zone</b>: <b>Corto, Medio, Lungo</b>. Un Attacco <b>[MELEE]</b> richiede che il bersaglio sia nella stessa zona (Corto). Un Attacco <b>[RANGE]</b> ha un <b>Reach di 1 zona</b> (colpisce solo la zona adiacente) o <b>2 zone</b> (colpisce qualunque zona) a seconda dell'Attacco/Qualities possedute; se il bersaglio è oltre il Reach, l'Attacco non può essere tentato. Attaccare a distanza impone una penalità ad Accuracy pari a <b>-2</b> (1 zona di distanza) o <b>-4</b> (2 zone di distanza), indipendentemente dal Reach disponibile.</p>
+  <p><b>Range = 3 + BIT</b>. <b>Effective Limit = Range + SV</b>. Un Attacco [MELEE] richiede adiacenza. Un Attacco [RANGE] richiede linea di vista/percezione e può colpire entro l'Effective Limit; oltre il Range (fino all'Effective Limit) si subisce <b>-1 Accuracy per spazio</b>. Attaccare con [RANGE] con un nemico adiacente costa <b>-3 Accuracy</b>.</p>
 
   <h2 class="rule-h2" id="pc-9-04">9.04 — Tamer in Combattimento</h2>
-  <p>Attaccare come Tamer è sconsigliato e pericoloso. Un Tamer che attacca a distanza raggiunge solo la zona adiacente (Reach 1 zona). Contro un altro Tamer: Check contrapposto Precision vs Evade. Contro un Digimon: Check Precision, TN 12 + doppio SV bersaglio. Il colpo infligge 1 Danno Unalterable (2 su Critico), ma <b>non ha effetto</b> su Digimon Huge/Gigantic/Mega o superiori.</p>
+  <p>Attaccare come Tamer è sconsigliato e pericoloso. Un Tamer che attacca a distanza raggiunge solo 2 + metà Precision spazi. Contro un altro Tamer: Check contrapposto Precision vs Evade. Contro un Digimon: Check Precision, TN 12 + doppio SV bersaglio. Il colpo infligge 1 Danno Unalterable (2 su Critico), ma <b>non ha effetto</b> su Digimon Huge/Gigantic/Mega o superiori.</p>
   <p>Schivare come Tamer: contro un altro umano, Check Evade vs Precision. Contro un Digimon: Check Evade, TN 12 + doppio SV attaccante.</p>
   <table class="rules-table">
     <tr><th>Risultato</th><th>Danno subito</th></tr>
@@ -1062,8 +919,8 @@
     <tr><td>Stance Change</td><td>1 (solo Digimon)</td><td>Cambia Stance. Una volta a turno.</td></tr>
     <tr><td>Clash</td><td>1</td><td>Inizia un Clash (9.08). Una volta a turno contro lo stesso bersaglio.</td></tr>
     <tr><td>Resist</td><td>1-2 (solo Digimon)</td><td>Riduce la Potenza di tutti gli Effetti attivi di 1 per Azione spesa (a 0 termina l'Effetto).</td></tr>
-    <tr><td>Bolster</td><td>trasforma 1→2</td><td>+2 (Tamer) o +SV nel Default Range (Digimon) a un Pool Check (anche per potenziare il bonus di Direct, Aid o Guard). Utilizzabile anche come Interrupt.</td></tr>
-    <tr><td>Aid</td><td>1 (solo Digimon)</td><td>+SV al prossimo Accuracy/Dodge Pool di un alleato entro il proprio Reach (in zone). Una volta a turno.</td></tr>
+    <tr><td>Bolster</td><td>trasforma 1→2</td><td>+2 (Tamer) o +SV nel Default Range (Digimon) a un Pool Check. Utilizzabile anche come Interrupt.</td></tr>
+    <tr><td>Aid</td><td>1 (solo Digimon)</td><td>+SV al prossimo Accuracy/Dodge Pool di un alleato entro Range. Una volta a turno.</td></tr>
     <tr><td>Guard</td><td>1 (solo Digimon)</td><td>+SV al proprio prossimo Dodge Pool (non conta per le penalità da Dodge ripetuto). Una volta a turno.</td></tr>
   </table>
   <h3 class="rule-h3" id="pc-9-06b">9.06b — Azioni Speciali</h3>
@@ -1071,11 +928,11 @@
     <tr><th>Azione</th><th>Costo</th><th>Effetto</th></tr>
     <tr><td>Called Shot: Sharpshooter</td><td>2 (solo Digimon)</td><td>Attacco non-Area con -Accuracy pari all'SV bersaglio; se colpisce, effetto extra a discrezione del GM (vedi esempi in 9.06c).</td></tr>
     <tr><td>Called Shot: Focused</td><td>2 (solo Digimon)</td><td>Attacco con Effetto, -Accuracy pari all'SV bersaglio; se colpisce, l'Effetto ignora Resistance/immunità/Overwrite. Una volta a combattimento.</td></tr>
-    <tr><td>Direct</td><td>1-2 (solo Tamer)</td><td>+Charisma (1 Az.) o +Highest Attribute (2 Az.) al prossimo Pool Accuracy/Dodge di un Digimon (-2 se non è il proprio), fino a quando non viene usato o il Tamer ripete l'Azione. Una volta a turno.</td></tr>
+    <tr><td>Direct</td><td>1-2 (solo Tamer)</td><td>+Charisma (1 Az.) o +Highest Attribute (2 Az.) al prossimo Pool Accuracy/Dodge di un Digimon (-2 se non è il proprio). Una volta a turno.</td></tr>
     <tr><td>Reinforce</td><td>1-2 (solo Tamer)</td><td>Pool di Body (1 Az.) o Highest Attribute (2 Az.): il Digimon ottiene Wound Box Temporanee pari ai Successi fino al prossimo turno del Tamer. Una volta a turno.</td></tr>
-    <tr><td>Hold Breath</td><td>1</td><td>Evita il danno da annegamento quel turno; usi limitati a combattimento (=CPU). Se usata preventivamente mentre si ha ancora aria disponibile, non consuma un utilizzo.</td></tr>
-    <tr><td>Hold Action</td><td>2 (solo Tamer)</td><td>Dichiara un trigger specifico (non le proprie azioni): se si verifica prima del prossimo turno, il Digimon esegue 1 Azione predefinita (+Intelligence del Tamer al tiro; l'azione non può bypassare i limiti naturali di turno, es. un Attacco già fatto). Se usata per iniziare un Clash, il Contest si tira all'inizio del turno di chi l'ha dichiarato. Beneficiandone più volte (es. Omniscient inForce), va scelto un nuovo trigger ogni volta.</td></tr>
-    <tr><td>Reposition</td><td>1-2 (solo Tamer)</td><td>Pool di Agility (1 Az.) o Highest Attribute (2 Az.): il Digimon si muove di 1 zona per Successo (max 2 zone), anche in Terreno Difficile (servono 2 Successi per zona se usata per nuotare/saltare senza il relativo Extra Movement). Una volta a turno.</td></tr>
+    <tr><td>Hold Breath</td><td>1</td><td>Evita il danno da annegamento quel turno; usi limitati a combattimento (=CPU).</td></tr>
+    <tr><td>Hold Action</td><td>2 (solo Tamer)</td><td>Dichiara un trigger specifico; se si verifica prima del prossimo turno, il Digimon esegue 1 Azione predefinita (+Intelligence del Tamer al tiro).</td></tr>
+    <tr><td>Reposition</td><td>1-2 (solo Tamer)</td><td>Pool di Agility (1 Az.) o Highest Attribute (2 Az.): il Digimon si muove di spazi pari ai Successi, anche in Terreno Difficile. Una volta a turno.</td></tr>
     <tr><td>Evolution</td><td>1-2</td><td>Tamer: dichiara l'Evoluzione (2 Az. come Interrupt prima dell'Iniziativa). Digimon (di solito NPC): evolve direttamente con 2 Azioni. Una volta a turno.</td></tr>
     <tr><td>Intercede</td><td>Interrupt</td><td>Si prende il colpo al posto di un alleato (vedi 9.07a).</td></tr>
   </table>
@@ -1089,32 +946,32 @@
   <p><b>Se un Tamer Intercede, scende automaticamente a 0 Wound Box</b>, salvo spendere 2 IP per Fate's Protection (resta a 1 Wound Box, una volta a combattimento).</p>
 
   <h2 class="rule-h2" id="pc-9-08">9.08 — Clash</h2>
-  <p>Durante un Clash, entrambi i partecipanti possono usare solo <b>1 Clash Action per turno</b> (costa 1 Azione) e vengono resettati a Neutral Stance. Se un Digimon non ha Azioni rimaste dopo aver iniziato un Clash, non ottiene una Clash Action quel turno e passa al prossimo in Iniziativa.</p>
+  <p>Durante un Clash, entrambi i partecipanti possono usare solo <b>1 Clash Action per turno</b> (costa 1 Azione) e vengono resettati a Neutral Stance.</p>
   <h3 class="rule-h3" id="pc-9-08a">9.08a — Iniziare un Clash</h3>
-  <p>1 Azione per iniziare (impossibile se affetto da [FEAR] causato dal bersaglio). Entrambi tirano un <b>Check di Clash</b> (+1 se più grandi); vince chi ottiene di più (parità: CPU più alto, poi il giocatore). Se il vincitore è 2+ Size più piccolo, deve subito uscire dal Clash (salvo Monster Strength). Il Check si ripete ogni round a inizio turno dell'iniziatore. Un Digimon con Substitute può spendere un uso per scappare da un Clash iniziato su di lui.</p>
+  <p>1 Azione per iniziare (impossibile se affetto da [FEAR] causato dal bersaglio). Entrambi tirano un <b>Check di Clash</b> (+1 se più grandi); vince chi ottiene di più (parità: CPU più alto, poi il giocatore). Se il vincitore è 2+ Size più piccolo, deve subito uscire dal Clash (salvo Monster Strength). Il Check si ripete ogni round a inizio turno dell'iniziatore.</p>
   <h3 class="rule-h3" id="pc-9-08b">9.08b — Clash Action del Controller</h3>
   <table class="rules-table">
     <tr><th>Azione</th><th>Effetto</th></tr>
-    <tr><td>Attack</td><td>[MELEE] non-Area contro l'avversario, che tira Dodge dimezzato. Con [CHARGE] e avversario di pari/minor Size, puoi muoverti fino a metà Movement trascinandolo; puoi spingerlo contro un muro per Crash Damage, ma lo subisci anche tu.</td></tr>
+    <tr><td>Attack</td><td>[MELEE] non-Area contro l'avversario, che tira Dodge dimezzato.</td></tr>
     <tr><td>Move</td><td>Si riposiziona restando adiacente (o entro Reach) all'avversario; può spostare l'avversario solo con Monster Strength.</td></tr>
-    <tr><td>Pin</td><td>L'avversario non può Escape né Clash Comeback; vince automaticamente il prossimo Contest salvo Contest Pin. Se in volo, entrambi cadono a terra e subiscono Crash Damage normale. Max 3 volte a combattimento.</td></tr>
-    <tr><td>End the Clash</td><td>Azione Gratuita: termina il Clash, libero di agire normalmente. Se usata subito dopo un Clash Contest, nessuno dei due viene forzato a Neutral Stance.</td></tr>
-    <tr><td>Throw</td><td>Lancia l'avversario di 1 zona (2 zone se CPU ≥5) (danno da Crash se applicabile), come Attacco [RANGE] con bonus Accuracy = CPU; termina il Clash. Non lanciabile se 2+ Size più grande, salvo Titan Power.</td></tr>
-    <tr><td>Finisher</td><td>Richiede Data Specialization: Wrestlemania. Check di Clash TN 12+CPU/RAM bersaglio (più alto) mentre si fa un Attacco; su Signature Move si aggiunge la Battery al Check. Il Clash finisce sempre dopo l'Attacco, qualsiasi sia l'esito. Fallimento Critico = l'Accuracy dell'Attacco è dimezzata; Fallimento = niente; Successo = scegli uno tra: un secondo Attacco o Lancio prima di finire il Clash (ignora "un Attacco a round"), oppure un salto con Crash Damage come se il bersaglio fosse Pinnato al culmine del salto, oppure un effetto stile Called Shot: Sharpshooter col permesso del GM; Successo Critico = come Successo, e un Attacco [DAMAGE] ottiene anche +3 Danno. Una volta usato, non riutilizzabile sullo stesso bersaglio per il resto del combattimento.</td></tr>
+    <tr><td>Pin</td><td>L'avversario non può Escape né Clash Comeback; vince automaticamente il prossimo Contest salvo Contest Pin. Max 3 volte a combattimento.</td></tr>
+    <tr><td>End the Clash</td><td>Azione Gratuita: termina il Clash, libero di agire normalmente.</td></tr>
+    <tr><td>Throw</td><td>Lancia l'avversario a 3+CPU spazi (danno da Crash se applicabile), come Attacco [RANGE] con bonus Accuracy = CPU; termina il Clash.</td></tr>
+    <tr><td>Finisher</td><td>Richiede Data Specialization: Wrestlemania. Check di Clash TN 12+CPU/RAM bersaglio per un Attacco speciale che chiude sempre il Clash.</td></tr>
   </table>
   <h3 class="rule-h3" id="pc-9-08c">9.08c — Clash Action dell'Opponent</h3>
   <table class="rules-table">
     <tr><th>Azione</th><th>Effetto</th></tr>
-    <tr><td>Weak Attack</td><td>[MELEE] disperato: danno dimezzato dopo Armor (o -1 Successo su [SUPPORT]); il Dodge del bersaglio è dimezzato. Se il bersaglio non è a portata Melee per via della Quality Reach, l'Attacco è comunque tentabile ma il Dodge è pieno, non dimezzato.</td></tr>
+    <tr><td>Weak Attack</td><td>[MELEE] disperato: danno dimezzato dopo Armor (o -1 Successo su [SUPPORT]); il Dodge del bersaglio è dimezzato.</td></tr>
     <tr><td>Clash Comeback</td><td>+3 al prossimo Clash Contest (non se Pinned, non come prima Azione dell'iniziatore).</td></tr>
     <tr><td>Contest Pin</td><td>1 Azione, Check CPU/RAM TN 12+CPU Controller: successo = rompe il Pin, +2 al prossimo Contest.</td></tr>
-    <tr><td>Escape the Clash</td><td>Ritenta il Clash Contest; se vince, il Clash finisce subito (il Controller può comunque iniziarne un altro quel round).</td></tr>
+    <tr><td>Escape the Clash</td><td>Ritenta il Clash Contest; se vince, il Clash finisce subito.</td></tr>
     <tr><td>Teleport</td><td>Con la Quality Teleport, usa l'uso Once per Combat per fuggire dal Clash.</td></tr>
   </table>
   <h3 class="rule-h3" id="pc-9-08d">9.08d — Attacchi dall'Esterno del Clash</h3>
   <p>Chi è in Clash non tira Dodge contro attacchi esterni, ma riduce il danno subito di metà del CPU combinato dei due partecipanti (senza penalità standard da Dodge). Un [SUPPORT] esterno tratta il bersaglio come se avesse Successi Dodge pari a metà RAM combinato (niente tiro Health per gli Effetti Positivi).</p>
   <h3 class="rule-h3" id="pc-9-08e">9.08e — Fermare un Clash dall'Esterno</h3>
-  <p>Un terzo partecipante può separare i due con 2 Azioni: Check CPU (chi separa, ed eventualmente il bersaglio se consenziente) contro Check RAM del Controller. Vince chi ottiene di più. Un Clash finisce anche se i due vengono separati oltre il Melee da [PUSH]/[PULL] (il Controller può opporsi con un Check CPU, TN 10+Potenza dell'Effetto; con Reach, il Clash si mantiene comunque entro il proprio Reach), oppure se il Controller subisce [FEAR] (dall'avversario), [STUN] o [PARALYZE].</p>
+  <p>Un terzo partecipante può separare i due con 2 Azioni: Check CPU (chi separa, ed eventualmente il bersaglio se consenziente) contro Check RAM del Controller. Vince chi ottiene di più. Un Clash finisce anche se i due vengono separati oltre il Melee da [PUSH]/[PULL] (il Controller può opporsi con un Check CPU, TN 10+Potenza dell'Effetto), oppure se il Controller subisce [FEAR] (dall'avversario), [STUN] o [PARALYZE].</p>
 
   <h2 class="rule-h2" id="pc-9-09">9.09 — Regole Aggiuntive di Combattimento</h2>
   <h3 class="rule-h3" id="pc-9-09a">9.09a — Vista in Combattimento</h3>
@@ -1122,11 +979,11 @@
     <tr><th>Stato</th><th>Effetto</th></tr>
     <tr><td>Unobscured</td><td>Nessuna penalità.</td></tr>
     <tr><td>Obscured</td><td>-3 Awareness per individuare; +1 Successo Dodge automatico contro chi lo considera Obscured.</td></tr>
-    <tr><td>Blinded</td><td>Niente Awareness basata sulla vista; tratta tutti come Hidden salvo un Awareness Check riuscito (TN 10, o il risultato dello Stealth Check del bersaglio se più alto; poi trattati come Obscured).</td></tr>
+    <tr><td>Blinded</td><td>Niente Awareness basata sulla vista; tratta tutti come Hidden salvo un Awareness Check riuscito (TN 10, poi trattati come Obscured).</td></tr>
   </table>
   <p>Il Naturewalk associato ignora le penalità di vista dovute al proprio Elemento.</p>
   <h3 class="rule-h3" id="pc-9-09b">9.09b — Stealth in Combattimento</h3>
-  <p>Stealth Check (TN 10) fuori dalla linea di vista per diventare <b>Hidden</b> — non bersagliabile da Attacchi/Effetti singoli (ma può comunque essere colpito da Area Attack) finché resta tale, interrompibile ristabilendo la linea di vista o interagendo. Un Awareness Check (TN = risultato dello Stealth) su un altro senso rivela la distanza, non la posizione esatta. Se Obscured, ci si può nascondere senza rompere la linea di vista.</p>
+  <p>Stealth Check (TN 10) fuori dalla linea di vista per diventare <b>Hidden</b> — non attaccabile finché resta tale, interrompibile ristabilendo la linea di vista o interagendo. Un Awareness Check (TN = risultato dello Stealth) su un altro senso rivela la distanza, non la posizione esatta. Se Obscured, ci si può nascondere senza rompere la linea di vista.</p>
   <h3 class="rule-h3" id="pc-9-09c">9.09c — Sommerso (Submerged)</h3>
   <p>Un Digimon completamente ricoperto (acqua, terra, neve) è <b>Submerged</b>: Obscured reciprocamente rispetto ai non sommersi (anche sottoterra, salvo barriera solida).</p>
   <h3 class="rule-h3" id="pc-9-09d">9.09d — Annegamento</h3>
@@ -1134,7 +991,7 @@
   <h3 class="rule-h3" id="pc-9-09e">9.09e — Wound Box Temporanee</h3>
   <p>Risorsa separata dalle Wound Box normali: possono superare il massimo, non si sommano tra fonti diverse (si tiene il valore più alto, salvo eccezioni indicate) e scompaiono alla scadenza indicata dall'Effetto/Quality che le ha concesse.</p>
   <h3 class="rule-h3" id="pc-9-09f">9.09f — Crash Damage</h3>
-  <p>Ignora l'Armor. Un Digimon lo riduce del proprio CPU (CPU+RAM con Tumbler, fino a 0); un Tamer lo riduce di 1 ma ne subisce solo la metà. Cadendo, si infliggono 2 danni per ogni zona di altezza oltre la prima. Essere lanciati contro un muro infligge Crash Damage pari a 2 per la zona non percorsa a causa dell'ostacolo.</p>
+  <p>Ignora l'Armor. Un Digimon lo riduce del proprio CPU (CPU+RAM con Tumbler, fino a 0); un Tamer lo riduce di 1 ma ne subisce solo la metà. Cadendo, si conta ogni spazio oltre il primo. Essere lanciati contro un muro infligge Crash Damage per ogni spazio non percorso a causa dell'ostacolo.</p>
   <h3 class="rule-h3" id="pc-9-09g">9.09g — Terreno</h3>
   <table class="rules-table">
     <tr><th>Tipo</th><th>Effetto</th></tr>
@@ -1147,10 +1004,10 @@
   <p>Una barriera che copre buona parte della linea di vista dà <b>+1 Successo Dodge automatico</b>; una copertura quasi totale dà <b>+2</b> (non si sommano al bonus da Obscured — si prende il più alto). Vale anche per il Melee.</p>
 
   <h2 class="rule-h2" id="pc-9-10">9.10 — Blast Evolution</h2>
-  <p>Evoluzione temporanea e rara, riservata di norma a Tamer e Partner. Richiede: Battery massima disponibile (viene consumata) e uno Stage superiore non ancora sbloccato naturalmente.</p>
+  <p>Evoluzione temporanea e rara, riservata di norma a Tamer e Partner. Richiede: Battery massima disponibile (viene consumata) e uno Stage superiore non ancora sbloccato naturalmente. Il Digimon <b>recupera tutte le Wound Box</b> in entrambe le varianti:</p>
   <ul>
-    <li><b>Blast Evolution Attack</b> (2 Azioni Digimon + 1 Azione Tamer): sale di Stage, <b>recupera tutte le Wound Box</b>, e usa un Attacco di quello Stage (non la Signature Move), aggiungendo la Battery come se fosse una Signature Move.</li>
-    <li><b>Blast Evolution Intercede</b> (1 Azione extra Digimon + 1 Azione Tamer): sale di Stage per Intercedere su un colpo fatale, guadagnando Wound Box pari alla Battery <b>invece del massimo</b>.</li>
+    <li><b>Blast Evolution Attack</b> (2 Azioni Digimon + 1 Azione Tamer): sale di Stage e usa un Attacco di quello Stage (non la Signature Move), aggiungendo la Battery come se fosse una Signature Move.</li>
+    <li><b>Blast Evolution Intercede</b> (1 Azione extra Digimon + 1 Azione Tamer): sale di Stage per Intercedere su un colpo fatale, guadagnando Wound Box pari alla Battery invece del massimo.</li>
   </ul>
   <p>Dopo l'uso, il Tamer tira un Check di Willpower, TN 12 + SV della Blast Evolution:</p>
   <table class="rules-table">
@@ -1169,11 +1026,11 @@
     <tr><td>[AMMO]</td><td>Quality</td><td>Ignora "un Attacco a round", ma usi limitati a combattimento.</td></tr>
     <tr><td>[BASTION]</td><td>Speciale</td><td>Aumenta tutte le Stat tranne Health.</td></tr>
     <tr><td>[BLIND]</td><td>Effetto</td><td>Acceca il bersaglio.</td></tr>
-    <tr><td>[BURN]</td><td>Effetto</td><td>Danno basato sulle zone attraversate.</td></tr>
+    <tr><td>[BURN]</td><td>Effetto</td><td>Danno basato sul Movimento.</td></tr>
     <tr><td>[CERTAIN]</td><td>Quality</td><td>Successi automatici sull'Accuracy.</td></tr>
     <tr><td>[CHARGE]</td><td>Quality</td><td>Move + Attack in 1 sola Azione, in linea retta.</td></tr>
     <tr><td>[CHARM]</td><td>Speciale</td><td>Obbedisce al comando altrui contro la propria volontà.</td></tr>
-    <tr><td>[CLEANSE]</td><td>Effetto</td><td>Riduce Durata degli Effetti (mirabile su specifici); su Alleati/Area Attack ha regole dedicate.</td></tr>
+    <tr><td>[CLEANSE]</td><td>Effetto</td><td>Rimuove Effetti (o specifici, con Selective Targeting).</td></tr>
     <tr><td>[COMPLEX]</td><td>Quality</td><td>La Signature Move costa 2 Azioni.</td></tr>
     <tr><td>[CONFUSE]</td><td>Effetto</td><td>Riduce Accuracy/Dodge in base alla Stat Derivata più alta.</td></tr>
     <tr><td>[COUNTER]</td><td>Quality</td><td>Permette la ritorsione via Counterattack.</td></tr>
@@ -1188,10 +1045,10 @@
     <tr><td>[DULL]</td><td>Effetto</td><td>Riduce il Danno.</td></tr>
     <tr><td>[EXPLOIT]</td><td>Effetto</td><td>Riduce Dodge e Armor.</td></tr>
     <tr><td>[FEAR]</td><td>Effetto</td><td>Riduce l'Accuracy contro il Caster e impedisce di avvicinarsi/Clashare.</td></tr>
-    <tr><td>[FRAGILE]</td><td>Quality</td><td>Riduce Danno e Potenza/Durata Effetti; va abbinato a [CERTAIN].</td></tr>
+    <tr><td>[FRAGILE]</td><td>Quality</td><td>Riduce l'Accuracy; va abbinato a [PIERCING].</td></tr>
     <tr><td>[FRAIL]</td><td>Effetto</td><td>Riduce l'Armor.</td></tr>
     <tr><td>[FREEZE]</td><td>Effetto</td><td>Danno se il bersaglio non si muove.</td></tr>
-    <tr><td>[FUMBLE]</td><td>Quality</td><td>Riduce i benefici dei Successi Accuracy; va abbinato a [PIERCING].</td></tr>
+    <tr><td>[FUMBLE]</td><td>Quality</td><td>Riduce i benefici dei Successi Accuracy; va abbinato a [CERTAIN].</td></tr>
     <tr><td>[FURY]</td><td>Effetto</td><td>Aumenta Accuracy e Danno.</td></tr>
     <tr><td>[GUIDING]</td><td>Quality</td><td>Dadi extra per i Pool Check.</td></tr>
     <tr><td>[HASTE]</td><td>Effetto</td><td>Concede un'Azione extra.</td></tr>
@@ -1199,7 +1056,6 @@
     <tr><td>[HEAVY]</td><td>Effetto</td><td>Rimuove opzioni di movimento extra.</td></tr>
     <tr><td>[IMMUNE]</td><td>Effetto</td><td>Riduce la Potenza degli Effetti Negativi in arrivo.</td></tr>
     <tr><td>[KEEN]</td><td>Effetto</td><td>Aumenta l'Accuracy.</td></tr>
-    <tr><td>[MELEE]</td><td>Standard</td><td>L'Attacco va fatto in mischia (stessa zona, vedi 9.03).</td></tr>
     <tr><td>[NIMBLE]</td><td>Effetto</td><td>Aumenta Accuracy e Dodge.</td></tr>
     <tr><td>[OFFHAND]</td><td>Quality</td><td>Un secondo Tag [WEAPON] pseudo-indipendente.</td></tr>
     <tr><td>[PACIFY]</td><td>Effetto</td><td>Riduce Accuracy e Danno.</td></tr>
@@ -1209,7 +1065,6 @@
     <tr><td>[PRECISE]</td><td>Quality</td><td>Aumenta l'Accuracy di un [RANGE] ed è efficace contro le Wound Box Temporanee.</td></tr>
     <tr><td>[PULL] / [PUSH]</td><td>Effetto</td><td>Tira/spinge il bersaglio verso/lontano dal Caster.</td></tr>
     <tr><td>[PUNISH]</td><td>Quality</td><td>Attacca un nemico in fuga.</td></tr>
-    <tr><td>[RANGE]</td><td>Standard</td><td>L'Attacco può colpire qualsiasi bersaglio entro il Reach (vedi 9.03).</td></tr>
     <tr><td>[RATTLED]</td><td>Effetto</td><td>Riduce Danno e Dodge.</td></tr>
     <tr><td>[RECOIL]</td><td>Quality</td><td>Spinge indietro l'attaccante con un [RANGE].</td></tr>
     <tr><td>[REGEN]</td><td>Effetto</td><td>Cura e permette di sopravvivere a un colpo fatale.</td></tr>
@@ -1454,32 +1309,30 @@
     <tr><td>Jogress / DNA Digivolving / DigiXros</td><td>Due Tamer spendono 2 Azioni (1 come Interrupt) per un Jogress Check (3d6+Willpower, TN 15, entrambi devono superarlo). Se riuscito, i due Digimon diventano uno solo con 2 Azioni condivise; entrambi i Tamer agiscono sull'Iniziativa più bassa dei due. Il nuovo Digimon somma i Bonus DP di entrambi i componenti. Riutilizzabile spendendo Evolution Point pari allo Stage risultante per ciascun Tamer.</td></tr>
     <tr><td>Hybrid/Bio-Merge/Mind Link</td><td>Tamer e Digimon diventano un solo personaggio con 3 Azioni a turno (ma sempre "un Attacco a round"). Fuori Combattimento usa gli Attributi/Aspects/Talent del Tamer; in Combattimento le Stat/Qualities/Derivate del Digimon (a scelta per i bonus alle Skill).</td></tr>
   </table>
-
-  <h3 class="rule-h3" id="gm-2-02a-digimental">Template di Digimental</h3>
-  <div class="note">Se un oggetto evolutivo viene condiviso tra i giocatori, dategli un'identità elementale dedicata (es. tramite Naturewalk) per renderlo unico e riconoscibile. Avvisate sempre i giocatori in anticipo se userete questa versione di Armor Evolution, ed è consigliato offrire in parallelo altre opzioni di evoluzione alternativa. Esempio guida: Chrome Digizoid Armor + Chrome Digizoid Weaponry gratis è la build più comune, dato che insieme costano solo 2 DP.</div>
-
-  <div class="quality-card"><span class="qname">Digimental of Courage</span><span class="qcost">Stage 2 — 8 DP</span><p>Naturewalk: Fuoco, Elemental Force: Fuoco, Prodigious Skill: Bravery, <b>Weapon 3</b>, <b>Chrome Digizoid Weaponry</b>.</p></div>
-  <div class="quality-card"><span class="qname">Digimental of Friendship</span><span class="qcost">Stage 2 — 8 DP</span><p>Naturewalk: Fulmine, Elemental Force: Fulmine, Prodigious Skill: Persuasion, <b>Instinct 3</b>, <b>Overwrite</b>.</p></div>
-  <div class="quality-card"><span class="qname">Digimental of Love</span><span class="qcost">Stage 2 — 8 DP</span><p>Naturewalk: Vento, Elemental Force: Vento, Prodigious Skill: Persuasion, <b>Instinct 3</b>, <b>Chrome Digizoid Armor</b>.</p></div>
-  <div class="quality-card"><span class="qname">Digimental of Sincerity</span><span class="qcost">Stage 2 — 6 DP</span><p>Naturewalk: Legno, Elemental Force: Legno, Prodigious Skill: Decipher Intent, <b>Anticipate Assault</b>.</p></div>
-  <div class="quality-card"><span class="qname">Digimental of Knowledge</span><span class="qcost">Stage 2 — 7 DP</span><p>Naturewalk: Terra, Elemental Force: Terra, Prodigious Skill: Knowledge, <b>Armor Piercing 3</b>.</p></div>
-  <div class="quality-card"><span class="qname">Digimental of Reliability</span><span class="qcost">Stage 2 — 8 DP</span><p>Naturewalk: Acqua, Elemental Force: Acqua, Prodigious Skill: Endurance, <b>Second Wind 3</b>, <b>Chrome Digizoid Armor</b>.</p></div>
-  <div class="quality-card"><span class="qname">Digimental of Hope</span><span class="qcost">Stage 2 — 8 DP</span><p>Naturewalk: Luce, Elemental Force: Luce, Prodigious Skill: Fortitude, Aggressive Flank, <b>Coordinated Assault</b>.</p></div>
-  <div class="quality-card"><span class="qname">Digimental of Light</span><span class="qcost">Stage 2 — 6-8 DP</span><p>Naturewalk: Luce, Elemental Force: Luce, 1 Effetto Positivo da Attacco, <b>Holy Ward</b>.</p></div>
-  <div class="quality-card"><span class="qname">Digimental of Kindness</span><span class="qcost">Stage 2 — 3 DP</span><p>1 Master Effect Positivo da Attacco.</p></div>
-  <div class="quality-card"><span class="qname">Digimental of Miracles</span><span class="qcost">Stage 3 — 8 DP</span><p>Data Optimization: Variable, Naturewalk: Luce, Elemental Force: Luce, Weapon 1, <b>Shining Digizoid Weaponry</b>.</p></div>
-  <div class="quality-card"><span class="qname">Digimental of Destiny</span><span class="qcost">Stage 3 — 6 DP</span><p>Naturewalk: Luce, Elemental Force: Luce, <b>Shining Digizoid Armor</b>.</p></div>
-  <div class="quality-card"><span class="qname">Digimental of Darkness</span><span class="qcost">Stage 3 — 7 DP</span><p>Naturewalk: Oscurità, Elemental Force: Oscurità, Instinct 1, <b>Digital Hazard</b>.</p></div>
+  <h3 class="rule-h3" id="gm-2-02a-digimental">Esempi di Digimental</h3>
+  <div class="note">Ogni oggetto evolutivo condiviso tra i giocatori dovrebbe avere un'identità elementale dedicata (es. tramite Naturewalk), per renderlo unico. Se usi questa versione di Armor Evolution, avvisa i giocatori in anticipo così possono aspettarsela, e valuta di offrire anche altri metodi di Evoluzione Alternativa in parallelo. La build più comune resta gratis Chrome Digizoid Armor + Chrome Digizoid Weaponry, dato che insieme costano solo 2 DP totali.</div>
+  <div class="quality-card"><span class="qname">Digimental del Coraggio</span><span class="qcost">Stage 2 — 8 DP</span><p>Naturewalk: Fuoco, Elemental Force: Fuoco, Prodigious Skill: Bravery, Weapon 3, Chrome Digizoid Weaponry.</p></div>
+  <div class="quality-card"><span class="qname">Digimental dell'Amicizia</span><span class="qcost">Stage 2 — 8 DP</span><p>Naturewalk: Fulmine, Elemental Force: Fulmine, Prodigious Skill: Persuasion, Instinct 3, Overwrite.</p></div>
+  <div class="quality-card"><span class="qname">Digimental dell'Amore</span><span class="qcost">Stage 2 — 8 DP</span><p>Naturewalk: Vento, Elemental Force: Vento, Prodigious Skill: Persuasion, Instinct 3, Chrome Digizoid Armor.</p></div>
+  <div class="quality-card"><span class="qname">Digimental della Sincerità</span><span class="qcost">Stage 2 — 6 DP</span><p>Naturewalk: Legno, Elemental Force: Legno, Prodigious Skill: Decipher Intent, Anticipate Assault.</p></div>
+  <div class="quality-card"><span class="qname">Digimental della Conoscenza</span><span class="qcost">Stage 2 — 7 DP</span><p>Naturewalk: Terra, Elemental Force: Terra, Prodigious Skill: Knowledge, Armor Piercing 3.</p></div>
+  <div class="quality-card"><span class="qname">Digimental dell'Affidabilità</span><span class="qcost">Stage 2 — 8 DP</span><p>Naturewalk: Acqua, Elemental Force: Acqua, Prodigious Skill: Endurance, Second Wind 3, Chrome Digizoid Armor.</p></div>
+  <div class="quality-card"><span class="qname">Digimental della Speranza</span><span class="qcost">Stage 2 — 8 DP</span><p>Naturewalk: Luce, Elemental Force: Luce, Prodigious Skill: Fortitude, Aggressive Flank, Coordinated Assault.</p></div>
+  <div class="quality-card"><span class="qname">Digimental della Luce</span><span class="qcost">Stage 2 — 6-8 DP</span><p>Naturewalk: Luce, Elemental Force: Luce, 1 Effetto Positivo, Holy Ward.</p></div>
+  <div class="quality-card"><span class="qname">Digimental della Gentilezza</span><span class="qcost">Stage 2 — 3 DP</span><p>1 Master Effect Positivo.</p></div>
+  <div class="quality-card"><span class="qname">Digimental dei Miracoli</span><span class="qcost">Stage 3 — 8 DP</span><p>Data Optimization: Variable, Naturewalk: Luce, Elemental Force: Luce, Weapon 1, Shining Digizoid Weaponry.</p></div>
+  <div class="quality-card"><span class="qname">Digimental del Destino</span><span class="qcost">Stage 3 — 6 DP</span><p>Naturewalk: Luce, Elemental Force: Luce, Shining Digizoid Armor.</p></div>
+  <div class="quality-card"><span class="qname">Digimental dell'Oscurità</span><span class="qcost">Stage 3 — 7 DP</span><p>Naturewalk: Oscurità, Elemental Force: Oscurità, Instinct 1, Digital Hazard.</p></div>
 
   <h3 class="rule-h3" id="gm-2-02b">2.02b — Burst Power</h3>
   <p>Potenziamento riservato al fine campagna (Stage 4+), tipicamente in sostituzione dell'ultima Milestone. Alla creazione del Digimon, i DP spesi in Stat possono essere ri-allocati in una build separata ("Burst Mode") — decisione permanente una volta finalizzata. Dichiarare Burst Power richiede un Check di Bravery del Tamer (TN 18/20/22 per Classic/Standard/Extreme): se riuscito, dura <b>3 turni</b> e il Digimon recupera 5 Wound Box extra (limitate dal nuovo massimo).</p>
   <p>In base all'Attributo più alto del Tamer, il Digimon ottiene un bonus statistico fisso e sceglie <b>una</b> Quality speciale (permanente per la campagna):</p>
   <table class="rules-table">
     <tr><th>Attributo</th><th>Bonus Stat</th><th>Quality a scelta</th></tr>
-    <tr><td>Agility</td><td>+5 Accuracy, +5 Danno, +5 Movement</td><td><b>The Future is Now</b>: 2° Rank di Digizoid Weaponry (diversa dalla prima; l'ultimo Attacco può avere entrambe solo se è la Signature Move). <b>Boiling Power</b>: con Charge Attack, +1 Danno per zona attraversata (max = Agility del Tamer); si somma a Hit and Run.</td></tr>
+    <tr><td>Agility</td><td>+5 Accuracy, +5 Danno, +5 Movement</td><td><b>The Future is Now</b>: 2° Rank di Digizoid Weaponry (diversa dalla prima; l'ultimo Attacco può avere entrambe solo se è la Signature Move). <b>Boiling Power</b>: con Charge Attack, +1 Danno per spazio mosso (max = Agility del Tamer); si somma a Hit and Run.</td></tr>
     <tr><td>Body</td><td>+5 Armor, +5 Accuracy, +5 Wound Box Temporanee</td><td><b>One Vision</b>: 1 [REFLECT] come Intercede — riflette metà danno di un colpo che farebbe ≥ metà Wound Box. <b>The Biggest Dreamer</b>: 2° Rank di Digizoid Armor.</td></tr>
     <tr><td>Charisma</td><td>+5 Accuracy, +5 Dodge</td><td><b>Butter-Fly Effect</b>: resetta turni sull'Iniziativa consumando i round rimanenti di Burst Mode. <b>Be My Light</b>: un alleato scelto riceve gli Effetti Positivi a Potenza BIT×2, durata fissa 1 round senza tiro, non riapplicabili.</td></tr>
-    <tr><td>Intelligence</td><td>+5 Dodge, +5 Danno, +5m Range</td><td><b>War Game</b>: un'Area Attack a scelta ottiene Reach esteso a 2 zone (Complex Action). <b>Beat Hit</b>: un secondo Tag [Signature Move] su un altro Attacco.</td></tr>
+    <tr><td>Intelligence</td><td>+5 Dodge, +5 Danno, +5m Range</td><td><b>War Game</b>: un'Area Attack a scelta ha Range raddoppiato (Complex Action). <b>Beat Hit</b>: un secondo Tag [Signature Move] su un altro Attacco.</td></tr>
     <tr><td>Willpower</td><td>+5 Danno, +5 Armor</td><td><b>Endless Tale</b>: a 0 Wound Box, esce dal Burst Mode con 10 Wound Box residue (Recovery Check gratuito se ha Second Wind). <b>Those Who Inherit Courage</b>: a 0 Wound Box, dona +5 Wound Box e bonus Danno/Armor (=CPU) a tutti gli alleati, uscendo di scena (non richiamabile con Revitalize).</td></tr>
   </table>
 
@@ -1524,7 +1377,7 @@
   <h3 class="rule-h3" id="gm-2-05d">2.05d — Size Illimitata</h3>
   <p>Rimuove le restrizioni di Size per Stage: un Digimon di qualsiasi Stage può avere qualsiasi Size (es. In-Training Huge, Champion Colossal).</p>
   <h3 class="rule-h3" id="gm-2-05e">2.05e — Tamer da Combattimento</h3>
-  <p>I Tamer ottengono Stat proprie di Accuracy/Damage/Dodge/Armor: <b>Accuracy Pool</b> = 1+Precision, <b>Damage</b> = 1+Feats of Strength, <b>Dodge Pool</b> = 1+Evade, <b>Armor</b> = 1+Endurance, <b>Wound Box</b> = 3+Body, <b>Movement</b> = Agility (min 2), <b>Reach a distanza</b> = 1 zona (vedi 9.03), <b>Recovery Pool</b> = Body, Size Medium, Stage 1. Gli Effetti sui Tamer hanno Potenza massima 1. Un Tamer può Controllare un Clash solo contro Medium o più piccoli, usando Body+Agility al posto di CPU+RAM. I Tamer non sono soggetti alle Azioni/Special Order di altri Tamer.</p>
+  <p>I Tamer ottengono Stat proprie di Accuracy/Damage/Dodge/Armor: <b>Accuracy Pool</b> = 1+Precision, <b>Damage</b> = 1+Feats of Strength, <b>Dodge Pool</b> = 1+Evade, <b>Armor</b> = 1+Endurance, <b>Wound Box</b> = 3+Body, <b>Movement</b> = Agility (min 2), <b>Range</b> = 2+metà Precision, <b>Effective Limit</b> = 2+Precision, <b>Recovery Pool</b> = Body, Size Medium, Stage 1. Gli Effetti sui Tamer hanno Potenza massima 1. Un Tamer può Controllare un Clash solo contro Medium o più piccoli, usando Body+Agility al posto di CPU+RAM. I Tamer non sono soggetti alle Azioni/Special Order di altri Tamer.</p>
   <h3 class="rule-h3" id="gm-2-05f">2.05f — Iniziativa Legacy</h3>
   <p>Ordine di Iniziativa semplice dal più alto al più basso, senza alternanza forzata tra le fazioni (rischio di sbilanciamento su combattimenti ravvicinati numericamente).</p>
   <h3 class="rule-h3" id="gm-2-05g">2.05g — Iniziativa Istantanea</h3>
@@ -1597,7 +1450,7 @@
     <tr><td>Big Scary DP Pool</td><td>Un singolo nemico molto resistente, con DP tra il 10% e il 100% in più della media del party (di solito in Health/Armor più che Danno). Rischia di essere sopraffatto dal numero di Azioni del party nel lungo periodo.</td></tr>
     <tr><td>Boss Template</td><td>Il Boss ottiene un Turno e un Pool di Wound Box <b>per ogni giocatore</b>, ciascuno assegnato a un giocatore specifico: di fatto combattono "il loro" Boss individualmente. Il limite: il Boss deve dividersi tra più bersagli o spendere molte Azioni per spostarsi.</td></tr>
     <tr><td>Tag Team Boss</td><td>Un gruppo di nemici alla pari col party in numero, ma chiunque può attaccare chiunque (diversamente dal Boss Template). Più dispendioso da preparare (serve almeno un Digimon per giocatore).</td></tr>
-    <tr><td>Raid Boss</td><td>Mix delle precedenti: +50% DP medio (soprattutto Health), Resistance (non immunità) a molti Effetti Negativi. Introduce la <b>Raid Action</b>: sempre per prima nell'Iniziativa, richiede un intero round per attivarsi; un Decipher Intent Check (Interrupt, TN 10+Stage Boss+Milestone party) ne rivela il funzionamento esatto, dando al party un round per adattarsi prima che scatti. Appena una Raid Action scatta, il Boss ne telegrafa subito un'altra per il round successivo: è un ciclo continuo per tutto lo scontro, non un evento singolo.</td></tr>
+    <tr><td>Raid Boss</td><td>Mix delle precedenti: +50% DP medio (soprattutto Health), Resistance (non immunità) a molti Effetti Negativi. Introduce la <b>Raid Action</b>: sempre per prima nell'Iniziativa, richiede un intero round per attivarsi; un Decipher Intent Check (Interrupt, TN 10+Stage Boss+Milestone party) ne rivela il funzionamento esatto, dando al party un round per adattarsi prima che scatti.</td></tr>
     <tr><td>Multi-Stage Boss</td><td>Il Boss, portato a 0 Wound Box, si trasforma in una forma più potente con Wound Box piene (via Evoluzione o Mode Change a tema). Riservare 3-4 stage solo per gli scontri più climatici.</td></tr>
   </table>
   <div class="note">Esempio di Raid Action: un Machinedramon che carica i Giga Cannon per un round, poi li scarica come Area Attack con +5 Successi automatici Accuracy e 5 Danno Unalterable — chi schiva subisce comunque metà danno come una normale Area, chi non schiva subisce il colpo pieno.</div>
@@ -1613,7 +1466,7 @@
     <tr><td>Multigrappler</td><td>3 DP</td><td>Può Clashare con più nemici contemporaneamente (fino al proprio Stage); con Reach, anche 1 nemico a distanza senza penalità.</td></tr>
     <tr><td>Limitless System</td><td>2 DP</td><td>Può comprare più Rank di System Boost, anche ripetendo la stessa Stat Derivata.</td></tr>
     <tr><td>Spatial Distortion</td><td>2 DP</td><td>Richiede Teleport. Con 1 Azione extra, ignora la distanza dal bersaglio: [RANGE] senza penalità, [MELEE] a qualsiasi distanza (richiede comunque linea di vista).</td></tr>
-    <tr><td>Suppression</td><td>3 DP</td><td>Sceglie un tipo di Quality (Static/Trigger/Attack): i nemici entro un numero di zone pari al proprio DOS (min. 1) non possono beneficiarne o attivarla. Un Digimon in area può ignorarlo per il resto del combattimento con 2 Azioni e un Check DOS TN 10+DOS del Boss.</td></tr>
+    <tr><td>Suppression</td><td>3 DP</td><td>Sceglie un tipo di Quality (Static/Trigger/Attack): i nemici entro un raggio pari al proprio DOS non possono beneficiarne o attivarla. Un Digimon in area può ignorarlo per il resto del combattimento con 2 Azioni e un Check DOS TN 10+DOS del Boss.</td></tr>
     <tr><td>True Sight</td><td>1 DP</td><td>Richiede Combat Awareness; incompatibile con Blind Justice. Immune a [BLIND], vede attraverso oggetti solidi, individua automaticamente chi usa Hide in Plain Sight.</td></tr>
     <tr><td>Ultimate Algorithm</td><td>1 DP</td><td>Richiede Stage 4+ e 2 Rank di Algorithm. +1 Rank extra di Algorithm; ignora l'incompatibilità con Gain Force normali e Digizoid Weaponry.</td></tr>
     <tr><td>Unleashed Potential</td><td>2 DP/Rank</td><td>I Rank si sommano allo Stage ai fini dell'acquisto di Qualities (es. uno Stage 1 con 2 Rank compra Qualities come se fosse Stage 3).</td></tr>
@@ -1625,7 +1478,7 @@
     <tr><td>Chain Counter</td><td>3 DP</td><td>Richiede 1 Rank di Counterattack. Può usare Counterattack una volta a round senza consumarne un uso (consuma comunque un'Interrupt Action).</td></tr>
     <tr><td>Mass Destruction</td><td>1 DP</td><td>Richiede 1 Rank di Counterattack. Distruggendo un Minion evocato con Counterattack, mantiene l'uso della Quality e recupera 1 Azione.</td></tr>
     <tr><td>Data Absorb</td><td>2 DP</td><td>Richiede Trojan. 1 Azione per attivare/disattivare: Movement a 0, ma cura 6 Wound Box a fine round (8 con Firewall).</td></tr>
-    <tr><td>Gravity</td><td>2 DP</td><td>1 Azione: applica [HEAVY] a tutti i bersagli scelti entro un numero di zone pari al proprio DOS (min. 1), finché restano nell'area.</td></tr>
+    <tr><td>Gravity</td><td>2 DP</td><td>1 Azione: applica [HEAVY] a tutti i bersagli scelti entro un'area pari al proprio DOS, finché restano nell'area.</td></tr>
     <tr><td>Omnipotent Summoning</td><td>2 DP</td><td>Richiede Summoner. Può evocare Minion di qualsiasi tipo, non solo uno fisso.</td></tr>
     <tr><td>Superior Domain</td><td>3 DP</td><td>Richiede Domain Control. Applica entrambi gli effetti del proprio Elemento (o di un secondo Naturewalk/Adaptive Element) contemporaneamente.</td></tr>
     <tr><td>Tormentor</td><td>1 DP</td><td>1 Azione, una volta a combattimento: forza tutti i partecipanti a un Torment Check sul Torment più grave. Un Tamer che fallisce subisce le normali conseguenze e il proprio Digimon [DEBILITATE 2] per il resto del combattimento (rimovibile solo ritentando il Torment Check con successo).</td></tr>
@@ -1641,9 +1494,9 @@
   <table class="rules-table">
     <tr><th>Effetto</th><th>Tipo</th><th>Descrizione</th><th>Durata</th></tr>
     <tr><td>[CHARM]</td><td>N</td><td>Il Caster controlla le Azioni del bersaglio, che lo tratta come alleato (può persino Intercedere per lui). Se ha un Tamer, questi può contestare con Charisma/Willpower (2 Azioni, TN 10+BIT Caster): Successo = termina subito.</td><td>Sì</td></tr>
-    <tr><td>[BUG]</td><td>N</td><td>Scambia tutte le Stat Derivate del bersaglio (CPU↔DOS, BIT↔RAM), inclusi i calcoli che le usano.</td><td>Sì</td></tr>
+    <tr><td>[BUG]</td><td>N</td><td>Scambia tutte le Stat Derivate del bersaglio (CPU↔DOS, BIT↔RAM), inclusi i calcoli che le usano (es. Range passa a usare DOS invece di BIT).</td><td>Sì</td></tr>
     <tr><td>[DEMORALIZE]</td><td>N</td><td>Richiede [SUPPORT]; colpisce solo Tamer, nessun danno. Sceglie un Attributo: colpendo, il Tamer perde 1 punto in quell'Attributo per il resto del combattimento (perdendo l'accesso a Talent che lo richiedono).</td><td>No</td></tr>
-    <tr><td>[FRENZY]</td><td>N</td><td>Il bersaglio non risente più di Azioni/Special Order del Tamer e deve fare un Attacco [DAMAGE] o con Effetto Negativo contro il nemico più vicino ogni round, prima che il Tamer possa agire (o subire Danno Unalterable pari al doppio del proprio Stage). Il Tamer può tentare un Check di Charisma (1 Azione, TN 10+DOS Caster) per far attaccare un bersaglio a sua scelta; su Successo Critico, riduce anche la Durata di 1 (a 0, l'Effetto finisce subito). Durata massima 3 round.</td><td>Sì (max 3)</td></tr>
+    <tr><td>[FRENZY]</td><td>N</td><td>Il bersaglio non risente più di Azioni/Special Order del Tamer e deve attaccare il nemico più vicino ogni round (o subire Danno Unalterable pari al doppio del proprio Stage). Il Tamer può tentare un Check di Charisma (1 Azione, TN 10+DOS Caster) per riprendere il controllo di un singolo Attacco. Durata massima 3 round.</td><td>Sì (max 3)</td></tr>
     <tr><td>[INVINCIBLE]</td><td>P</td><td>Richiede [SIGNATURE]. Il bersaglio annulla tutti gli Attacchi in arrivo (Called Shot esclusi) fino al prossimo turno del Caster; non utilizzabile con Area Attack. Ogni uso alza di 1 la Battery minima per la Signature Move.</td><td>No</td></tr>
   </table>
 </section>
@@ -1830,12 +1683,6 @@ function renderTocEntry(sec, cls){
   div.className = cls;
   div.dataset.target = sec.id;
   div.textContent = (sec.num ? sec.num + ' — ' : '') + sec.title;
-  if(!sec.done){
-    const tag = document.createElement('span');
-    tag.className = 'todo-tag';
-    tag.textContent = 'in arrivo';
-    div.appendChild(tag);
-  }
   div.onclick = ()=> {
     showSection(sec.id, sec.title, sec.done);
     if(window.innerWidth <= 760){
