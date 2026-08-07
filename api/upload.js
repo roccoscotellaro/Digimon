@@ -2,9 +2,12 @@
 // Endpoint ACCORPATO per restare sotto il limite di Serverless Functions del piano Vercel:
 //  1) comportamento ORIGINALE (upload immagini) — invariato, usato da map.html:
 //       POST { code, filename, dataUrl, folder } -> carica su Storage, ritorna { ok, url }
-//  2) comportamento NUOVO (Bio-Resonance Scan log) — attivo solo se req.body/query.resource === 'scan':
-//       GET  ?resource=scan&code=..&username=..                       -> stato tentativi/log/nomi presi
-//       POST { resource:'scan', code, username, digimonName, crestName, attemptNumber } -> registra un tentativo
+//  2) comportamento NUOVO (Bio-Resonance Scan log) — attivo solo se resource === 'scan':
+//       GET    ?resource=scan&code=..&username=..   -> stato tentativi/log/nomi presi (giocatore)
+//                (username omesso -> ritorna anche allLog, usato dalla Vista Master per il log completo)
+//       POST   { resource:'scan', code, username, digimonName, crestName, attemptNumber } -> registra un tentativo
+//       DELETE ?resource=scan&code=..&id=..          -> il Master cancella una riga del log
+//                (libera il nome per un doppione, o restituisce un tentativo a un giocatore)
 //
 // NOTA PER ROCCO: se in futuro liberi uno slot funzione (es. rimuovendo un endpoint non più
 // usato), puoi sempre spostare il blocco "SCAN" in un file api/scan.js dedicato senza toccare
@@ -55,23 +58,36 @@ async function handleImageUpload(req, res) {
 // ---------- BLOCCO NUOVO: Bio-Resonance Scan (tentativi, log, anti-doppione) ----------
 async function handleScanGet(req, res) {
   const { code, username } = req.query || {};
-  if (!code || !username) return res.status(400).json({ error: 'code e username sono obbligatori' });
+  if (!code) return res.status(400).json({ error: 'code è obbligatorio' });
 
   const { data: rows, error } = await supabase
     .from(SCAN_TABLE)
-    .select('username, digimon_name, crest_name, attempt_number, created_at')
+    .select('id, username, digimon_name, crest_name, attempt_number, created_at')
     .eq('code', code)
-    .order('attempt_number', { ascending: true });
+    .order('created_at', { ascending: true });
   if (error) return res.status(500).json({ error: error.message });
 
-  const myLog = (rows || []).filter(r => r.username === username);
-  const takenNames = (rows || []).map(r => r.digimon_name);
+  const allLog = rows || [];
+  // username è opzionale: se assente (vista Master) ritorna solo il log completo della
+  // campagna; se presente (vista giocatore in digivice-scan.html) calcola anche il suo
+  // sottoinsieme e il conteggio tentativi.
+  const myLog = username ? allLog.filter(r => r.username === username) : [];
+  const takenNames = allLog.map(r => r.digimon_name);
 
   return res.status(200).json({
     attemptsUsed: myLog.length,
     myLog,
-    takenNames
+    takenNames,
+    allLog
   });
+}
+
+async function handleScanDelete(req, res) {
+  const { code, id } = req.query || {};
+  if (!code || !id) return res.status(400).json({ error: 'code e id sono obbligatori' });
+  const { error } = await supabase.from(SCAN_TABLE).delete().eq('code', code).eq('id', id);
+  if (error) return res.status(500).json({ error: error.message });
+  return res.status(200).json({ ok: true });
 }
 
 async function handleScanPost(req, res) {
@@ -120,14 +136,15 @@ async function handleScanPost(req, res) {
 // ---------- ROUTER ----------
 module.exports = async (req, res) => {
   try {
-    const isScan = req.method === 'GET'
-      ? (req.query && req.query.resource === 'scan')
-      : ((req.body && req.body.resource === 'scan'));
+    const isScan = req.method === 'POST'
+      ? ((req.body && req.body.resource === 'scan'))
+      : (req.query && req.query.resource === 'scan'); // GET e DELETE passano resource in query
 
     if (isScan) {
       if (req.method === 'GET') return await handleScanGet(req, res);
       if (req.method === 'POST') return await handleScanPost(req, res);
-      res.setHeader('Allow', ['GET', 'POST']);
+      if (req.method === 'DELETE') return await handleScanDelete(req, res);
+      res.setHeader('Allow', ['GET', 'POST', 'DELETE']);
       return res.status(405).json({ error: 'Metodo non permesso' });
     }
 

@@ -479,7 +479,7 @@ const PRIMARY_NAMES = ALL_NAMES.filter(n=>!SECONDARY_ONLY.includes(n));
 
 // ---------- IDENTIFICAZIONE TAMER, TENTATIVI, LOG E ANTI-DOPPIONE ----------
 // Lo scan ora richiede il nome utente (lo stesso della campagna in Digivice OS) prima di poter
-// partire. Il backend (/api/scan) tiene traccia di: quanti tentativi ha già usato quel Tamer
+// partire. Il backend (/api/upload?resource=scan) tiene traccia di: quanti tentativi ha già usato quel Tamer
 // (max 2), quali Digimon sono già stati assegnati a QUALSIASI Tamer della campagna (per non
 // avere doppioni), e viene interrogato anche /api/roster per controllare se il Tamer possiede
 // il Digimedaglione in inventario (sblocca la rivelazione del Crest).
@@ -491,9 +491,11 @@ let takenNames = [];      // nomi già assegnati a QUALSIASI Tamer della campagn
 let hasMedaglione = false;
 let identityVerified = false;
 
+// NOTA: lo scan è accorpato dentro /api/upload.js (?resource=scan) per restare sotto il limite
+// di Serverless Functions del piano Vercel — vedi commento in cima a upload.js sul server.
 async function apiGetScan(qs){
   try{
-    const r = await fetch('/api/scan?' + qs);
+    const r = await fetch('/api/upload?resource=scan&' + qs);
     const data = await r.json();
     if(!r.ok) return { error: data.error || ('Errore ' + r.status) };
     return data;
@@ -501,7 +503,7 @@ async function apiGetScan(qs){
 }
 async function apiPostScan(body){
   try{
-    const r = await fetch('/api/scan', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const r = await fetch('/api/upload', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ resource:'scan', ...body }) });
     const data = await r.json();
     if(!r.ok) return { error: data.error || ('Errore ' + r.status) };
     return data;
