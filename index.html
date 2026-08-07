@@ -215,6 +215,38 @@
   .bar-controls button{width:22px;height:22px;line-height:1;border:1px solid var(--line);background:var(--panel-2);color:var(--cyan);cursor:pointer;border-radius:3px;font-size:14px;}
   .bar-controls button:hover{border-color:var(--cyan-dim);}
 
+  /* ---- Battery: chevron-cell charge readout instead of a plain gradient bar ---- */
+  @keyframes battcharge{0%,100%{filter:brightness(1);}50%{filter:brightness(1.35);}}
+  .batt-cells{display:flex;gap:3px;}
+  .batt-cell{flex:1;min-width:9px;height:18px;background:var(--panel-2);border:1px solid var(--line);border-radius:2px;position:relative;overflow:hidden;
+    clip-path:polygon(30% 0%, 100% 0%, 70% 100%, 0% 100%);
+    box-shadow:inset 0 0 5px rgba(0,0,0,0.6);}
+  .batt-cell::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg, rgba(255,255,255,0.10), transparent 45%);}
+  .batt-cell.filled{background:linear-gradient(180deg,#e6cbff,#8a4fe0 55%,#5c2ba3);border-color:#c299f5;
+    box-shadow:0 0 9px rgba(168,121,232,0.75), 0 0 2px rgba(230,203,255,0.9), inset 0 0 4px rgba(255,255,255,0.35);
+    animation:battcharge 2.4s ease-in-out infinite;}
+  .batt-cells.mini .batt-cell{height:11px;}
+
+  /* ---- Compact HP readout for the Scene and Combat tracker ---- */
+  @keyframes hpcrit{0%,100%{box-shadow:0 0 6px rgba(255,93,93,0.55);}50%{box-shadow:0 0 13px rgba(255,93,93,0.95);}}
+  @keyframes hpsheen{0%{transform:translateX(-120%);}100%{transform:translateX(220%);}}
+  .hp-mini{display:flex;align-items:center;gap:6px;margin-top:5px;flex:1;min-width:80px;}
+  .hp-mini-track{flex:1;height:11px;background:var(--panel-2);border:1px solid var(--line);border-radius:3px;overflow:hidden;position:relative;
+    box-shadow:inset 0 1px 3px rgba(0,0,0,0.6);}
+  .hp-mini-fill{height:100%;border-radius:2px;transition:width .4s ease, background .4s ease;position:relative;overflow:hidden;}
+  .hp-mini-fill::before{content:"";position:absolute;inset:0;
+    background-image:repeating-linear-gradient(90deg, rgba(0,0,0,0.35) 0 2px, transparent 2px 9%);}
+  .hp-mini-fill::after{content:"";position:absolute;top:0;bottom:0;width:30%;
+    background:linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+    animation:hpsheen 3.2s ease-in-out infinite;}
+  .hp-mini-fill.ok{background:linear-gradient(90deg, var(--cyan-dim), var(--cyan));}
+  .hp-mini-fill.warn{background:linear-gradient(90deg, #b06a1f, var(--amber));box-shadow:0 0 6px rgba(255,138,61,0.4);}
+  .hp-mini-fill.crit{background:linear-gradient(90deg, #8a2f2f, var(--danger));animation:hpcrit 1.1s ease-in-out infinite;}
+  .hp-mini-fill.ko{background:repeating-linear-gradient(90deg,#3a3f3f 0 4px,#2a2e2e 4px 8px);}
+  .hp-mini-val{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-mute);white-space:nowrap;}
+  .hp-mini-label{font-size:9px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-mute);margin-right:2px;}
+  .enc-card-mini{display:flex;flex-direction:column;align-items:center;}
+
   .view-mode .field-static{margin-bottom:10px;}
   .field-static label{margin-bottom:2px;}
   .field-static .v{font-size:13px;color:var(--text);}
@@ -248,6 +280,7 @@
   let sectorMapSelectedId = null; // which Settore is expanded in the compact Mappa panel
   let encounterDraft = null; // pending Digimon (from Dex or homebrew) being reviewed before adding to the scene
   let cachedMe = null;
+  const ACTION_HINT_DEFAULT_TEXT = 'Scorciatoia: scrivi <code>/tira NomeSkill [TN] [major|minor]</code> (es. <code>/tira awareness 15 major</code>) per tirare in chat, opzionalmente usando un Aspect.';
   let animatedLogIds = new Set();
   let cachedCombat = null;
   let cachedProgression = null;
@@ -331,7 +364,18 @@
   }
 
   function defaultCombat(){
-    return { active:false, round:1, currentIndex:0, participants:[], order:[] };
+    return { active:false, round:1, currentIndex:0, participants:[], order:[], startZone:'Medio' };
+  }
+
+  // ---------- turn gating helpers (self-service player actions) ----------
+  function currentTurnParticipant(combat){
+    if(!combat || !combat.active || !combat.order || combat.order.length===0) return null;
+    const id = combat.order[combat.currentIndex];
+    return (combat.participants||[]).find(x=>x.id===id) || null;
+  }
+  function isMyCombatTurn(combat, username){
+    const p = currentTurnParticipant(combat);
+    return !!(p && p.isPC && p.username===username);
   }
 
   function recalcCombatOrder(combat){
@@ -345,19 +389,24 @@
     });
   }
 
+  // 'move' e 'attack' hanno ora un pannello dedicato (movimento relativo + attacco con Dodge automatico);
+  // qui restano solo le altre Azioni narrative/di supporto.
+  const SELF_ACTION_DEFS = ACTION_DEFS.filter(a=>a.key!=='move' && a.key!=='attack');
+
   function combatSelfActionHTML(combat, username){
     if(!combat || !combat.active) return '';
     const p = (combat.participants||[]).find(x=>x.username===username);
     if(!p) return '';
     const acts = p.actions===undefined?2:p.actions;
+    const myTurn = isMyCombatTurn(combat, username);
     return `
       <div class="divider"></div>
       <div class="muted" style="margin-bottom:6px;">Le tue Azioni: <span class="mono" style="color:var(--cyan);">${acts}/2</span></div>
       <div class="row">
-        <select id="self-action-select" style="flex:2;">${ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost})</option>`).join('')}</select>
-        <button class="btn small" id="btn-self-action-use" style="flex:1;">Usa</button>
+        <select id="self-action-select" style="flex:2;" ${myTurn?'':'disabled'}>${SELF_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost})</option>`).join('')}</select>
+        <button class="btn small" id="btn-self-action-use" style="flex:1;" ${myTurn?'':'disabled'}>Usa</button>
       </div>
-      <div class="muted" id="self-action-status" style="margin-top:4px;"></div>
+      <div class="muted" id="self-action-status" style="margin-top:4px;">${myTurn?'':'Disponibile solo durante il tuo turno.'}</div>
     `;
   }
 
@@ -368,18 +417,143 @@
       if(!cachedCombat || !cachedCombat.active) return;
       const p = cachedCombat.participants.find(x=>x.username===username);
       if(!p) return;
+      const statusEl = document.getElementById('self-action-status');
+      if(!isMyCombatTurn(cachedCombat, username)){
+        if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Non è il tuo turno.'; }
+        return;
+      }
       const sel = document.getElementById('self-action-select');
       const result = trySpendAction(p, sel.value);
-      const statusEl = document.getElementById('self-action-status');
       if(!result.ok){
-        statusEl.style.color = 'var(--danger)';
-        statusEl.textContent = result.msg;
+        if(statusEl){ statusEl.style.color = 'var(--danger)'; statusEl.textContent = result.msg; }
         return;
       }
       await saveCombat(code, cachedCombat);
       await pushLog(code, { who: p.name, role:'player', text: `${p.name} usa ${result.def.label} (${result.def.cost} Azione/i) — restano ${p.actions}/2 Azioni.` });
       refreshLiveParts();
     };
+  }
+
+  // ---------- pannello Attacco/Movimento self-service del giocatore (solo nel proprio turno) ----------
+  function turnBannerHTML(combat, username){
+    if(!combat || !combat.active) return '';
+    const cur = currentTurnParticipant(combat);
+    if(!cur) return '<div class="muted" style="margin-bottom:8px;">Ordine non ancora calcolato dal Master.</div>';
+    const mine = cur.isPC && cur.username===username;
+    return mine
+      ? `<div class="hud-frame" style="padding:6px 10px;margin-bottom:8px;border-color:var(--cyan);background:rgba(53,232,201,0.08);"><b style="color:var(--cyan);">▶ È il tuo turno!</b></div>`
+      : `<div class="muted" style="margin-bottom:8px;">Turno di <b>${escapeHTML(cur.name)}</b> — attendi il tuo turno.</div>`;
+  }
+
+  function attacksCardHTML(me, combat, username){
+    if(!combat || !combat.active) return '';
+    const myTurn = isMyCombatTurn(combat, username);
+    const p = (combat.participants||[]).find(x=>x.username===username);
+    const alreadyAttacked = !!(p && p.attackedThisRound);
+    const actsLeft = p ? (p.actions===undefined?2:p.actions) : 0;
+    const others = (combat.participants||[]).filter(x=>!p || x.id!==p.id);
+    const targetOptions = others.map(x=>`<option value="${x.id}">${escapeHTML(x.name)} ${x.side==='enemy'?'(Nemico)':'(Alleato)'} — ${escapeHTML(x.zone||'Medio')}</option>`).join('');
+    const canAct = myTurn && !!p;
+    return `
+      ${turnBannerHTML(combat, username)}
+      ${p ? `<div class="muted" style="margin-bottom:8px;">Zona attuale: <b style="color:var(--amber);">${escapeHTML(p.zone||'Medio')}</b> · Azioni: <span class="mono">${actsLeft}/2</span></div>` : ''}
+      <div class="field"><label>Bersaglio / riferimento</label>
+        <select id="self-target-select" ${canAct?'':'disabled'}>${targetOptions || '<option value="">(nessun altro partecipante)</option>'}</select>
+      </div>
+      <div class="row" style="margin-top:6px;">
+        <button class="btn small" id="btn-self-move-closer" style="flex:1;" ${canAct?'':'disabled'}>⬅ Avvicinati (1 Az.)</button>
+        <button class="btn ghost small" id="btn-self-move-away" style="flex:1;" ${canAct?'':'disabled'}>Allontanati ➡ (1 Az.)</button>
+      </div>
+      <div class="muted" id="self-move-status" style="margin-top:4px;"></div>
+      <div class="divider"></div>
+      <div class="moves-grid">
+        ${(me.digimon.attacks||[]).map((a,i)=>{
+          const enabled = canAct && !alreadyAttacked;
+          return `
+          <button class="move-btn" data-self-attack-idx="${i}" ${enabled?'':'disabled'} style="${enabled?'':'opacity:0.45;cursor:not-allowed;'}">
+            <div class="name mono">${a.signature?'⭐ ':''}${escapeHTML(a.name)}</div>
+            <div class="desc">${attackTagsHTML(a)}</div>
+            ${a.desc ? `<div class="desc" style="margin-top:3px;">${escapeHTML(a.desc)}</div>` : ''}
+          </button>
+        `;}).join('')}
+      </div>
+      ${alreadyAttacked ? '<div class="muted" style="margin-top:6px;">Hai già attaccato in questo round.</div>' : ''}
+      <div id="self-attack-result" style="margin-top:8px;"></div>
+    `;
+  }
+
+  function bindAttacksCard(code, me){
+    const targetSel = document.getElementById('self-target-select');
+    const moveCloserBtn = document.getElementById('btn-self-move-closer');
+    const moveAwayBtn = document.getElementById('btn-self-move-away');
+    const moveStatus = document.getElementById('self-move-status');
+    const resEl = document.getElementById('self-attack-result');
+
+    async function doMove(closer){
+      if(!cachedCombat || !cachedCombat.active) return;
+      const p = cachedCombat.participants.find(x=>x.username===session.username);
+      if(!p) return;
+      if(!isMyCombatTurn(cachedCombat, session.username)){
+        if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent='Non è il tuo turno.'; }
+        return;
+      }
+      const refId = targetSel ? targetSel.value : '';
+      const ref = cachedCombat.participants.find(x=>x.id===refId);
+      if(!ref){
+        if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent='Scegli un Digimon di riferimento.'; }
+        return;
+      }
+      const newZone = closer ? zoneStepToward(p.zone||'Medio', ref.zone||'Medio') : zoneStepAway(p.zone||'Medio', ref.zone||'Medio');
+      if(!newZone){
+        if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent = closer ? 'Sei già alla stessa zona di questo bersaglio.' : 'Non puoi allontanarti oltre così.'; }
+        return;
+      }
+      const spend = trySpendAction(p, 'move');
+      if(!spend.ok){
+        if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent = spend.msg; }
+        return;
+      }
+      const from = p.zone||'Medio';
+      p.zone = newZone;
+      await saveCombat(code, cachedCombat);
+      await pushLog(code, { who: p.name, role:'player', text: `${p.name} si ${closer?'avvicina a':'allontana da'} ${ref.name}: ${from} → ${newZone} (1 Azione) — restano ${p.actions}/2 Azioni.` });
+      refreshLiveParts();
+    }
+    if(moveCloserBtn) moveCloserBtn.onclick = ()=>doMove(true);
+    if(moveAwayBtn) moveAwayBtn.onclick = ()=>doMove(false);
+
+    document.querySelectorAll('[data-self-attack-idx]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        if(!cachedCombat || !cachedCombat.active) return;
+        const p = cachedCombat.participants.find(x=>x.username===session.username);
+        if(!p) return;
+        if(!isMyCombatTurn(cachedCombat, session.username)){
+          if(resEl) resEl.innerHTML = '<div class="err">Non è il tuo turno.</div>';
+          return;
+        }
+        const idx = Number(btn.getAttribute('data-self-attack-idx'));
+        const atk = me.digimon.attacks[idx];
+        const targetId = targetSel ? targetSel.value : '';
+        const target = cachedCombat.participants.find(x=>x.id===targetId);
+        const validation = validateAttackTargeting(p, target, atk);
+        if(!validation.ok){
+          if(resEl) resEl.innerHTML = `<div class="err">${validation.error}</div>`;
+          return;
+        }
+        const spend = trySpendAction(p, 'attack');
+        if(!spend.ok){
+          if(resEl) resEl.innerHTML = `<div class="err">${spend.msg}</div>`;
+          return;
+        }
+        const { logText, dealt, accRoll, dodgeRoll } = await performAttackRoll(code, cachedCombat, p, target, atk);
+        if(resEl){
+          resEl.innerHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">vs</span>${diceRowHTML(dodgeRoll.dice)}${dealt>0?`<span class="roll-total">${dealt} danno</span>`:''}`;
+        }
+        await saveCombat(code, cachedCombat);
+        await pushLog(code, { who: p.name, role:'roll', text: logText, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
+        refreshLiveParts();
+      };
+    });
   }
 
   let mountingTNState = { modifier: 0, step: 0, log: [] };
@@ -546,6 +720,13 @@
     recalc();
   }
 
+  function getParticipantBattery(p){
+    if(!p.isPC) return null; // Battery è una risorsa da Partner Digimon: i Nemici normalmente non la usano
+    const member = cachedRoster.find(m=>m.username===p.username);
+    if(!member) return null;
+    return { current: Number(member.digimon.battery||0), max: batteryCap(member.digimon.stage) };
+  }
+
   function combatDisplayHTML(combat){
     if(!combat || !combat.active) return '<div class="muted">Nessun combattimento in corso.</div>';
     const byId = {};
@@ -555,16 +736,21 @@
       <div class="flex-between" style="margin-bottom:8px;">
         <span class="mono" style="color:var(--cyan);">ROUND ${combat.round}</span>
       </div>
-      ${orderList.length===0 ? '<div class="muted">Ordine non ancora calcolato.</div>' : orderList.map((p,i)=>`
-        <div style="padding:6px 8px;margin-bottom:4px;border-radius:4px;${i===combat.currentIndex?'background:rgba(53,232,201,0.15);border:1px solid var(--cyan);':'background:var(--panel-2);border:1px solid var(--line);'}">
+      ${orderList.length===0 ? '<div class="muted">Ordine non ancora calcolato.</div>' : orderList.map((p,i)=>{
+        const wounds = getParticipantWounds(p);
+        const battery = getParticipantBattery(p);
+        return `
+        <div style="padding:6px 8px;margin-bottom:4px;border-radius:4px;${i===combat.currentIndex?'background:rgba(53,232,201,0.15);border:1px solid var(--cyan);':'background:var(--panel-2);border:1px solid var(--line);'}${p.side==='enemy'?'border-left:3px solid var(--danger);':''}">
           <div class="flex-between">
             <span>${i===combat.currentIndex?'▶ ':''}<b>${escapeHTML(p.name)}</b> <span class="tag" style="margin-left:4px;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};">${p.side==='ally'?'Alleato':'Nemico'}</span></span>
             <span class="mono">Iniz. ${p.initiative} · Az. ${p.actions===undefined?2:p.actions}/2 · <span style="color:var(--amber);">${escapeHTML(p.zone||'Medio')}</span></span>
           </div>
+          ${miniHpBarHTML(wounds.current, wounds.max, wounds.temp, 'HP')}
+          ${battery ? `<div style="display:flex;align-items:center;gap:6px;margin-top:4px;"><span class="hp-mini-label">⚡</span>${batteryCellsHTML(battery.current, battery.max, true)}<span class="hp-mini-val">${battery.current}/${battery.max}</span></div>` : ''}
           ${p.effects && p.effects.length ? `<div style="margin-top:4px;">${effectTagsHTML(p)}</div>` : ''}
           ${p.clashWith ? `<div class="muted" style="margin-top:4px;">🤼 In Clash con ${escapeHTML((byId[p.clashWith]||{}).name||'?')} — ${p.clashController?'<b style="color:var(--cyan);">controlla</b>':'sotto controllo'}</div>` : ''}
         </div>
-      `).join('')}
+      `;}).join('')}
     `;
   }
   let dexEditOpenId = null;
@@ -1024,10 +1210,33 @@
     if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
     const attacksCard = document.getElementById('attacks-card');
     if(attacksCard) attacksCard.style.display = (cachedCombat && cachedCombat.active) ? '' : 'none';
+    if(session.role==='player'){
+      cachedMe = cachedRoster.find(m=>m.username===session.username) || cachedMe;
+      const attacksCardInner = document.getElementById('attacks-card-inner');
+      if(attacksCardInner && cachedMe){
+        attacksCardInner.innerHTML = attacksCardHTML(cachedMe, cachedCombat, session.username);
+        bindAttacksCard(session.code, cachedMe);
+      }
+    }
     const combatSelf = document.getElementById('combat-self-actions');
     if(combatSelf && session.role==='player'){
       combatSelf.innerHTML = combatSelfActionHTML(cachedCombat, session.username);
       bindCombatSelfActions(session.code, session.username);
+    }
+    // Blocca la chat pubblica (non quella privata col Master) fuori dal proprio turno, se in combattimento.
+    if(session.role==='player'){
+      const myTurnNow = isMyCombatTurn(cachedCombat, session.username);
+      const lockPublicChat = !!(cachedCombat && cachedCombat.active) && playerChatMode!=='private' && !myTurnNow;
+      ['action-text','btn-send-action','btn-correct','action-img-btn'].forEach(id=>{
+        const el = document.getElementById(id);
+        if(el) el.disabled = lockPublicChat;
+      });
+      const actionHintEl = document.getElementById('action-hint');
+      if(actionHintEl){
+        actionHintEl.innerHTML = lockPublicChat
+          ? '<span style="color:var(--danger);">⛔ Sei in combattimento: la chat pubblica è bloccata fuori dal tuo turno. Puoi comunque scrivere in privato al Master.</span>'
+          : ACTION_HINT_DEFAULT_TEXT;
+      }
     }
     const privateLogLiveMaster = document.getElementById('private-log-live-master');
     if(privateLogLiveMaster && session.role==='master' && masterPrivateThread){
@@ -1090,6 +1299,46 @@
           <button id="${onMinusId}">−</button>
           <button id="${onPlusId}">+</button>
         </div>
+      </div>
+    `;
+  }
+
+  // ---------- battery cells (visual redesign: segmented cells instead of a plain bar) ----------
+  function batteryCellsHTML(current, max, mini){
+    const m = Math.max(0, Number(max)||0);
+    const c = Math.max(0, Number(current)||0);
+    if(m<=0) return `<div class="muted" style="font-size:10px;">—</div>`;
+    let cells = '';
+    for(let i=0;i<m;i++) cells += `<div class="batt-cell ${i<c?'filled':''}"></div>`;
+    return `<div class="batt-cells${mini?' mini':''}">${cells}</div>`;
+  }
+
+  function batteryBarHTML(label, current, max, onMinusId, onPlusId){
+    return `
+      <div class="bar-row">
+        <div class="bar-label"><span>⚡ ${label}</span><span class="val">${current||0} / ${max}</span></div>
+        ${batteryCellsHTML(current, max)}
+        <div class="bar-controls">
+          <button id="${onMinusId}">−</button>
+          <button id="${onPlusId}">+</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // ---------- compact HP readout, used in Scene encounter cards and the Combat tracker ----------
+  function miniHpBarHTML(current, max, temp, label){
+    const maxN = Math.max(1, Number(max)||1);
+    const curN = Math.max(0, Number(current)||0);
+    const pct = Math.max(0, Math.min(100, (curN/maxN)*100));
+    const ratio = curN/maxN;
+    const cls = curN<=0 ? 'ko' : (ratio<=0.25 ? 'crit' : (ratio<=0.5 ? 'warn' : 'ok'));
+    const tempN = Number(temp)||0;
+    return `
+      <div class="hp-mini">
+        ${label?`<span class="hp-mini-label">${escapeHTML(label)}</span>`:''}
+        <div class="hp-mini-track"><div class="hp-mini-fill ${cls}" style="width:${pct}%;"></div></div>
+        <span class="hp-mini-val">${curN}/${maxN}${tempN>0?` <span style="color:var(--cyan);">+${tempN}🛡</span>`:''}</span>
       </div>
     `;
   }
@@ -1410,7 +1659,7 @@
             </div>
             <div class="log" id="log-live" style="height:220px;">${logHTML(sceneLog(), session.role==='master')}</div>
             <textarea id="action-text" rows="3" placeholder="Scrivi cosa fa il tuo Tamer o il tuo Digimon..." style="margin-top:10px;"></textarea>
-            <div class="muted" id="action-hint" style="margin-top:4px;">Scorciatoia: scrivi <code>/tira NomeSkill [TN] [major|minor]</code> (es. <code>/tira awareness 15 major</code>) per tirare in chat, opzionalmente usando un Aspect.</div>
+            <div class="muted" id="action-hint" style="margin-top:4px;">${ACTION_HINT_DEFAULT_TEXT}</div>
             <div id="action-roll-result" style="margin-top:8px;"></div>
             ${chatAttachHTML('action')}
             <div class="row" style="margin-top:8px;">
@@ -1422,15 +1671,7 @@
 
           <div class="hud-frame card" id="attacks-card" style="${(cachedCombat && cachedCombat.active) ? '' : 'display:none;'}">
             <div class="section-title">Attacchi di ${escapeHTML(me.digimon.name || 'Digimon')}</div>
-            <div class="moves-grid">
-              ${me.digimon.attacks.map((a,i)=>`
-                <button class="move-btn" data-move-idx="${i}">
-                  <div class="name mono">${a.signature?'⭐ ':''}${escapeHTML(a.name)}</div>
-                  <div class="desc">${attackTagsHTML(a)}</div>
-                  ${a.desc ? `<div class="desc" style="margin-top:3px;">${escapeHTML(a.desc)}</div>` : ''}
-                </button>
-              `).join('')}
-            </div>
+            <div id="attacks-card-inner">${attacksCardHTML(me, cachedCombat, session.username)}</div>
           </div>
 
           <div class="hud-frame card">
@@ -1496,14 +1737,7 @@
       if(actionPreview) actionPreview.innerHTML = '';
       refreshLiveParts();
     };
-    document.querySelectorAll('[data-move-idx]').forEach(btn=>{
-      btn.onclick = async ()=>{
-        const idx = Number(btn.getAttribute('data-move-idx'));
-        const atk = me.digimon.attacks[idx];
-        await pushLog(code, { who: session.username, role:'player', text: `${me.digimon.name || 'Il Digimon'} dichiara ${atk.name}! (${attackTagsPlain(atk)}) — il Master lo risolve dal Combat Manager.` });
-        refreshLiveParts();
-      };
-    });
+    bindAttacksCard(code, me);
     attachLogModeration(document.getElementById('log-live'), code, me);
     bindCombatSelfActions(code, session.username);
     updateChatModeButtons();
@@ -2732,7 +2966,7 @@
           d.stance==='Anticipate' ? '6 su Dodge contano doppio contro un bersaglio marcato (richiede Anticipate Assault — gestione manuale)' : ''
         } (modificabile da "Modifica")</div>
         <div class="divider"></div>
-        ${barHTML('Battery', d.battery, batteryCap(d.stage), 'mp', 'dig-batt-minus-'+containerId, 'dig-batt-plus-'+containerId)}
+        ${batteryBarHTML('Battery', d.battery, batteryCap(d.stage), 'dig-batt-minus-'+containerId, 'dig-batt-plus-'+containerId)}
         <button class="btn amber" id="btn-sig-move-${containerId}" style="width:100%;margin-top:4px;" ${(d.battery||0)<1?'disabled':''}>⚡ Usa Signature Move (Battery ${d.battery||0})</button>
         <div class="divider"></div>
         ${barHTML('Resolve', d.resolveCurrent||0, d.resolveMax||4, 'mp', 'dig-res-minus-'+containerId, 'dig-res-plus-'+containerId)}
@@ -4059,6 +4293,99 @@
     }
   }
 
+  // ---------- shared attack resolution (usato sia dal Combat Manager del Master sia dall'attacco in self-service del giocatore) ----------
+  function validateAttackTargeting(attacker, target, atk){
+    if(!attacker || !target || attacker.id===target.id){
+      return { ok:false, error:'Scegli attaccante e bersaglio diversi.' };
+    }
+    const zDist = zoneDistance(attacker.zone||'Medio', target.zone||'Medio');
+    if(atk && atk.shape==='Melee' && zDist>0){
+      return { ok:false, error:`${atk.name} è [MELEE]: serve la stessa zona di ${target.name} (ora: ${attacker.zone||'Medio'}→${target.zone||'Medio'}). Avvicinati prima di attaccare.` };
+    }
+    if(atk && atk.shape==='Range' && zDist > (atk.reach||1)){
+      return { ok:false, error:`${atk.name} è [RANGE ${atk.reach||1}]: ${target.name} è troppo lontano (distanza ${zDist} zone, ${attacker.zone||'Medio'}→${target.zone||'Medio'}).` };
+    }
+    return { ok:true };
+  }
+
+  // Esegue i tiri Accuracy (attaccante) vs Dodge (bersaglio, automatico) e applica il danno se colpito.
+  // Assume che validateAttackTargeting sia già stato chiamato con esito positivo.
+  async function performAttackRoll(code, combat, attacker, target, atk){
+    const aStats = getParticipantCombatStats(attacker);
+    const tStats = getParticipantCombatStats(target);
+    const zDist = zoneDistance(attacker.zone||'Medio', target.zone||'Medio');
+    const zPenalty = zonePenalty(zDist);
+    const effAccuracy = Math.max(0, aStats.accuracy + zPenalty);
+    const overpowerUsed = !!attacker.overpowerActive;
+    const accRoll = rollPool(effAccuracy, overpowerUsed);
+    if(overpowerUsed) attacker.overpowerActive = false;
+    if(aStats.certainStrike>0) accRoll.successes += aStats.certainStrike;
+    let attrAdvNote = '';
+    const attrRule = cachedProgression && cachedProgression.attributeAdvantage;
+    if(attrRule && hasAttributeAdvantage(getParticipantAttribute(attacker), getParticipantAttribute(target))){
+      if(attrRule==='minor'){
+        const bonusDie = rollD6();
+        accRoll.dice.push(bonusDie);
+        if(bonusDie>=4) accRoll.successes += 1;
+        attrAdvNote = ` [Attribute Advantage (Minor): +1d6(${bonusDie})]`;
+      } else if(attrRule==='major'){
+        accRoll.successes += 1;
+        attrAdvNote = ' [Attribute Advantage (Major): +1 Successo automatico]';
+      }
+    }
+    const dodgeRoll = rollPool(tStats.dodge);
+    if(tStats.absoluteEvasion>0) dodgeRoll.successes += tStats.absoluteEvasion;
+    const zoneNote = (zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza: ${attacker.zone||'Medio'}→${target.zone||'Medio'})` : '') + (overpowerUsed ? ' [Overpower: 4 conta come Successo]' : '');
+    const certainNote = (aStats.certainStrike>0 ? ` +${aStats.certainStrike} [CERTAIN]` : '') + attrAdvNote;
+    const atkLabel = atk ? `${atk.name} ${attackTagsPlain(atk)}` : 'Attacco generico';
+    let logText, dealt = 0;
+
+    if(atk && atk.type==='Support'){
+      if(accRoll.successes <= dodgeRoll.successes){
+        logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO, nessun Effetto applicato.`;
+      } else if(atk.effectKey){
+        const def = EFFECT_DEFS.find(d=>d.key===atk.effectKey);
+        const potencyStr = window.prompt(`Potenza di ${def?def.label:atk.effectKey} da applicare a ${target.name}:`, '1');
+        const potency = Math.max(1, Number(potencyStr)||1);
+        if(def && def.instant){
+          const msg = await applyInstantEffect(code, target, atk.effectKey, potency);
+          logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! ${msg}`;
+        } else {
+          const durationStr = window.prompt('Durata (round, max 3):', '3');
+          const duration = Math.min(3, Math.max(1, Number(durationStr)||3));
+          if(!target.effects) target.effects = [];
+          target.effects.push({ key: atk.effectKey, potency, duration });
+          logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! Applica ${def?def.label:atk.effectKey} (Potenza ${potency}, Durata ${duration}).`;
+        }
+      } else {
+        logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: colpisce, ma non ha un Effetto collegato da applicare.`;
+      }
+    } else {
+      if(accRoll.successes <= dodgeRoll.successes){
+        logText = `⚔ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO (schivato)`;
+      } else {
+        const excess = accRoll.successes - dodgeRoll.successes;
+        let raw = excess + aStats.damage;
+        let combatMonsterNote = '';
+        if(attacker.isPC){
+          const aMember = cachedRoster.find(m=>m.username===attacker.username);
+          if(aMember && Number(aMember.digimon.resolveCurrent||0)>0 && computeQualityMechanics(aMember.digimon.qualities).combatMonster>0){
+            const resolveSpent = Number(aMember.digimon.resolveCurrent||0);
+            raw += resolveSpent;
+            aMember.digimon.resolveCurrent = 0;
+            await saveMember(code, aMember);
+            combatMonsterNote = ` +${resolveSpent} Resolve (Combat Monster, azzerato)`;
+          }
+        }
+        dealt = Math.max(0, raw - tStats.armor);
+        await applyDamageToParticipant(code, combat, target, dealt);
+        const w = getParticipantWounds(target);
+        logText = `⚔ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! (${excess}+DMG ${aStats.damage})${combatMonsterNote}-ARM ${tStats.armor} = ${dealt} danno → ${target.name} ${w.current}/${w.max} Ferite`;
+      }
+    }
+    return { logText, dealt, accRoll, dodgeRoll, atkLabel };
+  }
+
   let masterPrivateThread = null;
 
   async function grantMilestoneRewards(code){
@@ -4332,6 +4659,19 @@
   function zoneIndex(z){ const i = ZONES.indexOf(z); return i<0?1:i; }
   function zoneDistance(a,b){ return Math.abs(zoneIndex(a)-zoneIndex(b)); }
   function zonePenalty(distance){ if(distance<=0) return 0; if(distance===1) return -2; return -4; }
+  // Muovi di un solo passo lungo l'asse Corto/Medio/Lungo, in riferimento a un altro partecipante.
+  function zoneStepToward(fromZone, refZone){
+    const fi = zoneIndex(fromZone), ri = zoneIndex(refZone);
+    if(fi===ri) return null; // già alla stessa distanza, "avvicinati" non ha effetto
+    return ZONES[fi + (ri>fi?1:-1)];
+  }
+  function zoneStepAway(fromZone, refZone){
+    const fi = zoneIndex(fromZone), ri = zoneIndex(refZone);
+    const dir = (ri>=fi) ? -1 : 1; // se pari, per default ci si allontana verso "Corto"
+    const ni = fi + dir;
+    if(ni<0 || ni>ZONES.length-1) return null; // già al limite (non si può allontanare oltre)
+    return ZONES[ni];
+  }
 
   function renderCombatManager(code, players){
     const cardEl = document.getElementById('combat-mgr-card');
@@ -4343,11 +4683,16 @@
       cardEl.innerHTML = `
         <div class="section-title">Gestione Combattimento</div>
         <div class="muted" style="margin-bottom:10px;">Nessun combattimento attivo.</div>
-        <button class="btn solid" id="btn-combat-start" style="width:100%;">Inizia Combattimento</button>
+        <div class="field"><label>Zona di partenza (default per tutti i partecipanti)</label>
+          <select id="combat-start-zone">${ZONES.map(z=>`<option ${z==='Medio'?'selected':''}>${z}</option>`).join('')}</select>
+        </div>
+        <button class="btn solid" id="btn-combat-start" style="width:100%;margin-top:6px;">Inizia Combattimento</button>
       `;
       document.getElementById('btn-combat-start').onclick = async ()=>{
+        const startZoneSel = document.getElementById('combat-start-zone');
         cachedCombat = defaultCombat();
         cachedCombat.active = true;
+        cachedCombat.startZone = (startZoneSel && startZoneSel.value) || 'Medio';
         await saveCombat(code, cachedCombat);
         for(const p of players){
           const orderKeys = TALENT_DEFS.filter(t=>t.once==='combat').map(t=>t.order);
@@ -4364,6 +4709,10 @@
 
     cardEl.innerHTML = `
       <div class="section-title">Gestione Combattimento</div>
+      <div class="row" style="margin-bottom:8px;align-items:center;">
+        <span class="muted" style="flex:1;">Zona di partenza per i nuovi arrivati</span>
+        <select id="combat-startzone-live" style="flex:1;">${ZONES.map(z=>`<option ${(combat.startZone||'Medio')===z?'selected':''}>${z}</option>`).join('')}</select>
+      </div>
       <div id="combat-participants-list">
         ${combat.participants.length===0 ? '<div class="muted" style="margin-bottom:8px;">Nessun partecipante ancora aggiunto.</div>' : combat.participants.map((p,i)=>{
           const w = getParticipantWounds(p);
@@ -4487,6 +4836,14 @@
       const combatLive = document.getElementById('combat-live');
       if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
     };
+
+    const startZoneLiveSel = document.getElementById('combat-startzone-live');
+    if(startZoneLiveSel){
+      startZoneLiveSel.onchange = async ()=>{
+        combat.startZone = startZoneLiveSel.value;
+        await saveCombat(code, combat);
+      };
+    }
 
     function populateAttackChoice(){
       const attackerId = document.getElementById('combat-attacker').value;
@@ -4700,96 +5057,18 @@
         const attacker = combat.participants.find(p=>p.id===attackerId);
         const target = combat.participants.find(p=>p.id===targetId);
         const resEl = document.getElementById('combat-attack-result');
-        if(!attacker || !target || attacker.id===target.id){
-          if(resEl) resEl.innerHTML = '<div class="err">Scegli attaccante e bersaglio diversi.</div>';
-          return;
-        }
         let atk = null;
         const atkChoiceEl = document.getElementById('combat-attack-choice');
-        if(attacker.isPC && atkChoiceEl && atkChoiceEl.value !== ''){
+        if(attacker && attacker.isPC && atkChoiceEl && atkChoiceEl.value !== ''){
           const member = cachedRoster.find(m=>m.username===attacker.username);
           if(member) atk = (member.digimon.attacks||[])[Number(atkChoiceEl.value)];
         }
-        const zDist = zoneDistance(attacker.zone||'Medio', target.zone||'Medio');
-        if(atk && atk.shape==='Melee' && zDist>0){
-          if(resEl) resEl.innerHTML = `<div class="err">${atk.name} è [MELEE]: serve la stessa zona di ${target.name} (ora: ${attacker.zone||'Medio'}→${target.zone||'Medio'}). Usa "🏃 Muovi" per avvicinarti.</div>`;
+        const validation = validateAttackTargeting(attacker, target, atk);
+        if(!validation.ok){
+          if(resEl) resEl.innerHTML = `<div class="err">${validation.error}</div>`;
           return;
         }
-        if(atk && atk.shape==='Range' && zDist > (atk.reach||1)){
-          if(resEl) resEl.innerHTML = `<div class="err">${atk.name} è [RANGE ${atk.reach||1}]: ${target.name} è troppo lontano (distanza ${zDist} zone, ${attacker.zone||'Medio'}→${target.zone||'Medio'}).</div>`;
-          return;
-        }
-        const aStats = getParticipantCombatStats(attacker);
-        const tStats = getParticipantCombatStats(target);
-        const zPenalty = zonePenalty(zDist);
-        const effAccuracy = Math.max(0, aStats.accuracy + zPenalty);
-        const overpowerUsed = !!attacker.overpowerActive;
-        const accRoll = rollPool(effAccuracy, overpowerUsed);
-        if(overpowerUsed) attacker.overpowerActive = false;
-        if(aStats.certainStrike>0) accRoll.successes += aStats.certainStrike;
-        let attrAdvNote = '';
-        const attrRule = cachedProgression && cachedProgression.attributeAdvantage;
-        if(attrRule && hasAttributeAdvantage(getParticipantAttribute(attacker), getParticipantAttribute(target))){
-          if(attrRule==='minor'){
-            const bonusDie = rollD6();
-            accRoll.dice.push(bonusDie);
-            if(bonusDie>=4) accRoll.successes += 1;
-            attrAdvNote = ` [Attribute Advantage (Minor): +1d6(${bonusDie})]`;
-          } else if(attrRule==='major'){
-            accRoll.successes += 1;
-            attrAdvNote = ' [Attribute Advantage (Major): +1 Successo automatico]';
-          }
-        }
-        const dodgeRoll = rollPool(tStats.dodge);
-        if(tStats.absoluteEvasion>0) dodgeRoll.successes += tStats.absoluteEvasion;
-        const zoneNote = (zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza: ${attacker.zone||'Medio'}→${target.zone||'Medio'})` : '') + (overpowerUsed ? ' [Overpower: 4 conta come Successo]' : '');
-        const certainNote = (aStats.certainStrike>0 ? ` +${aStats.certainStrike} [CERTAIN]` : '') + attrAdvNote;
-        const atkLabel = atk ? `${atk.name} ${attackTagsPlain(atk)}` : 'Attacco generico';
-        let logText, dealt = 0;
-
-        if(atk && atk.type==='Support'){
-          if(accRoll.successes <= dodgeRoll.successes){
-            logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO, nessun Effetto applicato.`;
-          } else if(atk.effectKey){
-            const def = EFFECT_DEFS.find(d=>d.key===atk.effectKey);
-            const potencyStr = window.prompt(`Potenza di ${def?def.label:atk.effectKey} da applicare a ${target.name}:`, '1');
-            const potency = Math.max(1, Number(potencyStr)||1);
-            if(def && def.instant){
-              const msg = await applyInstantEffect(code, target, atk.effectKey, potency);
-              logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! ${msg}`;
-            } else {
-              const durationStr = window.prompt('Durata (round, max 3):', '3');
-              const duration = Math.min(3, Math.max(1, Number(durationStr)||3));
-              if(!target.effects) target.effects = [];
-              target.effects.push({ key: atk.effectKey, potency, duration });
-              logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! Applica ${def?def.label:atk.effectKey} (Potenza ${potency}, Durata ${duration}).`;
-            }
-          } else {
-            logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: colpisce, ma non ha un Effetto collegato da applicare.`;
-          }
-        } else {
-          if(accRoll.successes <= dodgeRoll.successes){
-            logText = `⚔ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO`;
-          } else {
-            const excess = accRoll.successes - dodgeRoll.successes;
-            let raw = excess + aStats.damage;
-            let combatMonsterNote = '';
-            if(attacker.isPC){
-              const aMember = cachedRoster.find(m=>m.username===attacker.username);
-              if(aMember && Number(aMember.digimon.resolveCurrent||0)>0 && computeQualityMechanics(aMember.digimon.qualities).combatMonster>0){
-                const resolveSpent = Number(aMember.digimon.resolveCurrent||0);
-                raw += resolveSpent;
-                aMember.digimon.resolveCurrent = 0;
-                await saveMember(code, aMember);
-                combatMonsterNote = ` +${resolveSpent} Resolve (Combat Monster, azzerato)`;
-              }
-            }
-            dealt = Math.max(0, raw - tStats.armor);
-            await applyDamageToParticipant(code, combat, target, dealt);
-            const w = getParticipantWounds(target);
-            logText = `⚔ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! (${excess}+DMG ${aStats.damage})${combatMonsterNote}-ARM ${tStats.armor} = ${dealt} danno → ${target.name} ${w.current}/${w.max} Ferite`;
-          }
-        }
+        const { logText, dealt, accRoll, dodgeRoll } = await performAttackRoll(code, combat, attacker, target, atk);
         if(resEl){
           resEl.innerHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">vs</span>${diceRowHTML(dodgeRoll.dice)}${dealt>0?`<span class="roll-total">${dealt} danno</span>`:''}`;
         }
@@ -5211,7 +5490,7 @@
       const member = cachedRoster.find(m=>m.username===username);
       const ram = member ? computeDerivedStats(member.digimon).ram : 0;
       const startActions = (member && member.digimon.hybridMode) ? 3 : 2;
-      combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:username, side:'ally', ram, initiative:0, actions:startActions, attackedThisRound:false, effects:[], zone:'Medio', clashPinned:false, clashComebackBonus:0, isPC:true, username });
+      combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:username, side:'ally', ram, initiative:0, actions:startActions, attackedThisRound:false, effects:[], zone: combat.startZone||'Medio', clashPinned:false, clashComebackBonus:0, isPC:true, username });
       await persistAndRefresh();
     };
     const dexFillSelect = document.getElementById('combat-enemy-fromdex');
@@ -5240,7 +5519,7 @@
       const maxWounds = Number(document.getElementById('combat-enemy-hp').value)||1;
       const attribute = document.getElementById('combat-enemy-attribute').value;
       combat.participants.push({
-        id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name, side:'enemy', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], zone:'Medio', clashPinned:false, clashComebackBonus:0, isPC:false,
+        id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name, side:'enemy', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], zone: combat.startZone||'Medio', clashPinned:false, clashComebackBonus:0, isPC:false,
         accuracy, damage, dodge, armor, maxWounds, currentWounds: maxWounds, attribute
       });
       await persistAndRefresh();
@@ -5686,7 +5965,7 @@
     visible.forEach(e=>{
       const key = e.name.trim().toLowerCase()+'|'+(e.stage||'')+'|'+(e.image||'');
       let g = groups.find(x=>x.key===key);
-      if(!g){ g = { key, name:e.name, stage:e.stage, image:e.image, isBoss:false, count:0 }; groups.push(g); }
+      if(!g){ g = { key, name:e.name, stage:e.stage, image:e.image, isBoss:false, count:0, single:e }; groups.push(g); }
       g.count++;
       if(e.isBoss) g.isBoss = true;
     });
@@ -5696,13 +5975,19 @@
       <div style="margin-top:8px;">
         <button type="button" class="btn ghost small" data-toggle-enc-size style="margin-bottom:8px;">${large?'🔎 Immagini più piccole':'🔍 Immagini più grandi'}</button>
         <div style="display:flex;flex-wrap:wrap;gap:10px;">
-          ${groups.map(g=>`
-            <div data-enc-name="${escapeAttr(g.name)}" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;width:${imgSize+18}px;padding:4px;border-radius:8px;border:2px solid ${g.isBoss?'var(--danger)':'transparent'};position:relative;" title="Clicca per i dettagli">
+          ${groups.map(g=>{
+            // Una barra vita si mostra solo per un individuo singolo: per un gruppo (×N) le Ferite si tracciano nel Combat Manager una volta ingaggiati.
+            const showHp = g.count===1 && encounterMaxWounds(g.single) > 1;
+            const cardW = showHp ? Math.max(imgSize+18, 90) : imgSize+18;
+            const hpRow = showHp ? `<div style="width:100%;">${miniHpBarHTML(encounterCurrentWounds(g.single), encounterMaxWounds(g.single))}</div>` : '';
+            return `
+            <div class="enc-card-mini" data-enc-name="${escapeAttr(g.name)}" style="cursor:pointer;width:${cardW}px;padding:4px;border-radius:8px;border:2px solid ${g.isBoss?'var(--danger)':'transparent'};position:relative;" title="Clicca per i dettagli">
               ${g.count>1 ? `<span style="position:absolute;top:-4px;right:0px;background:var(--cyan);color:#04211c;font-size:9px;font-weight:700;border-radius:8px;padding:1px 5px;">×${g.count}</span>` : ''}
               ${g.image ? `<img src="${escapeAttr(g.image)}" onerror="this.style.display='none'" style="width:${imgSize}px;height:${imgSize}px;object-fit:cover;border-radius:6px;" />` : `<div style="width:${imgSize}px;height:${imgSize}px;display:flex;align-items:center;justify-content:center;background:var(--panel-2);border-radius:6px;color:var(--text-mute);font-size:16px;">${escapeHTML((g.name||'?')[0]||'?')}</div>`}
               <div style="font-size:10px;text-align:center;margin-top:3px;line-height:1.2;">${escapeHTML(g.name)}</div>
+              ${hpRow}
             </div>
-          `).join('')}
+          `;}).join('')}
         </div>
       </div>
     `;
@@ -5718,12 +6003,21 @@
     return items.map((e,i)=>{
       const already = !!e.dexId || isInDex(e.name);
       const visible = e.revealed!==false;
+      const maxW = encounterMaxWounds(e);
+      const curW = encounterCurrentWounds(e);
       return `
         <div class="roster-item" style="padding:6px 8px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;${e.isBoss?'border-color:var(--danger);':''}">
           ${e.image ? `<img src="${escapeAttr(e.image)}" onerror="this.style.display='none'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0;" />` : ''}
-          <div style="flex:1;min-width:120px;">
+          <div style="flex:1;min-width:140px;">
             <div><b>${escapeHTML(e.name)}</b> ${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}${e.isBoss?`<span class="tag" style="color:var(--danger);border-color:var(--danger);">👑 Boss</span>`:''}${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>
             <div class="muted" style="font-size:11px;">${visible ? '👁️ Visibile ai giocatori' : '🙈 Nascosto — solo il Master lo vede'}</div>
+            <div style="display:flex;align-items:center;gap:6px;max-width:220px;">
+              ${miniHpBarHTML(curW, maxW)}
+              <div class="bar-controls" style="margin-top:5px;">
+                <button data-enchp-minus="${i}">−</button>
+                <button data-enchp-plus="${i}">+</button>
+              </div>
+            </div>
           </div>
           <button class="btn ${e.isBoss?'':'ghost'} small" data-toggle-boss="${i}" style="padding:4px 8px;font-size:10px;">${e.isBoss?'👑 Rimuovi Boss':'👑 Segna Boss'}</button>
           <button class="btn ${visible?'ghost':''} small" data-toggle-reveal="${i}" style="padding:4px 8px;font-size:10px;">${visible?'🙈 Nascondi':'👁️ Mostra ai giocatori'}</button>
@@ -5887,8 +6181,32 @@
         const idx = Number(btn.getAttribute('data-dupe-enc'));
         const e = cachedScene.encounters[idx];
         if(!e) return;
-        const copy = Object.assign({}, e, { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6) });
+        const copy = Object.assign({}, e, { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), currentWounds:null });
         cachedScene.encounters.splice(idx+1, 0, copy);
+        await saveScene(code, cachedScene);
+        live.innerHTML = encountersEditableHTML(cachedScene.encounters);
+        bindEncountersInnerActions(code, username);
+        refreshLiveParts();
+      };
+    });
+    live.querySelectorAll('[data-enchp-minus]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const idx = Number(btn.getAttribute('data-enchp-minus'));
+        const e = cachedScene.encounters[idx];
+        if(!e) return;
+        e.currentWounds = Math.max(0, encounterCurrentWounds(e)-1);
+        await saveScene(code, cachedScene);
+        live.innerHTML = encountersEditableHTML(cachedScene.encounters);
+        bindEncountersInnerActions(code, username);
+        refreshLiveParts();
+      };
+    });
+    live.querySelectorAll('[data-enchp-plus]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const idx = Number(btn.getAttribute('data-enchp-plus'));
+        const e = cachedScene.encounters[idx];
+        if(!e) return;
+        e.currentWounds = Math.min(encounterMaxWounds(e), encounterCurrentWounds(e)+1);
         await saveScene(code, cachedScene);
         live.innerHTML = encountersEditableHTML(cachedScene.encounters);
         bindEncountersInnerActions(code, username);
@@ -6037,9 +6355,20 @@
   // ---------- SCENE ENCOUNTERS: name-only strings (legacy) vs full Dex-linked objects ----------
   function normalizeEncounter(e){
     if(typeof e === 'string'){
-      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, revealed:true, isBoss:false };
+      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, revealed:true, isBoss:false, currentWounds:null };
     }
-    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, revealed:true, isBoss:false }, e);
+    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, revealed:true, isBoss:false, currentWounds:null }, e);
+  }
+
+  // Caselle Ferita di un Incontro nella Scena, stessa formula usata per i Digimon dei giocatori (Stage + Health×2)
+  function encounterMaxWounds(e){
+    const bs = (e && e.baseStats) || {};
+    return Math.max(1, stageIndex(e && e.stage) + Number(bs.baseHealth||0)*2);
+  }
+  function encounterCurrentWounds(e){
+    const max = encounterMaxWounds(e);
+    if(e.currentWounds===null || e.currentWounds===undefined) return max;
+    return Math.max(0, Math.min(max, Number(e.currentWounds)));
   }
   function encName(e){ return (typeof e==='string') ? e : ((e && e.name) || ''); }
 

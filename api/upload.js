@@ -17,10 +17,25 @@
 // E la tabella "scan_log" (vedi SQL_scan_log.sql) per la parte SCAN.
 const { createClient } = require('@supabase/supabase-js');
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+// Inizializzazione "lazy" e protetta: se SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY mancano,
+// createClient() lancerebbe un'eccezione SINCRONA al caricamento del modulo, fuori da ogni
+// try/catch — Vercel risponderebbe con un 500 "nudo", senza corpo JSON, esattamente come un
+// crash indecifrabile in console. Qui invece l'errore viene rimandato dentro il try/catch della
+// richiesta, con un messaggio chiaro su cosa manca.
+let _supabase = null;
+function getSupabase() {
+  if (_supabase) return _supabase;
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error(
+      'SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY non impostate su questo deployment. ' +
+      'Controlla su Vercel → Settings → Environment Variables che entrambe siano abilitate ' +
+      'anche per l\'ambiente "Preview", non solo "Production" (gli URL con hash tipo ' +
+      '"digimon-XXXXXXX-....vercel.app" sono deployment di Preview).'
+    );
+  }
+  _supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  return _supabase;
+}
 
 const BUCKET = 'chat-uploads';
 const SCAN_TABLE = 'scan_log';
@@ -45,12 +60,12 @@ async function handleImageUpload(req, res) {
     .slice(-80);
   const path = `${folder || 'chat'}/${code}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`;
 
-  const { error: upErr } = await supabase.storage
+  const { error: upErr } = await getSupabase().storage
     .from(BUCKET)
     .upload(path, buffer, { contentType: mimeType, upsert: false });
   if (upErr) return res.status(500).json({ error: upErr.message });
 
-  const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  const { data: pub } = getSupabase().storage.from(BUCKET).getPublicUrl(path);
 
   return res.status(200).json({ ok: true, url: pub.publicUrl });
 }
@@ -60,7 +75,7 @@ async function handleScanGet(req, res) {
   const { code, username } = req.query || {};
   if (!code) return res.status(400).json({ error: 'code è obbligatorio' });
 
-  const { data: rows, error } = await supabase
+  const { data: rows, error } = await getSupabase()
     .from(SCAN_TABLE)
     .select('id, username, digimon_name, crest_name, attempt_number, created_at')
     .eq('code', code)
@@ -85,7 +100,7 @@ async function handleScanGet(req, res) {
 async function handleScanDelete(req, res) {
   const { code, id } = req.query || {};
   if (!code || !id) return res.status(400).json({ error: 'code e id sono obbligatori' });
-  const { error } = await supabase.from(SCAN_TABLE).delete().eq('code', code).eq('id', id);
+  const { error } = await getSupabase().from(SCAN_TABLE).delete().eq('code', code).eq('id', id);
   if (error) return res.status(500).json({ error: error.message });
   return res.status(200).json({ ok: true });
 }
@@ -116,7 +131,7 @@ async function handleScanPost(req, res) {
     return res.status(409).json({ error: 'Questo Digimon è già stato assegnato a un altro Tamer della campagna.' });
   }
 
-  const { error: insErr } = await supabase.from(SCAN_TABLE).insert({
+  const { error: insErr } = await getSupabase().from(SCAN_TABLE).insert({
     code,
     username,
     digimon_name: digimonName,
