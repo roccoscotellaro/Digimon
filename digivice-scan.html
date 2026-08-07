@@ -59,7 +59,7 @@
   .progress-seg.done{ background:var(--cyan-dim); }
   .progress-seg.current{ background:var(--cyan); }
 
-  .body-pad{ padding:22px 22px 26px 22px; }
+  .body-pad{ padding:22px 22px 26px 22px; overflow-wrap:break-word; word-wrap:break-word; }
 
   .qnum{
     font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--cyan);
@@ -128,8 +128,8 @@
 
   .id-block{ background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:16px; }
   .id-label{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--cyan-dim); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:8px; }
-  .id-row{ display:flex; gap:8px; }
-  .id-input{ flex:1; background:var(--bg); border:1px solid var(--line); border-radius:var(--radius); color:var(--text); padding:11px 12px; font-family:'Manrope',sans-serif; font-size:14px; }
+  .id-row{ display:flex; gap:8px; flex-wrap:wrap; }
+  .id-input{ flex:1; min-width:180px; background:var(--bg); border:1px solid var(--line); border-radius:var(--radius); color:var(--text); padding:11px 12px; font-family:'Manrope',sans-serif; font-size:14px; }
   .id-input:focus{ outline:none; border-color:var(--cyan-dim); }
   .id-verify-btn{ background:var(--cyan-dim); color:#04110d; border:none; border-radius:var(--radius); padding:0 16px; font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; cursor:pointer; }
   .id-verify-btn:hover{ filter:brightness(1.15); }
@@ -157,25 +157,25 @@
   .crest-reasoning-item .q{ color:var(--text-mute); }
   .crest-reasoning-item .a{ color:var(--text); }
 
-  .gm-panel{ margin-top:22px; padding-top:16px; border-top:2px dashed #6b5a1f; }
+  .gm-panel{ margin-top:22px; padding-top:16px; border-top:2px dashed #6b5a1f; overflow-wrap:break-word; word-wrap:break-word; }
   .gm-panel .gm-title{ font-family:'JetBrains Mono',monospace; font-size:11px; color:#ffd76a; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:10px; }
-  .gm-section{ background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:14px; margin-bottom:14px; }
+  .gm-section{ background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:14px; margin-bottom:14px; max-width:100%; }
   .gm-section .gm-section-h{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--cyan-dim); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:10px; }
-  .gm-crest-row{ display:flex; gap:8px; align-items:center; margin-bottom:8px; }
-  .gm-crest-row label{ width:96px; flex-shrink:0; font-size:12px; color:var(--text); }
-  .gm-crest-row input{ flex:1; background:var(--bg); border:1px solid var(--line); border-radius:6px; color:var(--text); padding:8px 10px; font-size:12.5px; }
-  .gm-crest-row button{ background:var(--cyan-dim); color:#04110d; border:none; border-radius:6px; padding:8px 12px; font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:700; cursor:pointer; }
+  .gm-crest-row{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }
+  .gm-crest-row label{ width:100%; flex-shrink:0; font-size:12px; color:var(--text); font-weight:700; }
+  .gm-crest-row input{ flex:1; min-width:140px; background:var(--bg); border:1px solid var(--line); border-radius:6px; color:var(--text); padding:8px 10px; font-size:12.5px; }
+  .gm-crest-row button{ background:var(--cyan-dim); color:#04110d; border:none; border-radius:6px; padding:8px 12px; font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:700; cursor:pointer; flex-shrink:0; }
   .gm-crest-row .gm-thumb{ width:28px; height:28px; border-radius:6px; object-fit:cover; border:1px solid var(--line); flex-shrink:0; }
-  .gm-status{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--text-mute); margin-top:4px; }
+  .gm-status{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--text-mute); margin-top:4px; overflow-wrap:break-word; }
   .gm-ref-table{ font-size:11.5px; }
   .gm-ref-crest{ margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid var(--line); }
   .gm-ref-crest:last-child{ border-bottom:none; margin-bottom:0; padding-bottom:0; }
   .gm-ref-crest .gm-ref-name{ font-weight:800; color:#ffd76a; margin-bottom:4px; }
-  .gm-ref-crest .gm-ref-line{ color:var(--text-mute); padding:2px 0; }
+  .gm-ref-crest .gm-ref-line{ color:var(--text-mute); padding:2px 0; overflow-wrap:break-word; }
   .gm-ref-crest .gm-ref-line b{ color:var(--text); font-weight:600; }
-  .gm-test-row{ display:flex; justify-content:space-between; gap:10px; align-items:center; padding:6px 0; border-bottom:1px solid var(--line); font-size:12px; }
-  .gm-test-row select{ background:var(--bg); border:1px solid var(--line); border-radius:6px; color:var(--text); padding:6px 8px; font-size:12px; }
-  .gm-test-result{ margin-top:12px; padding:10px; background:rgba(255,215,106,0.08); border:1px solid #6b5a1f; border-radius:8px; font-size:13px; }
+  .gm-test-btn{ width:100%; background:var(--cyan-dim); color:#04110d; border:none; border-radius:var(--radius); padding:12px; font-family:'JetBrains Mono',monospace; font-weight:700; font-size:12px; letter-spacing:0.04em; cursor:pointer; }
+  .gm-test-btn:hover{ filter:brightness(1.15); }
+  .gm-back-btn{ width:100%; margin-top:14px; background:transparent; color:var(--text-mute); border:1px solid var(--line); border-radius:var(--radius); padding:11px; font-family:'JetBrains Mono',monospace; font-size:11px; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -252,6 +252,7 @@
     <div class="runner-up" id="runnerUp"></div>
     <button class="btn" id="addStarterBtn" style="margin-bottom:10px;">🧬 Aggiungi come Starter</button>
     <button class="btn ghost" id="restartBtn">Ripeti la Scansione</button>
+    <button class="gm-back-btn hidden" id="gmPreviewBackBtn">← Torna al Pannello Master</button>
     <div class="footer-note" id="starterNote" style="display:none;">Apri Digivice OS con il Digimon e le statistiche già pronte nella Creation Wizard — dovrai comunque accedere con codice campagna e nome utente.</div>
     <div class="footer-note">Il risultato è un punto di partenza narrativo, non un vincolo: il GM ha sempre l'ultima parola.</div>
   </div>
@@ -521,12 +522,39 @@ async function apiPostCrestImage(crestName, imageUrl){
 }
 
 // ---------- PANNELLO MASTER (visibile solo con ?gm=1 nell'URL) ----------
-// Tre strumenti in uno, tutti pensati per non dover rifare l'intero quiz per verificare qualcosa:
+// Tre strumenti in uno:
 //  1) Editor immagini Crest — salva sul server, visibile subito a tutti i Tamer.
 //  2) Tabella di riferimento — per ogni Crest, quale risposta di ogni domanda lo allinea.
-//  3) Test rapido — scegli le risposte da dei menu a tendina e vedi subito il Crest risultante,
-//     con lo stesso dettaglio "domanda per domanda" che vede il giocatore a fine scan.
+//  3) "Prova il quiz per intero" — avvia il VERO mini-quiz dedicato al Crest (8 domande, una
+//     schermata alla volta, esattamente come lo vede un giocatore), senza dover prima passare
+//     dal Digimon-match e senza registrare nulla sul backend. Utile per verificare che le
+//     domande e il risultato abbiano senso prima di farlo giocare al gruppo.
 const isGmMode = new URLSearchParams(location.search).get('gm') === '1';
+
+function startGmCrestQuizPreview(){
+  document.getElementById('gmPanel').classList.add('hidden');
+  document.getElementById('starterNote').style.display = 'none';
+  document.getElementById('addStarterBtn').classList.add('hidden');
+  document.getElementById('restartBtn').classList.add('hidden');
+  runCrestQuiz((crestAnswers)=>{
+    const matchedCrest = bestCrestMatch(crestAnswers);
+    document.getElementById('resultTag').textContent = 'Anteprima Master — nessun dato salvato';
+    document.getElementById('resPortrait').innerHTML = '<span class="placeholder">🔶</span>';
+    document.getElementById('resName').textContent = '';
+    document.getElementById('resStage').textContent = '';
+    document.getElementById('resWhy').textContent = '';
+    document.getElementById('resTraits').innerHTML = '';
+    document.getElementById('runnerUp').innerHTML = '';
+    renderCrestPortrait(matchedCrest);
+    document.getElementById('crestName').textContent = matchedCrest;
+    document.getElementById('crestDesc').textContent = CRESTS[matchedCrest].desc;
+    buildCrestReasoning(matchedCrest, crestAnswers);
+    document.getElementById('crestCard').classList.remove('hidden');
+    const backBtn = document.getElementById('gmPreviewBackBtn');
+    backBtn.classList.remove('hidden');
+    showScreen('result');
+  });
+}
 
 function recomputeGmTest(host){
   const axisMap = {};
@@ -566,19 +594,16 @@ async function renderGmPanel(){
   const refHTML = '<div class="gm-section"><div class="gm-section-h">📋 Riferimento — quale risposta allinea a quale Crest</div><div class="gm-ref-table">'
     + crestNames.map(name=>{
         const tags = CRESTS[name].tags;
-        const lines = QUESTIONS.map(q =>
+        const lines = CREST_QUESTIONS.map(q =>
           '<div class="gm-ref-line">' + q.text + ' → <b>' + (tags[q.axis]==='A'?q.a:q.b) + '</b></div>'
         ).join('');
         return '<div class="gm-ref-crest"><div class="gm-ref-name">' + name + '</div>' + lines + '</div>';
       }).join('')
     + '</div></div>';
 
-  const testHTML = '<div class="gm-section"><div class="gm-section-h">🧪 Test rapido — senza rifare tutto il quiz</div>'
-    + QUESTIONS.map(q=>(
-        '<div class="gm-test-row"><span>' + q.text + '</span>'
-        + '<select data-test-axis="' + q.axis + '"><option value="">—</option><option value="A">' + q.a + '</option><option value="B">' + q.b + '</option></select></div>'
-      )).join('')
-    + '<div class="gm-test-result" id="gmTestResult">Seleziona qualche risposta per vedere il Crest risultante.</div>'
+  const testHTML = '<div class="gm-section"><div class="gm-section-h">🧪 Prova il quiz per intero</div>'
+    + '<div class="gm-status" style="margin-top:0;margin-bottom:10px;">Le 8 domande del Crest sono DIVERSE da quelle del match col Digimon (qui sopra vedi quali). Il pulsante qui sotto avvia il vero quiz, una domanda alla volta — nessun dato viene salvato.</div>'
+    + '<button class="gm-test-btn" id="gmStartCrestPreview">▶ Avvia il quiz Crest per intero</button>'
     + '</div>';
 
   host.innerHTML = '<div class="gm-title">⚙ Pannello Master (?gm=1 — non visibile ai giocatori)</div>' + imagesHTML + refHTML + testHTML;
@@ -601,7 +626,7 @@ async function renderGmPanel(){
     };
   });
 
-  host.querySelectorAll('[data-test-axis]').forEach(sel=>{ sel.onchange = ()=> recomputeGmTest(host); });
+  document.getElementById('gmStartCrestPreview').onclick = startGmCrestQuizPreview;
 }
 renderGmPanel();
 function renderCrestPortrait(name){
@@ -754,28 +779,62 @@ function findTiebreakForTop(ranked, mismatch){
 }
 
 // ---------- CREST (sbloccato solo con il Digimedaglione in inventario) ----------
-// Stesso principio di matching a mismatch minimo usato per i Digimon, ma su un set indipendente
-// di 8 profili (i Crest classici). Non c'è vincolo di unicità tra Tamer: più persone possono
-// convergere sullo stesso Crest, è narrativamente corretto.
+// Domande DEDICATE, diverse da quelle del Digimon-match qui sopra: ognuna delle 8 mette il
+// giocatore davanti a un dilemma legato al "nucleo" di un singolo Crest classico. Rispondere
+// "A" (la scelta che incarna quel valore) pesa a favore di quel Crest; rispondere "B" no.
+// Non c'è vincolo di unicità tra Tamer: più persone possono convergere sullo stesso Crest,
+// è narrativamente corretto.
+const CREST_QUESTIONS = [
+  { axis:0, crest:'Coraggio',
+    text:"Devi decidere in una frazione di secondo, senza tempo per pensarci.",
+    a:"Agisco subito, di petto — poi si vedrà.", b:"Mi blocco un istante e cerco un'alternativa più sicura." },
+  { axis:1, crest:'Amicizia',
+    text:"Un amico ti chiede un favore grosso, che ti costerà caro.",
+    a:"Lo aiuto comunque — gli amici vengono prima di tutto.", b:"Valuto bene i costi prima di impegnarmi davvero." },
+  { axis:2, crest:'Amore',
+    text:"Vedi qualcuno soffrire in silenzio, senza chiedere aiuto.",
+    a:"Mi avvicino e mi prendo cura di lui/lei comunque.", b:"Aspetto che sia lui/lei a cercarmi, se vuole parlarne." },
+  { axis:3, crest:'Conoscenza',
+    text:"Ti trovi davanti a un problema che non capisci ancora del tutto.",
+    a:"Voglio prima capirlo a fondo, prima di agire.", b:"Provo e imparo facendo — capirò strada facendo." },
+  { axis:4, crest:'Sincerità',
+    text:"Un'opinione scomoda potrebbe ferire qualcuno a cui tieni.",
+    a:"Gliela dico comunque — la verità viene prima.", b:"Scelgo le parole con cura, o taccio se serve." },
+  { axis:5, crest:'Affidabilità',
+    text:"Ti hanno affidato un compito importante per il gruppo.",
+    a:"Lo porto a termine qualunque cosa succeda — è una promessa.", b:"Faccio il possibile, ma le circostanze possono cambiare le cose." },
+  { axis:6, crest:'Speranza',
+    text:"Le cose sembrano perse, tutto va storto.",
+    a:"Continuo a crederci, e lo dico agli altri per tenerli su.", b:"Mi preparo al peggio — meglio essere realisti." },
+  { axis:7, crest:'Luce',
+    text:"Un compagno è confuso, non sa che scelta fare.",
+    a:"Gli sto vicino in silenzio — la mia presenza basta.", b:"Gli parlo, provo ad aiutarlo a vedere le cose chiaramente." }
+];
+
+// Ogni Crest è 'A' solo sul proprio asse-dilemma e 'B' su tutti gli altri: il Crest che esce è
+// semplicemente quello il cui dilemma hai risolto "in modo eroico" (risposta A). Se hai risposto
+// A a più di un dilemma, vince quello con priorità più alta nell'ordine qui sotto (Coraggio in
+// cima); se non hai risposto A a nessuno, il Digivice assegna Coraggio di default. Semplice e
+// trasparente da verificare — vedi la tabella di riferimento nel pannello Master.
 const CRESTS = {
-  Coraggio:      { tags:'AAAAAAAAAA', desc:'Agisci d\'istinto per chi ami, ti butti al centro della scena e non hai paura di sbagliare in pubblico. La tua è una spinta pura, diretta, quasi mai calcolata.' },
-  Amicizia:      { tags:'BBBBAABBBB', desc:'Ti fidi lentamente ma quando lo fai è per sempre — proteggi chi ti sta vicino piegando anche le regole, restando però riservato/a su come lo vivi davvero.' },
-  Amore:         { tags:'BABABABABB', desc:'Ti prendi cura degli altri con calore e fiducia immediata, ma tieni le tue emozioni più profonde per te, dimostrandole con la presenza più che con le parole.' },
-  Conoscenza:    { tags:'BBBBBBBBBB', desc:'Osservi, rifletti, analizzi prima di agire. Preferisci capire davvero una situazione piuttosto che reagire d\'istinto, e agisci meglio lontano dai riflettori.' },
-  Sincerità:     { tags:'AAAAAABAAA', desc:'Dici quello che pensi, ti fidi facilmente e vivi le emozioni apertamente. Il tuo ottimismo e la tua spontaneità sono la tua forma più onesta di affetto.' },
-  Affidabilità:  { tags:'BBBBBABBBB', desc:'Sei prudente, rispetti le regole e ti prepari sempre al peggio — non per pessimismo, ma perché qualcuno deve pensare a tutto. Su di te si può sempre contare.' },
-  Speranza:      { tags:'AAAAAABABA', desc:'Credi che le cose si risolveranno anche quando le prove dicono il contrario, e lo dici apertamente per sostenere chi ti sta vicino. Il tuo ottimismo è contagioso, non ingenuo.' },
-  Luce:          { tags:'BAAAAABABB', desc:'Sei riflessivo/a ma caloroso/a, empatico/a e gentile — non cerchi l\'attenzione, ma la tua presenza discreta cambia le cose per chi ti circonda.' }
+  Coraggio:      { tags:'ABBBBBBB', desc:'Agisci d\'istinto per chi ami, ti butti al centro della scena e non hai paura di sbagliare in pubblico. La tua è una spinta pura, diretta, quasi mai calcolata.' },
+  Amicizia:      { tags:'BABBBBBB', desc:'Ti fidi lentamente ma quando lo fai è per sempre — proteggi chi ti sta vicino piegando anche le regole, restando però riservato/a su come lo vivi davvero.' },
+  Amore:         { tags:'BBABBBBB', desc:'Ti prendi cura degli altri con calore e fiducia immediata, ma tieni le tue emozioni più profonde per te, dimostrandole con la presenza più che con le parole.' },
+  Conoscenza:    { tags:'BBBABBBB', desc:'Osservi, rifletti, analizzi prima di agire. Preferisci capire davvero una situazione piuttosto che reagire d\'istinto, e agisci meglio lontano dai riflettori.' },
+  Sincerità:     { tags:'BBBBABBB', desc:'Dici quello che pensi, ti fidi facilmente e vivi le emozioni apertamente. Il tuo ottimismo e la tua spontaneità sono la tua forma più onesta di affetto.' },
+  Affidabilità:  { tags:'BBBBBABB', desc:'Sei prudente, rispetti le regole e ti prepari sempre al peggio — non per pessimismo, ma perché qualcuno deve pensare a tutto. Su di te si può sempre contare.' },
+  Speranza:      { tags:'BBBBBBAB', desc:'Credi che le cose si risolveranno anche quando le prove dicono il contrario, e lo dici apertamente per sostenere chi ti sta vicino. Il tuo ottimismo è contagioso, non ingenuo.' },
+  Luce:          { tags:'BBBBBBBA', desc:'Sei riflessivo/a ma caloroso/a, empatico/a e gentile — non cerchi l\'attenzione, ma la tua presenza discreta cambia le cose per chi ti circonda.' }
 };
 
 function bestCrestMatch(axisMapOverride){
-  const axisMap = axisMapOverride || answersByAxis;
+  const axisMap = axisMapOverride || answersByAxisCrest;
   const names = Object.keys(CRESTS);
   const mismatch = {};
   names.forEach(name=>{
     const tags = CRESTS[name].tags;
     let m = 0;
-    for(let axis=0; axis<QUESTIONS.length; axis++){
+    for(let axis=0; axis<CREST_QUESTIONS.length; axis++){
       const given = axisMap[axis];
       if(given === undefined) continue;
       if(given !== tags[axis]) m++;
@@ -785,15 +844,15 @@ function bestCrestMatch(axisMapOverride){
   return names.slice().sort((a,b)=> mismatch[a]-mismatch[b])[0];
 }
 
-// Elenca, per il Crest assegnato, tutte le domande a cui il giocatore ha effettivamente
-// risposto: mostra la domanda, la risposta data, e se quella risposta è allineata (✔) o meno
-// (·) col profilo del Crest — così chi ha il Digimedaglione può vedere "perché" gli è uscito
-// quel Crest, non solo il nome.
+// Elenca, per il Crest assegnato, tutte le domande DEDICATE (CREST_QUESTIONS) a cui il
+// giocatore ha risposto: mostra la domanda, la risposta data, e se è allineata (✔) o meno (·)
+// col profilo del Crest — così chi ha il Digimedaglione può vedere "perché" gli è uscito quel
+// Crest, non solo il nome.
 function buildCrestReasoning(crestName, axisMapOverride, targetId){
   const tags = CRESTS[crestName].tags;
-  const axisMap = axisMapOverride || answersByAxis;
+  const axisMap = axisMapOverride || answersByAxisCrest;
   const wrap = document.getElementById(targetId || 'crestReasoning');
-  const rows = QUESTIONS
+  const rows = CREST_QUESTIONS
     .filter(q => axisMap[q.axis] !== undefined)
     .map(q=>{
       const given = axisMap[q.axis];
@@ -805,6 +864,47 @@ function buildCrestReasoning(crestName, axisMapOverride, targetId){
         + '</div>';
     });
   wrap.innerHTML = rows.join('') || '<div class="muted" style="font-size:11px;">Nessuna domanda registrata per questo scan.</div>';
+}
+
+let answersByAxisCrest = {}; // { [axis]: 'A'|'B' } — risposte al mini-quiz dedicato al Crest
+let crestQuizPending = null; // stato in sospeso mentre gira il mini-quiz Crest (vedi runCrestQuiz)
+
+// Motore condiviso del mini-quiz Crest: usato sia dal flusso reale (dopo il match Digimon, se il
+// Tamer ha il Digimedaglione) sia dal "Prova il quiz per intero" nel pannello Master. Riusa le
+// STESSE schermate (screen-question/screen-scanning) della scansione principale — non un modulo
+// separato — così testare col Master equivale esattamente a quello che vede un giocatore.
+function runCrestQuiz(onDone){
+  const order = shuffledIndices(CREST_QUESTIONS.length);
+  let idx = 0;
+  const answers = {};
+  function step(){
+    const q = CREST_QUESTIONS[order[idx]];
+    document.getElementById('qnum').textContent = 'RISONANZA DEL CREST — Domanda ' + (idx+1) + '/' + CREST_QUESTIONS.length;
+    document.getElementById('candidatesLeft').textContent = '🔶 Il Digimedaglione reagisce...';
+    document.getElementById('qtext').textContent = q.text;
+    const wrap = document.getElementById('optsWrap');
+    wrap.innerHTML = '';
+    [['A', q.a], ['B', q.b]].forEach(([letter, text])=>{
+      const btn = document.createElement('button');
+      btn.className = 'opt';
+      btn.innerHTML = '<span class="k">' + letter + '</span>' + text;
+      btn.onclick = ()=>{
+        answers[q.axis] = letter;
+        idx++;
+        if(idx < CREST_QUESTIONS.length){
+          step();
+        } else {
+          showScreen('scanning');
+          stepLabel.textContent = 'CREST';
+          document.getElementById('scanLabel').textContent = 'RISONANZA DEL DIGIMEDAGLIONE...';
+          setTimeout(()=>{ onDone(answers); }, 900);
+        }
+      };
+      wrap.appendChild(btn);
+    });
+    showScreen('question');
+  }
+  step();
 }
 
 let current = 0;
@@ -995,27 +1095,38 @@ function renderResult(wasEarly, forcedBest){
     }
   }
 
-  // ---- Crest (solo se il Tamer ha il Digimedaglione in inventario) ----
-  const crestCard = document.getElementById('crestCard');
-  let matchedCrest = null;
-  if(hasMedaglione){
-    matchedCrest = bestCrestMatch();
-    renderCrestPortrait(matchedCrest);
-    document.getElementById('crestName').textContent = matchedCrest;
-    document.getElementById('crestDesc').textContent = CRESTS[matchedCrest].desc;
-    buildCrestReasoning(matchedCrest);
-    crestCard.classList.remove('hidden');
-  } else {
-    crestCard.classList.add('hidden');
-  }
-
+  document.getElementById('crestCard').classList.add('hidden');
   stepLabel.textContent = 'MATCH';
   document.getElementById('starterNote').style.display = 'block';
   showScreen('result');
 
-  // Registra il tentativo sul backend: aggiorna il conteggio tentativi, il log e la lista
-  // dei nomi presi, così il prossimo giocatore (o un secondo tentativo dello stesso) non può
-  // più ricevere questo stesso Digimon.
+  if(hasMedaglione){
+    // Il Digimedaglione si attiva SOLO dopo che il match col Digimon è già stato mostrato: il
+    // Tamer vede prima il suo Digimon, poi (con una breve pausa) parte il mini-quiz dedicato
+    // al Crest (8 domande diverse da quelle del match, una per Crest). Il salvataggio sul
+    // backend avviene solo alla fine, con Digimon e Crest già decisi entrambi.
+    setTimeout(()=>{
+      runCrestQuiz((crestAnswers)=>{
+        answersByAxisCrest = crestAnswers;
+        const matchedCrest = bestCrestMatch(crestAnswers);
+        renderCrestPortrait(matchedCrest);
+        document.getElementById('crestName').textContent = matchedCrest;
+        document.getElementById('crestDesc').textContent = CRESTS[matchedCrest].desc;
+        buildCrestReasoning(matchedCrest, crestAnswers);
+        document.getElementById('crestCard').classList.remove('hidden');
+        showScreen('result');
+        logScanAttempt(best, matchedCrest);
+      });
+    }, 1400);
+  } else {
+    logScanAttempt(best, null);
+  }
+}
+
+// Registra il tentativo sul backend: aggiorna il conteggio tentativi, il log e la lista dei
+// nomi presi, così il prossimo giocatore (o un secondo tentativo dello stesso) non può più
+// ricevere questo stesso Digimon.
+function logScanAttempt(best, matchedCrest){
   if(identityVerified && currentUsername){
     const nextAttempt = attemptsUsed + 1;
     apiPostScan({ code: CAMPAIGN_CODE, username: currentUsername, digimonName: best, crestName: matchedCrest, attemptNumber: nextAttempt })
@@ -1088,6 +1199,17 @@ document.getElementById('restartBtn').onclick = async ()=>{
       startBtn.textContent = 'Avvia la Scansione (tentativo ' + (attemptsUsed+1) + '/' + MAX_ATTEMPTS + ')';
     }
   }
+};
+
+document.getElementById('gmPreviewBackBtn').onclick = ()=>{
+  document.getElementById('gmPreviewBackBtn').classList.add('hidden');
+  document.getElementById('addStarterBtn').classList.remove('hidden');
+  document.getElementById('restartBtn').classList.remove('hidden');
+  document.getElementById('starterNote').style.display = '';
+  document.getElementById('crestCard').classList.add('hidden');
+  stepLabel.textContent = 'INIT';
+  showScreen('intro');
+  document.getElementById('gmPanel').classList.remove('hidden');
 };
 </script>
 
