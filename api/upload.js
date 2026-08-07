@@ -111,7 +111,7 @@ async function handleScanPost(req, res) {
     return res.status(400).json({ error: 'code, username e digimonName sono obbligatori' });
   }
 
-  const { data: mineRows, error: mineErr } = await supabase
+  const { data: mineRows, error: mineErr } = await getSupabase()
     .from(SCAN_TABLE)
     .select('id')
     .eq('code', code)
@@ -121,7 +121,7 @@ async function handleScanPost(req, res) {
     return res.status(403).json({ error: 'Hai già esaurito i ' + SCAN_MAX_ATTEMPTS + ' tentativi disponibili per questo scan.' });
   }
 
-  const { data: dupRows, error: dupErr } = await supabase
+  const { data: dupRows, error: dupErr } = await getSupabase()
     .from(SCAN_TABLE)
     .select('username')
     .eq('code', code)
