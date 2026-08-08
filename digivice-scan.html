@@ -243,6 +243,7 @@
       <div class="crest-portrait" id="crestPortrait"></div>
       <div class="name" id="crestName"></div>
       <div class="b" id="crestDesc"></div>
+      <div class="b" id="crestDigimental" style="margin-top:8px;font-weight:700;"></div>
       <details class="crest-reasoning" id="crestReasoningWrap">
         <summary>Perché questo Crest? Le domande che l'hanno determinato</summary>
         <div id="crestReasoning"></div>
@@ -538,6 +539,7 @@ function startGmCrestQuizPreview(){
   document.getElementById('restartBtn').classList.add('hidden');
   runCrestQuiz((crestAnswers)=>{
     const matchedCrest = bestCrestMatch(crestAnswers);
+    const matchedDigimental = digimentalFor(matchedCrest);
     document.getElementById('resultTag').textContent = 'Anteprima Master — nessun dato salvato';
     document.getElementById('resPortrait').innerHTML = '<span class="placeholder">🔶</span>';
     document.getElementById('resName').textContent = '';
@@ -548,6 +550,7 @@ function startGmCrestQuizPreview(){
     renderCrestPortrait(matchedCrest);
     document.getElementById('crestName').textContent = matchedCrest;
     document.getElementById('crestDesc').textContent = CRESTS[matchedCrest].desc;
+    document.getElementById('crestDigimental').textContent = matchedDigimental ? ('🗡️ ' + matchedDigimental + ' sbloccato') : '';
     buildCrestReasoning(matchedCrest, crestAnswers);
     document.getElementById('crestCard').classList.remove('hidden');
     const backBtn = document.getElementById('gmPreviewBackBtn');
@@ -592,17 +595,22 @@ async function renderGmPanel(){
     + '</div>';
 
   const refHTML = '<div class="gm-section"><div class="gm-section-h">📋 Riferimento — quale risposta allinea a quale Crest</div><div class="gm-ref-table">'
-    + crestNames.map(name=>{
+    + NORMAL_CRESTS.map(name=>{
         const tags = CRESTS[name].tags;
         const lines = CREST_QUESTIONS.map(q =>
           '<div class="gm-ref-line">' + q.text + ' → <b>' + (tags[q.axis]==='A'?q.a:q.b) + '</b></div>'
         ).join('');
-        return '<div class="gm-ref-crest"><div class="gm-ref-name">' + name + '</div>' + lines + '</div>';
+        const dig = digimentalFor(name);
+        return '<div class="gm-ref-crest"><div class="gm-ref-name">' + name + (dig ? ' <span class="muted" style="font-weight:400;">→ ' + dig + '</span>' : '') + '</div>' + lines + '</div>';
       }).join('')
+    + '<div class="gm-ref-crest"><div class="gm-ref-name">🔒 Miracoli <span class="muted" style="font-weight:400;">→ ' + digimentalFor('Miracoli') + '</span></div>'
+    + '<div class="gm-ref-line">SEGRETO — mai annunciato al giocatore in alcuna forma. Si ottiene SOLO rispondendo "A" a tutte e 9 le domande del Crest, senza eccezioni. Una sola risposta diversa esclude il segreto e assegna il Crest normale più vicino.</div></div>'
+    + '<div class="gm-ref-crest"><div class="gm-ref-name">🔒 Destino <span class="muted" style="font-weight:400;">→ ' + digimentalFor('Destino') + '</span></div>'
+    + '<div class="gm-ref-line">SEGRETO — mai annunciato al giocatore in alcuna forma. Si ottiene SOLO rispondendo "B" a tutte e 9 le domande del Crest, senza eccezioni. Una sola risposta diversa esclude il segreto e assegna il Crest normale più vicino.</div></div>'
     + '</div></div>';
 
   const testHTML = '<div class="gm-section"><div class="gm-section-h">🧪 Prova il quiz per intero</div>'
-    + '<div class="gm-status" style="margin-top:0;margin-bottom:10px;">Le 8 domande del Crest sono DIVERSE da quelle del match col Digimon (qui sopra vedi quali). Il pulsante qui sotto avvia il vero quiz, una domanda alla volta — nessun dato viene salvato.</div>'
+    + '<div class="gm-status" style="margin-top:0;margin-bottom:10px;">Le 9 domande del Crest sono DIVERSE da quelle del match col Digimon (qui sopra vedi quali). Il pulsante qui sotto avvia il vero quiz, una domanda alla volta — nessun dato viene salvato. Rispondi sempre "A" o sempre "B" per testare i due segreti.</div>'
     + '<button class="gm-test-btn" id="gmStartCrestPreview">▶ Avvia il quiz Crest per intero</button>'
     + '</div>';
 
@@ -673,6 +681,7 @@ let currentUsername = '';
 let attemptsUsed = 0;
 let myLog = [];
 let takenNames = [];      // nomi già assegnati a QUALSIASI Tamer della campagna (esclusi dal pool)
+let takenCrests = [];     // Crest/esiti già assegnati a QUALSIASI Tamer (incl. Miracoli/Destino se già usciti)
 let hasMedaglione = false;
 let identityVerified = false;
 
@@ -747,6 +756,7 @@ document.getElementById('verifyBtn').onclick = async ()=>{
   attemptsUsed = scanData.attemptsUsed || 0;
   myLog = scanData.myLog || [];
   takenNames = scanData.takenNames || [];
+  takenCrests = scanData.takenCrests || [];
   hasMedaglione = medaglione;
   identityVerified = true;
   renderIdStatus();
@@ -808,30 +818,71 @@ const CREST_QUESTIONS = [
     a:"Continuo a crederci, e lo dico agli altri per tenerli su.", b:"Mi preparo al peggio — meglio essere realisti." },
   { axis:7, crest:'Luce',
     text:"Un compagno è confuso, non sa che scelta fare.",
-    a:"Gli sto vicino in silenzio — la mia presenza basta.", b:"Gli parlo, provo ad aiutarlo a vedere le cose chiaramente." }
+    a:"Gli sto vicino in silenzio — la mia presenza basta.", b:"Gli parlo, provo ad aiutarlo a vedere le cose chiaramente." },
+  { axis:8, crest:'Gentilezza',
+    text:"Un rivale che non ti ha mai trattato bene è nei guai, e nessun altro muoverebbe un dito per lui/lei.",
+    a:"Lo aiuto comunque, anche se non se lo aspetta da me.", b:"Non sono affari miei — ognuno raccoglie quello che semina." }
 ];
 
-// Ogni Crest è 'A' solo sul proprio asse-dilemma e 'B' su tutti gli altri: il Crest che esce è
-// semplicemente quello il cui dilemma hai risolto "in modo eroico" (risposta A). Se hai risposto
-// A a più di un dilemma, vince quello con priorità più alta nell'ordine qui sotto (Coraggio in
-// cima); se non hai risposto A a nessuno, il Digivice assegna Coraggio di default. Semplice e
-// trasparente da verificare — vedi la tabella di riferimento nel pannello Master.
+// Ogni Crest "normale" è 'A' solo sul proprio asse-dilemma e 'B' su tutti gli altri: il Crest che
+// esce è semplicemente quello il cui dilemma hai risolto "in modo eroico" (risposta A). Se hai
+// risposto A a più di un dilemma, vince quello con priorità più alta nell'ordine qui sotto
+// (Coraggio in cima); se non hai risposto A a nessuno, il Digivice assegna Coraggio di default.
+// Semplice e trasparente da verificare — vedi la tabella di riferimento nel pannello Master.
+//
+// Miracoli e Destino sono contenuti SEGRETI (mai annunciati al giocatore, in nessuna forma): si
+// ottengono SOLO rispondendo esattamente "A" a tutte e 9 le domande (Miracoli) o esattamente "B"
+// a tutte e 9 (Destino) — non c'è punteggio parziale, una sola risposta diversa esclude entrambi
+// e si torna al Crest "normale" più vicino. La logica è in bestCrestMatch, non qui.
 const CRESTS = {
-  Coraggio:      { tags:'ABBBBBBB', desc:'Agisci d\'istinto per chi ami, ti butti al centro della scena e non hai paura di sbagliare in pubblico. La tua è una spinta pura, diretta, quasi mai calcolata.' },
-  Amicizia:      { tags:'BABBBBBB', desc:'Ti fidi lentamente ma quando lo fai è per sempre — proteggi chi ti sta vicino piegando anche le regole, restando però riservato/a su come lo vivi davvero.' },
-  Amore:         { tags:'BBABBBBB', desc:'Ti prendi cura degli altri con calore e fiducia immediata, ma tieni le tue emozioni più profonde per te, dimostrandole con la presenza più che con le parole.' },
-  Conoscenza:    { tags:'BBBABBBB', desc:'Osservi, rifletti, analizzi prima di agire. Preferisci capire davvero una situazione piuttosto che reagire d\'istinto, e agisci meglio lontano dai riflettori.' },
-  Sincerità:     { tags:'BBBBABBB', desc:'Dici quello che pensi, ti fidi facilmente e vivi le emozioni apertamente. Il tuo ottimismo e la tua spontaneità sono la tua forma più onesta di affetto.' },
-  Affidabilità:  { tags:'BBBBBABB', desc:'Sei prudente, rispetti le regole e ti prepari sempre al peggio — non per pessimismo, ma perché qualcuno deve pensare a tutto. Su di te si può sempre contare.' },
-  Speranza:      { tags:'BBBBBBAB', desc:'Credi che le cose si risolveranno anche quando le prove dicono il contrario, e lo dici apertamente per sostenere chi ti sta vicino. Il tuo ottimismo è contagioso, non ingenuo.' },
-  Luce:          { tags:'BBBBBBBA', desc:'Sei riflessivo/a ma caloroso/a, empatico/a e gentile — non cerchi l\'attenzione, ma la tua presenza discreta cambia le cose per chi ti circonda.' }
+  Coraggio:      { tags:'ABBBBBBBB', desc:'Agisci d\'istinto per chi ami, ti butti al centro della scena e non hai paura di sbagliare in pubblico. La tua è una spinta pura, diretta, quasi mai calcolata.' },
+  Amicizia:      { tags:'BABBBBBBB', desc:'Ti fidi lentamente ma quando lo fai è per sempre — proteggi chi ti sta vicino piegando anche le regole, restando però riservato/a su come lo vivi davvero.' },
+  Amore:         { tags:'BBABBBBBB', desc:'Ti prendi cura degli altri con calore e fiducia immediata, ma tieni le tue emozioni più profonde per te, dimostrandole con la presenza più che con le parole.' },
+  Conoscenza:    { tags:'BBBABBBBB', desc:'Osservi, rifletti, analizzi prima di agire. Preferisci capire davvero una situazione piuttosto che reagire d\'istinto, e agisci meglio lontano dai riflettori.' },
+  Sincerità:     { tags:'BBBBABBBB', desc:'Dici quello che pensi, ti fidi facilmente e vivi le emozioni apertamente. Il tuo ottimismo e la tua spontaneità sono la tua forma più onesta di affetto.' },
+  Affidabilità:  { tags:'BBBBBABBB', desc:'Sei prudente, rispetti le regole e ti prepari sempre al peggio — non per pessimismo, ma perché qualcuno deve pensare a tutto. Su di te si può sempre contare.' },
+  Speranza:      { tags:'BBBBBBABB', desc:'Credi che le cose si risolveranno anche quando le prove dicono il contrario, e lo dici apertamente per sostenere chi ti sta vicino. Il tuo ottimismo è contagioso, non ingenuo.' },
+  Luce:          { tags:'BBBBBBBAB', desc:'Sei riflessivo/a ma caloroso/a, empatico/a e gentile — non cerchi l\'attenzione, ma la tua presenza discreta cambia le cose per chi ti circonda.' },
+  Gentilezza:    { tags:'BBBBBBBBA', desc:'Aiuti anche chi non se lo merita e non te lo chiede, senza cercare nulla in cambio. La tua bontà non ha condizioni — è la forma più disarmante di forza.' },
+  Miracoli:      { tags:'AAAAAAAAA', desc:'Ogni singola scelta, senza eccezioni, è stata quella più coraggiosa, generosa e istintiva possibile. Il Digivice non ha mai visto una risonanza così totale — qualcosa di eccezionale si è appena risvegliato.' },
+  Destino:       { tags:'BBBBBBBBB', desc:'Ogni singola scelta, senza eccezioni, è stata quella più prudente e ponderata possibile. Una costanza così assoluta non è indecisione: è il segno di chi è destinato a guidare, non a seguire.' }
 };
+
+// Crest "normali" ottenibili tramite punteggio (Miracoli e Destino ne sono esclusi: si ottengono
+// SOLO tramite corrispondenza esatta, mai per punteggio più vicino).
+const NORMAL_CRESTS = Object.keys(CRESTS).filter(n => n !== 'Miracoli' && n !== 'Destino');
+
+// Ogni Crest "normale" corrisponde 1:1 a uno dei 9 Digimental "core" (tutti tranne Oscurità, che
+// resta escluso perché non canonico/non abbinato a un Crest). Miracoli e Destino sono anche i
+// nomi dei rispettivi Digimental — non serve una mappa separata per quei due.
+const CREST_TO_DIGIMENTAL = {
+  Coraggio: 'Digimental del Coraggio', Amicizia: 'Digimental dell\'Amicizia', Amore: 'Digimental dell\'Amore',
+  Conoscenza: 'Digimental della Conoscenza', Sincerità: 'Digimental della Sincerità', Affidabilità: 'Digimental dell\'Affidabilità',
+  Speranza: 'Digimental della Speranza', Luce: 'Digimental della Luce', Gentilezza: 'Digimental della Gentilezza',
+  Miracoli: 'Digimental dei Miracoli', Destino: 'Digimental del Destino'
+};
+function digimentalFor(crestName){ return CREST_TO_DIGIMENTAL[crestName] || null; }
 
 function bestCrestMatch(axisMapOverride){
   const axisMap = axisMapOverride || answersByAxisCrest;
-  const names = Object.keys(CRESTS);
+
+  // 1) Controllo dei due esiti SEGRETI: corrispondenza ESATTA su tutte e 9 le domande, nessuna
+  // eccezione ammessa (una sola risposta diversa esclude il segreto). Solo se non già assegnato
+  // a un altro Tamer della campagna — altrimenti si ricade sul Crest normale più vicino.
+  const answeredAll = CREST_QUESTIONS.every(q => axisMap[q.axis] !== undefined);
+  if(answeredAll){
+    const allA = CREST_QUESTIONS.every(q => axisMap[q.axis] === 'A');
+    const allB = CREST_QUESTIONS.every(q => axisMap[q.axis] === 'B');
+    if(allA && !takenCrests.includes('Miracoli')) return 'Miracoli';
+    if(allB && !takenCrests.includes('Destino')) return 'Destino';
+  }
+
+  // 2) Punteggio normale sui 9 Crest "normali", escludendo quelli già assegnati a un altro Tamer
+  // (se per assurdo fossero tutti presi, si ricade sul set completo piuttosto che bloccarsi).
+  const available = NORMAL_CRESTS.filter(n => !takenCrests.includes(n));
+  const pool = available.length ? available : NORMAL_CRESTS;
   const mismatch = {};
-  names.forEach(name=>{
+  pool.forEach(name=>{
     const tags = CRESTS[name].tags;
     let m = 0;
     for(let axis=0; axis<CREST_QUESTIONS.length; axis++){
@@ -841,7 +892,14 @@ function bestCrestMatch(axisMapOverride){
     }
     mismatch[name] = m;
   });
-  return names.slice().sort((a,b)=> mismatch[a]-mismatch[b])[0];
+  // IMPORTANTE per l'equità: quando più Crest sono a pari merito (es. hai risposto "A" a più di
+  // una domanda), la scelta tra i pareggiati è CASUALE, non "il primo della lista". Con un ordine
+  // fisso, Coraggio (primo) vincerebbe ogni pareggio che lo coinvolge — circa metà delle scansioni
+  // — mentre Gentilezza (ultimo) vincerebbe solo rispondendo "A" a lei sola e "B" a tutte le altre
+  // otto. Scegliendo a caso tra i pareggiati, ogni Crest ha invece la stessa probabilità di uscire.
+  const minMismatch = Math.min(...pool.map(n => mismatch[n]));
+  const tied = pool.filter(n => mismatch[n] === minMismatch);
+  return tied[Math.floor(Math.random() * tied.length)];
 }
 
 // Elenca, per il Crest assegnato, tutte le domande DEDICATE (CREST_QUESTIONS) a cui il
@@ -1109,9 +1167,11 @@ function renderResult(wasEarly, forcedBest){
       runCrestQuiz((crestAnswers)=>{
         answersByAxisCrest = crestAnswers;
         const matchedCrest = bestCrestMatch(crestAnswers);
+        const matchedDigimental = digimentalFor(matchedCrest);
         renderCrestPortrait(matchedCrest);
         document.getElementById('crestName').textContent = matchedCrest;
         document.getElementById('crestDesc').textContent = CRESTS[matchedCrest].desc;
+        document.getElementById('crestDigimental').textContent = matchedDigimental ? ('🗡️ ' + matchedDigimental + ' sbloccato') : '';
         buildCrestReasoning(matchedCrest, crestAnswers);
         document.getElementById('crestCard').classList.remove('hidden');
         showScreen('result');
@@ -1125,16 +1185,18 @@ function renderResult(wasEarly, forcedBest){
 
 // Registra il tentativo sul backend: aggiorna il conteggio tentativi, il log e la lista dei
 // nomi presi, così il prossimo giocatore (o un secondo tentativo dello stesso) non può più
-// ricevere questo stesso Digimon.
+// ricevere questo stesso Digimon (né lo stesso Crest, se assegnato).
 function logScanAttempt(best, matchedCrest){
   if(identityVerified && currentUsername){
     const nextAttempt = attemptsUsed + 1;
-    apiPostScan({ code: CAMPAIGN_CODE, username: currentUsername, digimonName: best, crestName: matchedCrest, attemptNumber: nextAttempt })
+    const matchedDigimental = matchedCrest ? digimentalFor(matchedCrest) : null;
+    apiPostScan({ code: CAMPAIGN_CODE, username: currentUsername, digimonName: best, crestName: matchedCrest, digimentalName: matchedDigimental, attemptNumber: nextAttempt })
       .then(res=>{
         if(res && !res.error){
           attemptsUsed = nextAttempt;
           takenNames.push(best);
-          myLog.push({ attempt_number: nextAttempt, digimon_name: best, crest_name: matchedCrest });
+          if(matchedCrest) takenCrests.push(matchedCrest);
+          myLog.push({ attempt_number: nextAttempt, digimon_name: best, crest_name: matchedCrest, digimental_name: matchedDigimental });
         }
         // Se il salvataggio fallisce (rete assente, race condition su un doppione), il risultato
         // resta comunque visibile al giocatore: è il GM a dover risolvere manualmente il conflitto.
@@ -1189,6 +1251,7 @@ document.getElementById('restartBtn').onclick = async ()=>{
       attemptsUsed = scanData.attemptsUsed || 0;
       myLog = scanData.myLog || [];
       takenNames = scanData.takenNames || [];
+      takenCrests = scanData.takenCrests || [];
     }
     renderIdStatus();
     const startBtn = document.getElementById('startBtn');

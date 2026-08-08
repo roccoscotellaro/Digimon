@@ -4602,7 +4602,7 @@
           <div class="row" style="align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px;">
             <div>
               <b>${escapeHTML(l.username)}</b> <span class="muted">— tentativo ${l.attempt_number}/2</span><br/>
-              <span class="mono">${escapeHTML(l.digimon_name)}</span>${l.crest_name ? ` <span class="muted">· Crest: ${escapeHTML(l.crest_name)}</span>` : ''}
+              <span class="mono">${escapeHTML(l.digimon_name)}</span>${l.crest_name ? ` <span class="muted">· Crest: ${escapeHTML(l.crest_name)}</span>` : ''}${l.digimental_name ? ` <span class="muted">· ${escapeHTML(l.digimental_name)}</span>` : ''}
               <div class="muted" style="font-size:10px;">${new Date(l.created_at).toLocaleString('it-IT')}</div>
             </div>
             <button class="btn ghost small" data-scan-del="${escapeAttr(l.id)}" title="Cancella questa riga (libera il nome e restituisce il tentativo)">✕</button>
