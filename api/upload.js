@@ -50,7 +50,7 @@ async function handleScanGet(req, res) {
 
   const { data: rows, error } = await supabase
     .from(SCAN_TABLE)
-    .select('id, username, digimon_name, crest_name, attempt_number, created_at')
+    .select('id, username, digimon_name, crest_name, digimental_name, attempt_number, created_at')
     .eq('code', code)
     .order('created_at', { ascending: true });
   if (error) return res.status(500).json({ error: error.message });
@@ -61,11 +61,13 @@ async function handleScanGet(req, res) {
   // sottoinsieme e il conteggio tentativi.
   const myLog = username ? allLog.filter(r => r.username === username) : [];
   const takenNames = allLog.map(r => r.digimon_name);
+  const takenCrests = allLog.filter(r => r.crest_name).map(r => r.crest_name);
 
   return res.status(200).json({
     attemptsUsed: myLog.length,
     myLog,
     takenNames,
+    takenCrests,
     allLog
   });
 }
@@ -82,7 +84,7 @@ async function handleScanDelete(req, res) {
 async function handleScanPost(req, res) {
   const body = req.body || {};
   const code = cleanCode(body.code);
-  const { username, digimonName, crestName, attemptNumber } = body;
+  const { username, digimonName, crestName, digimentalName, attemptNumber } = body;
   if (!code || !username || !digimonName) {
     return res.status(400).json({ error: 'code, username e digimonName sono obbligatori' });
   }
@@ -107,16 +109,32 @@ async function handleScanPost(req, res) {
     return res.status(409).json({ error: 'Questo Digimon è già stato assegnato a un altro Tamer della campagna.' });
   }
 
+  // Stesso controllo anti-doppione, ma sul Crest (incluso Miracoli/Destino): non dovrebbe mai
+  // scattare, perché il client sceglie già solo tra i Crest disponibili — è una rete di sicurezza
+  // contro race condition tra due scan quasi simultanei.
+  if (crestName) {
+    const { data: dupCrestRows, error: dupCrestErr } = await supabase
+      .from(SCAN_TABLE)
+      .select('username')
+      .eq('code', code)
+      .eq('crest_name', crestName);
+    if (dupCrestErr) return res.status(500).json({ error: dupCrestErr.message });
+    if ((dupCrestRows || []).length > 0) {
+      return res.status(409).json({ error: 'Questo Crest è già stato assegnato a un altro Tamer della campagna.' });
+    }
+  }
+
   const { error: insErr } = await supabase.from(SCAN_TABLE).insert({
     code,
     username,
     digimon_name: digimonName,
     crest_name: crestName || null,
+    digimental_name: digimentalName || null,
     attempt_number: attemptNumber || ((mineRows || []).length + 1)
   });
   if (insErr) {
     if (insErr.code === '23505') {
-      return res.status(409).json({ error: 'Questo Digimon è appena stato assegnato a un altro Tamer — riprova lo scan.' });
+      return res.status(409).json({ error: 'Questo Digimon o questo Crest sono appena stati assegnati a un altro Tamer — riprova lo scan.' });
     }
     return res.status(500).json({ error: insErr.message });
   }
