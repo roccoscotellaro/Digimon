@@ -115,7 +115,29 @@
     { key:'baseArmor', label:'Armor' }, { key:'baseHealth', label:'Health' }
   ];
   const STAGES = ['Fresh','Baby','Rookie','Champion','Ultimate','Mega'];
-  const SIZES = ['Small','Medium','Large','Huge'];
+  const SIZES = ['Small','Medium','Large','Huge','Gigantic','Colossal'];
+  function stageIndex(s){ const i = STAGES.indexOf(s); return i<0?0:i; }
+  function maxSizeIndexForStage(stage){ return Math.min(SIZES.length-1, stageIndex(stage)+1); }
+  function allowedSizes(stage){ return SIZES.slice(0, maxSizeIndexForStage(stage)+1); }
+
+  const STAGE_CREATION = {
+    Fresh:    { dp:2,  startStat:1 },
+    Baby:     { dp:5,  startStat:1 },
+    Rookie:   { dp:10, startStat:2 },
+    Champion: { dp:20, startStat:3 },
+    Ultimate: { dp:30, startStat:4 },
+    Mega:     { dp:40, startStat:5 }
+  };
+  const CAMPAIGN_LEVELS = {
+    Standard: { ap:10, sp:25, cap:5, thresholds:[3,5,6,7], tnShift:0, startTorment:8 },
+    Classic:  { ap:5,  sp:20, cap:3, thresholds:[2,3,4,5], tnShift:-2, startTorment:5 },
+    Extreme:  { ap:15, sp:30, cap:7, thresholds:[4,6,8,10], tnShift:2, startTorment:10 }
+  };
+  let cachedProgression = null;
+  function campaignConfig(){
+    const level = (cachedProgression && cachedProgression.campaignLevel) || 'Standard';
+    return CAMPAIGN_LEVELS[level] || CAMPAIGN_LEVELS.Standard;
+  }
 
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s){ return escapeHTML(s); }
@@ -125,7 +147,7 @@
       name:'', stage:'Rookie', personality:'', imageUrl:'', approved:false,
       maxWounds:5, currentWounds:5, maxMp:3, currentMp:3,
       baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:1,
-      dpTotal:0, qualities:[],
+      dpTotal:0, unspentBonusDP:0, qualities:[],
       defaultStage:'Rookie', defaultRange:2, evolutionPoints:0, forcedEvoRoundsLeft:0,
       battery:0, size:'Medium', stance:'Neutral', chatColor:'#c896ff',
       resolveCurrent:0, resolveMax:4, hybridMode:false,
@@ -159,6 +181,100 @@
   async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]).map(normalizeMember) : []; }
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
   async function uploadImage(code, dataUrl){ return apiPost('/api/upload', { code, dataUrl }); }
+  async function getProgression(code){
+    const d = await apiGet('/api/progression?code=' + encodeURIComponent(code));
+    const p = d ? d.progression : { milestone:0, xp:0, inspiration:0, campaign_level:'Standard' };
+    return { milestone: p.milestone||0, xp: p.xp||0, inspiration: p.inspiration||0, campaignLevel: p.campaign_level || 'Standard' };
+  }
+  async function pushLog(code, entry){ return apiPost('/api/log', { code, ...entry }); }
+
+  function getStarterPrefillFromURL(){
+    try{
+      const params = new URLSearchParams(location.search);
+      if(!params.has('prefillName')) return null;
+      return {
+        name: params.get('prefillName') || '',
+        attribute: params.get('prefillAttribute') || 'Free',
+        personality: params.get('prefillPersonality') || '',
+        baseAccuracy: Number(params.get('prefillAcc'))||2,
+        baseDamage: Number(params.get('prefillDmg'))||2,
+        baseDodge: Number(params.get('prefillDodge'))||2,
+        baseArmor: Number(params.get('prefillArmor'))||2,
+        baseHealth: Number(params.get('prefillHp'))||2,
+        signatureMove: params.get('prefillSig') || ''
+      };
+    }catch(e){ return null; }
+  }
+  function clearStarterPrefillFromURL(){
+    try{
+      const url = new URL(location.href);
+      ['prefillName','prefillAttribute','prefillPersonality','prefillAcc','prefillDmg','prefillDodge','prefillArmor','prefillHp','prefillSig'].forEach(k=>url.searchParams.delete(k));
+      history.replaceState(null, '', url.toString());
+    }catch(e){}
+  }
+
+  // ---------- Avvisi (notice) ----------
+  async function getNotices(code){ const d = await apiGet('/api/feedback?resource=notice&code=' + encodeURIComponent(code)); return d ? (d.notices||[]) : []; }
+  async function confirmNotice(code, id, username){ return apiPost('/api/feedback', { resource:'notice', action:'confirm', code, id, username }); }
+
+  // ---------- Segnalazioni Bug ----------
+  async function createBugReport(code, username, text){ return apiPost('/api/feedback', { resource:'bugreport', action:'create', code, username, text }); }
+
+  // ---------- Coda Avvisi bloccanti (stessa logica di index.html) ----------
+  let noticeQueue = [];
+  let noticeModalOpen = false;
+  function isNoticeForMe(n){
+    if(!session) return false;
+    if(n.target_type==='all') return true;
+    const list = Array.isArray(n.target_usernames) ? n.target_usernames : [];
+    return list.includes(session.username);
+  }
+  function isNoticeConfirmedByMe(n){
+    const confs = Array.isArray(n.confirmations) ? n.confirmations : [];
+    return confs.some(c=>c.username===session.username);
+  }
+  async function checkNoticesForMe(){
+    if(!session) return;
+    const all = await getNotices(session.code);
+    const mine = all.filter(n=>n.active && isNoticeForMe(n) && !isNoticeConfirmedByMe(n));
+    mine.sort((a,b)=> new Date(a.created_at) - new Date(b.created_at));
+    noticeQueue = mine;
+    if(!noticeModalOpen && noticeQueue.length>0) showNextNotice();
+    if(noticeQueue.length===0 && noticeModalOpen){
+      noticeModalOpen = false;
+      const old = document.getElementById('notice-modal');
+      if(old) old.remove();
+    }
+  }
+  function showNextNotice(){
+    if(noticeQueue.length===0){
+      noticeModalOpen = false;
+      const old = document.getElementById('notice-modal');
+      if(old) old.remove();
+      return;
+    }
+    noticeModalOpen = true;
+    const n = noticeQueue[0];
+    const old = document.getElementById('notice-modal');
+    if(old) old.remove();
+    const modal = document.createElement('div');
+    modal.id = 'notice-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;';
+    modal.innerHTML = `
+      <div class="hud-frame" style="max-width:480px;width:100%;padding:22px;background:var(--panel);">
+        <div class="section-title"><span>📢 Avviso dal Master${noticeQueue.length>1?` (${noticeQueue.length} in attesa)`:''}</span></div>
+        ${n.image_url ? `<img src="${escapeAttr(n.image_url)}" style="max-width:100%;max-height:40vh;object-fit:contain;margin-bottom:14px;border:1px solid var(--line);display:block;" />` : ''}
+        <div style="white-space:pre-wrap;margin-bottom:18px;line-height:1.5;">${escapeHTML(n.text)}</div>
+        <button class="btn solid" id="notice-confirm-btn" style="width:100%;padding:12px;">Ho capito</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    document.getElementById('notice-confirm-btn').onclick = async ()=>{
+      await confirmNotice(session.code, n.id, session.username);
+      noticeQueue.shift();
+      showNextNotice();
+    };
+  }
 
   function enableCollapsibleCards(container){
     (container||document).querySelectorAll('.hud-frame.card').forEach(card=>{
@@ -180,9 +296,11 @@
 
   function startPolling(){
     if(pollTimer) clearInterval(pollTimer);
+    checkNoticesForMe();
     pollTimer = setInterval(async ()=>{
       if(!session) return;
       cachedRoster = await getRoster(session.code);
+      checkNoticesForMe();
       if(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
       render();
     }, 4000);
@@ -242,6 +360,7 @@
       session = { code, username, role };
       saveSession(session);
       cachedRoster = await getRoster(code);
+      cachedProgression = await getProgression(code);
       startPolling();
       render();
     };
@@ -423,6 +542,329 @@
     </div>`;
   }
 
+  // ---------- Creazione Guidata: Digimon (incorporata direttamente in questa pagina) ----------
+  let creationDraft = null;
+  let justBuiltDigimon = false;
+
+  function startDigimonWizard(prefill){
+    creationDraft = {
+      stage:'Rookie', size:'Medium',
+      name: (prefill && prefill.name) || '',
+      imageUrl: '',
+      personality: (prefill && prefill.personality) || '',
+      attribute: (prefill && prefill.attribute) || 'Free',
+      baseAccuracy: (prefill && prefill.baseAccuracy) || STAGE_CREATION.Rookie.startStat,
+      baseDamage: (prefill && prefill.baseDamage) || STAGE_CREATION.Rookie.startStat,
+      baseDodge: (prefill && prefill.baseDodge) || STAGE_CREATION.Rookie.startStat,
+      baseArmor: (prefill && prefill.baseArmor) || STAGE_CREATION.Rookie.startStat,
+      baseHealth: (prefill && prefill.baseHealth) || STAGE_CREATION.Rookie.startStat,
+      signatureMove: (prefill && prefill.signatureMove) || ''
+    };
+    renderPage();
+  }
+
+  function digimonWizardHTML(){
+    const draft = creationDraft;
+    const cfg = STAGE_CREATION[draft.stage];
+    const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
+    const statLabels = { baseAccuracy:'ACC', baseDamage:'DMG', baseDodge:'DODGE', baseArmor:'ARM', baseHealth:'HP' };
+    const dpSpent = statKeys.reduce((s,k)=>s+(draft[k]-cfg.startStat),0);
+    const dpRemaining = cfg.dp - dpSpent;
+    const errors = [];
+    if(dpRemaining<0) errors.push(`Hai speso troppi DP sulle Stat (sforo di ${-dpRemaining}).`);
+
+    return `
+    <div class="hud-frame card">
+      <div class="section-title"><span>🧙 Creazione Guidata — Digimon</span></div>
+      ${draft.signatureMove ? `<div class="muted" style="margin-bottom:10px;color:var(--dchroma);">📡 Dati importati dalla Bio-Resonance Scan — puoi comunque modificarli.</div>` : ''}
+      <div class="field"><label>Nome</label><input type="text" id="wiz-d-name" value="${escapeAttr(draft.name)}" /></div>
+      <div class="row">
+        <div class="field"><label>Stage</label>
+          <select id="wiz-d-stage">${STAGES.map(s=>`<option ${draft.stage===s?'selected':''}>${s}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Size</label>
+          <select id="wiz-d-size">${allowedSizes(draft.stage).map(s=>`<option ${draft.size===s?'selected':''}>${s}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="muted" style="margin-bottom:6px;">DP di partenza per ${escapeHTML(draft.stage)}: <b>${cfg.dp}</b> · Stat base: <b>${cfg.startStat}</b> ciascuna prima di spendere DP.</div>
+      <div class="flex-between" style="margin-bottom:6px;"><span class="muted">DP rimasti per le Stat</span><span class="mono" style="color:${dpRemaining>=0?'var(--dchroma)':'var(--danger)'};">${dpRemaining}</span></div>
+      <div class="grid-stats">
+        ${statKeys.map(k=>`
+          <div class="stat-box">
+            <div class="l">${statLabels[k]}</div>
+            <input type="number" data-wiz-stat="${k}" min="${cfg.startStat}" value="${draft[k]}" />
+          </div>
+        `).join('')}
+      </div>
+      <div class="muted" style="margin-top:6px;">DP non spesi in Stat verranno riservati come budget Qualities (${Math.max(0,dpRemaining)} DP).</div>
+      <div class="field" style="margin-top:8px;"><label>Personalità</label><textarea id="wiz-d-personality" rows="2">${escapeHTML(draft.personality)}</textarea></div>
+      <div class="field"><label>URL Immagine (opz. — resterà nascosta finché il Master non approva)</label><input type="text" id="wiz-d-img" value="${escapeAttr(draft.imageUrl)}" /></div>
+      <div class="field"><label>Attributo (Variant Rule 2.05c)</label>
+        <select id="wiz-d-attribute">
+          ${['Vaccine','Data','Virus','Free','Variable'].map(a=>`<option ${draft.attribute===a?'selected':''}>${a}</option>`).join('')}
+        </select>
+      </div>
+      <div style="border-top:1px dashed var(--line);margin:12px 0;"></div>
+      ${errors.length ? `<div class="err">${errors.map(e=>escapeHTML(e)).join('<br/>')}</div>` : '<div class="ok-msg">Tutto valido, puoi salvare.</div>'}
+      <div class="row" style="margin-top:10px;">
+        <button class="btn ghost" id="btn-wiz-cancel" style="flex:1;">Annulla</button>
+        <button class="btn solid" id="btn-wiz-save" style="flex:1;" ${errors.length?'disabled':''}>🥚 Applica e Chiudi nell'Uovo</button>
+      </div>
+      <div class="muted" id="wiz-status" style="margin-top:6px;"></div>
+    </div>`;
+  }
+
+  function bindDigimonWizard(target){
+    const draft = creationDraft;
+    const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
+    document.getElementById('wiz-d-name').onchange = (e)=>{ draft.name = e.target.value; };
+    document.getElementById('wiz-d-personality').onchange = (e)=>{ draft.personality = e.target.value; };
+    document.getElementById('wiz-d-img').onchange = (e)=>{ draft.imageUrl = e.target.value; };
+    document.getElementById('wiz-d-attribute').onchange = (e)=>{ draft.attribute = e.target.value; };
+    document.getElementById('wiz-d-stage').onchange = (e)=>{
+      draft.stage = e.target.value;
+      const newCfg = STAGE_CREATION[draft.stage];
+      statKeys.forEach(k=>{ draft[k] = newCfg.startStat; });
+      draft.size = allowedSizes(draft.stage)[0] || 'Medium';
+      renderPage();
+    };
+    document.getElementById('wiz-d-size').onchange = (e)=>{ draft.size = e.target.value; };
+    root.querySelectorAll('[data-wiz-stat]').forEach(inp=>{
+      inp.onchange = ()=>{
+        const cfg = STAGE_CREATION[draft.stage];
+        draft[inp.getAttribute('data-wiz-stat')] = Math.max(cfg.startStat, Number(inp.value)||cfg.startStat);
+        renderPage();
+      };
+    });
+    document.getElementById('btn-wiz-cancel').onclick = ()=>{ creationDraft = null; renderPage(); };
+    const saveBtn = document.getElementById('btn-wiz-save');
+    if(saveBtn){
+      saveBtn.onclick = async ()=>{
+        const cfg = STAGE_CREATION[draft.stage];
+        const dpSpent = statKeys.reduce((s,k)=>s+(draft[k]-cfg.startStat),0);
+        const dpRemaining = cfg.dp - dpSpent;
+
+        target.digimon.name = draft.name;
+        target.digimon.stage = draft.stage;
+        target.digimon.defaultStage = draft.stage;
+        target.digimon.size = draft.size;
+        target.digimon.personality = draft.personality;
+        target.digimon.imageUrl = draft.imageUrl;
+        target.digimon.attribute = draft.attribute || 'Free';
+        statKeys.forEach(k=>{ target.digimon[k] = draft[k]; });
+        target.digimon.maxWounds = stageIndex(draft.stage) + Number(draft.baseHealth)*2;
+        target.digimon.currentWounds = target.digimon.maxWounds;
+        target.digimon.dpTotal = Math.max(0, dpRemaining);
+        target.digimon.qualities = [];
+        target.digimon.evolutionPoints = 0;
+        target.digimon.defaultRange = 2;
+        target.digimon.approved = false; // si "chiude" nell'Uovo finché il Master non lo schiude
+        if(!target.digimon.stageStats) target.digimon.stageStats = {};
+        target.digimon.stageStats[draft.stage] = {
+          baseAccuracy: draft.baseAccuracy, baseDamage: draft.baseDamage, baseDodge: draft.baseDodge,
+          baseArmor: draft.baseArmor, baseHealth: draft.baseHealth,
+          maxWounds: target.digimon.maxWounds, maxMp: target.digimon.maxMp, size: draft.size
+        };
+        if(draft.signatureMove){
+          target.digimon.attacks = [
+            { name: draft.signatureMove, shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc:'Attacco caratteristico portato dal Bio-Resonance Scan.', signature:true, reach:1, areaAttack:false },
+            { name:'Raggio a Distanza', shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc:'Un colpo dalla distanza.', signature:false, reach:1, areaAttack:false }
+          ];
+        }
+
+        const st = document.getElementById('wiz-status');
+        st.textContent = 'Salvataggio...';
+        const ok = await saveMember(session.code, target);
+        if(ok){
+          await pushLog(session.code, { who: session.username, role:'player', text: `${target.username} ha completato la Creazione Guidata di ${target.digimon.name||'un Digimon'} — resta nell'Uovo in attesa dell'approvazione del Master.` });
+          creationDraft = null;
+          justBuiltDigimon = true;
+          cachedRoster = await getRoster(session.code);
+          renderPage();
+        } else {
+          st.style.color = 'var(--danger)';
+          st.textContent = 'Errore: ' + (lastApiError||'sconosciuto');
+        }
+      };
+    }
+  }
+
+  // ---------- Costruisci Nuovo Stage (prepara le Stat di uno Stage mai raggiunto prima) ----------
+  // Per regola (3.19): raggiungere per la prima volta uno Stage è come creare un nuovo Digimon —
+  // va costruito con un budget DP proprio, non assegnato automaticamente.
+  let stageBuildDraft = null;
+
+  function isStageBuilt(d, stage){ return !!(d.stageStats && d.stageStats[stage]); }
+
+  function stageBuilderHTML(m){
+    const d = m.digimon;
+    if(stageBuildDraft){
+      const draft = stageBuildDraft;
+      const cfg = STAGE_CREATION[draft.stage];
+      const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
+      const statLabels = { baseAccuracy:'ACC', baseDamage:'DMG', baseDodge:'DODGE', baseArmor:'ARM', baseHealth:'HP' };
+      const dpSpent = statKeys.reduce((s,k)=>s+(draft[k]-cfg.startStat),0);
+      const dpRemaining = cfg.dp - dpSpent;
+      const errors = [];
+      if(dpRemaining<0) errors.push(`Hai speso troppi DP sulle Stat (sforo di ${-dpRemaining}).`);
+      return `
+      <div class="hud-frame card">
+        <div class="section-title"><span>🛠️ Costruisci Stage: ${escapeHTML(draft.stage)}</span></div>
+        <div class="muted" style="margin-bottom:6px;">DP di partenza per ${escapeHTML(draft.stage)}: <b>${cfg.dp}</b> · Stat base: <b>${cfg.startStat}</b> ciascuna prima di spendere DP.</div>
+        <div class="field"><label>Size</label>
+          <select id="sb-size">${allowedSizes(draft.stage).map(s=>`<option ${draft.size===s?'selected':''}>${s}</option>`).join('')}</select>
+        </div>
+        <div class="flex-between" style="margin-bottom:6px;"><span class="muted">DP rimasti per le Stat</span><span class="mono" style="color:${dpRemaining>=0?'var(--dchroma)':'var(--danger)'};">${dpRemaining}</span></div>
+        <div class="grid-stats">
+          ${statKeys.map(k=>`
+            <div class="stat-box">
+              <div class="l">${statLabels[k]}</div>
+              <input type="number" data-sb-stat="${k}" min="${cfg.startStat}" value="${draft[k]}" />
+            </div>
+          `).join('')}
+        </div>
+        <div class="muted" style="margin-top:6px;">DP non spesi in Stat verranno riservati come budget Qualities aggiuntivo per questo Stage (${Math.max(0,dpRemaining)} DP).</div>
+        ${errors.length ? `<div class="err">${errors.map(e=>escapeHTML(e)).join('<br/>')}</div>` : '<div class="ok-msg">Tutto valido, puoi salvare.</div>'}
+        <div class="row" style="margin-top:10px;">
+          <button class="btn ghost" id="btn-sb-cancel" style="flex:1;">Annulla</button>
+          <button class="btn solid" id="btn-sb-save" style="flex:1;" ${errors.length?'disabled':''}>✅ Salva Stage</button>
+        </div>
+        <div class="muted" id="sb-status" style="margin-top:6px;"></div>
+      </div>`;
+    }
+    const unbuilt = STAGES.filter(s=>!isStageBuilt(d, s));
+    if(unbuilt.length===0) return '';
+    return `
+    <div class="hud-frame card">
+      <div class="section-title"><span>🛠️ Costruisci Nuovo Stage</span></div>
+      <div class="muted" style="margin-bottom:10px;">Prima di poter evolvere a uno Stage mai raggiunto, va costruito qui — è come creare un Digimon nuovo (regola 3.19), con un suo budget DP.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        ${STAGES.map(s=>{
+          const built = isStageBuilt(d, s);
+          return built
+            ? `<span class="tag" style="background:var(--panel-2);border-color:var(--dchroma);color:var(--dchroma);">✅ ${s}</span>`
+            : `<button class="btn ghost small" data-sb-start="${s}">🛠️ ${s}</button>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }
+
+  function bindStageBuilder(target){
+    if(stageBuildDraft){
+      const draft = stageBuildDraft;
+      root.querySelectorAll('[data-sb-stat]').forEach(inp=>{
+        inp.onchange = ()=>{
+          const cfg = STAGE_CREATION[draft.stage];
+          draft[inp.getAttribute('data-sb-stat')] = Math.max(cfg.startStat, Number(inp.value)||cfg.startStat);
+          renderPage();
+        };
+      });
+      const sizeSel = document.getElementById('sb-size');
+      if(sizeSel) sizeSel.onchange = (e)=>{ draft.size = e.target.value; };
+      const cancelBtn = document.getElementById('btn-sb-cancel');
+      if(cancelBtn) cancelBtn.onclick = ()=>{ stageBuildDraft = null; renderPage(); };
+      const saveBtn = document.getElementById('btn-sb-save');
+      if(saveBtn){
+        saveBtn.onclick = async ()=>{
+          const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
+          if(!target.digimon.stageStats) target.digimon.stageStats = {};
+          target.digimon.stageStats[draft.stage] = {
+            baseAccuracy: draft.baseAccuracy, baseDamage: draft.baseDamage, baseDodge: draft.baseDodge,
+            baseArmor: draft.baseArmor, baseHealth: draft.baseHealth,
+            maxWounds: stageIndex(draft.stage) + Number(draft.baseHealth)*2,
+            maxMp: target.digimon.maxMp, size: draft.size
+          };
+          const st = document.getElementById('sb-status');
+          st.textContent = 'Salvataggio...';
+          const ok = await saveMember(session.code, target);
+          if(ok){
+            await pushLog(session.code, { who: session.username, role:'player', text: `${target.username} ha costruito lo Stage ${draft.stage} per ${target.digimon.name||'il proprio Digimon'} — ora è disponibile per l'Evoluzione.` });
+            stageBuildDraft = null;
+            cachedRoster = await getRoster(session.code);
+            renderPage();
+          } else {
+            st.style.color='var(--danger)'; st.textContent = 'Errore: ' + (lastApiError||'sconosciuto');
+          }
+        };
+      }
+      return;
+    }
+    root.querySelectorAll('[data-sb-start]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const stage = btn.getAttribute('data-sb-start');
+        const cfg = STAGE_CREATION[stage];
+        stageBuildDraft = {
+          stage, size: allowedSizes(stage)[0] || 'Medium',
+          baseAccuracy: cfg.startStat, baseDamage: cfg.startStat, baseDodge: cfg.startStat,
+          baseArmor: cfg.startStat, baseHealth: cfg.startStat
+        };
+        renderPage();
+      };
+    });
+  }
+
+  // ---------- Bonus DP da Milestone: da spendere su Stat (propagate a tutti gli Stage costruiti) o Qualities ----------
+  function bonusDpBlockHTML(m){
+    const d = m.digimon;
+    const pool = Number(d.unspentBonusDP||0);
+    if(pool<=0) return '';
+    const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
+    const statLabels = { baseAccuracy:'Accuracy', baseDamage:'Damage', baseDodge:'Dodge', baseArmor:'Armor', baseHealth:'Health' };
+    return `
+    <div class="hud-frame card" style="border-color:var(--dchroma);">
+      <div class="section-title"><span>🎁 Bonus DP da Milestone: ${pool}</span></div>
+      <div class="muted" style="margin-bottom:10px;">Ogni punto va su una Stat (si applica automaticamente a tutti gli Stage già costruiti, per regola 10.03) oppure nel budget Qualities.</div>
+      <div class="row">
+        <select id="bdp-stat-select" style="flex:2;">
+          ${statKeys.map(k=>`<option value="${k}">${statLabels[k]}</option>`).join('')}
+        </select>
+        <button class="btn small" id="btn-bdp-stat" style="flex:1;">+1 Stat</button>
+      </div>
+      <div class="row" style="margin-top:6px;">
+        <button class="btn ghost small" id="btn-bdp-quality" style="width:100%;">Sposta 1 DP nel budget Qualities</button>
+      </div>
+      <div class="muted" id="bdp-status" style="margin-top:6px;"></div>
+    </div>`;
+  }
+
+  function bindBonusDp(target){
+    const statBtn = document.getElementById('btn-bdp-stat');
+    if(statBtn){
+      statBtn.onclick = async ()=>{
+        const key = document.getElementById('bdp-stat-select').value;
+        const d = target.digimon;
+        d[key] = Number(d[key]||0) + 1;
+        // Propaga l'incremento a tutti gli Stage già costruiti, come da regola 10.03.
+        if(d.stageStats){
+          Object.keys(d.stageStats).forEach(stage=>{
+            if(stage===d.stage) return; // lo Stage attuale è già aggiornato sopra
+            d.stageStats[stage][key] = Number(d.stageStats[stage][key]||0) + 1;
+          });
+        }
+        if(!d.stageStats) d.stageStats = {};
+        if(d.stageStats[d.stage]) d.stageStats[d.stage][key] = d[key];
+        d.unspentBonusDP = Math.max(0, Number(d.unspentBonusDP||0) - 1);
+        const st = document.getElementById('bdp-status');
+        st.textContent = 'Salvataggio...';
+        const ok = await saveMember(session.code, target);
+        if(ok){ cachedRoster = await getRoster(session.code); renderPage(); }
+        else { st.style.color='var(--danger)'; st.textContent = 'Errore: ' + (lastApiError||'sconosciuto'); }
+      };
+    }
+    const qBtn = document.getElementById('btn-bdp-quality');
+    if(qBtn){
+      qBtn.onclick = async ()=>{
+        target.digimon.dpTotal = Number(target.digimon.dpTotal||0) + 1;
+        target.digimon.unspentBonusDP = Math.max(0, Number(target.digimon.unspentBonusDP||0) - 1);
+        const st = document.getElementById('bdp-status');
+        st.textContent = 'Salvataggio...';
+        const ok = await saveMember(session.code, target);
+        if(ok){ cachedRoster = await getRoster(session.code); renderPage(); }
+        else { st.style.color='var(--danger)'; st.textContent = 'Errore: ' + (lastApiError||'sconosciuto'); }
+      };
+    }
+  }
+
   function renderPage(){
     const isMaster = session.role === 'master';
     let target = null;
@@ -445,33 +887,48 @@
     }
 
     const editable = true;
+    if(isMaster && creationDraft) creationDraft = null;
+    if(isMaster && stageBuildDraft) stageBuildDraft = null;
 
-    root.innerHTML = `
-      <div style="max-width:760px;margin:0 auto;">
-        ${topbar()}
-        ${selectorHTML}
-        ${!target ? `
+    let bodyHTML;
+    if(creationDraft && target){
+      bodyHTML = digimonWizardHTML();
+    } else if(stageBuildDraft && target){
+      bodyHTML = stageBuilderHTML(target);
+    } else if(!target || !target.digimon.name){
+      bodyHTML = `
         <div class="hud-frame card muted">
-          ${isMaster ? 'Nessuna scheda trovata. Seleziona un giocatore.' : `
+          ${isMaster ? (target ? `
+            <div style="margin-bottom:10px;">${escapeHTML(target.username)} non ha ancora un Digimon.</div>
+            <button class="btn ghost small" id="btn-start-wizard">🧙 Apri Creazione Guidata manualmente (bypassa lo Scan)</button>
+          ` : 'Nessuna scheda trovata. Seleziona un giocatore.') : `
             <div style="margin-bottom:10px;">Non hai ancora un Digimon. Il primo passo è la Bio-Resonance Scan, che ti assegna il tuo Digimon partner — dopo lo Scan potrai completare i punteggi con la Creazione Guidata.</div>
             <a href="digivice-scan.html" target="_blank" class="btn solid" style="text-decoration:none;display:inline-block;padding:10px 16px;">📡 Avvia Bio-Resonance Scan</a>
+            <div class="muted" style="margin-top:10px;">Hai già fatto lo Scan ma la Creazione Guidata non si è aperta o non l'hai finita? Chiedi al Master di aprirtela da qui.</div>
           `}
-        </div>` : (!target.digimon.approved ? `
+        </div>`;
+    } else if(!target.digimon.approved){
+      bodyHTML = `
         <div class="hud-frame card">
           <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 0;gap:14px;">
             ${EGG_IMAGE_URL ? `<img src="${escapeAttr(EGG_IMAGE_URL)}" style="width:140px;height:140px;object-fit:contain;" />` : `<div style="width:140px;height:140px;border-radius:50%;background:radial-gradient(circle at 35% 30%, #fff8e6, #f0d9a0 60%, #d9b976);display:flex;align-items:center;justify-content:center;font-size:64px;">🥚</div>`}
             ${isMaster ? `<button class="btn small" id="d-approve" style="color:var(--cyan);border-color:var(--cyan-dim);">✅ Approva</button>` : ''}
           </div>
-        </div>
-        ` : `
-        ${(!isMaster && !target.digimon.name) ? `
-        <div class="hud-frame card" style="border-color:var(--dchroma);">
-          <div style="margin-bottom:10px;">Il tuo Digimon non è ancora stato creato con la Creazione Guidata — qui sotto puoi comunque impostare punteggi e dati a mano, ma ti consigliamo di partire dalla Wizard per rispettare i vincoli del manuale.</div>
-          <a href="index.html?openWizard=1" target="_blank" class="btn solid" style="text-decoration:none;display:inline-block;padding:10px 16px;">🧙 Apri Creazione Guidata</a>
-        </div>` : ''}
+        </div>`;
+    } else {
+      bodyHTML = null;
+    }
+
+    root.innerHTML = `
+      <div style="max-width:760px;margin:0 auto;">
+        ${topbar()}
+        ${selectorHTML}
+        ${bodyHTML !== null ? bodyHTML : `
         <div class="hud-frame card">
           ${portraitBlockHTML(target, editable, isMaster)}
         </div>
+        ${bonusDpBlockHTML(target)}
+        ${stageBuilderHTML(target)}
         <div class="hud-frame card">
           <div class="section-title"><span>Punteggi Base</span></div>
           <div class="grid-stats">
@@ -488,15 +945,42 @@
           <div id="d-save-msg" style="margin-top:8px;"></div>
           ${isMaster ? `<button class="btn ghost" id="d-reset" style="width:100%;padding:10px;margin-top:8px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera Digimon (permette una nuova Creazione Guidata)</button>` : ''}
         </div>` : ''}
-        `)}
+        `}
+        <div class="hud-frame card">
+          <div class="section-title"><span>🐞 Segnala un Bug</span></div>
+          <div class="muted" style="margin-bottom:10px;">Hai trovato qualcosa che non funziona come dovrebbe? Descrivilo qui — arriva direttamente al Master.</div>
+          <textarea id="bug-text" rows="4" placeholder="Cosa è successo? Cosa ti aspettavi succedesse invece?"></textarea>
+          <button class="btn solid" id="btn-send-bug" style="width:100%;margin-top:8px;">Invia Segnalazione</button>
+          <div class="muted" id="bug-status" style="margin-top:6px;"></div>
+        </div>
       </div>`;
 
     document.getElementById('btn-logout').onclick = logout;
+    const bugBtn = document.getElementById('btn-send-bug');
+    if(bugBtn) bugBtn.onclick = async ()=>{
+      const text = document.getElementById('bug-text').value.trim();
+      const statusEl = document.getElementById('bug-status');
+      if(!text){ statusEl.style.color='var(--danger)'; statusEl.textContent = 'Scrivi qualcosa prima di inviare.'; return; }
+      statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Invio...';
+      const res = await createBugReport(session.code, session.username, text);
+      if(res && res.ok){
+        statusEl.style.color='var(--dchroma)'; statusEl.textContent = 'Segnalazione inviata, grazie!';
+        document.getElementById('bug-text').value = '';
+      } else {
+        statusEl.style.color='var(--danger)'; statusEl.textContent = 'Errore: ' + (lastApiError||'sconosciuto');
+      }
+    };
 
     if(isMaster){
       const sel = document.getElementById('d-select-player');
       if(sel) sel.onchange = ()=>{ window.__digimonSelected = sel.value; renderPage(); };
     }
+
+    const startWizBtn = document.getElementById('btn-start-wizard');
+    if(startWizBtn) startWizBtn.onclick = ()=>{ startDigimonWizard(null); };
+    if(creationDraft && target) bindDigimonWizard(target);
+    if(target) bindStageBuilder(target);
+    if(target && target.digimon.approved) bindBonusDp(target);
 
     if(target){
       root.querySelectorAll('[data-stage-switch]').forEach(btn=>{
@@ -648,8 +1132,22 @@
   const restored = loadSession();
   if(restored && restored.code && restored.username){ session = restored; }
   (async ()=>{
-    if(session){ cachedRoster = await getRoster(session.code); startPolling(); }
+    if(session){
+      cachedRoster = await getRoster(session.code);
+      cachedProgression = await getProgression(session.code);
+      startPolling();
+    }
     render();
+    // Se arriviamo dallo Scan (?prefillName=...), apri subito la Wizard del Digimon pre-compilata —
+    // solo se il Digimon non è già stato creato, per non azzerare per sbaglio una scheda esistente.
+    const prefill = getStarterPrefillFromURL();
+    if(prefill && session && session.role==='player'){
+      const me = cachedRoster.find(m=>m.username===session.username);
+      if(!me || !me.digimon.name){
+        startDigimonWizard(prefill);
+      }
+      clearStarterPrefillFromURL();
+    }
   })();
 })();
 </script>

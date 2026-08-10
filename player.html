@@ -114,16 +114,38 @@
   const root = document.getElementById('root-app');
 
   const SKILL_DEFS = [
-    { key:'evade', label:'Evade' }, { key:'precision', label:'Precision' }, { key:'stealth', label:'Stealth' },
-    { key:'athletics', label:'Athletics' }, { key:'endurance', label:'Endurance' }, { key:'featsOfStrength', label:'Feats of Strength' },
-    { key:'manipulate', label:'Manipulate' }, { key:'perform', label:'Perform' }, { key:'persuasion', label:'Persuasion' },
-    { key:'decipherIntent', label:'Decipher Intent' }, { key:'survival', label:'Survival' }, { key:'knowledge', label:'Knowledge' },
-    { key:'fortitude', label:'Fortitude' }, { key:'bravery', label:'Bravery' }, { key:'awareness', label:'Awareness' }
+    { key:'evade', label:'Evade', attrs:['agility','willpower'] },
+    { key:'precision', label:'Precision', attrs:['agility','intelligence'] },
+    { key:'stealth', label:'Stealth', attrs:['agility','body'] },
+    { key:'athletics', label:'Athletics', attrs:['body','agility'] },
+    { key:'endurance', label:'Endurance', attrs:['body','willpower'] },
+    { key:'featsOfStrength', label:'Feats of Strength', attrs:['body','charisma'] },
+    { key:'manipulate', label:'Manipulate', attrs:['charisma','body'] },
+    { key:'perform', label:'Perform', attrs:['charisma','agility'] },
+    { key:'persuasion', label:'Persuasion', attrs:['charisma','intelligence'] },
+    { key:'decipherIntent', label:'Decipher Intent', attrs:['intelligence','charisma'] },
+    { key:'survival', label:'Survival', attrs:['intelligence','willpower'] },
+    { key:'knowledge', label:'Knowledge', attrs:['intelligence'] },
+    { key:'fortitude', label:'Fortitude', attrs:['willpower','intelligence'] },
+    { key:'bravery', label:'Bravery', attrs:['willpower','body'] },
+    { key:'awareness', label:'Awareness', attrs:['willpower','agility'] }
   ];
   const STAT_DEFS = [
     { key:'agility', label:'Agility' }, { key:'body', label:'Body' }, { key:'charisma', label:'Charisma' },
     { key:'intelligence', label:'Intelligence' }, { key:'willpower', label:'Willpower' }
   ];
+  const ATTR_ABBR = { agility:'AGI', body:'BODY', charisma:'CAR', intelligence:'INT', willpower:'WILL' };
+  const CAMPAIGN_LEVELS = {
+    Standard: { ap:10, sp:25, cap:5, thresholds:[3,5,6,7], tnShift:0, startTorment:8 },
+    Classic:  { ap:5,  sp:20, cap:3, thresholds:[2,3,4,5], tnShift:-2, startTorment:5 },
+    Extreme:  { ap:15, sp:30, cap:7, thresholds:[4,6,8,10], tnShift:2, startTorment:10 }
+  };
+  let cachedProgression = null;
+  function campaignConfig(){
+    const level = (cachedProgression && cachedProgression.campaignLevel) || 'Standard';
+    return CAMPAIGN_LEVELS[level] || CAMPAIGN_LEVELS.Standard;
+  }
+  function skillMax(t, def){ return Math.max(...def.attrs.map(a=>Number(t[a])||0)); }
 
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s){ return escapeHTML(s); }
@@ -132,10 +154,12 @@
     const skills = {}; SKILL_DEFS.forEach(s=>skills[s.key]=0);
     return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, imageUrl:'', currentWounds:null, inventory:[], skills,
       unspentGrowthPoints:0, inspirationPoints:0, tormentPenalty:0, torments:[],
-      majorAspect:{text:'',usesLeft:1}, minorAspect:{text:'',usesLeft:2} };
+      majorAspect:{text:'',usesLeft:1}, minorAspect:{text:'',usesLeft:2}, built:false };
   }
   function normalizeMember(m){
+    const hadPriorTamer = !!(m.tamer && typeof m.tamer.built === 'undefined' && Object.keys(m.tamer).length>0);
     m.tamer = Object.assign(defaultTamer(), m.tamer||{});
+    if(hadPriorTamer) m.tamer.built = true;
     m.tamer.skills = Object.assign((()=>{const s={};SKILL_DEFS.forEach(d=>s[d.key]=0);return s;})(), m.tamer.skills||{});
     if(!Array.isArray(m.tamer.inventory)) m.tamer.inventory = [];
     if(!Array.isArray(m.tamer.torments)) m.tamer.torments = [];
@@ -166,6 +190,75 @@
   async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]).map(normalizeMember) : []; }
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
   async function uploadImage(code, dataUrl){ return apiPost('/api/upload', { code, dataUrl }); }
+  async function getProgression(code){
+    const d = await apiGet('/api/progression?code=' + encodeURIComponent(code));
+    const p = d ? d.progression : { milestone:0, xp:0, inspiration:0, campaign_level:'Standard' };
+    return { milestone: p.milestone||0, xp: p.xp||0, inspiration: p.inspiration||0, campaignLevel: p.campaign_level || 'Standard' };
+  }
+  async function pushLog(code, entry){ return apiPost('/api/log', { code, ...entry }); }
+
+  // ---------- Avvisi (notice) ----------
+  async function getNotices(code){ const d = await apiGet('/api/feedback?resource=notice&code=' + encodeURIComponent(code)); return d ? (d.notices||[]) : []; }
+  async function confirmNotice(code, id, username){ return apiPost('/api/feedback', { resource:'notice', action:'confirm', code, id, username }); }
+
+  // ---------- Segnalazioni Bug ----------
+  async function createBugReport(code, username, text){ return apiPost('/api/feedback', { resource:'bugreport', action:'create', code, username, text }); }
+
+  // ---------- Coda Avvisi bloccanti (stessa logica di index.html) ----------
+  let noticeQueue = [];
+  let noticeModalOpen = false;
+  function isNoticeForMe(n){
+    if(!session) return false;
+    if(n.target_type==='all') return true;
+    const list = Array.isArray(n.target_usernames) ? n.target_usernames : [];
+    return list.includes(session.username);
+  }
+  function isNoticeConfirmedByMe(n){
+    const confs = Array.isArray(n.confirmations) ? n.confirmations : [];
+    return confs.some(c=>c.username===session.username);
+  }
+  async function checkNoticesForMe(){
+    if(!session) return;
+    const all = await getNotices(session.code);
+    const mine = all.filter(n=>n.active && isNoticeForMe(n) && !isNoticeConfirmedByMe(n));
+    mine.sort((a,b)=> new Date(a.created_at) - new Date(b.created_at));
+    noticeQueue = mine;
+    if(!noticeModalOpen && noticeQueue.length>0) showNextNotice();
+    if(noticeQueue.length===0 && noticeModalOpen){
+      noticeModalOpen = false;
+      const old = document.getElementById('notice-modal');
+      if(old) old.remove();
+    }
+  }
+  function showNextNotice(){
+    if(noticeQueue.length===0){
+      noticeModalOpen = false;
+      const old = document.getElementById('notice-modal');
+      if(old) old.remove();
+      return;
+    }
+    noticeModalOpen = true;
+    const n = noticeQueue[0];
+    const old = document.getElementById('notice-modal');
+    if(old) old.remove();
+    const modal = document.createElement('div');
+    modal.id = 'notice-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;';
+    modal.innerHTML = `
+      <div class="hud-frame" style="max-width:480px;width:100%;padding:22px;background:var(--panel);">
+        <div class="section-title"><span>📢 Avviso dal Master${noticeQueue.length>1?` (${noticeQueue.length} in attesa)`:''}</span></div>
+        ${n.image_url ? `<img src="${escapeAttr(n.image_url)}" style="max-width:100%;max-height:40vh;object-fit:contain;margin-bottom:14px;border:1px solid var(--line);display:block;" />` : ''}
+        <div style="white-space:pre-wrap;margin-bottom:18px;line-height:1.5;">${escapeHTML(n.text)}</div>
+        <button class="btn solid" id="notice-confirm-btn" style="width:100%;padding:12px;">Ho capito</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    document.getElementById('notice-confirm-btn').onclick = async ()=>{
+      await confirmNotice(session.code, n.id, session.username);
+      noticeQueue.shift();
+      showNextNotice();
+    };
+  }
 
   // ---------- collapsible cards (mobile) ----------
   function enableCollapsibleCards(container){
@@ -189,9 +282,11 @@
   // ---------- polling ----------
   function startPolling(){
     if(pollTimer) clearInterval(pollTimer);
+    checkNoticesForMe();
     pollTimer = setInterval(async ()=>{
       if(!session) return;
       cachedRoster = await getRoster(session.code);
+      checkNoticesForMe();
       if(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
       render();
     }, 4000);
@@ -253,6 +348,7 @@
       session = { code, username, role };
       saveSession(session);
       cachedRoster = await getRoster(code);
+      cachedProgression = await getProgression(code);
       startPolling();
       render();
     };
@@ -297,6 +393,14 @@
           <span class="muted" id="p-img-status"></span>
         </div>` : ''}
       </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);">
+      ${m.tamer.digiviceImageUrl
+        ? `<img src="${escapeAttr(m.tamer.digiviceImageUrl)}" onerror="this.style.visibility='hidden'" style="width:48px;height:48px;object-fit:contain;border:1px solid var(--cyan-dim);border-radius:var(--radius);background:var(--panel-2);padding:4px;" />`
+        : `<div style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:var(--radius);color:var(--text-mute);font-size:20px;">📟</div>`}
+      ${editable
+        ? `<div class="field" style="flex:1;margin:0;"><label>URL Immagine Digivice</label><input type="text" id="p-digiviceImageUrl" value="${escapeAttr(m.tamer.digiviceImageUrl||'')}" placeholder="https://..." /></div>`
+        : `<div class="muted">Digivice</div>`}
     </div>`;
   }
 
@@ -423,6 +527,175 @@
     </div>`;
   }
 
+  // ---------- Creazione Guidata: Tamer (incorporata direttamente in questa pagina) ----------
+  let creationDraft = null;
+  let justBuiltTamer = false;
+
+  function startTamerWizard(existingTamer){
+    creationDraft = {
+      agility:1, body:1, charisma:1, intelligence:1, willpower:1,
+      skills: (()=>{ const s={}; SKILL_DEFS.forEach(d=>s[d.key]=0); return s; })(),
+      digiviceImageUrl: (existingTamer && existingTamer.digiviceImageUrl) || ''
+    };
+    renderPage();
+  }
+
+  function growthPointsBlockHTML(m){
+    const t = m.tamer;
+    const gp = Number(t.unspentGrowthPoints||0);
+    if(gp<=0) return '';
+    return `
+    <div class="hud-frame card" style="border-color:var(--cyan);">
+      <div class="section-title"><span>🎁 Growth Point disponibili: ${gp}</span></div>
+      <div class="muted" style="margin-bottom:10px;">1 GP = +1 a una Skill (fino al max consentito dagli Attributi collegati). 3 GP insieme = +1 a un Attributo (rispettando il tetto per Milestone).</div>
+      <div class="row">
+        <select id="gp-skill-select" style="flex:2;">${SKILL_DEFS.map(d=>`<option value="${d.key}">${escapeHTML(d.label)}</option>`).join('')}</select>
+        <button class="btn small" id="btn-gp-skill" style="flex:1;">+1 Skill (1 GP)</button>
+      </div>
+      ${gp>=3 ? `
+      <div class="row" style="margin-top:6px;">
+        <select id="gp-attr-select" style="flex:2;">
+          <option value="agility">Agility</option><option value="body">Body</option><option value="charisma">Charisma</option><option value="intelligence">Intelligence</option><option value="willpower">Willpower</option>
+        </select>
+        <button class="btn small" id="btn-gp-attr" style="flex:1;">+1 Attributo (3 GP)</button>
+      </div>` : ''}
+      <div class="muted" id="gp-status" style="margin-top:6px;"></div>
+    </div>`;
+  }
+
+  function bindGrowthPoints(target){
+    const t = target.tamer;
+    const gpSkillBtn = document.getElementById('btn-gp-skill');
+    if(gpSkillBtn){
+      gpSkillBtn.onclick = async ()=>{
+        const key = document.getElementById('gp-skill-select').value;
+        const def = SKILL_DEFS.find(d=>d.key===key);
+        const max = skillMax(t, def);
+        const statusEl = document.getElementById('gp-status');
+        if((Number(t.skills[key])||0) >= max){ statusEl.style.color='var(--danger)'; statusEl.textContent = `${def.label} è già al massimo consentito (${max}).`; return; }
+        t.skills[key] = (Number(t.skills[key])||0) + 1;
+        t.unspentGrowthPoints = Number(t.unspentGrowthPoints||0) - 1;
+        const ok = await saveMember(session.code, target);
+        if(ok){ cachedRoster = await getRoster(session.code); renderPage(); }
+        else { statusEl.style.color='var(--danger)'; statusEl.textContent = 'Errore: ' + (lastApiError||'sconosciuto'); }
+      };
+    }
+    const gpAttrBtn = document.getElementById('btn-gp-attr');
+    if(gpAttrBtn){
+      gpAttrBtn.onclick = async ()=>{
+        const attr = document.getElementById('gp-attr-select').value;
+        const statusEl = document.getElementById('gp-status');
+        const current = Number(t[attr])||0;
+        const milestone = cachedProgression ? Number(cachedProgression.milestone||0) : 0;
+        let cap = 5;
+        if(milestone>=6) cap = 7; else if(milestone>=3) cap = 6;
+        if(current >= cap){ statusEl.style.color='var(--danger)'; statusEl.textContent = `Tetto attuale per gli Attributi: ${cap} (Milestone ${milestone}).`; return; }
+        t[attr] = current + 1;
+        t.unspentGrowthPoints = Number(t.unspentGrowthPoints||0) - 3;
+        const ok = await saveMember(session.code, target);
+        if(ok){ cachedRoster = await getRoster(session.code); renderPage(); }
+        else { statusEl.style.color='var(--danger)'; statusEl.textContent = 'Errore: ' + (lastApiError||'sconosciuto'); }
+      };
+    }
+  }
+
+  function tamerWizardHTML(){
+    const draft = creationDraft;
+    const cfg = campaignConfig();
+    const cap = cfg.cap;
+    const attrs = ['agility','body','charisma','intelligence','willpower'];
+    const apSpent = attrs.reduce((s,a)=>s+(draft[a]-1),0);
+    const apRemaining = cfg.ap - apSpent;
+    const spSpent = SKILL_DEFS.reduce((s,def)=>s+Number(draft.skills[def.key]||0),0);
+    const spRemaining = cfg.sp - spSpent;
+    const attrAtCap = attrs.filter(a=>draft[a]===cap).length;
+    const skillsAtCap = SKILL_DEFS.filter(def=>Number(draft.skills[def.key]||0)===cap).length;
+    const errors = [];
+    if(apRemaining!==0) errors.push(`Punti Attributo da spendere: ${apRemaining} (devono arrivare esattamente a 0)`);
+    if(spRemaining!==0) errors.push(`Punti Skill da spendere: ${spRemaining} (devono arrivare esattamente a 0)`);
+    if(attrAtCap>1) errors.push(`Solo un Attributo può arrivare al tetto di ${cap} in creazione.`);
+    if(skillsAtCap>1) errors.push(`Solo una Skill può arrivare al tetto di ${cap} in creazione.`);
+
+    return `
+    <div class="hud-frame card">
+      <div class="section-title"><span>🧙 Creazione Guidata — Tamer</span></div>
+      <div class="muted" style="margin-bottom:8px;">Campaign Level: <b>${(cachedProgression&&cachedProgression.campaignLevel)||'Standard'}</b> — ${cfg.ap} Punti Attributo (partono da 1) · ${cfg.sp} Punti Skill · solo un Attributo e una Skill possono arrivare al tetto di ${cap}.</div>
+      <div class="flex-between" style="margin-bottom:6px;"><span class="muted">Punti Attributo rimasti</span><span class="mono" style="color:${apRemaining===0?'var(--cyan)':'var(--amber)'};">${apRemaining}</span></div>
+      <div class="grid-stats">
+        ${attrs.map(a=>`
+          <div class="stat-box">
+            <div class="l">${ATTR_ABBR[a]}</div>
+            <input type="number" data-wiz-attr="${a}" min="1" max="${cap}" value="${draft[a]}" />
+          </div>
+        `).join('')}
+      </div>
+      <div style="border-top:1px dashed var(--line);margin:12px 0;"></div>
+      <div class="flex-between" style="margin-bottom:6px;"><span class="muted">Punti Skill rimasti</span><span class="mono" style="color:${spRemaining===0?'var(--cyan)':'var(--amber)'};">${spRemaining}</span></div>
+      <div class="grid-skills">
+        ${SKILL_DEFS.map(def=>{
+          const max = Math.min(cap, skillMax(draft, def));
+          return `<div class="skill-box" style="flex-direction:column;align-items:stretch;text-align:left;">
+            <span class="l">${escapeHTML(def.label)} <span class="muted" style="font-size:9px;">(max ${max})</span></span>
+            <input type="number" data-wiz-skill="${def.key}" min="0" max="${max}" value="${draft.skills[def.key]||0}" style="margin-top:4px;" />
+          </div>`;
+        }).join('')}
+      </div>
+      <div style="border-top:1px dashed var(--line);margin:12px 0;"></div>
+      <div class="field"><label>URL Immagine Digivice (opzionale)</label><input type="text" id="wiz-t-digivice-img" value="${escapeAttr(draft.digiviceImageUrl)}" placeholder="https://..." /></div>
+      ${errors.length ? `<div class="err">${errors.map(e=>escapeHTML(e)).join('<br/>')}</div>` : '<div class="ok-msg">Tutto valido, puoi salvare.</div>'}
+      <div class="row" style="margin-top:10px;">
+        <button class="btn ghost" id="btn-wiz-cancel" style="flex:1;">Annulla</button>
+        <button class="btn solid" id="btn-wiz-save" style="flex:1;" ${errors.length?'disabled':''}>✅ Salva Tamer</button>
+      </div>
+      <div class="muted" id="wiz-status" style="margin-top:6px;"></div>
+    </div>`;
+  }
+
+  function bindTamerWizard(target){
+    const draft = creationDraft;
+    const cfg = campaignConfig();
+    const cap = cfg.cap;
+    root.querySelectorAll('[data-wiz-attr]').forEach(inp=>{
+      inp.onchange = ()=>{ draft[inp.getAttribute('data-wiz-attr')] = Math.max(1, Math.min(cap, Number(inp.value)||1)); renderPage(); };
+    });
+    root.querySelectorAll('[data-wiz-skill]').forEach(inp=>{
+      inp.onchange = ()=>{
+        const key = inp.getAttribute('data-wiz-skill');
+        const def = SKILL_DEFS.find(d=>d.key===key);
+        const max = Math.min(cap, skillMax(draft, def));
+        draft.skills[key] = Math.max(0, Math.min(max, Number(inp.value)||0));
+        renderPage();
+      };
+    });
+    const digiviceImgInp = document.getElementById('wiz-t-digivice-img');
+    if(digiviceImgInp) digiviceImgInp.onchange = (e)=>{ draft.digiviceImageUrl = e.target.value; };
+    document.getElementById('btn-wiz-cancel').onclick = ()=>{ creationDraft = null; renderPage(); };
+    const saveBtn = document.getElementById('btn-wiz-save');
+    if(saveBtn){
+      saveBtn.onclick = async ()=>{
+        ['agility','body','charisma','intelligence','willpower'].forEach(a=>{ target.tamer[a] = draft[a]; });
+        target.tamer.skills = draft.skills;
+        target.tamer.unspentGrowthPoints = 0;
+        target.tamer.currentWounds = 3 + Number(draft.skills.endurance||0);
+        target.tamer.digiviceImageUrl = draft.digiviceImageUrl || '';
+        target.tamer.built = true;
+        const st = document.getElementById('wiz-status');
+        st.textContent = 'Salvataggio...';
+        const ok = await saveMember(session.code, target);
+        if(ok){
+          await pushLog(session.code, { who: session.username, role:'player', text: `${target.username} ha completato la Creazione Guidata del Tamer.` });
+          creationDraft = null;
+          justBuiltTamer = true;
+          cachedRoster = await getRoster(session.code);
+          renderPage();
+        } else {
+          st.style.color = 'var(--danger)';
+          st.textContent = 'Errore: ' + (lastApiError||'sconosciuto');
+        }
+      };
+    }
+  }
+
   function renderPage(){
     const isMaster = session.role === 'master';
     let target = null;
@@ -446,17 +719,38 @@
 
     const editable = true;
 
+    // Master: se seleziona un giocatore mentre la wizard di qualcun altro era aperta, annulla la wizard per sicurezza.
+    if(isMaster && creationDraft) creationDraft = null;
+
+    let bodyHTML;
+    if(creationDraft && target){
+      bodyHTML = tamerWizardHTML();
+    } else if(!isMaster && justBuiltTamer && target && target.tamer.built){
+      bodyHTML = `
+      <div class="hud-frame card" style="border-color:var(--cyan);">
+        <div class="section-title"><span>✅ Tamer creato</span></div>
+        <div style="margin-bottom:10px;">Ora crea il tuo Digimon. Se non l'hai ancora fatto, parti dalla Bio-Resonance Scan.</div>
+        <div class="row">
+          <a href="digimon.html" target="_blank" class="btn solid" style="flex:1;text-decoration:none;text-align:center;padding:10px;">👾 Vai alla Scheda Digimon</a>
+        </div>
+      </div>`;
+    } else if(!target || !target.tamer.built){
+      bodyHTML = `
+        <div class="hud-frame card muted">
+          ${isMaster ? (target ? `${escapeHTML(target.username)} non ha ancora completato la Creazione Guidata.` : 'Nessuna scheda trovata. Seleziona un giocatore.') : `
+            <div style="margin-bottom:10px;">Non hai ancora una scheda. Puoi crearla subito con la Creazione Guidata.</div>
+            <button class="btn solid" id="btn-start-wizard" style="padding:10px 16px;">🧙 Apri Creazione Guidata</button>
+          `}
+        </div>`;
+    } else {
+      bodyHTML = null; // usa il ramo completo sotto
+    }
+
     root.innerHTML = `
       <div style="max-width:760px;margin:0 auto;">
         ${topbar()}
         ${selectorHTML}
-        ${!target ? `
-        <div class="hud-frame card muted">
-          ${isMaster ? 'Nessuna scheda trovata. Seleziona un giocatore.' : `
-            <div style="margin-bottom:10px;">Non hai ancora una scheda. Puoi crearla subito con la Creazione Guidata.</div>
-            <a href="index.html?openWizard=1" target="_blank" class="btn solid" style="text-decoration:none;display:inline-block;padding:10px 16px;">🧙 Apri Creazione Guidata</a>
-          `}
-        </div>` : `
+        ${bodyHTML !== null ? bodyHTML : `
         <div class="hud-frame card">
           ${portraitBlockHTML(target, editable)}
         </div>
@@ -472,6 +766,7 @@
             ${SKILL_DEFS.map(d=>skillBoxHTML(target, d, editable)).join('')}
           </div>
         </div>
+        ${growthPointsBlockHTML(target)}
         ${statoBlockHTML(target, editable)}
         ${aspectsBlockHTML(target, editable)}
         ${inventoryBlockHTML(target, editable)}
@@ -483,16 +778,42 @@
           ${isMaster ? `<button class="btn ghost" id="p-reset" style="width:100%;padding:10px;margin-top:8px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera Scheda Tamer (permette una nuova Creazione Guidata)</button>` : ''}
         </div>` : ''}
         `}
+        <div class="hud-frame card">
+          <div class="section-title"><span>🐞 Segnala un Bug</span></div>
+          <div class="muted" style="margin-bottom:10px;">Hai trovato qualcosa che non funziona come dovrebbe? Descrivilo qui — arriva direttamente al Master.</div>
+          <textarea id="bug-text" rows="4" placeholder="Cosa è successo? Cosa ti aspettavi succedesse invece?"></textarea>
+          <button class="btn solid" id="btn-send-bug" style="width:100%;margin-top:8px;">Invia Segnalazione</button>
+          <div class="muted" id="bug-status" style="margin-top:6px;"></div>
+        </div>
       </div>`;
 
     document.getElementById('btn-logout').onclick = logout;
+    const bugBtn = document.getElementById('btn-send-bug');
+    if(bugBtn) bugBtn.onclick = async ()=>{
+      const text = document.getElementById('bug-text').value.trim();
+      const statusEl = document.getElementById('bug-status');
+      if(!text){ statusEl.style.color='var(--danger)'; statusEl.textContent = 'Scrivi qualcosa prima di inviare.'; return; }
+      statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Invio...';
+      const res = await createBugReport(session.code, session.username, text);
+      if(res && res.ok){
+        statusEl.style.color='var(--cyan)'; statusEl.textContent = 'Segnalazione inviata, grazie!';
+        document.getElementById('bug-text').value = '';
+      } else {
+        statusEl.style.color='var(--danger)'; statusEl.textContent = 'Errore: ' + (lastApiError||'sconosciuto');
+      }
+    };
 
     if(isMaster){
       const sel = document.getElementById('p-select-player');
-      if(sel) sel.onchange = ()=>{ window.__playerSelected = sel.value; renderPage(); };
+      if(sel) sel.onchange = ()=>{ window.__playerSelected = sel.value; justBuiltTamer=false; renderPage(); };
     }
 
-    if(target && editable){
+    const startWizBtn = document.getElementById('btn-start-wizard');
+    if(startWizBtn) startWizBtn.onclick = ()=>{ startTamerWizard(target && target.tamer); };
+    if(creationDraft && target) bindTamerWizard(target);
+    if(target && target.tamer.built && bodyHTML===null) bindGrowthPoints(target);
+
+    if(target && editable && bodyHTML === null){
       bindImageUpload(target);
       bindListEditors(target);
       document.getElementById('p-save').onclick = async ()=>{
@@ -506,6 +827,8 @@
         });
         const imgEl = document.getElementById('p-imageUrl');
         if(imgEl) target.tamer.imageUrl = imgEl.value.trim();
+        const digiviceEl = document.getElementById('p-digiviceImageUrl');
+        if(digiviceEl) target.tamer.digiviceImageUrl = digiviceEl.value.trim();
         target.tamer.currentWounds = Math.max(0, Number(document.getElementById('p-currentWounds').value)||0);
         target.tamer.unspentGrowthPoints = Math.max(0, Number(document.getElementById('p-unspentGrowthPoints').value)||0);
         target.tamer.inspirationPoints = Math.max(0, Number(document.getElementById('p-inspirationPoints').value)||0);
@@ -633,7 +956,7 @@
   const restored = loadSession();
   if(restored && restored.code && restored.username){ session = restored; }
   (async ()=>{
-    if(session){ cachedRoster = await getRoster(session.code); startPolling(); }
+    if(session){ cachedRoster = await getRoster(session.code); cachedProgression = await getProgression(session.code); startPolling(); }
     render();
   })();
 })();

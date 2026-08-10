@@ -149,7 +149,7 @@
   .role-pick{display:flex;gap:10px;margin-bottom:16px;}
   .role-pick .btn{flex:1;}
   .role-pick .btn.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
-  #tab-scheda.active, #tab-inventario.active, #tab-dex.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
+  #tab-scheda.active, #tab-inventario.active, #tab-dex.active, #tab-bug.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
   #chatmode-public.active, #chatmode-private.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
 
   .roster-item{padding:10px;border-bottom:1px solid var(--line);font-size:12px;}
@@ -233,6 +233,8 @@
 
   /* ---- Compact HP readout for the Scene and Combat tracker ---- */
   @keyframes hpcrit{0%,100%{box-shadow:0 0 6px rgba(255,93,93,0.55);}50%{box-shadow:0 0 13px rgba(255,93,93,0.95);}}
+  @keyframes evounready{0%,100%{box-shadow:0 0 5px rgba(255,138,61,0.5);border-color:var(--amber);}50%{box-shadow:0 0 15px rgba(255,138,61,0.95);border-color:#ffb066;}}
+  .evo-btn-unready{animation:evounready 1.1s ease-in-out infinite;}
   @keyframes hpsheen{0%{transform:translateX(-120%);}100%{transform:translateX(220%);}}
   .hp-mini{display:flex;align-items:center;gap:6px;margin-top:5px;flex:1;min-width:80px;}
   .hp-mini-track{flex:1;height:11px;background:var(--panel-2);border:1px solid var(--line);border-radius:3px;overflow:hidden;position:relative;
@@ -858,6 +860,19 @@
   }
 
   async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]) : []; }
+
+  // ---------- Avvisi (notice) ----------
+  async function getNotices(code){ const d = await apiGet('/api/feedback?resource=notice&code=' + encodeURIComponent(code)); return d ? (d.notices||[]) : []; }
+  async function createNotice(code, { text, imageUrl, targetType, targetUsernames, createdBy }){
+    return apiPost('/api/feedback', { resource:'notice', action:'create', code, text, imageUrl, targetType, targetUsernames, createdBy });
+  }
+  async function confirmNotice(code, id, username){ return apiPost('/api/feedback', { resource:'notice', action:'confirm', code, id, username }); }
+  async function closeNotice(code, id){ return apiPost('/api/feedback', { resource:'notice', action:'close', code, id }); }
+
+  // ---------- Segnalazioni Bug ----------
+  async function getBugReports(code){ const d = await apiGet('/api/feedback?resource=bugreport&code=' + encodeURIComponent(code)); return d ? (d.reports||[]) : []; }
+  async function createBugReport(code, username, text){ return apiPost('/api/feedback', { resource:'bugreport', action:'create', code, username, text }); }
+  async function resolveBugReport(code, id, resolved){ return apiPost('/api/feedback', { resource:'bugreport', action:'resolve', code, id, resolved }); }
   async function getScanLog(code){ const d = await apiGet('/api/upload?resource=scan&code=' + encodeURIComponent(code)); return d ? (d.allLog||[]) : []; }
   async function deleteScanEntry(code, id){ return apiDelete('/api/upload?resource=scan&code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
@@ -1014,7 +1029,8 @@
       majorAspect: { text:'', usesLeft:1 },
       minorAspect: { text:'', usesLeft:2 },
       specialOrdersUsed: {},
-      teamworkBonus: 0
+      teamworkBonus: 0,
+      built: false // diventa true al completamento della Creazione Guidata — segnala che la scheda non è più "vuota"
     };
   }
   function defaultDigimon(){
@@ -1022,7 +1038,7 @@
       name:'', stage:'Rookie', personality:'', imageUrl:'', approved:false,
       maxWounds:5, currentWounds:5, maxMp:3, currentMp:3,
       baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:1,
-      dpTotal:0, qualities:[],
+      dpTotal:0, unspentBonusDP:0, qualities:[],
       defaultStage:'Rookie', defaultRange:2, evolutionPoints:0, forcedEvoRoundsLeft:0,
       battery:0, usedSigMoveThisTurn:false,
       size:'Medium', stance:'Neutral', chatColor:'#c896ff',
@@ -1037,7 +1053,9 @@
     };
   }
   function normalizeMember(m){
+    const hadPriorTamer = !!(m.tamer && typeof m.tamer.built === 'undefined' && Object.keys(m.tamer).length>0);
     m.tamer = Object.assign(defaultTamer(), m.tamer||{});
+    if(hadPriorTamer) m.tamer.built = true; // scheda pre-esistente creata prima di questo flag: non è "vuota"
     if(!m.tamer.skills) m.tamer.skills = defaultSkills();
     m.tamer.skills = Object.assign(defaultSkills(), m.tamer.skills);
     if(m.tamer._legacyEndurance===undefined && m.tamer.endurance!==undefined && !m.tamer.skills.endurance){
@@ -1136,17 +1154,6 @@
       editingTamer = false; editingDigimon = false; editingScene = false;
       startPolling();
       render();
-
-      // Se arriviamo da un link "Aggiungi come Starter" del Bio-Resonance Scan e il personaggio
-      // è ancora vuoto, apri subito la Creation Wizard pre-compilata (senza il dialog di conferma,
-      // dato che non c'è nulla da "azzerare" su un personaggio nuovo).
-      const prefill = getStarterPrefillFromURL();
-      if(prefill && role==='player' && !member.digimon.name){
-        waitForElement('sidebar-content').then(()=>{
-          openCreationWizard(member, 'sidebar-content', prefill, true);
-          clearStarterPrefillFromURL();
-        });
-      }
     };
   }
 
@@ -1161,9 +1168,11 @@
     if(pollTimer) clearInterval(pollTimer);
     heartbeat(session.code, session.username);
     refreshLiveParts();
+    checkNoticesForMe();
     pollTimer = setInterval(async ()=>{
       if(session) await heartbeat(session.code, session.username);
       refreshLiveParts();
+      checkNoticesForMe();
     }, 4000);
   }
 
@@ -1732,6 +1741,7 @@
           <div class="hud-frame" style="padding:6px;margin-bottom:16px;display:flex;gap:6px;">
             <button class="btn small" id="tab-scheda" style="flex:1;">Scheda</button>
             <button class="btn small" id="tab-inventario" style="flex:1;">Inventario</button>
+            <button class="btn small" id="tab-bug" style="flex:1;">🐞 Bug</button>
           </div>
           <div id="sidebar-content"></div>
         </div>
@@ -1741,6 +1751,7 @@
     renderSidebar(me);
     document.getElementById('tab-scheda').onclick = ()=>{ sidebarTab='scheda'; renderSidebar(me); };
     document.getElementById('tab-inventario').onclick = ()=>{ sidebarTab='inventario'; renderSidebar(me); };
+    document.getElementById('tab-bug').onclick = ()=>{ sidebarTab='bug'; renderSidebar(me); };
 
     document.getElementById('btn-logout').onclick = logout;
     bindChatAttach('action', code, 'chat', ()=>pendingActionImageUrl, (url)=>{ pendingActionImageUrl = url; });
@@ -1955,268 +1966,6 @@
     Ultimate: { dp:30, startStat:4 },
     Mega:     { dp:40, startStat:5 }
   };
-  let creationDraft = null;
-
-  function applyStageStatScaling(digimon, oldStage, newStage){
-    if(!oldStage || !newStage || oldStage===newStage) return;
-    const oldCfg = STAGE_CREATION[oldStage] || STAGE_CREATION.Rookie;
-    const newCfg = STAGE_CREATION[newStage] || STAGE_CREATION.Rookie;
-    const delta = newCfg.startStat - oldCfg.startStat;
-    if(delta !== 0){
-      ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'].forEach(k=>{
-        digimon[k] = Math.max(0, Number(digimon[k]||0) + delta);
-      });
-    }
-    const oldMax = Number(digimon.maxWounds) || (stageIndex(oldStage) + Number(digimon.baseHealth||0)*2);
-    const missing = Math.max(0, oldMax - Number(digimon.currentWounds||0));
-    const newMax = stageIndex(newStage) + Number(digimon.baseHealth||0)*2;
-    digimon.maxWounds = newMax;
-    digimon.currentWounds = Math.max(0, Math.min(newMax, newMax - missing));
-  }
-
-  function getStarterPrefillFromURL(){
-    try{
-      const params = new URLSearchParams(location.search);
-      if(!params.has('prefillName')) return null;
-      return {
-        name: params.get('prefillName') || '',
-        attribute: params.get('prefillAttribute') || 'Free',
-        personality: params.get('prefillPersonality') || '',
-        baseAccuracy: Number(params.get('prefillAcc'))||2,
-        baseDamage: Number(params.get('prefillDmg'))||2,
-        baseDodge: Number(params.get('prefillDodge'))||2,
-        baseArmor: Number(params.get('prefillArmor'))||2,
-        baseHealth: Number(params.get('prefillHp'))||2,
-        signatureMove: params.get('prefillSig') || ''
-      };
-    }catch(e){ return null; }
-  }
-
-  function clearStarterPrefillFromURL(){
-    try{
-      const url = new URL(location.href);
-      ['prefillName','prefillAttribute','prefillPersonality','prefillAcc','prefillDmg','prefillDodge','prefillArmor','prefillHp','prefillSig'].forEach(k=>url.searchParams.delete(k));
-      history.replaceState(null, '', url.toString());
-    }catch(e){}
-  }
-
-  function openCreationWizard(me, hostId, prefill, skipConfirm){
-    if(!skipConfirm && !window.confirm('La Creazione Guidata azzera Attributi, Skill e Stat Base del Digimon per ricostruirli da zero rispettando i vincoli del manuale. Continuare?')) return;
-    creationDraft = {
-      hostId: hostId || 'sidebar-content',
-      tamer: { agility:1, body:1, charisma:1, intelligence:1, willpower:1, skills: defaultSkills(), digiviceImageUrl: me.tamer.digiviceImageUrl||'' },
-      digimon: { stage:'Rookie', size:'Medium', name: (prefill && prefill.name) || me.digimon.name||'', imageUrl: me.digimon.imageUrl||'', personality: (prefill && prefill.personality) || me.digimon.personality||'', attribute: (prefill && prefill.attribute) || me.digimon.attribute||'Free',
-        baseAccuracy: (prefill && prefill.baseAccuracy) || STAGE_CREATION.Rookie.startStat,
-        baseDamage: (prefill && prefill.baseDamage) || STAGE_CREATION.Rookie.startStat,
-        baseDodge: (prefill && prefill.baseDodge) || STAGE_CREATION.Rookie.startStat,
-        baseArmor: (prefill && prefill.baseArmor) || STAGE_CREATION.Rookie.startStat,
-        baseHealth: (prefill && prefill.baseHealth) || STAGE_CREATION.Rookie.startStat },
-      step: 1
-    };
-    if(prefill && prefill.signatureMove){
-      creationDraft.digimon.attacks = [
-        { name: prefill.signatureMove, shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc:'Attacco caratteristico portato dal Bio-Resonance Scan.', signature:true, reach:1, areaAttack:false },
-        { name:'Raggio a Distanza', shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc:'Un colpo dalla distanza.', signature:false, reach:1, areaAttack:false }
-      ];
-    }
-    if(creationDraft.hostId==='sidebar-content') sidebarTab = 'wizard';
-    renderCreationWizard(me);
-  }
-
-  function renderCreationWizard(me){
-    const content = document.getElementById(creationDraft.hostId);
-    if(!content) return;
-    if(creationDraft.step===1) renderWizardTamerStep(content, me);
-    else renderWizardDigimonStep(content, me);
-  }
-
-  function renderWizardTamerStep(content, me){
-    const draft = creationDraft.tamer;
-    const cfg = campaignConfig();
-    const cap = cfg.cap;
-    const attrs = ['agility','body','charisma','intelligence','willpower'];
-    const apSpent = attrs.reduce((s,a)=>s+(draft[a]-1),0);
-    const apRemaining = cfg.ap - apSpent;
-    const spSpent = SKILL_DEFS.reduce((s,def)=>s+Number(draft.skills[def.key]||0),0);
-    const spRemaining = cfg.sp - spSpent;
-    const attrAtCap = attrs.filter(a=>draft[a]===cap).length;
-    const skillsAtCap = SKILL_DEFS.filter(def=>Number(draft.skills[def.key]||0)===cap).length;
-    const errors = [];
-    if(apRemaining!==0) errors.push(`Punti Attributo da spendere: ${apRemaining} (devono arrivare esattamente a 0)`);
-    if(spRemaining!==0) errors.push(`Punti Skill da spendere: ${spRemaining} (devono arrivare esattamente a 0)`);
-    if(attrAtCap>1) errors.push(`Solo un Attributo può arrivare al tetto di ${cap} in creazione.`);
-    if(skillsAtCap>1) errors.push(`Solo una Skill può arrivare al tetto di ${cap} in creazione.`);
-
-    content.innerHTML = `
-      <div class="hud-frame card">
-        <div class="section-title">🧙 Creazione Guidata — Passo 1: Tamer</div>
-        <div class="muted" style="margin-bottom:8px;">Campaign Level: <b>${(cachedProgression&&cachedProgression.campaignLevel)||'Standard'}</b> — ${cfg.ap} Punti Attributo (partono da 1) · ${cfg.sp} Punti Skill · solo un Attributo e una Skill possono arrivare al tetto di ${cap}.</div>
-        <div class="flex-between" style="margin-bottom:6px;"><span class="muted">Punti Attributo rimasti</span><span class="mono" style="color:${apRemaining===0?'var(--cyan)':'var(--amber)'};">${apRemaining}</span></div>
-        <div class="grid-stats">
-          ${attrs.map(a=>`
-            <div class="stat-box">
-              <div class="l">${ATTR_ABBR[a]}</div>
-              <input type="number" data-wiz-attr="${a}" min="1" max="${cap}" value="${draft[a]}" />
-            </div>
-          `).join('')}
-        </div>
-        <div class="divider"></div>
-        <div class="flex-between" style="margin-bottom:6px;"><span class="muted">Punti Skill rimasti</span><span class="mono" style="color:${spRemaining===0?'var(--cyan)':'var(--amber)'};">${spRemaining}</span></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-          ${SKILL_DEFS.map(def=>{
-            const max = Math.min(cap, skillMax(draft, def));
-            return `<div class="stat-box" style="text-align:left;padding:6px 8px;">
-              <div class="l">${escapeHTML(def.label)} <span class="muted" style="font-size:9px;">(max ${max})</span></div>
-              <input type="number" data-wiz-skill="${def.key}" min="0" max="${max}" value="${draft.skills[def.key]||0}" />
-            </div>`;
-          }).join('')}
-        </div>
-        <div class="divider"></div>
-        <div class="field"><label>URL Immagine Digivice (opzionale)</label><input type="text" id="wiz-t-digivice-img" value="${escapeAttr(draft.digiviceImageUrl)}" placeholder="https://..." /></div>
-        ${errors.length ? `<div class="err">${errors.map(e=>escapeHTML(e)).join('<br/>')}</div>` : '<div class="muted" style="color:var(--cyan);">Tutto valido, puoi proseguire.</div>'}
-        <div class="row" style="margin-top:10px;">
-          <button class="btn ghost" id="btn-wiz-cancel">Annulla</button>
-          <button class="btn solid" id="btn-wiz-next" ${errors.length?'disabled':''}>Avanti: Digimon →</button>
-        </div>
-      </div>
-    `;
-    content.querySelectorAll('[data-wiz-attr]').forEach(inp=>{
-      inp.onchange = ()=>{
-        draft[inp.getAttribute('data-wiz-attr')] = Math.max(1, Math.min(cap, Number(inp.value)||1));
-        renderWizardTamerStep(content, me);
-      };
-    });
-    content.querySelectorAll('[data-wiz-skill]').forEach(inp=>{
-      inp.onchange = ()=>{
-        const key = inp.getAttribute('data-wiz-skill');
-        const def = SKILL_DEFS.find(d=>d.key===key);
-        const max = Math.min(cap, skillMax(draft, def));
-        draft.skills[key] = Math.max(0, Math.min(max, Number(inp.value)||0));
-        renderWizardTamerStep(content, me);
-      };
-    });
-    const digiviceImgInp = document.getElementById('wiz-t-digivice-img');
-    if(digiviceImgInp) digiviceImgInp.onchange = (e)=>{ draft.digiviceImageUrl = e.target.value; };
-    document.getElementById('btn-wiz-cancel').onclick = ()=>{
-      const wasPlayerHost = creationDraft.hostId==='sidebar-content';
-      creationDraft=null;
-      if(wasPlayerHost){ sidebarTab='scheda'; renderSidebar(me); }
-      else { content.innerHTML = '<div class="muted">Creazione annullata. Chiudi e riapri "Gestisci Scheda" per tornare alla vista normale.</div>'; }
-    };
-    const nextBtn = document.getElementById('btn-wiz-next');
-    if(nextBtn) nextBtn.onclick = ()=>{ creationDraft.step = 2; renderCreationWizard(me); };
-  }
-
-  function renderWizardDigimonStep(content, me){
-    const draft = creationDraft.digimon;
-    const cfg = STAGE_CREATION[draft.stage];
-    const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
-    const statLabels = { baseAccuracy:'ACC', baseDamage:'DMG', baseDodge:'DODGE', baseArmor:'ARM', baseHealth:'HP' };
-    const dpSpent = statKeys.reduce((s,k)=>s+(draft[k]-cfg.startStat),0);
-    const dpRemaining = cfg.dp - dpSpent;
-    const errors = [];
-    if(dpRemaining<0) errors.push(`Hai speso troppi DP sulle Stat (sforo di ${-dpRemaining}).`);
-
-    content.innerHTML = `
-      <div class="hud-frame card">
-        <div class="section-title">🧙 Creazione Guidata — Passo 2: Digimon</div>
-        <div class="field"><label>Nome</label><input type="text" id="wiz-d-name" value="${escapeAttr(draft.name)}" /></div>
-        <div class="row">
-          <div class="field"><label>Stage</label>
-            <select id="wiz-d-stage">${STAGES.map(s=>`<option ${draft.stage===s?'selected':''}>${s}</option>`).join('')}</select>
-          </div>
-          <div class="field"><label>Size</label>
-            <select id="wiz-d-size">${allowedSizes(draft.stage).map(s=>`<option ${draft.size===s?'selected':''}>${s}</option>`).join('')}</select>
-          </div>
-        </div>
-        <div class="muted" style="margin-bottom:6px;">DP di partenza per ${escapeHTML(draft.stage)}: <b>${cfg.dp}</b> · Stat base: <b>${cfg.startStat}</b> ciascuna prima di spendere DP.</div>
-        <div class="flex-between" style="margin-bottom:6px;"><span class="muted">DP rimasti per le Stat</span><span class="mono" style="color:${dpRemaining>=0?'var(--cyan)':'var(--danger)'};">${dpRemaining}</span></div>
-        <div class="grid-stats" style="grid-template-columns:repeat(5,1fr);">
-          ${statKeys.map(k=>`
-            <div class="stat-box">
-              <div class="l">${statLabels[k]}</div>
-              <input type="number" data-wiz-stat="${k}" min="${cfg.startStat}" value="${draft[k]}" />
-            </div>
-          `).join('')}
-        </div>
-        <div class="muted" style="margin-top:6px;">DP non spesi in Stat verranno riservati come budget Qualities (${Math.max(0,dpRemaining)} DP).</div>
-        <div class="field" style="margin-top:8px;"><label>Personalità</label><textarea id="wiz-d-personality" rows="2">${escapeHTML(draft.personality)}</textarea></div>
-        <div class="field"><label>URL Immagine (opz.)</label><input type="text" id="wiz-d-img" value="${escapeAttr(draft.imageUrl)}" /></div>
-        <div class="field"><label>Attributo (Variant Rule 2.05c)</label>
-          <select id="wiz-d-attribute">
-            ${['Vaccine','Data','Virus','Free','Variable'].map(a=>`<option ${draft.attribute===a?'selected':''}>${a}</option>`).join('')}
-          </select>
-        </div>
-        <div class="divider"></div>
-        ${errors.length ? `<div class="err">${errors.map(e=>escapeHTML(e)).join('<br/>')}</div>` : '<div class="muted" style="color:var(--cyan);">Tutto valido.</div>'}
-        <div class="row" style="margin-top:10px;">
-          <button class="btn ghost" id="btn-wiz-back">← Indietro</button>
-          <button class="btn solid" id="btn-wiz-finish" ${errors.length?'disabled':''}>✅ Applica e Salva</button>
-        </div>
-        <div class="muted" id="wiz-status" style="margin-top:6px;"></div>
-      </div>
-    `;
-    document.getElementById('wiz-d-name').onchange = (e)=>{ draft.name = e.target.value; };
-    document.getElementById('wiz-d-personality').onchange = (e)=>{ draft.personality = e.target.value; };
-    document.getElementById('wiz-d-img').onchange = (e)=>{ draft.imageUrl = e.target.value; };
-    document.getElementById('wiz-d-attribute').onchange = (e)=>{ draft.attribute = e.target.value; };
-    document.getElementById('wiz-d-stage').onchange = (e)=>{
-      draft.stage = e.target.value;
-      const newCfg = STAGE_CREATION[draft.stage];
-      statKeys.forEach(k=>{ draft[k] = newCfg.startStat; });
-      draft.size = allowedSizes(draft.stage)[0] || 'Medium';
-      renderWizardDigimonStep(content, me);
-    };
-    document.getElementById('wiz-d-size').onchange = (e)=>{ draft.size = e.target.value; };
-    content.querySelectorAll('[data-wiz-stat]').forEach(inp=>{
-      inp.onchange = ()=>{
-        draft[inp.getAttribute('data-wiz-stat')] = Math.max(cfg.startStat, Number(inp.value)||cfg.startStat);
-        renderWizardDigimonStep(content, me);
-      };
-    });
-    document.getElementById('btn-wiz-back').onclick = ()=>{ creationDraft.step = 1; renderCreationWizard(me); };
-    const finishBtn = document.getElementById('btn-wiz-finish');
-    if(finishBtn){
-      finishBtn.onclick = async ()=>{
-        const t = creationDraft.tamer;
-        ['agility','body','charisma','intelligence','willpower'].forEach(a=>{ me.tamer[a] = t[a]; });
-        me.tamer.skills = t.skills;
-        me.tamer.unspentGrowthPoints = 0;
-        me.tamer.currentWounds = 3 + Number(t.skills.endurance||0);
-        me.tamer.digiviceImageUrl = t.digiviceImageUrl || '';
-
-        me.digimon.name = draft.name;
-        me.digimon.stage = draft.stage;
-        me.digimon.defaultStage = draft.stage;
-        me.digimon.size = draft.size;
-        me.digimon.personality = draft.personality;
-        me.digimon.imageUrl = draft.imageUrl;
-        me.digimon.attribute = draft.attribute || 'Free';
-        statKeys.forEach(k=>{ me.digimon[k] = draft[k]; });
-        me.digimon.maxWounds = stageIndex(draft.stage) + Number(draft.baseHealth)*2;
-        me.digimon.currentWounds = me.digimon.maxWounds;
-        me.digimon.dpTotal = Math.max(0, dpRemaining);
-        me.digimon.qualities = [];
-        me.digimon.evolutionPoints = 0;
-        me.digimon.defaultRange = 2;
-        me.digimon.approved = false;
-
-        const ok = await saveMember(session.code, me);
-        const st = document.getElementById('wiz-status');
-        if(ok){
-          const wasPlayerHost = creationDraft.hostId==='sidebar-content';
-          st.style.color='var(--text-mute)';
-          st.textContent = wasPlayerHost ? 'Personaggio creato! Torno alla scheda...' : 'Personaggio creato! Chiudi e riapri "Gestisci Scheda" per vedere gli aggiornamenti.';
-          creationDraft = null;
-          await pushLog(session.code, { who: (session.role==='master'?'Master':session.username), role: (session.role==='master'?'gm':'player'), text: `${me.username} ha completato la creazione del personaggio con ${me.digimon.name||'il proprio Digimon'}.` });
-          if(wasPlayerHost){ sidebarTab = 'scheda'; setTimeout(()=>{ renderSidebar(me); refreshLiveParts(); }, 600); }
-          else { refreshLiveParts(); }
-        } else {
-          st.style.color='var(--danger)'; st.textContent = 'Errore: ' + (lastApiError||'sconosciuto');
-        }
-      };
-    }
-  }
 
   function renderTamerCard(me, containerId){
     containerId = containerId || 'tamer-card';
@@ -2227,7 +1976,7 @@
     if(!editingTamer){
       cardEl.innerHTML = `
         <div class="flex-between"><div class="section-title" style="margin:0;border:none;padding:0;">Scheda Tamer</div>
-        <span><button class="btn ghost small" id="btn-open-wizard" style="margin-right:4px;">🧙 Creazione Guidata</button><button class="btn small" id="btn-edit-tamer">Modifica</button>${containerId && containerId.indexOf('m-tamer-')===0 ? `<button class="btn ghost small" id="btn-reset-tamer" style="margin-left:4px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera</button>` : ''}</span></div>
+        <span><a href="player.html" target="_blank" class="btn ghost small" style="margin-right:4px;text-decoration:none;">✏️ Scheda Completa</a><button class="btn small" id="btn-edit-tamer">Modifica</button>${containerId && containerId.indexOf('m-tamer-')===0 ? `<button class="btn ghost small" id="btn-reset-tamer" style="margin-left:4px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera</button>` : ''}</span></div>
         <div class="sheet-head" style="margin-top:12px;">
           ${portraitHTML(t.imageUrl, session.username)}
           <div class="info"><div class="nm">${escapeHTML(session.username)}</div><div class="tg">AGI ${t.agility} · BODY ${t.body} · CAR ${t.charisma} · INT ${t.intelligence} · WILL ${t.willpower}</div></div>
@@ -2297,11 +2046,6 @@
         </div>
       `;
       document.getElementById('btn-edit-tamer').onclick = ()=>{ editingTamer = true; renderTamerCard(me); };
-      document.getElementById('btn-open-wizard').onclick = ()=>{
-        let hostId = 'sidebar-content';
-        if(containerId && containerId.indexOf('m-tamer-')===0){ hostId = 'manage-panel-'+containerId.slice('m-tamer-'.length); }
-        openCreationWizard(me, hostId);
-      };
       const resetTamerBtn = document.getElementById('btn-reset-tamer');
       if(resetTamerBtn){
         resetTamerBtn.onclick = async ()=>{
@@ -2510,7 +2254,7 @@
   function renderSidebar(me){
     const content = document.getElementById('sidebar-content');
     if(!content) return;
-    ['scheda','inventario'].forEach(t=>{
+    ['scheda','inventario','bug'].forEach(t=>{
       const btn = document.getElementById('tab-'+t);
       if(btn) btn.classList.toggle('active', t===sidebarTab);
     });
@@ -2526,12 +2270,38 @@
     } else if(sidebarTab==='inventario'){
       content.innerHTML = `<div class="hud-frame card" id="inventory-card"></div>`;
       renderInventoryCard(me);
-    } else if(sidebarTab==='wizard' && creationDraft){
-      renderCreationWizard(me);
+    } else if(sidebarTab==='bug'){
+      content.innerHTML = `<div class="hud-frame card" id="bugreport-card"></div>`;
+      renderBugReportCard();
     } else {
       sidebarTab = 'scheda';
       renderSidebar(me);
     }
+  }
+
+  function renderBugReportCard(){
+    const cardEl = document.getElementById('bugreport-card');
+    if(!cardEl) return;
+    cardEl.innerHTML = `
+      <div class="section-title">🐞 Segnala un Bug</div>
+      <div class="muted" style="margin-bottom:10px;">Hai trovato qualcosa che non funziona come dovrebbe? Descrivilo qui — arriva direttamente al Master.</div>
+      <textarea id="bug-text" rows="4" placeholder="Cosa è successo? Cosa ti aspettavi succedesse invece?"></textarea>
+      <button class="btn solid" id="btn-send-bug" style="width:100%;margin-top:8px;">Invia Segnalazione</button>
+      <div class="muted" id="bug-status" style="margin-top:6px;"></div>
+    `;
+    document.getElementById('btn-send-bug').onclick = async ()=>{
+      const text = document.getElementById('bug-text').value.trim();
+      const statusEl = document.getElementById('bug-status');
+      if(!text){ statusEl.style.color='var(--danger)'; statusEl.textContent = 'Scrivi qualcosa prima di inviare.'; return; }
+      statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Invio...';
+      const res = await createBugReport(session.code, session.username, text);
+      if(res && res.ok){
+        statusEl.style.color='var(--cyan)'; statusEl.textContent = 'Segnalazione inviata, grazie!';
+        document.getElementById('bug-text').value = '';
+      } else {
+        statusEl.style.color='var(--danger)'; statusEl.textContent = 'Errore: ' + (lastApiError||'sconosciuto');
+      }
+    };
   }
 
   function renderDexPanel(canEdit){
@@ -3032,7 +2802,7 @@
     if(!editingDigimon){
       cardEl.innerHTML = `
         <div class="flex-between"><div class="section-title" style="margin:0;border:none;padding:0;">Scheda Digimon</div>
-        <span><button class="btn small" id="btn-edit-digimon-${containerId}">Modifica</button>${containerId && containerId.indexOf('m-digimon-')===0 ? `<button class="btn ghost small" id="btn-reset-digimon-${containerId}" style="margin-left:4px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera</button>` : ''}</span></div>
+        <span><a href="digimon.html" target="_blank" class="btn ghost small" style="margin-right:4px;text-decoration:none;">✏️ Scheda Completa</a><button class="btn small" id="btn-edit-digimon-${containerId}">Modifica</button>${containerId && containerId.indexOf('m-digimon-')===0 ? `<button class="btn ghost small" id="btn-reset-digimon-${containerId}" style="margin-left:4px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera</button>` : ''}</span></div>
         <div class="sheet-head" style="margin-top:12px;">
           ${digimonPortraitHTML(d)}
           <div class="info"><div class="nm">${escapeHTML(d.name||'(senza nome)')}</div><div class="tg">${escapeHTML(d.stage)}</div></div>
@@ -3083,7 +2853,10 @@
         <div class="sub" style="margin-bottom:6px;">Il tuo Digimon riposa normalmente a <b>${escapeHTML(d.defaultStage)}</b> e può salire fino a <b>${STAGES[Math.min(5, stageIndex(d.defaultStage)+Number(d.defaultRange||0))]}</b> senza spendere Evolution Points (Default Range: ${d.defaultRange}). Evolution Points disponibili: ${d.evolutionPoints||0}${d.forcedEvoRoundsLeft>0?` · <span style="color:var(--danger);">Evoluzione Forzata: ${d.forcedEvoRoundsLeft} round rimasti</span>`:''}</div>
         ${d.hybridMode ? `<div class="muted" style="margin-bottom:6px;color:var(--cyan);">🔀 Hybrid/Bio-Merge attiva: 3 Azioni in combattimento invece di 2 (ancora 1 Attacco a round). Il Tamer non può Dirigere se stesso.</div>` : ''}
         <div class="row">
-          <select id="evo-target-${containerId}" style="flex:2;">${STAGES.map(s=>`<option ${s===d.stage?'selected':''}>${s}</option>`).join('')}</select>
+          <select id="evo-target-${containerId}" style="flex:2;">${STAGES.map(s=>{
+            const built = (d.stageStats && d.stageStats[s]) || s===d.stage;
+            return `<option value="${s}" ${s===d.stage?'selected':''}>${s}${built?'':' (da costruire)'}</option>`;
+          }).join('')}</select>
           <button class="btn small" id="btn-evolve-${containerId}" style="flex:1;">🧬 Evolvi</button>
           <button class="btn ghost small" id="btn-force-evolve-${containerId}" style="flex:1;">⚡ Forza</button>
         </div>
@@ -3174,11 +2947,28 @@
           refreshLiveParts();
         };
       }
+      const evoTargetSel = document.getElementById('evo-target-'+containerId);
+      if(evoTargetSel){
+        const updateEvoReadyGlow = ()=>{
+          const built = (d.stageStats && d.stageStats[evoTargetSel.value]) || evoTargetSel.value===d.stage;
+          const eBtn = document.getElementById('btn-evolve-'+containerId);
+          const fBtn = document.getElementById('btn-force-evolve-'+containerId);
+          if(eBtn) eBtn.classList.toggle('evo-btn-unready', !built);
+          if(fBtn) fBtn.classList.toggle('evo-btn-unready', !built);
+        };
+        evoTargetSel.onchange = updateEvoReadyGlow;
+        updateEvoReadyGlow();
+      }
       const evoBtn = document.getElementById('btn-evolve-'+containerId);
       if(evoBtn){
         evoBtn.onclick = async ()=>{
           const target = document.getElementById('evo-target-'+containerId).value;
           const statusEl = document.getElementById('evo-status-'+containerId);
+          if(!(me.digimon.stageStats && me.digimon.stageStats[target]) && target !== me.digimon.stage){
+            statusEl.style.color='var(--danger)';
+            statusEl.textContent = `Lo Stage ${target} non è mai stato costruito — vai su "Scheda Digimon" per assegnare i punti (è come creare un Digimon nuovo, regola 3.19) prima di potervi evolvere normalmente.`;
+            return;
+          }
           const cost = evolutionCost(me.digimon, target);
           if(cost > Number(me.digimon.evolutionPoints||0)){
             statusEl.style.color='var(--danger)';
@@ -3918,6 +3708,8 @@
           </div>
           <div class="hud-frame card" id="combat-mgr-card"></div>
           <div class="hud-frame card" id="private-chat-master-card"></div>
+          <div class="hud-frame card" id="notice-mgr-card"></div>
+          <div class="hud-frame card" id="bugreports-card"></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
             <div class="hud-frame card" id="progression-card"></div>
             <div class="hud-frame card" id="scan-log-card"></div>
@@ -3952,6 +3744,8 @@
     bindSceneCurrentSectorLuoghi(code);
     renderCombatManager(code, players);
     renderPrivateChatMaster(code, players);
+    renderNoticeManager(code, players);
+    renderBugReportsMaster(code);
     renderProgressionMaster(code);
     renderScanLogMaster(code);
     renderEncounterBalance();
@@ -4512,9 +4306,138 @@
     for(const p of players){
       p.tamer.unspentGrowthPoints = Number(p.tamer.unspentGrowthPoints||0) + 3;
       p.tamer.inspirationPoints = Number(p.tamer.inspirationPoints||0) + 1;
-      p.digimon.dpTotal = Number(p.digimon.dpTotal||0) + 3;
+      p.digimon.unspentBonusDP = Number(p.digimon.unspentBonusDP||0) + 3;
       await saveMember(code, p);
     }
+  }
+
+  async function renderNoticeManager(code, players){
+    const cardEl = document.getElementById('notice-mgr-card');
+    if(!cardEl) return;
+    const notices = await getNotices(code);
+    const active = notices.filter(n=>n.active);
+    const closed = notices.filter(n=>!n.active).slice(0, 5);
+
+    function targetDescHTML(n){
+      if(n.target_type==='all') return 'Tutti i giocatori';
+      const list = Array.isArray(n.target_usernames) ? n.target_usernames : [];
+      return (n.target_type==='single' ? 'Solo: ' : 'Alcuni: ') + (list.length ? list.join(', ') : '—');
+    }
+    function confirmProgressHTML(n){
+      const targetUsers = n.target_type==='all' ? players.map(p=>p.username) : (n.target_usernames||[]);
+      const confirmed = (n.confirmations||[]).map(c=>c.username);
+      const pending = targetUsers.filter(u=>!confirmed.includes(u));
+      return `
+        <div class="muted" style="margin-top:6px;font-size:11px;">
+          ✔ Confermato: ${confirmed.length ? confirmed.join(', ') : '—'}<br/>
+          ⏳ In attesa: ${pending.length ? pending.join(', ') : 'nessuno'}
+        </div>`;
+    }
+
+    cardEl.innerHTML = `
+      <div class="section-title">📢 Gestione Avvisi</div>
+      <div class="muted" style="margin-bottom:10px;">Un Avviso blocca l'interfaccia (con un popup che va confermato per proseguire) solo per i destinatari scelti — gli altri giocatori continuano a giocare normalmente.</div>
+      <textarea id="notice-text" rows="3" placeholder="Testo dell'avviso..."></textarea>
+      ${chatAttachHTML('notice')}
+      <div class="field" style="margin-top:10px;"><label>Destinatari</label>
+        <select id="notice-target-type">
+          <option value="all">Tutti i giocatori</option>
+          <option value="some">Solo alcuni</option>
+          <option value="single">Un solo giocatore</option>
+        </select>
+      </div>
+      <div id="notice-target-players" style="display:none;margin-bottom:10px;">
+        ${players.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;"><input type="${'checkbox'}" class="notice-target-player" value="${escapeAttr(p.username)}" /> ${escapeHTML(p.username)}</label>`).join('') || '<div class="muted">Nessun giocatore in roster.</div>'}
+      </div>
+      <button class="btn solid" id="btn-send-notice" style="width:100%;">Invia Avviso</button>
+      <div class="muted" id="notice-status" style="margin-top:6px;"></div>
+      <div class="divider"></div>
+      <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Avvisi attivi</div>
+      ${active.length===0 ? '<div class="muted">Nessun avviso attivo.</div>' : active.map(n=>`
+        <div class="roster-item" style="padding:8px;margin-bottom:6px;">
+          <div class="flex-between"><b style="font-size:12px;">${targetDescHTML(n)}</b><button class="btn ghost small" data-notice-close="${n.id}">Chiudi</button></div>
+          <div style="margin-top:4px;font-size:12px;white-space:pre-wrap;">${escapeHTML(n.text)}</div>
+          ${confirmProgressHTML(n)}
+        </div>
+      `).join('')}
+      ${closed.length ? `
+      <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin:10px 0 6px;">Storico recente (chiusi)</div>
+      ${closed.map(n=>`<div class="muted" style="font-size:11px;margin-bottom:4px;">• ${escapeHTML((n.text||'').slice(0,60))}${(n.text||'').length>60?'…':''} — ${targetDescHTML(n)}</div>`).join('')}
+      ` : ''}
+    `;
+
+    let pendingNoticeImageUrl = null;
+    bindChatAttach('notice', code, 'avvisi', ()=>pendingNoticeImageUrl, (url)=>{ pendingNoticeImageUrl = url; });
+
+    const targetSel = document.getElementById('notice-target-type');
+    targetSel.onchange = ()=>{
+      document.getElementById('notice-target-players').style.display = targetSel.value==='all' ? 'none' : 'block';
+      if(targetSel.value==='single'){
+        cardEl.querySelectorAll('.notice-target-player').forEach(cb=>{
+          cb.onclick = (ev)=>{
+            if(cb.checked){ cardEl.querySelectorAll('.notice-target-player').forEach(o=>{ if(o!==cb) o.checked=false; }); }
+          };
+        });
+      }
+    };
+
+    document.getElementById('btn-send-notice').onclick = async ()=>{
+      const text = document.getElementById('notice-text').value.trim();
+      const statusEl = document.getElementById('notice-status');
+      if(!text){ statusEl.textContent = 'Scrivi un testo per l\'avviso.'; statusEl.style.color='var(--danger)'; return; }
+      const targetType = targetSel.value;
+      const targetUsernames = targetType==='all' ? [] : Array.from(cardEl.querySelectorAll('.notice-target-player:checked')).map(cb=>cb.value);
+      if(targetType!=='all' && targetUsernames.length===0){ statusEl.textContent = 'Seleziona almeno un destinatario.'; statusEl.style.color='var(--danger)'; return; }
+      if(targetType==='single' && targetUsernames.length>1){ statusEl.textContent = 'Per "Un solo giocatore" seleziona un solo nome.'; statusEl.style.color='var(--danger)'; return; }
+      statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Invio...';
+      const res = await createNotice(code, { text, imageUrl: pendingNoticeImageUrl, targetType, targetUsernames, createdBy: session.username });
+      if(res && res.ok){
+        statusEl.style.color='var(--cyan)'; statusEl.textContent = 'Avviso inviato.';
+        pendingNoticeImageUrl = null;
+        renderNoticeManager(code, players);
+      } else {
+        statusEl.style.color='var(--danger)'; statusEl.textContent = 'Errore: ' + (lastApiError||'sconosciuto');
+      }
+    };
+
+    cardEl.querySelectorAll('[data-notice-close]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        if(!window.confirm('Chiudere questo avviso? Chi non ha ancora confermato non lo vedrà più.')) return;
+        await closeNotice(code, btn.getAttribute('data-notice-close'));
+        renderNoticeManager(code, players);
+      };
+    });
+  }
+
+  async function renderBugReportsMaster(code){
+    const cardEl = document.getElementById('bugreports-card');
+    if(!cardEl) return;
+    const reports = await getBugReports(code);
+    const open = reports.filter(r=>!r.resolved);
+    const resolved = reports.filter(r=>r.resolved);
+    cardEl.innerHTML = `
+      <div class="flex-between" style="margin-bottom:6px;">
+        <div class="section-title" style="margin:0;border:none;padding:0;">🐞 Bug Segnalati</div>
+        ${open.length ? `<span class="tag" style="background:var(--danger);color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;">${open.length} aperte</span>` : ''}
+      </div>
+      ${open.length===0 ? '<div class="muted">Nessuna segnalazione aperta.</div>' : open.map(r=>`
+        <div class="roster-item" style="padding:8px;margin-bottom:6px;">
+          <div class="flex-between"><b style="font-size:12px;">${escapeHTML(r.username||'anonimo')}</b><button class="btn ghost small" data-bug-resolve="${r.id}">Segna risolto</button></div>
+          <div style="margin-top:4px;font-size:12px;white-space:pre-wrap;">${escapeHTML(r.text)}</div>
+          <div class="muted" style="font-size:10px;margin-top:4px;">${new Date(r.created_at).toLocaleString('it-IT')}</div>
+        </div>
+      `).join('')}
+      ${resolved.length ? `
+      <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin:10px 0 6px;">Risolte (${resolved.length})</div>
+      ${resolved.slice(0,8).map(r=>`<div class="muted" style="font-size:11px;margin-bottom:4px;">✔ ${escapeHTML((r.text||'').slice(0,70))}${(r.text||'').length>70?'…':''}</div>`).join('')}
+      ` : ''}
+    `;
+    cardEl.querySelectorAll('[data-bug-resolve]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        await resolveBugReport(code, btn.getAttribute('data-bug-resolve'), true);
+        renderBugReportsMaster(code);
+      };
+    });
   }
 
   async function renderProgressionMaster(code){
@@ -6657,6 +6580,67 @@
     if(sceneImg){ openImageLightbox(sceneImg.getAttribute('data-scene-img-expand')); return; }
   });
 
+  // ---------- Coda Avvisi bloccanti ----------
+  let noticeQueue = [];
+  let noticeModalOpen = false;
+
+  function isNoticeForMe(n){
+    if(!session) return false;
+    if(n.target_type==='all') return true;
+    const list = Array.isArray(n.target_usernames) ? n.target_usernames : [];
+    return list.includes(session.username);
+  }
+  function isNoticeConfirmedByMe(n){
+    const confs = Array.isArray(n.confirmations) ? n.confirmations : [];
+    return confs.some(c=>c.username===session.username);
+  }
+
+  async function checkNoticesForMe(){
+    if(!session) return;
+    const all = await getNotices(session.code);
+    const mine = all.filter(n=>n.active && isNoticeForMe(n) && !isNoticeConfirmedByMe(n));
+    mine.sort((a,b)=> new Date(a.created_at) - new Date(b.created_at));
+    noticeQueue = mine;
+    if(!noticeModalOpen && noticeQueue.length>0) showNextNotice();
+    if(noticeQueue.length===0 && noticeModalOpen){
+      noticeModalOpen = false;
+      const old = document.getElementById('notice-modal');
+      if(old) old.remove();
+    }
+  }
+
+  function showNextNotice(){
+    if(noticeQueue.length===0){
+      noticeModalOpen = false;
+      const old = document.getElementById('notice-modal');
+      if(old) old.remove();
+      return;
+    }
+    noticeModalOpen = true;
+    const n = noticeQueue[0];
+    const old = document.getElementById('notice-modal');
+    if(old) old.remove();
+    const modal = document.createElement('div');
+    modal.id = 'notice-modal';
+    modal.className = 'enc-modal-backdrop';
+    modal.style.zIndex = '9999';
+    modal.innerHTML = `
+      <div class="hud-frame" style="max-width:480px;width:92vw;padding:22px;position:relative;">
+        <div class="section-title" style="margin-bottom:14px;">📢 Avviso dal Master${noticeQueue.length>1?` (${noticeQueue.length} in attesa)`:''}</div>
+        ${n.image_url ? `<img src="${escapeAttr(n.image_url)}" style="max-width:100%;max-height:40vh;object-fit:contain;margin-bottom:14px;border:1px solid var(--line);display:block;" />` : ''}
+        <div style="white-space:pre-wrap;margin-bottom:18px;line-height:1.5;">${escapeHTML(n.text)}</div>
+        <button class="btn solid" id="notice-confirm-btn" style="width:100%;padding:12px;">Ho capito</button>
+      </div>
+    `;
+    // Nessuna chiusura cliccando fuori né tasto ✕: è bloccante di proposito, come richiesto.
+    document.body.appendChild(modal);
+    document.getElementById('notice-confirm-btn').onclick = async ()=>{
+      await confirmNotice(session.code, n.id, session.username);
+      noticeQueue.shift();
+      showNextNotice();
+    };
+  }
+
   function openImageLightbox(url){
     if(!url) return;
     const old = document.getElementById('img-lightbox');
@@ -6857,43 +6841,6 @@
     session = restored;
   }
   render();
-
-  // Se la sessione è già salvata (utente che torna) e arriviamo da un link "Aggiungi come Starter",
-  // controlla comunque il prefill dopo aver ricaricato il roster.
-  (async ()=>{
-    const prefill = getStarterPrefillFromURL();
-    if(prefill && session && session.role==='player'){
-      const roster = await getRoster(session.code);
-      const existing = roster.find(m=>m.username===session.username);
-      const member = normalizeMember(existing || { username: session.username, role: session.role });
-      if(!member.digimon.name){
-        await waitForElement('sidebar-content');
-        openCreationWizard(member, 'sidebar-content', prefill, true);
-        clearStarterPrefillFromURL();
-      } else {
-        clearStarterPrefillFromURL();
-      }
-    }
-  })();
-  // Se arriviamo da un link "Crea la tua scheda" (player.html / digimon.html) con ?openWizard=1,
-  // apri subito la Creation Wizard — solo se il Digimon non è ancora stato creato.
-  (async ()=>{
-    try{
-      const params = new URLSearchParams(location.search);
-      if(params.get('openWizard') !== '1') return;
-      const url = new URL(location.href);
-      url.searchParams.delete('openWizard');
-      history.replaceState(null, '', url.toString());
-      if(!session || session.role !== 'player') return;
-      const roster = await getRoster(session.code);
-      const existing = roster.find(m=>m.username===session.username);
-      const member = normalizeMember(existing || { username: session.username, role: session.role });
-      if(!member.digimon.name){
-        await waitForElement('sidebar-content');
-        openCreationWizard(member, 'sidebar-content', null, true);
-      }
-    }catch(e){}
-  })();
 })();
 </script>
 </body>
