@@ -165,19 +165,47 @@
   function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
   function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
 
-  async function apiGet(path){
-    try{ const r = await fetch(path); const data = await r.json();
-      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
-      lastApiError = null; return data;
-    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
+  // ---------- API helpers ----------
+  // apiRequest centralizza fetch + parsing delle risposte. Due differenze rispetto a prima:
+  //  1) se il server risponde con HTML invece che con JSON (tipico: pagina 404 di Vercel quando
+  //     un endpoint non e' deployato) non esplode piu' con "Unexpected token ... is not valid JSON",
+  //     ma dice chiaramente quale endpoint non risponde;
+  //  2) le chiamate di background (polling) passano { silent:true } e non scrivono mai sul banner
+  //     d'errore: cosi' un errore di polling non puo' piu' comparire "in ritardo" al primo
+  //     re-render locale (es. quando si cambia una stat nella Creazione Guidata).
+  const API_ERROR_TTL = 12000;
+  let lastApiErrorAt = 0;
+  function setApiError(msg, silent){
+    if(silent) return null;
+    lastApiError = msg; lastApiErrorAt = Date.now();
+    return null;
   }
-  async function apiPost(path, body){
-    try{ const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-      const data = await r.json();
-      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
-      lastApiError = null; return data;
-    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
+  function clearApiError(){ lastApiError = null; lastApiErrorAt = 0; }
+  function currentApiError(){
+    if(lastApiError && (Date.now() - lastApiErrorAt) > API_ERROR_TTL) clearApiError();
+    return lastApiError;
   }
+  async function apiRequest(path, options, silent){
+    const endpoint = String(path).split('?')[0];
+    try{
+      const r = await fetch(path, options || {});
+      const raw = await r.text();
+      let data = null;
+      if(raw){ try{ data = JSON.parse(raw); }catch(_){ data = null; } }
+      if(!r.ok){
+        const msg = (data && data.error) ? data.error
+          : (r.status === 404 ? 'Endpoint non disponibile: ' + endpoint + ' (404)'
+                              : 'Errore ' + r.status + ' su ' + endpoint);
+        return setApiError(msg, silent);
+      }
+      if(data === null) return setApiError('Risposta non valida da ' + endpoint + ' (il server non ha risposto in JSON)', silent);
+      clearApiError();
+      return data;
+    }catch(e){ return setApiError('Errore di rete su ' + endpoint + ': ' + e.message, silent); }
+  }
+  const JSON_HEADERS = { 'Content-Type':'application/json' };
+  async function apiGet(path, opts){ return apiRequest(path, null, !!(opts && opts.silent)); }
+  async function apiPost(path, body, opts){ return apiRequest(path, { method:'POST', headers:JSON_HEADERS, body: JSON.stringify(body) }, !!(opts && opts.silent)); }
   async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]).map(normalizeMember) : []; }
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
   async function uploadImage(code, dataUrl){ return apiPost('/api/upload', { code, dataUrl }); }
@@ -214,11 +242,12 @@
   }
 
   // ---------- Avvisi (notice) ----------
-  async function getNotices(code){ const d = await apiGet('/api/feedback?resource=notice&code=' + encodeURIComponent(code)); return d ? (d.notices||[]) : []; }
+  async function getNotices(code){ const d = await apiGet('/api/feedback?resource=notice&code=' + encodeURIComponent(code), { silent:true }); return d ? (d.notices||[]) : []; }
   async function confirmNotice(code, id, username){ return apiPost('/api/feedback', { resource:'notice', action:'confirm', code, id, username }); }
 
   // ---------- Segnalazioni Bug ----------
-  async function createBugReport(code, username, text){ return apiPost('/api/feedback', { resource:'bugreport', action:'create', code, username, text }); }
+  // Spostate definitivamente sul Tavolo (index.html): un solo punto di raccolta, niente form
+  // duplicati su ogni pagina. Il link "← Tavolo" in alto porta lì.
 
   // ---------- Coda Avvisi bloccanti (stessa logica di index.html) ----------
   let noticeQueue = [];
@@ -325,7 +354,7 @@
         &nbsp;<button class="btn ghost small" id="btn-logout">Esci</button>
       </div>
     </div>
-    ${lastApiError ? `<div class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(lastApiError)}</div>` : ''}`;
+    ${(()=>{ const e = currentApiError(); return e ? `<div class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(e)}</div>` : ''; })()}`;
   }
 
   function renderLogin(){
@@ -946,31 +975,9 @@
           ${isMaster ? `<button class="btn ghost" id="d-reset" style="width:100%;padding:10px;margin-top:8px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera Digimon (permette una nuova Creazione Guidata)</button>` : ''}
         </div>` : ''}
         `}
-        <div class="hud-frame card">
-          <div class="section-title"><span>🐞 Segnala un Bug</span></div>
-          <div class="muted" style="margin-bottom:10px;">Hai trovato qualcosa che non funziona come dovrebbe? Descrivilo qui — arriva direttamente al Master.</div>
-          <textarea id="bug-text" rows="4" placeholder="Cosa è successo? Cosa ti aspettavi succedesse invece?"></textarea>
-          <button class="btn solid" id="btn-send-bug" style="width:100%;margin-top:8px;">Invia Segnalazione</button>
-          <div class="muted" id="bug-status" style="margin-top:6px;"></div>
-        </div>
       </div>`;
 
     document.getElementById('btn-logout').onclick = logout;
-    const bugBtn = document.getElementById('btn-send-bug');
-    if(bugBtn) bugBtn.onclick = async ()=>{
-      const text = document.getElementById('bug-text').value.trim();
-      const statusEl = document.getElementById('bug-status');
-      if(!text){ statusEl.style.color='var(--danger)'; statusEl.textContent = 'Scrivi qualcosa prima di inviare.'; return; }
-      statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Invio...';
-      const res = await createBugReport(session.code, session.username, text);
-      if(res && res.ok){
-        statusEl.style.color='var(--dchroma)'; statusEl.textContent = 'Segnalazione inviata, grazie!';
-        document.getElementById('bug-text').value = '';
-      } else {
-        statusEl.style.color='var(--danger)'; statusEl.textContent = 'Errore: ' + (lastApiError||'sconosciuto');
-      }
-    };
-
     if(isMaster){
       const sel = document.getElementById('d-select-player');
       if(sel) sel.onchange = ()=>{ window.__digimonSelected = sel.value; renderPage(); };

@@ -129,6 +129,10 @@
   .id-block{ background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:16px; }
   .id-label{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--cyan-dim); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:8px; }
   .id-row{ display:flex; gap:8px; flex-wrap:wrap; }
+  .id-identity{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:var(--bg); border:1px solid var(--line); border-radius:var(--radius); padding:11px 12px; font-size:14px; }
+  .id-identity b{ color:var(--cyan); }
+  .id-identity .id-swap{ margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--text-mute); text-decoration:underline; cursor:pointer; background:none; border:none; padding:0; }
+  .id-identity .id-swap:hover{ color:var(--cyan-dim); }
   .id-input{ flex:1; min-width:180px; background:var(--bg); border:1px solid var(--line); border-radius:var(--radius); color:var(--text); padding:11px 12px; font-family:'Manrope',sans-serif; font-size:14px; }
   .id-input:focus{ outline:none; border-color:var(--cyan-dim); }
   .id-verify-btn{ background:var(--cyan-dim); color:#04110d; border:none; border-radius:var(--radius); padding:0 16px; font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; cursor:pointer; }
@@ -201,11 +205,12 @@
 
     <div class="id-block">
       <div class="id-label">Identificazione Tamer</div>
-      <div class="id-row">
+      <div class="id-identity hidden" id="idIdentity"></div>
+      <div class="id-row hidden" id="idRow">
         <input class="id-input" id="usernameInput" type="text" placeholder="Il tuo nome utente nella campagna..." autocomplete="off" />
         <button class="id-verify-btn" id="verifyBtn">Verifica</button>
       </div>
-      <div class="id-status" id="idStatus">Inserisci il tuo nome utente e premi Verifica per sbloccare la scansione — massimo 2 tentativi a testa, e ogni Digimon può uscire ad un solo Tamer per campagna.</div>
+      <div class="id-status" id="idStatus">Sincronizzazione con Digivice OS...</div>
     </div>
 
     <button class="btn hidden" id="startBtn">Avvia la Scansione</button>
@@ -492,7 +497,15 @@ const ALL_NAMES = Object.keys(DIGIMON);
 // il ritratto vero del Digimon invece di un'icona generica. Se il fetch fallisce
 // (offline, codice campagna diverso, immagine non ancora caricata) mostra un placeholder
 // con l'iniziale del nome, senza bloccare il resto della scansione.
-const CAMPAIGN_CODE = 'FRONTIER1'; // aggiorna qui se cambia il codice della campagna
+// L'identità NON si reinserisce qui: si eredita dal login fatto sul Tavolo (index.html),
+// che salva la sessione in localStorage sotto 'digivice_session_v1'. Codice campagna e nome
+// utente vengono da lì; 'FRONTIER1' resta solo come fallback per aperture dirette senza sessione.
+function loadSharedSession(){
+  try{ const raw = localStorage.getItem('digivice_session_v1'); return raw ? JSON.parse(raw) : null; }
+  catch(e){ return null; }
+}
+const SHARED_SESSION = loadSharedSession();
+const CAMPAIGN_CODE = (SHARED_SESSION && SHARED_SESSION.code) ? SHARED_SESSION.code : 'FRONTIER1';
 let DEX_IMAGES = {};
 
 // Immagini dei Crest: NON le genero/scarico io, sono asset ufficiali della serie (copyright
@@ -532,12 +545,7 @@ async function apiPostCrestImage(crestName, imageUrl){
 //     dal Digimon-match e senza registrare nulla sul backend. Utile per verificare che le
 //     domande e il risultato abbiano senso prima di farlo giocare al gruppo.
 function checkSharedSessionForGM(){
-  try{
-    const raw = localStorage.getItem('digivice_session_v1');
-    if(!raw) return false;
-    const s = JSON.parse(raw);
-    return !!(s && s.role === 'master');
-  }catch(e){ return false; }
+  return !!(SHARED_SESSION && SHARED_SESSION.role === 'master');
 }
 // Sblocco automatico se arriviamo da una sessione condivisa (Tavolo/Digidex/Mappa/ecc.) con ruolo Master.
 // Resta comunque disponibile ?gm=1 per accessi diretti senza sessione salvata.
@@ -747,10 +755,13 @@ function renderIdStatus(){
   el.innerHTML = html;
 }
 
-document.getElementById('verifyBtn').onclick = async ()=>{
-  const uname = document.getElementById('usernameInput').value.trim();
+// Verifica dell'identità: unica funzione usata sia dall'avvio automatico (sessione ereditata
+// dal login sul Tavolo) sia dal fallback manuale per chi apre la pagina senza sessione.
+async function verifyIdentity(uname){
   const statusEl = document.getElementById('idStatus');
-  if(!uname){ statusEl.className='id-status err'; statusEl.textContent='Inserisci un nome utente prima di verificare.'; return; }
+  const startBtn = document.getElementById('startBtn');
+  uname = String(uname||'').trim();
+  if(!uname){ statusEl.className='id-status err'; statusEl.textContent='Inserisci un nome utente prima di verificare.'; return false; }
   statusEl.className = 'id-status';
   statusEl.textContent = 'Sincronizzazione con Digivice OS in corso...';
   const [scanData, medaglione] = await Promise.all([
@@ -759,9 +770,13 @@ document.getElementById('verifyBtn').onclick = async ()=>{
   ]);
   if(scanData.error){
     statusEl.className = 'id-status err';
-    statusEl.textContent = '⚠ ' + scanData.error + ' — riprova, oppure avvisa il GM se il problema persiste.';
-    document.getElementById('startBtn').classList.add('hidden');
-    return;
+    statusEl.innerHTML = '⚠ ' + scanData.error
+      + '<br/><button class="id-verify-btn" id="idRetryBtn" style="margin-top:8px;">Riprova</button>'
+      + '<div style="margin-top:6px;">Se l\'errore resta, avvisa il GM.</div>';
+    const retry = document.getElementById('idRetryBtn');
+    if(retry) retry.onclick = ()=> verifyIdentity(uname);
+    startBtn.classList.add('hidden');
+    return false;
   }
   currentUsername = uname;
   attemptsUsed = scanData.attemptsUsed || 0;
@@ -771,14 +786,51 @@ document.getElementById('verifyBtn').onclick = async ()=>{
   hasMedaglione = medaglione;
   identityVerified = true;
   renderIdStatus();
-  const startBtn = document.getElementById('startBtn');
   if(attemptsUsed >= MAX_ATTEMPTS){
     startBtn.classList.add('hidden');
   } else {
     startBtn.classList.remove('hidden');
     startBtn.textContent = 'Avvia la Scansione (tentativo ' + (attemptsUsed+1) + '/' + MAX_ATTEMPTS + ')';
   }
-};
+  return true;
+}
+
+document.getElementById('verifyBtn').onclick = ()=> verifyIdentity(document.getElementById('usernameInput').value);
+document.getElementById('usernameInput').addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter') verifyIdentity(e.target.value);
+});
+
+function showManualIdentity(message){
+  document.getElementById('idIdentity').classList.add('hidden');
+  document.getElementById('idRow').classList.remove('hidden');
+  const statusEl = document.getElementById('idStatus');
+  statusEl.className = 'id-status';
+  statusEl.innerHTML = message;
+}
+
+// Avvio: se c'è una sessione di login la usiamo direttamente, senza far ridigitare il nome.
+function bootIdentity(){
+  if(SHARED_SESSION && SHARED_SESSION.username){
+    const idEl = document.getElementById('idIdentity');
+    idEl.classList.remove('hidden');
+    idEl.innerHTML = 'Identificato come <b>' + escapeHtmlText(SHARED_SESSION.username) + '</b>'
+      + '<span class="muted" style="font-size:11px;"> · campagna ' + escapeHtmlText(CAMPAIGN_CODE) + '</span>'
+      + '<button class="id-swap" id="idSwapBtn" type="button">non sei tu?</button>';
+    const swap = document.getElementById('idSwapBtn');
+    if(swap) swap.onclick = ()=>{
+      identityVerified = false;
+      document.getElementById('startBtn').classList.add('hidden');
+      showManualIdentity('Inserisci un altro nome utente della campagna e premi Verifica.');
+      document.getElementById('usernameInput').value = '';
+      document.getElementById('usernameInput').focus();
+    };
+    verifyIdentity(SHARED_SESSION.username);
+  } else {
+    showManualIdentity('Nessuna sessione attiva: <a href="index.html" style="color:var(--cyan);">accedi dal Tavolo</a> per identificarti automaticamente, oppure inserisci qui il tuo nome utente.');
+  }
+}
+function escapeHtmlText(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+bootIdentity();
 
 // Pool di candidati realmente disponibili: esclude chi è già stato assegnato a un altro Tamer
 // della campagna. Se per qualche motivo il pool si svuotasse del tutto (praticamente impossibile
