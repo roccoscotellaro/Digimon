@@ -149,10 +149,20 @@
 
   function evolutionsHTML(evolutions, label){
     if(!evolutions || !evolutions.length) return '';
+    const isMaster = !!(session && session.role==='master');
     return `<div class="muted" style="margin:10px 0 4px;">${label||'Possibili Evoluzioni'}</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;">
         ${evolutions.map(ev=>{
           const live = ev.id ? cachedDex.find(e=>String(e.id)===String(ev.id)) : null;
+          // Come nell'albero completo: un Digimon non ancora scoperto compare comunque nell'elenco,
+          // ma per un non-Master come "?" — nessuna immagine, nome o possibilità di aprirne la scheda.
+          if(!isMaster && live && !live.discovered){
+            return `
+            <div style="display:flex;flex-direction:column;align-items:center;width:56px;opacity:0.55;">
+              <div style="width:40px;height:40px;border-radius:50%;background:var(--panel-2);border:1px dashed var(--cyan-dim);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:bold;color:var(--cyan-dim);">?</div>
+              <div class="muted" style="font-size:9px;text-align:center;margin-top:2px;">???</div>
+            </div>
+          `;}
           const img = live ? live.image_url : ev.imageUrl;
           const name = live ? live.name : ev.name;
           return `
@@ -295,19 +305,29 @@
 
   function armorEvolutionsHTML(armorNodes){
     if(!armorNodes || !armorNodes.length) return '';
+    const isMaster = !!(session && session.role==='master');
     return `<div class="muted" style="margin:10px 0 4px;">🛡️ Evoluzioni Armor disponibili</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;">
-        ${armorNodes.map(n=>`
+        ${armorNodes.map(n=>{
+          if(!isMaster && !n.discovered){
+            return `
+            <div style="display:flex;flex-direction:column;align-items:center;width:56px;opacity:0.55;">
+              <div style="width:40px;height:40px;border-radius:50%;background:var(--panel-2);border:1px dashed var(--violet, #b98cf0);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:bold;color:var(--violet, #b98cf0);">?</div>
+              <div class="muted" style="font-size:9px;text-align:center;margin-top:2px;">???</div>
+            </div>
+          `;}
+          return `
           <div style="display:flex;flex-direction:column;align-items:center;width:56px;cursor:pointer;" data-nav-evo="${n.id}">
             ${n.image_url ? `<img src="${escapeAttr(n.image_url)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:1px solid var(--violet, #b98cf0);" onerror="this.style.visibility='hidden'"/>` : `<div style="width:40px;height:40px;border-radius:50%;background:var(--panel-2);border:1px solid var(--violet, #b98cf0);"></div>`}
             <div class="muted" style="font-size:9px;text-align:center;margin-top:2px;color:var(--violet, #b98cf0);">${escapeHTML(n.name)}</div>
           </div>
-        `).join('')}
+        `;}).join('')}
       </div>`;
   }
 
   function evolutionChartHTML(entry, graph){
     if(!graph || graph.nodes.length<=1) return '';
+    const isMaster = !!(session && session.role==='master');
     const byIdFull = {};
     const byNameFull = {};
     cachedDex.forEach(e=>{ byIdFull[String(e.id)] = e; byNameFull[String(e.name||'').trim().toLowerCase()] = e; }); // tutto il dex, non solo i nodi già raccolti nel grafo:
@@ -369,9 +389,20 @@
       });
     }
     function nodeBoxHTML(n, borderColor, icon){
+      const isCurrent = String(n.id)===String(entry.id);
+      // Un Digimon non ancora scoperto dai giocatori resta comunque al proprio posto nell'albero
+      // (la struttura/le linee non cambiano), ma per un non-Master viene mostrato come un "?" —
+      // niente immagine, niente nome, niente pulsante "Apri" o "Espandi": solo la sua presenza,
+      // esattamente come un Digidex canonico che mostra una silhouette per ciò che non è ancora
+      // stato incontrato.
+      if(!isMaster && !n.discovered && !isCurrent){
+        return `<div id="chart-node-${n.id}" style="position:relative;display:flex;flex-direction:column;align-items:center;width:68px;padding:4px;border-radius:6px;background:transparent;border:1px dashed ${borderColor};opacity:0.55;">
+          <div style="width:38px;height:38px;border-radius:50%;background:var(--panel);border:1px solid ${borderColor};display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:bold;color:${borderColor};">?</div>
+          <div class="muted" style="font-size:8px;text-align:center;margin-top:3px;line-height:1.2;">${icon?icon+' ':''}???</div>
+        </div>`;
+      }
       const isCollapsed = graph.collapsedNodeIds && graph.collapsedNodeIds.has(String(n.id));
       const hiddenCount = graph.hiddenChildCounts ? (graph.hiddenChildCounts.get(String(n.id))||0) : 0;
-      const isCurrent = String(n.id)===String(entry.id);
       const expandAttrs = isCollapsed ? `data-expand-evo="${n.id}" title="Mostra le evoluzioni successive di ${escapeAttr(n.name)}"` : '';
       const cursorStyle = isCollapsed ? 'cursor:pointer;' : '';
       return `<div id="chart-node-${n.id}" data-collapsed="${isCollapsed?'1':'0'}" style="position:relative;display:flex;flex-direction:column;align-items:center;width:68px;padding:4px;border-radius:6px;background:${isCurrent?'rgba(255,193,74,0.18)':'transparent'};border:1px solid ${isCurrent?'var(--amber)':borderColor};">
