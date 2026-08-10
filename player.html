@@ -366,6 +366,16 @@
     </div>`;
   }
 
+  function tormentBoxesHTML(boxes){
+    boxes = Math.max(0, Math.min(10, Number(boxes)||0));
+    let out = '<span style="display:inline-flex;gap:2px;vertical-align:middle;">';
+    for(let i=1;i<=10;i++){
+      out += `<span style="width:12px;height:12px;border:1px solid var(--cyan-dim);${i<=boxes?'background:var(--cyan);':'background:transparent;'}display:inline-block;"></span>`;
+    }
+    out += '</span>';
+    return out;
+  }
+
   function tormentsBlockHTML(m, editable){
     const items = m.tamer.torments || [];
     return `
@@ -376,6 +386,14 @@
           <div class="top-row">
             <span class="name">${escapeHTML(tor.name)}</span>
             <span class="mono">${tor.boxes||0}/10</span>
+          </div>
+          <div class="top-row" style="margin-top:6px;">
+            ${tormentBoxesHTML(tor.boxes)}
+            ${editable ? `
+            <span style="display:flex;gap:4px;">
+              <button class="btn ghost small" data-tor-minus="${i}" style="padding:3px 9px;">−</button>
+              <button class="btn ghost small" data-tor-plus="${i}" style="padding:3px 9px;">+</button>
+            </span>` : ''}
           </div>
           ${editable ? `
           <div class="top-row" style="margin-top:6px;">
@@ -388,7 +406,7 @@
       <div class="add-row">
         <div class="row">
           <div class="field"><label>Nome Torment</label><input type="text" id="p-tor-name" placeholder="nome" /></div>
-          <div class="field" style="max-width:90px;"><label>Caselle</label><input type="number" id="p-tor-boxes" value="4" min="0" max="10" /></div>
+          <div class="field" style="max-width:90px;"><label>Caselle iniziali</label><input type="number" id="p-tor-boxes" value="4" min="0" max="10" /></div>
         </div>
         <button class="btn ghost small" id="p-tor-add" style="width:100%;">+ Aggiungi Torment</button>
       </div>` : ''}
@@ -410,19 +428,25 @@
         <select id="p-select-player">
           ${players.length===0 ? '<option>— nessun giocatore —</option>' : players.map(p=>`<option value="${escapeAttr(p.username)}" ${target && target.username===p.username?'selected':''}>${escapeHTML(p.username)}</option>`).join('')}
         </select>
-        <div class="muted" style="margin-top:8px;">Come Master vedi la scheda in sola lettura.</div>
+        <div class="muted" style="margin-top:8px;">Come Master puoi modificare direttamente la scheda selezionata.</div>
       </div>`;
     } else {
       target = cachedRoster.find(m=>m.username===session.username);
     }
 
-    const editable = !isMaster;
+    const editable = true;
 
     root.innerHTML = `
       <div style="max-width:760px;margin:0 auto;">
         ${topbar()}
         ${selectorHTML}
-        ${!target ? `<div class="hud-frame card muted">Nessuna scheda trovata. ${isMaster?'Seleziona un giocatore.':'Crea il tuo personaggio dal Tavolo Testuale.'}</div>` : `
+        ${!target ? `
+        <div class="hud-frame card muted">
+          ${isMaster ? 'Nessuna scheda trovata. Seleziona un giocatore.' : `
+            <div style="margin-bottom:10px;">Non hai ancora una scheda. Puoi crearla subito con la Creazione Guidata.</div>
+            <a href="index.html?openWizard=1" target="_blank" class="btn solid" style="text-decoration:none;display:inline-block;padding:10px 16px;">🧙 Apri Creazione Guidata</a>
+          `}
+        </div>` : `
         <div class="hud-frame card">
           ${portraitBlockHTML(target, editable)}
         </div>
@@ -512,6 +536,22 @@
     root.querySelectorAll('[data-torment-remove]').forEach(btn=>{
       btn.onclick = async ()=>{
         target.tamer.torments.splice(Number(btn.getAttribute('data-torment-remove')),1);
+        await saveMember(session.code, target);
+        renderPage();
+      };
+    });
+    root.querySelectorAll('[data-tor-plus]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const tor = target.tamer.torments[Number(btn.getAttribute('data-tor-plus'))];
+        tor.boxes = Math.min(10, (Number(tor.boxes)||0)+1);
+        await saveMember(session.code, target);
+        renderPage();
+      };
+    });
+    root.querySelectorAll('[data-tor-minus]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const tor = target.tamer.torments[Number(btn.getAttribute('data-tor-minus'))];
+        tor.boxes = Math.max(0, (Number(tor.boxes)||0)-1);
         await saveMember(session.code, target);
         renderPage();
       };

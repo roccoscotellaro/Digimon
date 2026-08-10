@@ -410,19 +410,30 @@
         <select id="d-select-player">
           ${players.length===0 ? '<option>— nessun giocatore —</option>' : players.map(p=>`<option value="${escapeAttr(p.username)}" ${target && target.username===p.username?'selected':''}>${escapeHTML(p.username)} — ${escapeHTML(p.digimon.name||'(senza Digimon)')}</option>`).join('')}
         </select>
-        <div class="muted" style="margin-top:8px;">Come Master vedi la scheda in sola lettura.</div>
+        <div class="muted" style="margin-top:8px;">Come Master puoi modificare direttamente la scheda selezionata.</div>
       </div>`;
     } else {
       target = cachedRoster.find(m=>m.username===session.username);
     }
 
-    const editable = !isMaster;
+    const editable = true;
 
     root.innerHTML = `
       <div style="max-width:760px;margin:0 auto;">
         ${topbar()}
         ${selectorHTML}
-        ${!target ? `<div class="hud-frame card muted">Nessuna scheda trovata. ${isMaster?'Seleziona un giocatore.':'Crea il tuo Digimon dal Tavolo Testuale.'}</div>` : `
+        ${!target ? `
+        <div class="hud-frame card muted">
+          ${isMaster ? 'Nessuna scheda trovata. Seleziona un giocatore.' : `
+            <div style="margin-bottom:10px;">Non hai ancora un Digimon. Puoi crearlo subito con la Creazione Guidata.</div>
+            <a href="index.html?openWizard=1" target="_blank" class="btn solid" style="text-decoration:none;display:inline-block;padding:10px 16px;">🧙 Apri Creazione Guidata</a>
+          `}
+        </div>` : `
+        ${(!isMaster && !target.digimon.name) ? `
+        <div class="hud-frame card" style="border-color:var(--dchroma);">
+          <div style="margin-bottom:10px;">Il tuo Digimon non è ancora stato creato con la Creazione Guidata — qui sotto puoi comunque impostare punteggi e dati a mano, ma ti consigliamo di partire dalla Wizard per rispettare i vincoli del manuale.</div>
+          <a href="index.html?openWizard=1" target="_blank" class="btn solid" style="text-decoration:none;display:inline-block;padding:10px 16px;">🧙 Apri Creazione Guidata</a>
+        </div>` : ''}
         <div class="hud-frame card">
           ${portraitBlockHTML(target, editable)}
         </div>

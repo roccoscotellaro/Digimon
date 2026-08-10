@@ -6762,6 +6762,24 @@
       }
     }
   })();
+  // Se arriviamo da un link "Crea la tua scheda" (player.html / digimon.html) con ?openWizard=1,
+  // apri subito la Creation Wizard — solo se il Digimon non è ancora stato creato.
+  (async ()=>{
+    try{
+      const params = new URLSearchParams(location.search);
+      if(params.get('openWizard') !== '1') return;
+      const url = new URL(location.href);
+      url.searchParams.delete('openWizard');
+      history.replaceState(null, '', url.toString());
+      if(!session || session.role !== 'player') return;
+      const roster = await getRoster(session.code);
+      const existing = roster.find(m=>m.username===session.username);
+      const member = normalizeMember(existing || { username: session.username, role: session.role });
+      if(!member.digimon.name){
+        setTimeout(()=>{ openCreationWizard(member, 'sidebar-content', null, true); }, 300);
+      }
+    }catch(e){}
+  })();
 })();
 </script>
 </body>
