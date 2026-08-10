@@ -21,7 +21,7 @@
          url('https://db.onlinewebfonts.com/t/e7a35327535403014c02a38c285b82cf.ttf') format('truetype');
     font-display: swap;
   }
-  .digimoji-text{ font-family:'Digicode','Share Tech Mono',monospace; letter-spacing:0.08em; font-size:20px; cursor:help; }
+  .digimoji-text{ font-family:'Digicode','Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic','Noto Sans JP','MS Gothic','Share Tech Mono',monospace; letter-spacing:0.08em; font-size:20px; cursor:help; }
   .pixel-title{ font-family:'Pixel Digivolve','Share Tech Mono',monospace; letter-spacing:0.03em; }
   :root{
     --bg: #080b10;
@@ -268,6 +268,9 @@
   let lastApiError = null;
   const ONLINE_WINDOW_MS = 9000;
   const SESSION_KEY = 'digivice_session_v1';
+  // Immagine dell'Uovo mostrata al posto del Digimon finché il Master non approva la scheda.
+  // Rocco: sostituisci con l'URL della tua immagine (es. su Supabase Storage), altrimenti resta l'emoji di fallback.
+  const EGG_IMAGE_URL = '';
 
   let editingTamer = false;
   let editingDigimon = false;
@@ -1016,7 +1019,7 @@
   }
   function defaultDigimon(){
     return {
-      name:'', stage:'Rookie', personality:'', imageUrl:'',
+      name:'', stage:'Rookie', personality:'', imageUrl:'', approved:false,
       maxWounds:5, currentWounds:5, maxMp:3, currentMp:3,
       baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:1,
       dpTotal:0, qualities:[],
@@ -1370,6 +1373,17 @@
     }
     const initial = (name||'?').trim().charAt(0).toUpperCase() || '?';
     return `<div class="${cls}" style="display:flex;align-items:center;justify-content:center;color:var(--cyan);font-family:'Share Tech Mono',monospace;font-size:${size==='sm'?'14px':'20px'};">${initial}</div>`;
+  }
+
+  // Finché il Master non approva la scheda (dopo la Creazione Guidata), mostriamo un Digitama
+  // al posto dell'immagine — anche se il giocatore ha già impostato un'immagine.
+  function digimonPortraitHTML(d, size){
+    if(!d.approved){
+      const cls = size==='sm' ? 'portrait-sm' : 'portrait';
+      if(EGG_IMAGE_URL) return `<img class="${cls}" src="${escapeAttr(EGG_IMAGE_URL)}" />`;
+      return `<div class="${cls}" style="display:flex;align-items:center;justify-content:center;font-size:${size==='sm'?'20px':'32px'};background:radial-gradient(circle at 35% 30%, #fff8e6, #f0d9a0 60%, #d9b976);border-radius:50%;">🥚</div>`;
+    }
+    return portraitHTML(d.imageUrl, d.name, size);
   }
 
   function dexFilterBarHTML(entries){
@@ -2172,6 +2186,7 @@
         me.digimon.qualities = [];
         me.digimon.evolutionPoints = 0;
         me.digimon.defaultRange = 2;
+        me.digimon.approved = false;
 
         const ok = await saveMember(session.code, me);
         const st = document.getElementById('wiz-status');
@@ -2976,13 +2991,37 @@
     const cardEl = document.getElementById(containerId);
     if(!cardEl) return;
     const d = me.digimon;
+    // Finché il Master non approva, la scheda Digimon mostra SOLO l'Uovo — nessun nome, stat,
+    // Qualities o altro testo. Il Master vede in più il bottone per approvare.
+    if(!d.approved){
+      const isMasterCtx = containerId && containerId.indexOf('m-digimon-')===0;
+      cardEl.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 0;gap:14px;">
+          ${EGG_IMAGE_URL
+            ? `<img src="${escapeAttr(EGG_IMAGE_URL)}" style="width:96px;height:96px;object-fit:contain;" />`
+            : `<div style="width:96px;height:96px;border-radius:50%;background:radial-gradient(circle at 35% 30%, #fff8e6, #f0d9a0 60%, #d9b976);display:flex;align-items:center;justify-content:center;font-size:44px;">🥚</div>`}
+          ${isMasterCtx ? `<button class="btn small" id="btn-approve-digimon-${containerId}" style="color:var(--cyan);border-color:var(--cyan-dim);">✅ Approva</button>` : ''}
+        </div>
+      `;
+      const approveBtn = document.getElementById('btn-approve-digimon-'+containerId);
+      if(approveBtn){
+        approveBtn.onclick = async ()=>{
+          me.digimon.approved = true;
+          await saveMember(session.code, me);
+          await pushLog(session.code, { who:'Master', role:'gm', text: `Il Digimon di ${me.username} (${me.digimon.name||'senza nome'}) è stato approvato dal Master.` });
+          renderDigimonCard(me, containerId);
+          refreshLiveParts();
+        };
+      }
+      return;
+    }
     const der = computeDerivedStats(d);
     if(!editingDigimon){
       cardEl.innerHTML = `
         <div class="flex-between"><div class="section-title" style="margin:0;border:none;padding:0;">Scheda Digimon</div>
         <span><button class="btn small" id="btn-edit-digimon-${containerId}">Modifica</button>${containerId && containerId.indexOf('m-digimon-')===0 ? `<button class="btn ghost small" id="btn-reset-digimon-${containerId}" style="margin-left:4px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera</button>` : ''}</span></div>
         <div class="sheet-head" style="margin-top:12px;">
-          ${portraitHTML(d.imageUrl, d.name)}
+          ${digimonPortraitHTML(d)}
           <div class="info"><div class="nm">${escapeHTML(d.name||'(senza nome)')}</div><div class="tg">${escapeHTML(d.stage)}</div></div>
         </div>
         ${barHTML('Caselle Ferita', d.currentWounds, d.maxWounds, 'hp', 'dig-w-minus-'+containerId, 'dig-w-plus-'+containerId)}
@@ -5666,7 +5705,7 @@
       <div class="roster-item">
         <div class="flex-between">
           <div style="display:flex;align-items:center;gap:8px;">
-            ${portraitHTML(p.digimon.imageUrl, p.digimon.name, 'sm')}
+            ${digimonPortraitHTML(p.digimon, 'sm')}
             <div>
               <span class="brand-dot" style="width:7px;height:7px;display:inline-block;margin-right:4px;background:${online?'var(--cyan)':'var(--text-mute)'};box-shadow:${online?'0 0 6px var(--cyan)':'none'};animation:${online?'pulse 2s infinite':'none'};"></span>
               <span class="name">${escapeHTML(p.username)}</span>

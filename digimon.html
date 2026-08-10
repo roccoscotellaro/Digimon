@@ -100,6 +100,9 @@
 <script>
 (function(){
   const SESSION_KEY = 'digivice_session_v1';
+  // Immagine dell'Uovo mostrata al posto del Digimon finché il Master non approva la scheda.
+  // Rocco: sostituisci con l'URL della tua immagine (es. su Supabase Storage), altrimenti resta l'emoji di fallback.
+  const EGG_IMAGE_URL = '';
   let session = null;
   let cachedRoster = [];
   let lastApiError = null;
@@ -119,7 +122,7 @@
 
   function defaultDigimon(){
     return {
-      name:'', stage:'Rookie', personality:'', imageUrl:'',
+      name:'', stage:'Rookie', personality:'', imageUrl:'', approved:false,
       maxWounds:5, currentWounds:5, maxMp:3, currentMp:3,
       baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:1,
       dpTotal:0, qualities:[],
@@ -231,6 +234,11 @@
       const username = document.getElementById('in-user').value.trim();
       const errEl = document.getElementById('login-err');
       if(!code || !username){ errEl.textContent = 'Inserisci codice campagna e nome utente.'; return; }
+      const roster = await getRoster(code);
+      const existing = roster.find(m=>m.username===username);
+      const member = normalizeMember(existing || { username, role });
+      member.role = role;
+      await saveMember(code, member);
       session = { code, username, role };
       saveSession(session);
       cachedRoster = await getRoster(code);
@@ -251,7 +259,7 @@
       : `<div class="stat-box"><div class="v mono" style="font-size:20px;color:var(--dchroma);">${val}</div><div class="l">${label}</div></div>`;
   }
 
-  function portraitBlockHTML(m, editable){
+  function portraitBlockHTML(m, editable, isMaster){
     const d = m.digimon;
     return `
     <div class="portrait-wrap">
@@ -280,6 +288,26 @@
           <button type="button" class="btn ghost small" id="d-img-btn">📎 Carica immagine</button>
           <span class="muted" id="d-img-status"></span>
         </div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  // Switch semplice tra gli Stage già sbloccati (tra Default Stage e Default Stage + Default Range,
+  // gli Stage raggiungibili senza spendere Evolution Points). Non replica le meccaniche complete di
+  // Evoluzione/Blast/Slide del Tavolo (che restano lì) — qui è solo un cambio rapido di visualizzazione/stato.
+  function stageSwitchBlockHTML(m, editable){
+    const d = m.digimon;
+    if(!d.name) return '';
+    const defIdx = STAGES.indexOf(d.defaultStage||'Rookie');
+    const maxIdx = Math.min(STAGES.length-1, defIdx + Number(d.defaultRange||0));
+    const unlocked = STAGES.slice(Math.max(0,defIdx), maxIdx+1);
+    if(unlocked.length<=1) return '';
+    return `
+    <div class="hud-frame card">
+      <div class="section-title"><span>Stage Attuale</span></div>
+      <div class="muted" style="margin-bottom:10px;">Stage sbloccati senza spendere Evolution Points: ${unlocked.join(' → ')}.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        ${unlocked.map(s=>`<button class="btn ${s===d.stage?'solid':'ghost'} small" data-stage-switch="${escapeAttr(s)}" ${s===d.stage?'disabled':''}>${s}</button>`).join('')}
       </div>
     </div>`;
   }
@@ -428,14 +456,21 @@
             <div style="margin-bottom:10px;">Non hai ancora un Digimon. Puoi crearlo subito con la Creazione Guidata.</div>
             <a href="index.html?openWizard=1" target="_blank" class="btn solid" style="text-decoration:none;display:inline-block;padding:10px 16px;">🧙 Apri Creazione Guidata</a>
           `}
-        </div>` : `
+        </div>` : (!target.digimon.approved ? `
+        <div class="hud-frame card">
+          <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 0;gap:14px;">
+            ${EGG_IMAGE_URL ? `<img src="${escapeAttr(EGG_IMAGE_URL)}" style="width:140px;height:140px;object-fit:contain;" />` : `<div style="width:140px;height:140px;border-radius:50%;background:radial-gradient(circle at 35% 30%, #fff8e6, #f0d9a0 60%, #d9b976);display:flex;align-items:center;justify-content:center;font-size:64px;">🥚</div>`}
+            ${isMaster ? `<button class="btn small" id="d-approve" style="color:var(--cyan);border-color:var(--cyan-dim);">✅ Approva</button>` : ''}
+          </div>
+        </div>
+        ` : `
         ${(!isMaster && !target.digimon.name) ? `
         <div class="hud-frame card" style="border-color:var(--dchroma);">
           <div style="margin-bottom:10px;">Il tuo Digimon non è ancora stato creato con la Creazione Guidata — qui sotto puoi comunque impostare punteggi e dati a mano, ma ti consigliamo di partire dalla Wizard per rispettare i vincoli del manuale.</div>
           <a href="index.html?openWizard=1" target="_blank" class="btn solid" style="text-decoration:none;display:inline-block;padding:10px 16px;">🧙 Apri Creazione Guidata</a>
         </div>` : ''}
         <div class="hud-frame card">
-          ${portraitBlockHTML(target, editable)}
+          ${portraitBlockHTML(target, editable, isMaster)}
         </div>
         <div class="hud-frame card">
           <div class="section-title"><span>Punteggi Base</span></div>
@@ -443,6 +478,7 @@
             ${STAT_DEFS.map(d=>statBoxHTML(target, d.key, d.label, editable)).join('')}
           </div>
         </div>
+        ${stageSwitchBlockHTML(target, editable)}
         ${statoBlockHTML(target, editable)}
         ${qualitiesBlockHTML(target, editable)}
         ${attacksBlockHTML(target, editable)}
@@ -452,7 +488,7 @@
           <div id="d-save-msg" style="margin-top:8px;"></div>
           ${isMaster ? `<button class="btn ghost" id="d-reset" style="width:100%;padding:10px;margin-top:8px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera Digimon (permette una nuova Creazione Guidata)</button>` : ''}
         </div>` : ''}
-        `}
+        `)}
       </div>`;
 
     document.getElementById('btn-logout').onclick = logout;
@@ -462,7 +498,27 @@
       if(sel) sel.onchange = ()=>{ window.__digimonSelected = sel.value; renderPage(); };
     }
 
-    if(target && editable){
+    if(target){
+      root.querySelectorAll('[data-stage-switch]').forEach(btn=>{
+        btn.onclick = async ()=>{
+          target.digimon.stage = btn.getAttribute('data-stage-switch');
+          await saveMember(session.code, target);
+          cachedRoster = await getRoster(session.code);
+          renderPage();
+        };
+      });
+      const approveBtn = document.getElementById('d-approve');
+      if(approveBtn){
+        approveBtn.onclick = async ()=>{
+          target.digimon.approved = true;
+          await saveMember(session.code, target);
+          cachedRoster = await getRoster(session.code);
+          renderPage();
+        };
+      }
+    }
+
+    if(target && editable && target.digimon.approved){
       bindImageUpload(target);
       bindListEditors(target);
       document.getElementById('d-save').onclick = async ()=>{

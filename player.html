@@ -103,6 +103,9 @@
 <script>
 (function(){
   const SESSION_KEY = 'digivice_session_v1';
+  // Immagine dell'Uovo mostrata al posto del Digimon finché il Master non approva la scheda.
+  // Rocco: sostituisci con l'URL della tua immagine (es. su Supabase Storage), altrimenti resta l'emoji di fallback.
+  const EGG_IMAGE_URL = '';
   let session = null;
   let cachedRoster = [];
   let lastApiError = null;
@@ -240,6 +243,13 @@
       const username = document.getElementById('in-user').value.trim();
       const errEl = document.getElementById('login-err');
       if(!code || !username){ errEl.textContent = 'Inserisci codice campagna e nome utente.'; return; }
+      // Salviamo subito uno stub del membro (come fa index.html al login) così il Master
+      // vede il giocatore comparire ovunque anche prima che abbia creato un personaggio.
+      const roster = await getRoster(code);
+      const existing = roster.find(m=>m.username===username);
+      const member = normalizeMember(existing || { username, role });
+      member.role = role;
+      await saveMember(code, member);
       session = { code, username, role };
       saveSession(session);
       cachedRoster = await getRoster(code);
