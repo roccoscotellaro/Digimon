@@ -200,7 +200,7 @@
       <div class="conn-ticker mono">
         UTENTE <b>${escapeHTML(session.username)}</b> (${session.role==='master'?'Master':'Giocatore'})
         &nbsp;<a href="index.html" class="btn ghost small">← Tavolo</a>
-        &nbsp;<a href="player.html" class="btn ghost small">🪪 Giocatore</a>
+        &nbsp;<a href="player.html" class="btn ghost small">👤 Giocatore</a>
         &nbsp;<button class="btn ghost small" id="btn-logout">Esci</button>
       </div>
     </div>
@@ -450,6 +450,7 @@
         <div class="save-bar">
           <button class="btn solid" id="d-save" style="width:100%;padding:12px;">💾 Salva Scheda</button>
           <div id="d-save-msg" style="margin-top:8px;"></div>
+          ${isMaster ? `<button class="btn ghost" id="d-reset" style="width:100%;padding:10px;margin-top:8px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera Digimon (permette una nuova Creazione Guidata)</button>` : ''}
         </div>` : ''}
         `}
       </div>`;
@@ -497,6 +498,17 @@
         msgEl.innerHTML = ok ? '<span class="ok-msg">✔ Salvato.</span>' : `<span class="err">⚠ ${escapeHTML(lastApiError||'errore sconosciuto')}</span>`;
         if(ok) cachedRoster = await getRoster(session.code);
       };
+      const resetBtn = document.getElementById('d-reset');
+      if(resetBtn){
+        resetBtn.onclick = async ()=>{
+          if(!window.confirm(`Azzerare il Digimon di ${target.username} (${target.digimon.name||'senza nome'})? Nome, Stage, Qualities, Attacchi e tutti i punteggi torneranno ai valori iniziali e potrà rifare la Creazione Guidata. L'azione non è reversibile.`)) return;
+          if(!window.confirm(`Sei sicuro? Questa è l'ultima conferma prima di azzerare definitivamente il Digimon di ${target.username}.`)) return;
+          target.digimon = defaultDigimon();
+          const ok = await saveMember(session.code, target);
+          if(ok) cachedRoster = await getRoster(session.code);
+          renderPage();
+        };
+      }
     }
 
     enableCollapsibleCards(root);

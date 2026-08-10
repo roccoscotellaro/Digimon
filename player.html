@@ -203,7 +203,7 @@
     return `
     <div class="hud-frame topbar">
       <div>
-        <div class="brand-title">🪪 GIOCATORE</div>
+        <div class="brand-title">👤 GIOCATORE</div>
         <div class="brand-sub">Digimon: Digital Adventures — Campagna ${escapeHTML(session.code)}</div>
       </div>
       <div class="conn-ticker mono">
@@ -270,7 +270,7 @@
   function portraitBlockHTML(m, editable){
     return `
     <div class="portrait-wrap">
-      ${m.tamer.imageUrl ? `<img class="portrait" src="${escapeAttr(m.tamer.imageUrl)}" />` : `<div class="portrait-placeholder">🪪</div>`}
+      ${m.tamer.imageUrl ? `<img class="portrait" src="${escapeAttr(m.tamer.imageUrl)}" />` : `<div class="portrait-placeholder">👤</div>`}
       <div style="flex:1;min-width:220px;">
         ${editable
           ? `<div class="field"><label>Nome Utente (login — non modificabile qui)</label><input type="text" value="${escapeAttr(m.username)}" disabled /></div>`
@@ -470,6 +470,7 @@
         <div class="save-bar">
           <button class="btn solid" id="p-save" style="width:100%;padding:12px;">💾 Salva Scheda</button>
           <div id="p-save-msg" style="margin-top:8px;"></div>
+          ${isMaster ? `<button class="btn ghost" id="p-reset" style="width:100%;padding:10px;margin-top:8px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera Scheda Tamer (permette una nuova Creazione Guidata)</button>` : ''}
         </div>` : ''}
         `}
       </div>`;
@@ -510,6 +511,17 @@
         msgEl.innerHTML = ok ? '<span class="ok-msg">✔ Salvato.</span>' : `<span class="err">⚠ ${escapeHTML(lastApiError||'errore sconosciuto')}</span>`;
         if(ok) cachedRoster = await getRoster(session.code);
       };
+      const resetBtn = document.getElementById('p-reset');
+      if(resetBtn){
+        resetBtn.onclick = async ()=>{
+          if(!window.confirm(`Azzerare la Scheda Tamer di ${target.username}? Attributi, Skill, Torments, Aspetti e Inventario torneranno a zero e potrà rifare la Creazione Guidata. L'azione non è reversibile.`)) return;
+          if(!window.confirm(`Sei sicuro? Questa è l'ultima conferma prima di azzerare definitivamente la Scheda Tamer di ${target.username}.`)) return;
+          target.tamer = defaultTamer();
+          const ok = await saveMember(session.code, target);
+          if(ok) cachedRoster = await getRoster(session.code);
+          renderPage();
+        };
+      }
     }
 
     enableCollapsibleCards(root);
