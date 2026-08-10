@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Giocatore — Digivice OS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  @font-face {
+    font-family: 'Pixel Digivolve';
+    src: url('https://db.onlinewebfonts.com/t/e7a35327535403014c02a38c285b82cf.woff2') format('woff2'),
+         url('https://db.onlinewebfonts.com/t/e7a35327535403014c02a38c285b82cf.woff') format('woff'),
+         url('https://db.onlinewebfonts.com/t/e7a35327535403014c02a38c285b82cf.ttf') format('truetype');
+    font-display: swap;
+  }
+  .pixel-title{ font-family:'Pixel Digivolve','Share Tech Mono',monospace; letter-spacing:0.03em; }
+  :root{
+    --bg: #080b10; --panel: #0e141b; --panel-2: #121a22; --line: #1c2a30;
+    --cyan: #35e8c9; --cyan-dim: #1f6e63; --amber: #ff8a3d; --text: #dcece8;
+    --text-mute: #6d8385; --danger: #ff5d5d; --radius: 2px;
+    font-family: 'Manrope', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body,#root-app{margin:0;padding:0;background:var(--bg);color:var(--text);}
+  .mono{font-family:'Share Tech Mono', monospace; letter-spacing:0.04em;}
+  .app{min-height:100vh;background:
+      radial-gradient(circle at 15% 10%, rgba(53,232,201,0.06), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(255,138,61,0.05), transparent 45%),
+      var(--bg); padding:20px;}
+  .hud-frame{border:1px solid var(--line); background:var(--panel); border-radius:var(--radius); position:relative;}
+  .hud-frame::before{content:"";position:absolute;top:-1px;left:-1px;width:14px;height:14px;border-top:2px solid var(--cyan);border-left:2px solid var(--cyan);}
+  .hud-frame::after{content:"";position:absolute;bottom:-1px;right:-1px;width:14px;height:14px;border-bottom:2px solid var(--cyan);border-right:2px solid var(--cyan);}
+  .topbar{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
+  .brand-title{font-family:'Pixel Digivolve','Share Tech Mono',monospace;font-size:15px;text-transform:uppercase;color:var(--cyan);letter-spacing:0.05em;}
+  .brand-sub{font-size:11px;color:var(--text-mute);}
+  .conn-ticker{font-size:11px;color:var(--text-mute);}
+  .conn-ticker b{color:var(--cyan);}
+  .btn{font-family:'Share Tech Mono',monospace;background:transparent;border:1px solid var(--cyan-dim);color:var(--cyan);
+    padding:8px 14px;cursor:pointer;text-transform:uppercase;font-size:12px;letter-spacing:0.05em;border-radius:var(--radius);transition:.15s;}
+  .btn:hover{background:rgba(53,232,201,0.1);border-color:var(--cyan);}
+  .btn:disabled{opacity:0.35;cursor:not-allowed;}
+  .btn.solid{background:var(--cyan);color:#04211c;border-color:var(--cyan);font-weight:700;}
+  .btn.solid:hover{background:#4ffbe0;}
+  .btn.ghost{border-color:var(--line);color:var(--text-mute);}
+  .btn.small{padding:5px 10px;font-size:10px;text-decoration:none;display:inline-block;}
+  input[type=text], input[type=number], textarea, select{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    padding:8px 10px; font-family:'Manrope',sans-serif; font-size:13px; border-radius:var(--radius); width:100%;
+  }
+  input:focus, select:focus{outline:none;border-color:var(--cyan-dim);}
+  label{font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;display:block;margin-bottom:4px;}
+  .field{margin-bottom:12px;}
+  .section-title{font-size:12px;text-transform:uppercase;color:var(--cyan);letter-spacing:0.08em;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);}
+  .card{padding:18px;margin-bottom:16px;}
+  .grid-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;}
+  .grid-skills{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;}
+  .stat-box{text-align:center;padding:10px 4px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);}
+  .stat-box .l{font-size:9px;color:var(--text-mute);text-transform:uppercase;margin-top:4px;}
+  .stat-box input{text-align:center;padding:6px;margin-top:4px;}
+  .skill-box{padding:8px 10px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .skill-box .l{font-size:10px;color:var(--text-mute);text-transform:uppercase;}
+  .skill-box input{width:60px;text-align:center;}
+  .portrait-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:6px;}
+  .portrait{width:120px;height:120px;border-radius:50%;object-fit:cover;border:2px solid var(--cyan-dim);background:#05070a;}
+  .portrait-placeholder{width:120px;height:120px;border-radius:50%;background:var(--panel-2);border:2px dashed var(--line);display:flex;align-items:center;justify-content:center;font-size:34px;color:var(--text-mute);}
+  .readonly-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px;}
+  .readonly-row:last-child{border-bottom:none;}
+  .readonly-row .l{color:var(--text-mute);text-transform:uppercase;font-size:10px;letter-spacing:0.04em;}
+  .readonly-row .v{color:var(--text);}
+  .tag-list{display:flex;flex-wrap:wrap;gap:6px;}
+  .tag{font-size:10px;padding:3px 9px;border:1px solid var(--line);color:var(--text-mute);border-radius:20px;}
+  .muted{color:var(--text-mute);font-size:11px;}
+  .err{color:var(--danger);font-size:11px;margin-top:6px;}
+  .ok-msg{color:var(--cyan);font-size:11px;margin-top:6px;}
+  .login-wrap{max-width:420px;margin:60px auto;padding:32px;}
+  .login-wrap h1{font-family:'Pixel Digivolve','Share Tech Mono',monospace;color:var(--cyan);font-size:26px;letter-spacing:0.03em;text-align:center;text-shadow:0 0 16px rgba(53,232,201,0.5);margin-bottom:4px;}
+  .login-wrap .sub{text-align:center;color:var(--text-mute);font-size:12px;margin-bottom:24px;}
+  .role-pick{display:flex;gap:10px;margin-bottom:16px;}
+  .role-pick .btn{flex:1;}
+  .role-pick .btn.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
+  @media (max-width: 700px){
+    .grid-stats{grid-template-columns:repeat(3,1fr);}
+    .app{padding:10px;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="scanline" style="position:fixed;inset:0;pointer-events:none;z-index:50;background:repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);mix-blend-mode:overlay;"></div>
+  <div id="root-app"></div>
+</div>
+<script>
+(function(){
+  const SESSION_KEY = 'digivice_session_v1';
+  let session = null;
+  let cachedRoster = [];
+  let lastApiError = null;
+  let pollTimer = null;
+  let statusMsg = { text:'', ok:false };
+
+  const root = document.getElementById('root-app');
+
+  const SKILL_DEFS = [
+    { key:'evade', label:'Evade' }, { key:'precision', label:'Precision' }, { key:'stealth', label:'Stealth' },
+    { key:'athletics', label:'Athletics' }, { key:'endurance', label:'Endurance' }, { key:'featsOfStrength', label:'Feats of Strength' },
+    { key:'manipulate', label:'Manipulate' }, { key:'perform', label:'Perform' }, { key:'persuasion', label:'Persuasion' },
+    { key:'decipherIntent', label:'Decipher Intent' }, { key:'survival', label:'Survival' }, { key:'knowledge', label:'Knowledge' },
+    { key:'fortitude', label:'Fortitude' }, { key:'bravery', label:'Bravery' }, { key:'awareness', label:'Awareness' }
+  ];
+  const STAT_DEFS = [
+    { key:'agility', label:'Agility' }, { key:'body', label:'Body' }, { key:'charisma', label:'Charisma' },
+    { key:'intelligence', label:'Intelligence' }, { key:'willpower', label:'Willpower' }
+  ];
+
+  function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function escapeAttr(s){ return escapeHTML(s); }
+
+  function defaultTamer(){
+    const skills = {}; SKILL_DEFS.forEach(s=>skills[s.key]=0);
+    return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, imageUrl:'', currentWounds:null, inventory:[], skills,
+      unspentGrowthPoints:0, inspirationPoints:0, tormentPenalty:0, torments:[],
+      majorAspect:{text:'',usesLeft:1}, minorAspect:{text:'',usesLeft:2} };
+  }
+  function normalizeMember(m){
+    m.tamer = Object.assign(defaultTamer(), m.tamer||{});
+    m.tamer.skills = Object.assign((()=>{const s={};SKILL_DEFS.forEach(d=>s[d.key]=0);return s;})(), m.tamer.skills||{});
+    if(!Array.isArray(m.tamer.inventory)) m.tamer.inventory = [];
+    if(!Array.isArray(m.tamer.torments)) m.tamer.torments = [];
+    return m;
+  }
+
+  // ---------- session ----------
+  function saveSession(s){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }catch(e){} }
+  function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
+  function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
+
+  // ---------- api ----------
+  async function apiGet(path){
+    try{ const r = await fetch(path); const data = await r.json();
+      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
+      lastApiError = null; return data;
+    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
+  }
+  async function apiPost(path, body){
+    try{ const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const data = await r.json();
+      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
+      lastApiError = null; return data;
+    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
+  }
+  async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]).map(normalizeMember) : []; }
+  async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
+  async function uploadImage(code, dataUrl){ return apiPost('/api/upload', { code, dataUrl }); }
+
+  // ---------- polling ----------
+  function startPolling(){
+    if(pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(async ()=>{
+      if(!session) return;
+      cachedRoster = await getRoster(session.code);
+      // Non tocchiamo il DOM se l'utente sta scrivendo in un campo: aggiorniamo solo se non c'è un editor aperto
+      if(document.activeElement && document.activeElement.tagName === 'INPUT') return;
+      render();
+    }, 4000);
+  }
+
+  function render(){
+    if(!session){ renderLogin(); return; }
+    renderPage();
+  }
+
+  function topbar(){
+    return `
+    <div class="hud-frame topbar">
+      <div>
+        <div class="brand-title">🪪 GIOCATORE</div>
+        <div class="brand-sub">Digimon: Digital Adventures — Campagna ${escapeHTML(session.code)}</div>
+      </div>
+      <div class="conn-ticker mono">
+        UTENTE <b>${escapeHTML(session.username)}</b> (${session.role==='master'?'Master':'Giocatore'})
+        &nbsp;<a href="index.html" class="btn ghost small">← Tavolo</a>
+        &nbsp;<a href="digimon.html" class="btn ghost small">👾 Digimon</a>
+        &nbsp;<button class="btn ghost small" id="btn-logout">Esci</button>
+      </div>
+    </div>
+    ${lastApiError ? `<div class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(lastApiError)}</div>` : ''}`;
+  }
+
+  function renderLogin(){
+    root.innerHTML = `
+      <div class="login-wrap hud-frame">
+        <h1>GIOCATORE // ACCESSO</h1>
+        <div class="sub">Inserisci lo stesso codice campagna e nome utente usati nel Tavolo Testuale.</div>
+        <div class="field"><label>Codice Campagna</label><input type="text" id="in-code" placeholder="es. FRONTIER01" /></div>
+        <div class="field"><label>Nome Utente</label><input type="text" id="in-user" placeholder="il tuo nome al tavolo" /></div>
+        <div class="field"><label>Ruolo</label>
+          <div class="role-pick">
+            <button class="btn active" id="role-player" data-role="player">Giocatore</button>
+            <button class="btn" id="role-master" data-role="master">Master</button>
+          </div>
+        </div>
+        <button class="btn solid" id="btn-enter" style="width:100%;padding:12px;">Entra</button>
+        <div class="err" id="login-err"></div>
+      </div>`;
+    let role = 'player';
+    document.getElementById('role-player').onclick = ()=>{ role='player'; document.getElementById('role-player').classList.add('active'); document.getElementById('role-master').classList.remove('active'); };
+    document.getElementById('role-master').onclick = ()=>{ role='master'; document.getElementById('role-master').classList.add('active'); document.getElementById('role-player').classList.remove('active'); };
+    document.getElementById('btn-enter').onclick = async ()=>{
+      const code = document.getElementById('in-code').value.trim().toUpperCase().replace(/[^A-Z0-9_-]/g,'');
+      const username = document.getElementById('in-user').value.trim();
+      const errEl = document.getElementById('login-err');
+      if(!code || !username){ errEl.textContent = 'Inserisci codice campagna e nome utente.'; return; }
+      session = { code, username, role };
+      saveSession(session);
+      cachedRoster = await getRoster(code);
+      startPolling();
+      render();
+    };
+  }
+
+  function logout(){
+    if(pollTimer) clearInterval(pollTimer);
+    session = null; clearSession(); render();
+  }
+
+  function statBoxHTML(m, key, label, editable){
+    const val = Number(m.tamer[key])||0;
+    return editable
+      ? `<div class="stat-box"><input type="number" min="0" max="10" id="p-stat-${key}" value="${val}" /><div class="l">${label}</div></div>`
+      : `<div class="stat-box"><div class="v mono" style="font-size:20px;color:var(--cyan);">${val}</div><div class="l">${label}</div></div>`;
+  }
+
+  function skillBoxHTML(m, def, editable){
+    const val = Number(m.tamer.skills[def.key])||0;
+    return editable
+      ? `<div class="skill-box"><span class="l">${def.label}</span><input type="number" min="0" max="10" id="p-skill-${def.key}" value="${val}" /></div>`
+      : `<div class="skill-box"><span class="l">${def.label}</span><span class="mono" style="color:var(--cyan);">${val}</span></div>`;
+  }
+
+  function portraitBlockHTML(m, editable){
+    return `
+    <div class="portrait-wrap">
+      ${m.tamer.imageUrl ? `<img class="portrait" src="${escapeAttr(m.tamer.imageUrl)}" />` : `<div class="portrait-placeholder">🪪</div>`}
+      <div style="flex:1;min-width:220px;">
+        <div class="pixel-title" style="font-size:22px;color:var(--cyan);text-shadow:0 0 10px rgba(53,232,201,0.4);">${escapeHTML(m.username)}</div>
+        <div class="muted" style="margin-top:2px;">Tamer — Campagna ${escapeHTML(session.code)}</div>
+        ${editable ? `
+        <div class="field" style="margin-top:12px;">
+          <label>URL Immagine Profilo</label>
+          <input type="text" id="p-imageUrl" value="${escapeAttr(m.tamer.imageUrl||'')}" placeholder="https://..." />
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input type="file" accept="image/*" id="p-img-file" style="display:none;" />
+          <button type="button" class="btn ghost small" id="p-img-btn">📎 Carica immagine</button>
+          <span class="muted" id="p-img-status"></span>
+        </div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  function readonlyBlockHTML(m){
+    const t = m.tamer;
+    return `
+    <div class="card hud-frame">
+      <div class="section-title">Dati di Gioco (gestiti dal Master)</div>
+      <div class="readonly-row"><span class="l">Ferite Attuali</span><span class="v">${t.currentWounds ?? '—'}</span></div>
+      <div class="readonly-row"><span class="l">Punti Crescita non spesi</span><span class="v">${t.unspentGrowthPoints||0}</span></div>
+      <div class="readonly-row"><span class="l">Punti Ispirazione</span><span class="v">${t.inspirationPoints||0}</span></div>
+      <div class="readonly-row"><span class="l">Aspetto Maggiore</span><span class="v">${escapeHTML(t.majorAspect && t.majorAspect.text || '—')}</span></div>
+      <div class="readonly-row"><span class="l">Aspetto Minore</span><span class="v">${escapeHTML(t.minorAspect && t.minorAspect.text || '—')}</span></div>
+      ${t.inventory && t.inventory.length ? `
+      <div style="margin-top:12px;">
+        <div class="l" style="margin-bottom:6px;text-transform:uppercase;font-size:10px;color:var(--text-mute);">Inventario</div>
+        <div class="tag-list">${t.inventory.map(i=>`<span class="tag">${escapeHTML(typeof i==='string'?i:(i.name||''))}</span>`).join('')}</div>
+      </div>` : ''}
+      <div class="muted" style="margin-top:14px;">Per modificare inventario, tormenti, aspetti o ferite usa il Tavolo Testuale — qui puoi personalizzare solo punteggi e immagine.</div>
+    </div>`;
+  }
+
+  function renderPage(){
+    const isMaster = session.role === 'master';
+    let target = null;
+    let selectorHTML = '';
+
+    if(isMaster){
+      const players = cachedRoster.filter(m=>m.role==='player');
+      const selected = window.__playerSelected || (players[0] && players[0].username) || null;
+      target = players.find(p=>p.username===selected) || players[0] || null;
+      selectorHTML = `
+      <div class="hud-frame card">
+        <div class="section-title">Seleziona Giocatore</div>
+        <select id="p-select-player">
+          ${players.length===0 ? '<option>— nessun giocatore —</option>' : players.map(p=>`<option value="${escapeAttr(p.username)}" ${target && target.username===p.username?'selected':''}>${escapeHTML(p.username)}</option>`).join('')}
+        </select>
+        <div class="muted" style="margin-top:8px;">Come Master vedi la scheda in sola lettura. Per una modifica completa usa "Gestisci" nel Tavolo.</div>
+      </div>`;
+    } else {
+      target = cachedRoster.find(m=>m.username===session.username);
+    }
+
+    const editable = !isMaster;
+
+    root.innerHTML = `
+      <div style="max-width:760px;margin:0 auto;">
+        ${topbar()}
+        ${selectorHTML}
+        ${!target ? `<div class="hud-frame card muted">Nessuna scheda trovata. ${isMaster?'Seleziona un giocatore.':'Crea il tuo personaggio dal Tavolo Testuale.'}</div>` : `
+        <div class="hud-frame card">
+          ${portraitBlockHTML(target, editable)}
+        </div>
+        <div class="hud-frame card">
+          <div class="section-title">Punteggi Base</div>
+          <div class="grid-stats">
+            ${STAT_DEFS.map(d=>statBoxHTML(target, d.key, d.label, editable)).join('')}
+          </div>
+        </div>
+        <div class="hud-frame card">
+          <div class="section-title">Skill</div>
+          <div class="grid-skills">
+            ${SKILL_DEFS.map(d=>skillBoxHTML(target, d, editable)).join('')}
+          </div>
+        </div>
+        ${readonlyBlockHTML(target)}
+        ${editable ? `
+        <div class="hud-frame card">
+          <button class="btn solid" id="p-save" style="width:100%;padding:12px;">💾 Salva Punteggi e Immagine</button>
+          <div id="p-save-msg" style="margin-top:8px;"></div>
+        </div>` : ''}
+        `}
+      </div>`;
+
+    document.getElementById('btn-logout').onclick = logout;
+
+    if(isMaster){
+      const sel = document.getElementById('p-select-player');
+      if(sel) sel.onchange = ()=>{ window.__playerSelected = sel.value; renderPage(); };
+    }
+
+    if(target && editable){
+      bindImageUpload(target);
+      document.getElementById('p-save').onclick = async ()=>{
+        STAT_DEFS.forEach(d=>{
+          const el = document.getElementById('p-stat-'+d.key);
+          if(el) target.tamer[d.key] = Math.max(0, Number(el.value)||0);
+        });
+        SKILL_DEFS.forEach(d=>{
+          const el = document.getElementById('p-skill-'+d.key);
+          if(el) target.tamer.skills[d.key] = Math.max(0, Number(el.value)||0);
+        });
+        const imgEl = document.getElementById('p-imageUrl');
+        if(imgEl) target.tamer.imageUrl = imgEl.value.trim();
+
+        const msgEl = document.getElementById('p-save-msg');
+        msgEl.innerHTML = '<span class="muted">Salvataggio...</span>';
+        const ok = await saveMember(session.code, target);
+        msgEl.innerHTML = ok ? '<span class="ok-msg">✔ Salvato.</span>' : `<span class="err">⚠ ${escapeHTML(lastApiError||'errore sconosciuto')}</span>`;
+        if(ok) cachedRoster = await getRoster(session.code);
+      };
+    }
+  }
+
+  function bindImageUpload(target){
+    const fileInput = document.getElementById('p-img-file');
+    const btn = document.getElementById('p-img-btn');
+    const statusEl = document.getElementById('p-img-status');
+    if(!fileInput || !btn) return;
+    btn.onclick = ()=> fileInput.click();
+    fileInput.onchange = async ()=>{
+      const file = fileInput.files[0];
+      if(!file) return;
+      statusEl.textContent = 'Caricamento...';
+      btn.disabled = true;
+      try{
+        const dataUrl = await new Promise((resolve,reject)=>{
+          const reader = new FileReader();
+          reader.onload = ()=> resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const res = await uploadImage(session.code, dataUrl);
+        if(res && res.ok && res.url){
+          const imgEl = document.getElementById('p-imageUrl');
+          if(imgEl) imgEl.value = res.url;
+          statusEl.textContent = '✔ Caricata — ricordati di salvare.';
+        } else {
+          statusEl.textContent = '⚠ Caricamento fallito: ' + (lastApiError||'errore sconosciuto');
+        }
+      }catch(e){
+        statusEl.textContent = '⚠ Errore: ' + e.message;
+      }
+      btn.disabled = false;
+      fileInput.value = '';
+    };
+  }
+
+  // ---------- boot ----------
+  const restored = loadSession();
+  if(restored && restored.code && restored.username){ session = restored; }
+  (async ()=>{
+    if(session){ cachedRoster = await getRoster(session.code); startPolling(); }
+    render();
+  })();
+})();
+</script>
+</body>
+</html>

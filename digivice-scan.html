@@ -184,6 +184,7 @@
   <div class="topbar">
     <span class="tag"><span class="dot"></span>DIGIVICE OS · MODULO SCAN</span>
     <span class="tag" id="stepLabel">INIT</span>
+    <a href="index.html" class="tag" style="text-decoration:none;">← Tavolo</a>
   </div>
   <div class="progress-row" id="progressRow"></div>
 
@@ -530,7 +531,17 @@ async function apiPostCrestImage(crestName, imageUrl){
 //     schermata alla volta, esattamente come lo vede un giocatore), senza dover prima passare
 //     dal Digimon-match e senza registrare nulla sul backend. Utile per verificare che le
 //     domande e il risultato abbiano senso prima di farlo giocare al gruppo.
-const isGmMode = new URLSearchParams(location.search).get('gm') === '1';
+function checkSharedSessionForGM(){
+  try{
+    const raw = localStorage.getItem('digivice_session_v1');
+    if(!raw) return false;
+    const s = JSON.parse(raw);
+    return !!(s && s.role === 'master');
+  }catch(e){ return false; }
+}
+// Sblocco automatico se arriviamo da una sessione condivisa (Tavolo/Digidex/Mappa/ecc.) con ruolo Master.
+// Resta comunque disponibile ?gm=1 per accessi diretti senza sessione salvata.
+const isGmMode = new URLSearchParams(location.search).get('gm') === '1' || checkSharedSessionForGM();
 
 function startGmCrestQuizPreview(){
   document.getElementById('gmPanel').classList.add('hidden');

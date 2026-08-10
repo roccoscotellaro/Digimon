@@ -175,6 +175,7 @@
     <button id="menuToggle" onclick="toggleSidebar()">☰</button>
     <div class="brand">DDA 2E · Indice Regole</div>
   </div>
+  <a href="index.html" style="text-decoration:none;color:inherit;font-size:12px;opacity:0.75;margin-right:10px;">← Tavolo</a>
   <button id="gmLockBtn" onclick="toggleGM()">🔒 Sblocca vista GM</button>
 </header>
 
@@ -1759,6 +1760,16 @@ const TOC = {
 };
 
 let gmUnlocked = false;
+const SHARED_SESSION_KEY = 'digivice_session_v1';
+
+function checkSharedSessionForGM(){
+  try{
+    const raw = localStorage.getItem(SHARED_SESSION_KEY);
+    if(!raw) return false;
+    const s = JSON.parse(raw);
+    return !!(s && s.role === 'master');
+  }catch(e){ return false; }
+}
 
 function toggleSidebar(){
   document.getElementById('sidebar').classList.toggle('open');
@@ -1886,6 +1897,16 @@ document.getElementById('search').addEventListener('input', (e)=>{
   });
 });
 
+// Sblocco automatico se arriviamo da una sessione condivisa (Tavolo/Digidex/Mappa/ecc.) con ruolo Master.
+// Se non c'è sessione (link aperto da solo, o accesso come Giocatore), resta la password manuale.
+if(checkSharedSessionForGM()){
+  gmUnlocked = true;
+  const btn0 = document.getElementById('gmLockBtn');
+  if(btn0){
+    btn0.textContent = "🔓 Vista Game Master attiva";
+    btn0.classList.add('unlocked');
+  }
+}
 buildSidebar();
 window.addEventListener('DOMContentLoaded', ()=> showSection('pc-1','1.0 - Introduzione', true));
 </script>

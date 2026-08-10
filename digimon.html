@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Digimon — Digivice OS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  @font-face {
+    font-family: 'Pixel Digivolve';
+    src: url('https://db.onlinewebfonts.com/t/e7a35327535403014c02a38c285b82cf.woff2') format('woff2'),
+         url('https://db.onlinewebfonts.com/t/e7a35327535403014c02a38c285b82cf.woff') format('woff'),
+         url('https://db.onlinewebfonts.com/t/e7a35327535403014c02a38c285b82cf.ttf') format('truetype');
+    font-display: swap;
+  }
+  .pixel-title{ font-family:'Pixel Digivolve','Share Tech Mono',monospace; letter-spacing:0.03em; }
+  :root{
+    --bg: #080b10; --panel: #0e141b; --panel-2: #121a22; --line: #1c2a30;
+    --cyan: #35e8c9; --cyan-dim: #1f6e63; --amber: #ff8a3d; --text: #dcece8;
+    --text-mute: #6d8385; --danger: #ff5d5d; --radius: 2px; --dchroma: #c896ff;
+    font-family: 'Manrope', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body,#root-app{margin:0;padding:0;background:var(--bg);color:var(--text);}
+  .mono{font-family:'Share Tech Mono', monospace; letter-spacing:0.04em;}
+  .app{min-height:100vh;background:
+      radial-gradient(circle at 15% 10%, rgba(200,150,255,0.06), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(53,232,201,0.06), transparent 45%),
+      var(--bg); padding:20px;}
+  .hud-frame{border:1px solid var(--line); background:var(--panel); border-radius:var(--radius); position:relative;}
+  .hud-frame::before{content:"";position:absolute;top:-1px;left:-1px;width:14px;height:14px;border-top:2px solid var(--dchroma);border-left:2px solid var(--dchroma);}
+  .hud-frame::after{content:"";position:absolute;bottom:-1px;right:-1px;width:14px;height:14px;border-bottom:2px solid var(--dchroma);border-right:2px solid var(--dchroma);}
+  .topbar{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
+  .brand-title{font-family:'Pixel Digivolve','Share Tech Mono',monospace;font-size:15px;text-transform:uppercase;color:var(--dchroma);letter-spacing:0.05em;}
+  .brand-sub{font-size:11px;color:var(--text-mute);}
+  .conn-ticker{font-size:11px;color:var(--text-mute);}
+  .conn-ticker b{color:var(--dchroma);}
+  .btn{font-family:'Share Tech Mono',monospace;background:transparent;border:1px solid var(--cyan-dim);color:var(--cyan);
+    padding:8px 14px;cursor:pointer;text-transform:uppercase;font-size:12px;letter-spacing:0.05em;border-radius:var(--radius);transition:.15s;}
+  .btn:hover{background:rgba(53,232,201,0.1);border-color:var(--cyan);}
+  .btn:disabled{opacity:0.35;cursor:not-allowed;}
+  .btn.solid{background:var(--dchroma);color:#1c0a2e;border-color:var(--dchroma);font-weight:700;}
+  .btn.solid:hover{background:#dcb8ff;}
+  .btn.ghost{border-color:var(--line);color:var(--text-mute);}
+  .btn.small{padding:5px 10px;font-size:10px;text-decoration:none;display:inline-block;}
+  input[type=text], input[type=number], textarea, select{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    padding:8px 10px; font-family:'Manrope',sans-serif; font-size:13px; border-radius:var(--radius); width:100%;
+  }
+  input:focus, select:focus{outline:none;border-color:var(--cyan-dim);}
+  label{font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;display:block;margin-bottom:4px;}
+  .field{margin-bottom:12px;}
+  .section-title{font-size:12px;text-transform:uppercase;color:var(--dchroma);letter-spacing:0.08em;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);}
+  .card{padding:18px;margin-bottom:16px;}
+  .grid-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;}
+  .stat-box{text-align:center;padding:10px 4px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);}
+  .stat-box .l{font-size:9px;color:var(--text-mute);text-transform:uppercase;margin-top:4px;}
+  .stat-box input{text-align:center;padding:6px;margin-top:4px;}
+  .portrait-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:6px;}
+  .portrait{width:120px;height:120px;border-radius:12px;object-fit:cover;border:2px solid var(--dchroma);background:#05070a;}
+  .portrait-placeholder{width:120px;height:120px;border-radius:12px;background:var(--panel-2);border:2px dashed var(--line);display:flex;align-items:center;justify-content:center;font-size:34px;color:var(--text-mute);}
+  .readonly-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px;}
+  .readonly-row:last-child{border-bottom:none;}
+  .readonly-row .l{color:var(--text-mute);text-transform:uppercase;font-size:10px;letter-spacing:0.04em;}
+  .readonly-row .v{color:var(--text);}
+  .tag{font-size:10px;padding:3px 9px;border:1px solid var(--line);color:var(--text-mute);border-radius:20px;}
+  .tag-list{display:flex;flex-wrap:wrap;gap:6px;}
+  .move-card{background:var(--panel-2);border:1px solid var(--line);padding:10px;border-radius:var(--radius);margin-bottom:8px;}
+  .move-card .name{font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--dchroma);}
+  .move-card .desc{font-size:11px;color:var(--text-mute);margin-top:3px;}
+  .muted{color:var(--text-mute);font-size:11px;}
+  .err{color:var(--danger);font-size:11px;margin-top:6px;}
+  .ok-msg{color:var(--dchroma);font-size:11px;margin-top:6px;}
+  .login-wrap{max-width:420px;margin:60px auto;padding:32px;}
+  .login-wrap h1{font-family:'Pixel Digivolve','Share Tech Mono',monospace;color:var(--dchroma);font-size:26px;letter-spacing:0.03em;text-align:center;text-shadow:0 0 16px rgba(200,150,255,0.5);margin-bottom:4px;}
+  .login-wrap .sub{text-align:center;color:var(--text-mute);font-size:12px;margin-bottom:24px;}
+  .role-pick{display:flex;gap:10px;margin-bottom:16px;}
+  .role-pick .btn{flex:1;}
+  .role-pick .btn.active{background:rgba(200,150,255,0.12);border-color:var(--dchroma);color:var(--dchroma);}
+  @media (max-width: 700px){
+    .grid-stats{grid-template-columns:repeat(3,1fr);}
+    .app{padding:10px;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="root-app"></div>
+</div>
+<script>
+(function(){
+  const SESSION_KEY = 'digivice_session_v1';
+  let session = null;
+  let cachedRoster = [];
+  let lastApiError = null;
+  let pollTimer = null;
+
+  const root = document.getElementById('root-app');
+
+  const STAT_DEFS = [
+    { key:'baseAccuracy', label:'Accuracy' }, { key:'baseDamage', label:'Damage' }, { key:'baseDodge', label:'Dodge' },
+    { key:'baseArmor', label:'Armor' }, { key:'baseHealth', label:'Health' }
+  ];
+
+  function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function escapeAttr(s){ return escapeHTML(s); }
+
+  function defaultDigimon(){
+    return {
+      name:'', stage:'Rookie', personality:'', imageUrl:'',
+      maxWounds:5, currentWounds:5, maxMp:3, currentMp:3,
+      baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:1,
+      dpTotal:0, qualities:[], size:'Medium', stance:'Neutral', categories:[],
+      attacks:[]
+    };
+  }
+  function normalizeMember(m){
+    m.digimon = Object.assign(defaultDigimon(), m.digimon||{});
+    if(!Array.isArray(m.digimon.qualities)) m.digimon.qualities = [];
+    if(!Array.isArray(m.digimon.attacks)) m.digimon.attacks = [];
+    if(!Array.isArray(m.digimon.categories)) m.digimon.categories = [];
+    return m;
+  }
+
+  function saveSession(s){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }catch(e){} }
+  function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
+  function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
+
+  async function apiGet(path){
+    try{ const r = await fetch(path); const data = await r.json();
+      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
+      lastApiError = null; return data;
+    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
+  }
+  async function apiPost(path, body){
+    try{ const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const data = await r.json();
+      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
+      lastApiError = null; return data;
+    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
+  }
+  async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]).map(normalizeMember) : []; }
+  async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
+  async function uploadImage(code, dataUrl){ return apiPost('/api/upload', { code, dataUrl }); }
+
+  function startPolling(){
+    if(pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(async ()=>{
+      if(!session) return;
+      cachedRoster = await getRoster(session.code);
+      if(document.activeElement && document.activeElement.tagName === 'INPUT') return;
+      render();
+    }, 4000);
+  }
+
+  function render(){
+    if(!session){ renderLogin(); return; }
+    renderPage();
+  }
+
+  function topbar(){
+    return `
+    <div class="hud-frame topbar">
+      <div>
+        <div class="brand-title">👾 DIGIMON</div>
+        <div class="brand-sub">Digimon: Digital Adventures — Campagna ${escapeHTML(session.code)}</div>
+      </div>
+      <div class="conn-ticker mono">
+        UTENTE <b>${escapeHTML(session.username)}</b> (${session.role==='master'?'Master':'Giocatore'})
+        &nbsp;<a href="index.html" class="btn ghost small">← Tavolo</a>
+        &nbsp;<a href="player.html" class="btn ghost small">🪪 Giocatore</a>
+        &nbsp;<button class="btn ghost small" id="btn-logout">Esci</button>
+      </div>
+    </div>
+    ${lastApiError ? `<div class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(lastApiError)}</div>` : ''}`;
+  }
+
+  function renderLogin(){
+    root.innerHTML = `
+      <div class="login-wrap hud-frame">
+        <h1>DIGIMON // ACCESSO</h1>
+        <div class="sub">Inserisci lo stesso codice campagna e nome utente usati nel Tavolo Testuale.</div>
+        <div class="field"><label>Codice Campagna</label><input type="text" id="in-code" placeholder="es. FRONTIER01" /></div>
+        <div class="field"><label>Nome Utente</label><input type="text" id="in-user" placeholder="il tuo nome al tavolo" /></div>
+        <div class="field"><label>Ruolo</label>
+          <div class="role-pick">
+            <button class="btn active" id="role-player" data-role="player">Giocatore</button>
+            <button class="btn" id="role-master" data-role="master">Master</button>
+          </div>
+        </div>
+        <button class="btn solid" id="btn-enter" style="width:100%;padding:12px;">Entra</button>
+        <div class="err" id="login-err"></div>
+      </div>`;
+    let role = 'player';
+    document.getElementById('role-player').onclick = ()=>{ role='player'; document.getElementById('role-player').classList.add('active'); document.getElementById('role-master').classList.remove('active'); };
+    document.getElementById('role-master').onclick = ()=>{ role='master'; document.getElementById('role-master').classList.add('active'); document.getElementById('role-player').classList.remove('active'); };
+    document.getElementById('btn-enter').onclick = async ()=>{
+      const code = document.getElementById('in-code').value.trim().toUpperCase().replace(/[^A-Z0-9_-]/g,'');
+      const username = document.getElementById('in-user').value.trim();
+      const errEl = document.getElementById('login-err');
+      if(!code || !username){ errEl.textContent = 'Inserisci codice campagna e nome utente.'; return; }
+      session = { code, username, role };
+      saveSession(session);
+      cachedRoster = await getRoster(code);
+      startPolling();
+      render();
+    };
+  }
+
+  function logout(){
+    if(pollTimer) clearInterval(pollTimer);
+    session = null; clearSession(); render();
+  }
+
+  function statBoxHTML(m, key, label, editable){
+    const val = Number(m.digimon[key])||0;
+    return editable
+      ? `<div class="stat-box"><input type="number" min="0" max="10" id="d-stat-${key}" value="${val}" /><div class="l">${label}</div></div>`
+      : `<div class="stat-box"><div class="v mono" style="font-size:20px;color:var(--dchroma);">${val}</div><div class="l">${label}</div></div>`;
+  }
+
+  function portraitBlockHTML(m, editable){
+    const d = m.digimon;
+    return `
+    <div class="portrait-wrap">
+      ${d.imageUrl ? `<img class="portrait" src="${escapeAttr(d.imageUrl)}" />` : `<div class="portrait-placeholder">👾</div>`}
+      <div style="flex:1;min-width:220px;">
+        <div class="pixel-title" style="font-size:22px;color:var(--dchroma);text-shadow:0 0 10px rgba(200,150,255,0.4);">${escapeHTML(d.name || '— nessun Digimon —')}</div>
+        <div class="muted" style="margin-top:2px;">${escapeHTML(d.stage||'')} · Partner di ${escapeHTML(m.username)}</div>
+        ${d.categories && d.categories.length ? `<div class="tag-list" style="margin-top:8px;">${d.categories.map(c=>`<span class="tag">${escapeHTML(c)}</span>`).join('')}</div>` : ''}
+        ${editable ? `
+        <div class="field" style="margin-top:12px;">
+          <label>URL Immagine</label>
+          <input type="text" id="d-imageUrl" value="${escapeAttr(d.imageUrl||'')}" placeholder="https://..." />
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input type="file" accept="image/*" id="d-img-file" style="display:none;" />
+          <button type="button" class="btn ghost small" id="d-img-btn">📎 Carica immagine</button>
+          <span class="muted" id="d-img-status"></span>
+        </div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  function readonlyBlockHTML(m){
+    const d = m.digimon;
+    return `
+    <div class="hud-frame card">
+      <div class="section-title">Dati di Gioco (gestiti dal Master)</div>
+      <div class="readonly-row"><span class="l">Personalità</span><span class="v">${escapeHTML(d.personality || '—')}</span></div>
+      <div class="readonly-row"><span class="l">Ferite</span><span class="v">${d.currentWounds ?? '—'} / ${d.maxWounds ?? '—'}</span></div>
+      <div class="readonly-row"><span class="l">MP</span><span class="v">${d.currentMp ?? '—'} / ${d.maxMp ?? '—'}</span></div>
+      <div class="readonly-row"><span class="l">Taglia</span><span class="v">${escapeHTML(d.size||'—')}</span></div>
+      <div class="readonly-row"><span class="l">DP Totali</span><span class="v">${d.dpTotal||0}</span></div>
+      ${d.qualities && d.qualities.length ? `
+      <div style="margin-top:12px;">
+        <div class="l" style="margin-bottom:6px;text-transform:uppercase;font-size:10px;color:var(--text-mute);">Qualities</div>
+        <div class="tag-list">${d.qualities.map(q=>`<span class="tag">${escapeHTML(q.name||'')}</span>`).join('')}</div>
+      </div>` : ''}
+      <div class="muted" style="margin-top:14px;">Per modificare nome, stage, evoluzioni, Qualities o mosse usa il Tavolo Testuale o il Digidex — qui puoi personalizzare solo i punteggi base e l'immagine.</div>
+    </div>
+    ${d.attacks && d.attacks.length ? `
+    <div class="hud-frame card">
+      <div class="section-title">Mosse</div>
+      ${d.attacks.map(a=>`
+        <div class="move-card">
+          <div class="name">${escapeHTML(a.name||'')} ${a.signature?'⭐':''}</div>
+          <div class="desc">${escapeHTML(a.desc||'')}</div>
+        </div>
+      `).join('')}
+    </div>` : ''}`;
+  }
+
+  function renderPage(){
+    const isMaster = session.role === 'master';
+    let target = null;
+    let selectorHTML = '';
+
+    if(isMaster){
+      const players = cachedRoster.filter(m=>m.role==='player');
+      const selected = window.__digimonSelected || (players[0] && players[0].username) || null;
+      target = players.find(p=>p.username===selected) || players[0] || null;
+      selectorHTML = `
+      <div class="hud-frame card">
+        <div class="section-title">Seleziona Giocatore</div>
+        <select id="d-select-player">
+          ${players.length===0 ? '<option>— nessun giocatore —</option>' : players.map(p=>`<option value="${escapeAttr(p.username)}" ${target && target.username===p.username?'selected':''}>${escapeHTML(p.username)} — ${escapeHTML(p.digimon.name||'(senza Digimon)')}</option>`).join('')}
+        </select>
+        <div class="muted" style="margin-top:8px;">Come Master vedi la scheda in sola lettura. Per una modifica completa usa "Gestisci" nel Tavolo o il Digidex.</div>
+      </div>`;
+    } else {
+      target = cachedRoster.find(m=>m.username===session.username);
+    }
+
+    const editable = !isMaster;
+
+    root.innerHTML = `
+      <div style="max-width:760px;margin:0 auto;">
+        ${topbar()}
+        ${selectorHTML}
+        ${!target ? `<div class="hud-frame card muted">Nessuna scheda trovata. ${isMaster?'Seleziona un giocatore.':'Crea il tuo Digimon dal Tavolo Testuale.'}</div>` : `
+        <div class="hud-frame card">
+          ${portraitBlockHTML(target, editable)}
+        </div>
+        <div class="hud-frame card">
+          <div class="section-title">Punteggi Base</div>
+          <div class="grid-stats">
+            ${STAT_DEFS.map(d=>statBoxHTML(target, d.key, d.label, editable)).join('')}
+          </div>
+        </div>
+        ${readonlyBlockHTML(target)}
+        ${editable ? `
+        <div class="hud-frame card">
+          <button class="btn solid" id="d-save" style="width:100%;padding:12px;">💾 Salva Punteggi e Immagine</button>
+          <div id="d-save-msg" style="margin-top:8px;"></div>
+        </div>` : ''}
+        `}
+      </div>`;
+
+    document.getElementById('btn-logout').onclick = logout;
+
+    if(isMaster){
+      const sel = document.getElementById('d-select-player');
+      if(sel) sel.onchange = ()=>{ window.__digimonSelected = sel.value; renderPage(); };
+    }
+
+    if(target && editable){
+      bindImageUpload(target);
+      document.getElementById('d-save').onclick = async ()=>{
+        STAT_DEFS.forEach(d=>{
+          const el = document.getElementById('d-stat-'+d.key);
+          if(el) target.digimon[d.key] = Math.max(0, Number(el.value)||0);
+        });
+        const imgEl = document.getElementById('d-imageUrl');
+        if(imgEl) target.digimon.imageUrl = imgEl.value.trim();
+
+        const msgEl = document.getElementById('d-save-msg');
+        msgEl.innerHTML = '<span class="muted">Salvataggio...</span>';
+        const ok = await saveMember(session.code, target);
+        msgEl.innerHTML = ok ? '<span class="ok-msg">✔ Salvato.</span>' : `<span class="err">⚠ ${escapeHTML(lastApiError||'errore sconosciuto')}</span>`;
+        if(ok) cachedRoster = await getRoster(session.code);
+      };
+    }
+  }
+
+  function bindImageUpload(target){
+    const fileInput = document.getElementById('d-img-file');
+    const btn = document.getElementById('d-img-btn');
+    const statusEl = document.getElementById('d-img-status');
+    if(!fileInput || !btn) return;
+    btn.onclick = ()=> fileInput.click();
+    fileInput.onchange = async ()=>{
+      const file = fileInput.files[0];
+      if(!file) return;
+      statusEl.textContent = 'Caricamento...';
+      btn.disabled = true;
+      try{
+        const dataUrl = await new Promise((resolve,reject)=>{
+          const reader = new FileReader();
+          reader.onload = ()=> resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const res = await uploadImage(session.code, dataUrl);
+        if(res && res.ok && res.url){
+          const imgEl = document.getElementById('d-imageUrl');
+          if(imgEl) imgEl.value = res.url;
+          statusEl.textContent = '✔ Caricata — ricordati di salvare.';
+        } else {
+          statusEl.textContent = '⚠ Caricamento fallito: ' + (lastApiError||'errore sconosciuto');
+        }
+      }catch(e){
+        statusEl.textContent = '⚠ Errore: ' + e.message;
+      }
+      btn.disabled = false;
+      fileInput.value = '';
+    };
+  }
+
+  const restored = loadSession();
+  if(restored && restored.code && restored.username){ session = restored; }
+  (async ()=>{
+    if(session){ cachedRoster = await getRoster(session.code); startPolling(); }
+    render();
+  })();
+})();
+</script>
+</body>
+</html>
