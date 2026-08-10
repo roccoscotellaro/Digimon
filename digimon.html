@@ -453,8 +453,8 @@
         ${!target ? `
         <div class="hud-frame card muted">
           ${isMaster ? 'Nessuna scheda trovata. Seleziona un giocatore.' : `
-            <div style="margin-bottom:10px;">Non hai ancora un Digimon. Puoi crearlo subito con la Creazione Guidata.</div>
-            <a href="index.html?openWizard=1" target="_blank" class="btn solid" style="text-decoration:none;display:inline-block;padding:10px 16px;">🧙 Apri Creazione Guidata</a>
+            <div style="margin-bottom:10px;">Non hai ancora un Digimon. Il primo passo è la Bio-Resonance Scan, che ti assegna il tuo Digimon partner — dopo lo Scan potrai completare i punteggi con la Creazione Guidata.</div>
+            <a href="digivice-scan.html" target="_blank" class="btn solid" style="text-decoration:none;display:inline-block;padding:10px 16px;">📡 Avvia Bio-Resonance Scan</a>
           `}
         </div>` : (!target.digimon.approved ? `
         <div class="hud-frame card">

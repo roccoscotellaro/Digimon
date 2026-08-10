@@ -1056,6 +1056,19 @@
     else { renderPlayer(); }
   }
 
+  // Aspetta che un elemento compaia nel DOM (es. 'sidebar-content' dopo che renderPlayer ha finito
+  // le sue chiamate di rete), invece di un timeout fisso che può scadere prima che la pagina sia pronta.
+  function waitForElement(id, maxWaitMs){
+    return new Promise(resolve=>{
+      const start = Date.now();
+      (function poll(){
+        const el = document.getElementById(id);
+        if(el || Date.now()-start > (maxWaitMs||8000)){ resolve(el); return; }
+        setTimeout(poll, 100);
+      })();
+    });
+  }
+
   function topbar(subtitle){
     return `
     <div class="hud-frame topbar">
@@ -1129,10 +1142,10 @@
       // dato che non c'è nulla da "azzerare" su un personaggio nuovo).
       const prefill = getStarterPrefillFromURL();
       if(prefill && role==='player' && !member.digimon.name){
-        setTimeout(()=>{
+        waitForElement('sidebar-content').then(()=>{
           openCreationWizard(member, 'sidebar-content', prefill, true);
           clearStarterPrefillFromURL();
-        }, 50);
+        });
       }
     };
   }
@@ -6854,10 +6867,9 @@
       const existing = roster.find(m=>m.username===session.username);
       const member = normalizeMember(existing || { username: session.username, role: session.role });
       if(!member.digimon.name){
-        setTimeout(()=>{
-          openCreationWizard(member, 'sidebar-content', prefill, true);
-          clearStarterPrefillFromURL();
-        }, 300);
+        await waitForElement('sidebar-content');
+        openCreationWizard(member, 'sidebar-content', prefill, true);
+        clearStarterPrefillFromURL();
       } else {
         clearStarterPrefillFromURL();
       }
@@ -6877,7 +6889,8 @@
       const existing = roster.find(m=>m.username===session.username);
       const member = normalizeMember(existing || { username: session.username, role: session.role });
       if(!member.digimon.name){
-        setTimeout(()=>{ openCreationWizard(member, 'sidebar-content', null, true); }, 300);
+        await waitForElement('sidebar-content');
+        openCreationWizard(member, 'sidebar-content', null, true);
       }
     }catch(e){}
   })();
