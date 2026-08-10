@@ -180,6 +180,9 @@
     .row > *{flex:1 1 100%;min-width:0;}
     .grid-stats{grid-template-columns:repeat(3,1fr);}
     .stat-box{padding:6px 3px;}
+    /* Schede pieghevoli: tocca il titolo di una scheda per aprirla/chiuderla */
+    .hud-frame.card .section-title{cursor:pointer;user-select:none;}
+    .hud-frame.card.collapsed{padding-bottom:14px;}
     .stat-box .v{font-size:16px;}
     .moves-grid{grid-template-columns:1fr;}
     .role-pick{flex-direction:column;}
@@ -6662,6 +6665,77 @@
       if(dexCanEditGlobal && session) bindDexEditButtons(session.code);
     }
   });
+
+  // ---------- schede pieghevoli su mobile ----------
+  // Tocca il titolo (.section-title) di una .hud-frame.card per aprirla/chiuderla.
+  // Lo stato "chiusa" è tenuto in un Set separato dal DOM (chiave = testo del titolo),
+  // perché il polling ogni 4s rigenera l'HTML delle card e perderebbe lo stato altrimenti.
+  const __collapsedCardKeys = new Set();
+
+  function __cardTitleKey(card){
+    if(card.id) return 'id:' + card.id;
+    const t = card.querySelector('.section-title');
+    if(!t) return null;
+    return 'txt:' + t.textContent.replace('▾','').replace('▸','').trim();
+  }
+
+  function __applyCollapseToCard(card){
+    const titleEl = card.querySelector('.section-title');
+    if(!titleEl) return;
+    const key = __cardTitleKey(card);
+    const shouldCollapse = key && __collapsedCardKeys.has(key);
+    let headerChild = titleEl;
+    while(headerChild.parentElement && headerChild.parentElement !== card) headerChild = headerChild.parentElement;
+    Array.from(card.children).forEach(child=>{
+      if(child === headerChild) return;
+      child.style.display = shouldCollapse ? 'none' : '';
+    });
+    card.classList.toggle('collapsed', !!shouldCollapse);
+    if(!titleEl.querySelector('.fold-icon')){
+      const icon = document.createElement('span');
+      icon.className = 'fold-icon';
+      icon.style.float = 'right';
+      icon.style.opacity = '0.6';
+      titleEl.appendChild(icon);
+    }
+    titleEl.querySelector('.fold-icon').textContent = shouldCollapse ? '▸' : '▾';
+  }
+
+  function __refreshAllCollapsibleCards(){
+    if(window.innerWidth > 760) return;
+    document.querySelectorAll('.hud-frame.card').forEach(__applyCollapseToCard);
+  }
+
+  document.addEventListener('click', function(e){
+    if(window.innerWidth > 760) return;
+    if(e.target.closest('button, a, input, select, textarea, label')) return;
+    const titleEl = e.target.closest('.section-title');
+    if(!titleEl) return;
+    const card = titleEl.closest('.hud-frame.card');
+    if(!card) return;
+    // Solo il titolo "principale" (il primo .section-title della card) apre/chiude l'intera scheda,
+    // per non interferire con eventuali sotto-titoli interni.
+    if(card.querySelector('.section-title') !== titleEl) return;
+    const key = __cardTitleKey(card);
+    if(!key) return;
+    if(__collapsedCardKeys.has(key)) __collapsedCardKeys.delete(key);
+    else __collapsedCardKeys.add(key);
+    __applyCollapseToCard(card);
+  });
+
+  // Le card vengono rigenerate di continuo (polling, cambi tab, ecc.): un MutationObserver
+  // leggero riapplica lo stato pieghevole ogni volta che il contenuto cambia, con un piccolo
+  // debounce per non lavorare ad ogni singola modifica del DOM.
+  let __collapseRefreshTimer = null;
+  const __collapseObserver = new MutationObserver(()=>{
+    if(__collapseRefreshTimer) return;
+    __collapseRefreshTimer = setTimeout(()=>{
+      __collapseRefreshTimer = null;
+      __refreshAllCollapsibleCards();
+    }, 150);
+  });
+  __collapseObserver.observe(document.body, { childList:true, subtree:true });
+  window.addEventListener('resize', __refreshAllCollapsibleCards);
 
   // ---------- boot ----------
   const restored = loadSession();

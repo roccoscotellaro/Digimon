@@ -96,6 +96,11 @@
     .row{flex-wrap:wrap;}
     .row > *{flex:1 1 100%;}
     .grid-stats{grid-template-columns:repeat(3,1fr);}
+    /* Gruppi per stage pieghevoli: tocca il titolo dello stage per aprire/chiudere */
+    .dex-stage-title{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;}
+    .dex-stage-title .fold-icon{transition:transform .15s;display:inline-block;}
+    .dex-stage-title.collapsed .fold-icon{transform:rotate(-90deg);}
+    .dex-stage-group.collapsed{display:none !important;}
   }
 </style>
 </head>
@@ -903,15 +908,28 @@ Devimon: https://..."></textarea>
     });
     const stagesToShow = STAGE_ORDER.filter(s=>groups[s]).concat(groups['🛡️ Armor'] ? ['🛡️ Armor'] : []).concat(groups['🤝 Jogress/Fusione'] ? ['🤝 Jogress/Fusione'] : []).concat(groups['✨ Spirito'] ? ['✨ Spirito'] : []).concat(groups['🔥 Burst Mode'] ? ['🔥 Burst Mode'] : []).concat(groups['Altro'] ? ['Altro'] : []);
 
-    grid.innerHTML = stagesToShow.map(stage=>{
+    grid.innerHTML = stagesToShow.map((stage,gi)=>{
       const entries = groups[stage].slice().sort((a,b)=>a.name.localeCompare(b.name, 'it', {sensitivity:'base'}));
       return `
         <div style="grid-column:1/-1;margin-top:10px;">
-          <div class="section-title" style="margin-bottom:8px;font-size:12px;">${escapeHTML(stage)} (${entries.length})</div>
+          <div class="section-title dex-stage-title" data-stage-toggle="${gi}" style="margin-bottom:8px;font-size:12px;">${escapeHTML(stage)} (${entries.length}) <span class="fold-icon">▾</span></div>
         </div>
-        ${entries.map(cardHTML).join('')}
+        <div class="dex-stage-group" data-stage-group="${gi}" style="display:contents;">
+          ${entries.map(cardHTML).join('')}
+        </div>
       `;
     }).join('');
+
+    grid.querySelectorAll('[data-stage-toggle]').forEach(title=>{
+      title.onclick = ()=>{
+        if(window.innerWidth > 760) return;
+        const idx = title.getAttribute('data-stage-toggle');
+        const group = grid.querySelector(`[data-stage-group="${idx}"]`);
+        if(!group) return;
+        title.classList.toggle('collapsed');
+        group.classList.toggle('collapsed');
+      };
+    });
 
     grid.querySelectorAll('[data-id]').forEach(card=>{
       card.onclick = ()=>{

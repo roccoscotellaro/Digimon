@@ -49,13 +49,17 @@
     background:var(--panel-2); border:1px solid var(--line); color:var(--text);
     padding:8px 10px; font-family:'Manrope',sans-serif; font-size:13px; border-radius:var(--radius); width:100%;
   }
-  input:focus, select:focus{outline:none;border-color:var(--cyan-dim);}
+  textarea{resize:vertical;min-height:56px;font-family:'Manrope',sans-serif;}
+  input:focus, select:focus, textarea:focus{outline:none;border-color:var(--cyan-dim);}
   label{font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;display:block;margin-bottom:4px;}
   .field{margin-bottom:12px;}
-  .section-title{font-size:12px;text-transform:uppercase;color:var(--cyan);letter-spacing:0.08em;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);}
+  .row{display:flex;gap:10px;}
+  .row > .field{flex:1;min-width:0;}
+  .section-title{font-size:12px;text-transform:uppercase;color:var(--cyan);letter-spacing:0.08em;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;}
   .card{padding:18px;margin-bottom:16px;}
   .grid-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;}
   .grid-skills{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
   .stat-box{text-align:center;padding:10px 4px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);}
   .stat-box .l{font-size:9px;color:var(--text-mute);text-transform:uppercase;margin-top:4px;}
   .stat-box input{text-align:center;padding:6px;margin-top:4px;}
@@ -65,12 +69,11 @@
   .portrait-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:6px;}
   .portrait{width:120px;height:120px;border-radius:50%;object-fit:cover;border:2px solid var(--cyan-dim);background:#05070a;}
   .portrait-placeholder{width:120px;height:120px;border-radius:50%;background:var(--panel-2);border:2px dashed var(--line);display:flex;align-items:center;justify-content:center;font-size:34px;color:var(--text-mute);}
-  .readonly-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px;}
-  .readonly-row:last-child{border-bottom:none;}
-  .readonly-row .l{color:var(--text-mute);text-transform:uppercase;font-size:10px;letter-spacing:0.04em;}
-  .readonly-row .v{color:var(--text);}
-  .tag-list{display:flex;flex-wrap:wrap;gap:6px;}
-  .tag{font-size:10px;padding:3px 9px;border:1px solid var(--line);color:var(--text-mute);border-radius:20px;}
+  .list-item{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin-bottom:8px;}
+  .list-item .top-row{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .list-item .name{font-weight:700;font-size:13px;}
+  .list-item .sub{font-size:11px;color:var(--text-mute);margin-top:4px;}
+  .add-row{border-top:1px dashed var(--line);padding-top:12px;margin-top:12px;}
   .muted{color:var(--text-mute);font-size:11px;}
   .err{color:var(--danger);font-size:11px;margin-top:6px;}
   .ok-msg{color:var(--cyan);font-size:11px;margin-top:6px;}
@@ -80,9 +83,15 @@
   .role-pick{display:flex;gap:10px;margin-bottom:16px;}
   .role-pick .btn{flex:1;}
   .role-pick .btn.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
+  .save-bar{position:sticky;bottom:0;padding:14px 0;margin-top:6px;background:linear-gradient(to top, var(--bg) 60%, transparent);}
   @media (max-width: 700px){
     .grid-stats{grid-template-columns:repeat(3,1fr);}
     .app{padding:10px;}
+    /* Schede pieghevoli: tocca il titolo per aprire/chiudere la scheda */
+    .hud-frame.card > .section-title{cursor:pointer;user-select:none;}
+    .hud-frame.card > .section-title .fold-icon{transition:transform .15s;display:inline-block;}
+    .hud-frame.card.collapsed > .section-title .fold-icon{transform:rotate(-90deg);}
+    .hud-frame.card.collapsed > *:not(.section-title){display:none;}
   }
 </style>
 </head>
@@ -98,7 +107,6 @@
   let cachedRoster = [];
   let lastApiError = null;
   let pollTimer = null;
-  let statusMsg = { text:'', ok:false };
 
   const root = document.getElementById('root-app');
 
@@ -128,6 +136,8 @@
     m.tamer.skills = Object.assign((()=>{const s={};SKILL_DEFS.forEach(d=>s[d.key]=0);return s;})(), m.tamer.skills||{});
     if(!Array.isArray(m.tamer.inventory)) m.tamer.inventory = [];
     if(!Array.isArray(m.tamer.torments)) m.tamer.torments = [];
+    if(!m.tamer.majorAspect) m.tamer.majorAspect = { text:'', usesLeft:1 };
+    if(!m.tamer.minorAspect) m.tamer.minorAspect = { text:'', usesLeft:2 };
     return m;
   }
 
@@ -154,14 +164,32 @@
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
   async function uploadImage(code, dataUrl){ return apiPost('/api/upload', { code, dataUrl }); }
 
+  // ---------- collapsible cards (mobile) ----------
+  function enableCollapsibleCards(container){
+    (container||document).querySelectorAll('.hud-frame.card').forEach(card=>{
+      const title = card.querySelector(':scope > .section-title');
+      if(!title || title.dataset.foldBound) return;
+      title.dataset.foldBound = '1';
+      if(!title.querySelector('.fold-icon')){
+        const icon = document.createElement('span');
+        icon.className = 'fold-icon';
+        icon.textContent = '▾';
+        title.appendChild(icon);
+      }
+      title.addEventListener('click', ()=>{
+        if(window.innerWidth > 700) return;
+        card.classList.toggle('collapsed');
+      });
+    });
+  }
+
   // ---------- polling ----------
   function startPolling(){
     if(pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(async ()=>{
       if(!session) return;
       cachedRoster = await getRoster(session.code);
-      // Non tocchiamo il DOM se l'utente sta scrivendo in un campo: aggiorniamo solo se non c'è un editor aperto
-      if(document.activeElement && document.activeElement.tagName === 'INPUT') return;
+      if(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
       render();
     }, 4000);
   }
@@ -244,7 +272,9 @@
     <div class="portrait-wrap">
       ${m.tamer.imageUrl ? `<img class="portrait" src="${escapeAttr(m.tamer.imageUrl)}" />` : `<div class="portrait-placeholder">🪪</div>`}
       <div style="flex:1;min-width:220px;">
-        <div class="pixel-title" style="font-size:22px;color:var(--cyan);text-shadow:0 0 10px rgba(53,232,201,0.4);">${escapeHTML(m.username)}</div>
+        ${editable
+          ? `<div class="field"><label>Nome Utente (login — non modificabile qui)</label><input type="text" value="${escapeAttr(m.username)}" disabled /></div>`
+          : `<div class="pixel-title" style="font-size:22px;color:var(--cyan);text-shadow:0 0 10px rgba(53,232,201,0.4);">${escapeHTML(m.username)}</div>`}
         <div class="muted" style="margin-top:2px;">Tamer — Campagna ${escapeHTML(session.code)}</div>
         ${editable ? `
         <div class="field" style="margin-top:12px;">
@@ -260,22 +290,108 @@
     </div>`;
   }
 
-  function readonlyBlockHTML(m){
+  function statoBlockHTML(m, editable){
     const t = m.tamer;
+    if(!editable){
+      return `
+      <div class="hud-frame card">
+        <div class="section-title"><span>Stato</span></div>
+        <div class="grid-2">
+          <div class="field"><label>Ferite Attuali</label><div class="mono">${t.currentWounds ?? '—'}</div></div>
+          <div class="field"><label>Punti Crescita non spesi</label><div class="mono">${t.unspentGrowthPoints||0}</div></div>
+          <div class="field"><label>Punti Ispirazione</label><div class="mono">${t.inspirationPoints||0}</div></div>
+          <div class="field"><label>Penalità Torment</label><div class="mono">${t.tormentPenalty||0}</div></div>
+        </div>
+      </div>`;
+    }
     return `
-    <div class="card hud-frame">
-      <div class="section-title">Dati di Gioco (gestiti dal Master)</div>
-      <div class="readonly-row"><span class="l">Ferite Attuali</span><span class="v">${t.currentWounds ?? '—'}</span></div>
-      <div class="readonly-row"><span class="l">Punti Crescita non spesi</span><span class="v">${t.unspentGrowthPoints||0}</span></div>
-      <div class="readonly-row"><span class="l">Punti Ispirazione</span><span class="v">${t.inspirationPoints||0}</span></div>
-      <div class="readonly-row"><span class="l">Aspetto Maggiore</span><span class="v">${escapeHTML(t.majorAspect && t.majorAspect.text || '—')}</span></div>
-      <div class="readonly-row"><span class="l">Aspetto Minore</span><span class="v">${escapeHTML(t.minorAspect && t.minorAspect.text || '—')}</span></div>
-      ${t.inventory && t.inventory.length ? `
-      <div style="margin-top:12px;">
-        <div class="l" style="margin-bottom:6px;text-transform:uppercase;font-size:10px;color:var(--text-mute);">Inventario</div>
-        <div class="tag-list">${t.inventory.map(i=>`<span class="tag">${escapeHTML(typeof i==='string'?i:(i.name||''))}</span>`).join('')}</div>
+    <div class="hud-frame card">
+      <div class="section-title"><span>Stato</span></div>
+      <div class="grid-2">
+        <div class="field"><label>Ferite Attuali</label><input type="number" id="p-currentWounds" value="${t.currentWounds ?? 0}" /></div>
+        <div class="field"><label>Punti Crescita non spesi</label><input type="number" id="p-unspentGrowthPoints" value="${t.unspentGrowthPoints||0}" /></div>
+        <div class="field"><label>Punti Ispirazione</label><input type="number" id="p-inspirationPoints" value="${t.inspirationPoints||0}" /></div>
+        <div class="field"><label>Penalità Torment</label><input type="number" id="p-tormentPenalty" value="${t.tormentPenalty||0}" /></div>
+      </div>
+    </div>`;
+  }
+
+  function aspectsBlockHTML(m, editable){
+    const t = m.tamer;
+    if(!editable){
+      return `
+      <div class="hud-frame card">
+        <div class="section-title"><span>Aspetti</span></div>
+        <div class="field"><label>Major Aspect</label><div>${escapeHTML(t.majorAspect.text||'—')} <span class="muted">(${t.majorAspect.usesLeft||0} usi)</span></div></div>
+        <div class="field"><label>Minor Aspect</label><div>${escapeHTML(t.minorAspect.text||'—')} <span class="muted">(${t.minorAspect.usesLeft||0} usi)</span></div></div>
+      </div>`;
+    }
+    return `
+    <div class="hud-frame card">
+      <div class="section-title"><span>Aspetti</span></div>
+      <div class="row">
+        <div class="field"><label>Major Aspect</label><input type="text" id="p-majorText" value="${escapeAttr(t.majorAspect.text||'')}" placeholder="es. Track Star..." /></div>
+        <div class="field" style="max-width:90px;"><label>Usi</label><input type="number" id="p-majorUses" value="${t.majorAspect.usesLeft||0}" /></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Minor Aspect</label><input type="text" id="p-minorText" value="${escapeAttr(t.minorAspect.text||'')}" placeholder="es. Smarter Than They Act..." /></div>
+        <div class="field" style="max-width:90px;"><label>Usi</label><input type="number" id="p-minorUses" value="${t.minorAspect.usesLeft||0}" /></div>
+      </div>
+    </div>`;
+  }
+
+  function inventoryBlockHTML(m, editable){
+    const items = m.tamer.inventory || [];
+    return `
+    <div class="hud-frame card">
+      <div class="section-title"><span>Inventario</span></div>
+      ${items.length===0 ? '<div class="muted">Nessun oggetto.</div>' : items.map((it,i)=>`
+        <div class="list-item">
+          <div class="top-row">
+            <span class="name">${escapeHTML(it.name)} <span class="muted">x${Number(it.qty)||1}</span></span>
+            ${editable ? `<button class="btn ghost small" data-inv-remove="${i}">Rimuovi</button>` : ''}
+          </div>
+          ${it.desc ? `<div class="sub">${escapeHTML(it.desc)}</div>` : ''}
+        </div>
+      `).join('')}
+      ${editable ? `
+      <div class="add-row">
+        <div class="row">
+          <div class="field"><label>Oggetto</label><input type="text" id="p-inv-name" placeholder="es. Digivice" /></div>
+          <div class="field" style="max-width:70px;"><label>Q.tà</label><input type="number" id="p-inv-qty" value="1" min="1" /></div>
+        </div>
+        <div class="field"><label>Descrizione (opz.)</label><input type="text" id="p-inv-desc" placeholder="cosa fa..." /></div>
+        <button class="btn ghost small" id="p-inv-add" style="width:100%;">+ Aggiungi Oggetto</button>
       </div>` : ''}
-      <div class="muted" style="margin-top:14px;">Per modificare inventario, tormenti, aspetti o ferite usa il Tavolo Testuale — qui puoi personalizzare solo punteggi e immagine.</div>
+    </div>`;
+  }
+
+  function tormentsBlockHTML(m, editable){
+    const items = m.tamer.torments || [];
+    return `
+    <div class="hud-frame card">
+      <div class="section-title"><span>Torments</span></div>
+      ${items.length===0 ? '<div class="muted">Nessun Torment registrato.</div>' : items.map((tor,i)=>`
+        <div class="list-item">
+          <div class="top-row">
+            <span class="name">${escapeHTML(tor.name)}</span>
+            <span class="mono">${tor.boxes||0}/10</span>
+          </div>
+          ${editable ? `
+          <div class="top-row" style="margin-top:6px;">
+            <label style="display:flex;align-items:center;gap:6px;margin:0;"><input type="checkbox" data-torment-rest="${i}" ${tor.usedThisRest?'checked':''} style="width:auto;" /> Già tentato (Rest)</label>
+            <button class="btn ghost small" data-torment-remove="${i}">Rimuovi</button>
+          </div>` : ''}
+        </div>
+      `).join('')}
+      ${editable ? `
+      <div class="add-row">
+        <div class="row">
+          <div class="field"><label>Nome Torment</label><input type="text" id="p-tor-name" placeholder="nome" /></div>
+          <div class="field" style="max-width:90px;"><label>Caselle</label><input type="number" id="p-tor-boxes" value="4" min="0" max="10" /></div>
+        </div>
+        <button class="btn ghost small" id="p-tor-add" style="width:100%;">+ Aggiungi Torment</button>
+      </div>` : ''}
     </div>`;
   }
 
@@ -290,11 +406,11 @@
       target = players.find(p=>p.username===selected) || players[0] || null;
       selectorHTML = `
       <div class="hud-frame card">
-        <div class="section-title">Seleziona Giocatore</div>
+        <div class="section-title"><span>Seleziona Giocatore</span></div>
         <select id="p-select-player">
           ${players.length===0 ? '<option>— nessun giocatore —</option>' : players.map(p=>`<option value="${escapeAttr(p.username)}" ${target && target.username===p.username?'selected':''}>${escapeHTML(p.username)}</option>`).join('')}
         </select>
-        <div class="muted" style="margin-top:8px;">Come Master vedi la scheda in sola lettura. Per una modifica completa usa "Gestisci" nel Tavolo.</div>
+        <div class="muted" style="margin-top:8px;">Come Master vedi la scheda in sola lettura.</div>
       </div>`;
     } else {
       target = cachedRoster.find(m=>m.username===session.username);
@@ -311,21 +427,24 @@
           ${portraitBlockHTML(target, editable)}
         </div>
         <div class="hud-frame card">
-          <div class="section-title">Punteggi Base</div>
+          <div class="section-title"><span>Punteggi Base</span></div>
           <div class="grid-stats">
             ${STAT_DEFS.map(d=>statBoxHTML(target, d.key, d.label, editable)).join('')}
           </div>
         </div>
         <div class="hud-frame card">
-          <div class="section-title">Skill</div>
+          <div class="section-title"><span>Skill</span></div>
           <div class="grid-skills">
             ${SKILL_DEFS.map(d=>skillBoxHTML(target, d, editable)).join('')}
           </div>
         </div>
-        ${readonlyBlockHTML(target)}
+        ${statoBlockHTML(target, editable)}
+        ${aspectsBlockHTML(target, editable)}
+        ${inventoryBlockHTML(target, editable)}
+        ${tormentsBlockHTML(target, editable)}
         ${editable ? `
-        <div class="hud-frame card">
-          <button class="btn solid" id="p-save" style="width:100%;padding:12px;">💾 Salva Punteggi e Immagine</button>
+        <div class="save-bar">
+          <button class="btn solid" id="p-save" style="width:100%;padding:12px;">💾 Salva Scheda</button>
           <div id="p-save-msg" style="margin-top:8px;"></div>
         </div>` : ''}
         `}
@@ -340,6 +459,7 @@
 
     if(target && editable){
       bindImageUpload(target);
+      bindListEditors(target);
       document.getElementById('p-save').onclick = async ()=>{
         STAT_DEFS.forEach(d=>{
           const el = document.getElementById('p-stat-'+d.key);
@@ -351,6 +471,14 @@
         });
         const imgEl = document.getElementById('p-imageUrl');
         if(imgEl) target.tamer.imageUrl = imgEl.value.trim();
+        target.tamer.currentWounds = Math.max(0, Number(document.getElementById('p-currentWounds').value)||0);
+        target.tamer.unspentGrowthPoints = Math.max(0, Number(document.getElementById('p-unspentGrowthPoints').value)||0);
+        target.tamer.inspirationPoints = Math.max(0, Number(document.getElementById('p-inspirationPoints').value)||0);
+        target.tamer.tormentPenalty = Number(document.getElementById('p-tormentPenalty').value)||0;
+        target.tamer.majorAspect.text = document.getElementById('p-majorText').value.trim();
+        target.tamer.majorAspect.usesLeft = Math.max(0, Number(document.getElementById('p-majorUses').value)||0);
+        target.tamer.minorAspect.text = document.getElementById('p-minorText').value.trim();
+        target.tamer.minorAspect.usesLeft = Math.max(0, Number(document.getElementById('p-minorUses').value)||0);
 
         const msgEl = document.getElementById('p-save-msg');
         msgEl.innerHTML = '<span class="muted">Salvataggio...</span>';
@@ -359,6 +487,50 @@
         if(ok) cachedRoster = await getRoster(session.code);
       };
     }
+
+    enableCollapsibleCards(root);
+  }
+
+  function bindListEditors(target){
+    root.querySelectorAll('[data-inv-remove]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        target.tamer.inventory.splice(Number(btn.getAttribute('data-inv-remove')),1);
+        await saveMember(session.code, target);
+        renderPage();
+      };
+    });
+    const invAdd = document.getElementById('p-inv-add');
+    if(invAdd) invAdd.onclick = async ()=>{
+      const name = document.getElementById('p-inv-name').value.trim();
+      if(!name) return;
+      const qty = Number(document.getElementById('p-inv-qty').value)||1;
+      const desc = document.getElementById('p-inv-desc').value.trim();
+      target.tamer.inventory.push({ name, qty, desc });
+      await saveMember(session.code, target);
+      renderPage();
+    };
+    root.querySelectorAll('[data-torment-remove]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        target.tamer.torments.splice(Number(btn.getAttribute('data-torment-remove')),1);
+        await saveMember(session.code, target);
+        renderPage();
+      };
+    });
+    root.querySelectorAll('[data-torment-rest]').forEach(chk=>{
+      chk.onchange = async ()=>{
+        target.tamer.torments[Number(chk.getAttribute('data-torment-rest'))].usedThisRest = chk.checked;
+        await saveMember(session.code, target);
+      };
+    });
+    const torAdd = document.getElementById('p-tor-add');
+    if(torAdd) torAdd.onclick = async ()=>{
+      const name = document.getElementById('p-tor-name').value.trim();
+      if(!name) return;
+      const boxes = Math.max(0, Math.min(10, Number(document.getElementById('p-tor-boxes').value)||0));
+      target.tamer.torments.push({ name, boxes, usedThisRest:false });
+      await saveMember(session.code, target);
+      renderPage();
+    };
   }
 
   function bindImageUpload(target){

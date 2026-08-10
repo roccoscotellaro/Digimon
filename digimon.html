@@ -49,27 +49,29 @@
     background:var(--panel-2); border:1px solid var(--line); color:var(--text);
     padding:8px 10px; font-family:'Manrope',sans-serif; font-size:13px; border-radius:var(--radius); width:100%;
   }
-  input:focus, select:focus{outline:none;border-color:var(--cyan-dim);}
+  textarea{resize:vertical;min-height:56px;font-family:'Manrope',sans-serif;}
+  input:focus, select:focus, textarea:focus{outline:none;border-color:var(--cyan-dim);}
+  input[type=color]{padding:2px;height:36px;}
   label{font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;display:block;margin-bottom:4px;}
   .field{margin-bottom:12px;}
-  .section-title{font-size:12px;text-transform:uppercase;color:var(--dchroma);letter-spacing:0.08em;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);}
+  .row{display:flex;gap:10px;}
+  .row > .field{flex:1;min-width:0;}
+  .section-title{font-size:12px;text-transform:uppercase;color:var(--dchroma);letter-spacing:0.08em;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;}
   .card{padding:18px;margin-bottom:16px;}
   .grid-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
   .stat-box{text-align:center;padding:10px 4px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);}
   .stat-box .l{font-size:9px;color:var(--text-mute);text-transform:uppercase;margin-top:4px;}
   .stat-box input{text-align:center;padding:6px;margin-top:4px;}
   .portrait-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:6px;}
   .portrait{width:120px;height:120px;border-radius:12px;object-fit:cover;border:2px solid var(--dchroma);background:#05070a;}
   .portrait-placeholder{width:120px;height:120px;border-radius:12px;background:var(--panel-2);border:2px dashed var(--line);display:flex;align-items:center;justify-content:center;font-size:34px;color:var(--text-mute);}
-  .readonly-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px;}
-  .readonly-row:last-child{border-bottom:none;}
-  .readonly-row .l{color:var(--text-mute);text-transform:uppercase;font-size:10px;letter-spacing:0.04em;}
-  .readonly-row .v{color:var(--text);}
-  .tag{font-size:10px;padding:3px 9px;border:1px solid var(--line);color:var(--text-mute);border-radius:20px;}
-  .tag-list{display:flex;flex-wrap:wrap;gap:6px;}
-  .move-card{background:var(--panel-2);border:1px solid var(--line);padding:10px;border-radius:var(--radius);margin-bottom:8px;}
-  .move-card .name{font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--dchroma);}
-  .move-card .desc{font-size:11px;color:var(--text-mute);margin-top:3px;}
+  .list-item{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin-bottom:8px;}
+  .list-item .top-row{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .list-item .name{font-weight:700;font-size:13px;}
+  .list-item .sub{font-size:11px;color:var(--text-mute);margin-top:4px;}
+  .add-row{border-top:1px dashed var(--line);padding-top:12px;margin-top:12px;}
   .muted{color:var(--text-mute);font-size:11px;}
   .err{color:var(--danger);font-size:11px;margin-top:6px;}
   .ok-msg{color:var(--dchroma);font-size:11px;margin-top:6px;}
@@ -79,9 +81,15 @@
   .role-pick{display:flex;gap:10px;margin-bottom:16px;}
   .role-pick .btn{flex:1;}
   .role-pick .btn.active{background:rgba(200,150,255,0.12);border-color:var(--dchroma);color:var(--dchroma);}
+  .save-bar{position:sticky;bottom:0;padding:14px 0;margin-top:6px;background:linear-gradient(to top, var(--bg) 60%, transparent);}
   @media (max-width: 700px){
     .grid-stats{grid-template-columns:repeat(3,1fr);}
+    .grid-3{grid-template-columns:1fr 1fr;}
     .app{padding:10px;}
+    .hud-frame.card > .section-title{cursor:pointer;user-select:none;}
+    .hud-frame.card > .section-title .fold-icon{transition:transform .15s;display:inline-block;}
+    .hud-frame.card.collapsed > .section-title .fold-icon{transform:rotate(-90deg);}
+    .hud-frame.card.collapsed > *:not(.section-title){display:none;}
   }
 </style>
 </head>
@@ -103,6 +111,8 @@
     { key:'baseAccuracy', label:'Accuracy' }, { key:'baseDamage', label:'Damage' }, { key:'baseDodge', label:'Dodge' },
     { key:'baseArmor', label:'Armor' }, { key:'baseHealth', label:'Health' }
   ];
+  const STAGES = ['Fresh','Baby','Rookie','Champion','Ultimate','Mega'];
+  const SIZES = ['Small','Medium','Large','Huge'];
 
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s){ return escapeHTML(s); }
@@ -112,7 +122,10 @@
       name:'', stage:'Rookie', personality:'', imageUrl:'',
       maxWounds:5, currentWounds:5, maxMp:3, currentMp:3,
       baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:1,
-      dpTotal:0, qualities:[], size:'Medium', stance:'Neutral', categories:[],
+      dpTotal:0, qualities:[],
+      defaultStage:'Rookie', defaultRange:2, evolutionPoints:0, forcedEvoRoundsLeft:0,
+      battery:0, size:'Medium', stance:'Neutral', chatColor:'#c896ff',
+      resolveCurrent:0, resolveMax:4, hybridMode:false,
       attacks:[]
     };
   }
@@ -120,7 +133,6 @@
     m.digimon = Object.assign(defaultDigimon(), m.digimon||{});
     if(!Array.isArray(m.digimon.qualities)) m.digimon.qualities = [];
     if(!Array.isArray(m.digimon.attacks)) m.digimon.attacks = [];
-    if(!Array.isArray(m.digimon.categories)) m.digimon.categories = [];
     return m;
   }
 
@@ -145,12 +157,30 @@
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
   async function uploadImage(code, dataUrl){ return apiPost('/api/upload', { code, dataUrl }); }
 
+  function enableCollapsibleCards(container){
+    (container||document).querySelectorAll('.hud-frame.card').forEach(card=>{
+      const title = card.querySelector(':scope > .section-title');
+      if(!title || title.dataset.foldBound) return;
+      title.dataset.foldBound = '1';
+      if(!title.querySelector('.fold-icon')){
+        const icon = document.createElement('span');
+        icon.className = 'fold-icon';
+        icon.textContent = '▾';
+        title.appendChild(icon);
+      }
+      title.addEventListener('click', ()=>{
+        if(window.innerWidth > 700) return;
+        card.classList.toggle('collapsed');
+      });
+    });
+  }
+
   function startPolling(){
     if(pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(async ()=>{
       if(!session) return;
       cachedRoster = await getRoster(session.code);
-      if(document.activeElement && document.activeElement.tagName === 'INPUT') return;
+      if(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
       render();
     }, 4000);
   }
@@ -227,9 +257,19 @@
     <div class="portrait-wrap">
       ${d.imageUrl ? `<img class="portrait" src="${escapeAttr(d.imageUrl)}" />` : `<div class="portrait-placeholder">👾</div>`}
       <div style="flex:1;min-width:220px;">
+        ${editable ? `
+        <div class="row">
+          <div class="field"><label>Nome</label><input type="text" id="d-name" value="${escapeAttr(d.name||'')}" placeholder="Nome del Digimon" /></div>
+          <div class="field" style="max-width:150px;"><label>Stage</label>
+            <select id="d-stage">${STAGES.map(s=>`<option value="${s}" ${d.stage===s?'selected':''}>${s}</option>`).join('')}</select>
+          </div>
+        </div>
+        <div class="field"><label>Personalità</label><textarea id="d-personality" placeholder="descrivi la personalità...">${escapeHTML(d.personality||'')}</textarea></div>
+        ` : `
         <div class="pixel-title" style="font-size:22px;color:var(--dchroma);text-shadow:0 0 10px rgba(200,150,255,0.4);">${escapeHTML(d.name || '— nessun Digimon —')}</div>
         <div class="muted" style="margin-top:2px;">${escapeHTML(d.stage||'')} · Partner di ${escapeHTML(m.username)}</div>
-        ${d.categories && d.categories.length ? `<div class="tag-list" style="margin-top:8px;">${d.categories.map(c=>`<span class="tag">${escapeHTML(c)}</span>`).join('')}</div>` : ''}
+        ${d.personality ? `<div class="muted" style="margin-top:6px;">${escapeHTML(d.personality)}</div>` : ''}
+        `}
         ${editable ? `
         <div class="field" style="margin-top:12px;">
           <label>URL Immagine</label>
@@ -244,33 +284,115 @@
     </div>`;
   }
 
-  function readonlyBlockHTML(m){
+  function statoBlockHTML(m, editable){
     const d = m.digimon;
+    if(!editable){
+      return `
+      <div class="hud-frame card">
+        <div class="section-title"><span>Stato di Gioco</span></div>
+        <div class="grid-3">
+          <div class="field"><label>Ferite</label><div class="mono">${d.currentWounds ?? '—'} / ${d.maxWounds ?? '—'}</div></div>
+          <div class="field"><label>MP</label><div class="mono">${d.currentMp ?? '—'} / ${d.maxMp ?? '—'}</div></div>
+          <div class="field"><label>Resolve</label><div class="mono">${d.resolveCurrent ?? '—'} / ${d.resolveMax ?? '—'}</div></div>
+          <div class="field"><label>Taglia</label><div>${escapeHTML(d.size||'—')}</div></div>
+          <div class="field"><label>Stance</label><div>${escapeHTML(d.stance||'—')}</div></div>
+          <div class="field"><label>DP Totali</label><div class="mono">${d.dpTotal||0}</div></div>
+        </div>
+      </div>`;
+    }
     return `
     <div class="hud-frame card">
-      <div class="section-title">Dati di Gioco (gestiti dal Master)</div>
-      <div class="readonly-row"><span class="l">Personalità</span><span class="v">${escapeHTML(d.personality || '—')}</span></div>
-      <div class="readonly-row"><span class="l">Ferite</span><span class="v">${d.currentWounds ?? '—'} / ${d.maxWounds ?? '—'}</span></div>
-      <div class="readonly-row"><span class="l">MP</span><span class="v">${d.currentMp ?? '—'} / ${d.maxMp ?? '—'}</span></div>
-      <div class="readonly-row"><span class="l">Taglia</span><span class="v">${escapeHTML(d.size||'—')}</span></div>
-      <div class="readonly-row"><span class="l">DP Totali</span><span class="v">${d.dpTotal||0}</span></div>
-      ${d.qualities && d.qualities.length ? `
-      <div style="margin-top:12px;">
-        <div class="l" style="margin-bottom:6px;text-transform:uppercase;font-size:10px;color:var(--text-mute);">Qualities</div>
-        <div class="tag-list">${d.qualities.map(q=>`<span class="tag">${escapeHTML(q.name||'')}</span>`).join('')}</div>
-      </div>` : ''}
-      <div class="muted" style="margin-top:14px;">Per modificare nome, stage, evoluzioni, Qualities o mosse usa il Tavolo Testuale o il Digidex — qui puoi personalizzare solo i punteggi base e l'immagine.</div>
-    </div>
-    ${d.attacks && d.attacks.length ? `
+      <div class="section-title"><span>Stato di Gioco</span></div>
+      <div class="grid-3">
+        <div class="row" style="grid-column:1/-1;">
+          <div class="field"><label>Ferite Attuali</label><input type="number" id="d-currentWounds" value="${d.currentWounds ?? 0}" /></div>
+          <div class="field"><label>Ferite Massime</label><input type="number" id="d-maxWounds" value="${d.maxWounds ?? 0}" /></div>
+          <div class="field"><label>MP Attuali</label><input type="number" id="d-currentMp" value="${d.currentMp ?? 0}" /></div>
+          <div class="field"><label>MP Massimi</label><input type="number" id="d-maxMp" value="${d.maxMp ?? 0}" /></div>
+        </div>
+        <div class="field"><label>Resolve Attuale</label><input type="number" id="d-resolveCurrent" value="${d.resolveCurrent ?? 0}" /></div>
+        <div class="field"><label>Resolve Massimo</label><input type="number" id="d-resolveMax" value="${d.resolveMax ?? 0}" /></div>
+        <div class="field"><label>Battery</label><input type="number" id="d-battery" value="${d.battery ?? 0}" /></div>
+        <div class="field"><label>Taglia</label>
+          <select id="d-size">${SIZES.map(s=>`<option value="${s}" ${d.size===s?'selected':''}>${s}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Stance</label><input type="text" id="d-stance" value="${escapeAttr(d.stance||'')}" /></div>
+        <div class="field"><label>Colore Chat</label><input type="color" id="d-chatColor" value="${escapeAttr(d.chatColor||'#c896ff')}" /></div>
+        <div class="field"><label>DP Totali</label><input type="number" id="d-dpTotal" value="${d.dpTotal||0}" /></div>
+        <div class="field"><label>Default Range</label><input type="number" id="d-defaultRange" value="${d.defaultRange ?? 2}" /></div>
+        <div class="field"><label>Evolution Points</label><input type="number" id="d-evolutionPoints" value="${d.evolutionPoints||0}" /></div>
+        <div class="field"><label>Forced Evo Rounds</label><input type="number" id="d-forcedEvoRoundsLeft" value="${d.forcedEvoRoundsLeft||0}" /></div>
+        <div class="field"><label>Default Stage</label>
+          <select id="d-defaultStage">${STAGES.map(s=>`<option value="${s}" ${d.defaultStage===s?'selected':''}>${s}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="d-hybridMode" ${d.hybridMode?'checked':''} style="width:auto;" /> Hybrid Mode</label></div>
+      </div>
+    </div>`;
+  }
+
+  function qualitiesBlockHTML(m, editable){
+    const items = m.digimon.qualities || [];
+    return `
     <div class="hud-frame card">
-      <div class="section-title">Mosse</div>
-      ${d.attacks.map(a=>`
-        <div class="move-card">
-          <div class="name">${escapeHTML(a.name||'')} ${a.signature?'⭐':''}</div>
-          <div class="desc">${escapeHTML(a.desc||'')}</div>
+      <div class="section-title"><span>Qualities</span></div>
+      ${items.length===0 ? '<div class="muted">Nessuna Quality.</div>' : items.map((q,i)=>`
+        <div class="list-item">
+          <div class="top-row">
+            <span class="name">${escapeHTML(q.name||'')} ${q.cost!=null?`<span class="muted">(${q.cost} DP)</span>`:''}</span>
+            ${editable ? `<button class="btn ghost small" data-q-remove="${i}">Rimuovi</button>` : ''}
+          </div>
+          ${q.category ? `<div class="sub">${escapeHTML(q.category)}</div>` : ''}
+          ${q.description ? `<div class="sub">${escapeHTML(q.description)}</div>` : ''}
         </div>
       `).join('')}
-    </div>` : ''}`;
+      ${editable ? `
+      <div class="add-row">
+        <div class="row">
+          <div class="field"><label>Nome Quality</label><input type="text" id="d-q-name" placeholder="es. Naturewalk" /></div>
+          <div class="field" style="max-width:90px;"><label>Costo DP</label><input type="number" id="d-q-cost" value="1" /></div>
+        </div>
+        <div class="field"><label>Categoria (opz.)</label><input type="text" id="d-q-category" placeholder="es. Movement" /></div>
+        <div class="field"><label>Descrizione (opz.)</label><input type="text" id="d-q-desc" placeholder="effetto..." /></div>
+        <button class="btn ghost small" id="d-q-add" style="width:100%;">+ Aggiungi Quality</button>
+        <div class="muted" style="margin-top:8px;">Per Qualities con meccaniche speciali guidate (rank, DP budget, effetti automatici) usa la Creation Wizard nel Tavolo — qui l'inserimento è libero.</div>
+      </div>` : ''}
+    </div>`;
+  }
+
+  function attacksBlockHTML(m, editable){
+    const items = m.digimon.attacks || [];
+    return `
+    <div class="hud-frame card">
+      <div class="section-title"><span>Mosse</span></div>
+      ${items.length===0 ? '<div class="muted">Nessuna mossa.</div>' : items.map((a,i)=>`
+        <div class="list-item">
+          <div class="top-row">
+            <span class="name">${escapeHTML(a.name||'')} ${a.signature?'⭐':''}</span>
+            ${editable ? `<button class="btn ghost small" data-a-remove="${i}">Rimuovi</button>` : ''}
+          </div>
+          <div class="sub">${escapeHTML(a.shape||'')} · ${escapeHTML(a.type||'')}${a.shape==='Range'?` · reach ${a.reach||1}`:''}</div>
+          ${a.desc ? `<div class="sub">${escapeHTML(a.desc)}</div>` : ''}
+        </div>
+      `).join('')}
+      ${editable ? `
+      <div class="add-row">
+        <div class="row">
+          <div class="field"><label>Nome Mossa</label><input type="text" id="d-a-name" placeholder="nome mossa" /></div>
+          <div class="field" style="max-width:110px;"><label>Forma</label>
+            <select id="d-a-shape"><option value="Melee">Melee</option><option value="Range">Range</option></select>
+          </div>
+          <div class="field" style="max-width:110px;"><label>Tipo</label>
+            <select id="d-a-type"><option value="Damage">Damage</option><option value="Support">Support</option></select>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Reach (se Range)</label><input type="number" id="d-a-reach" value="1" min="0" /></div>
+          <div class="field" style="max-width:140px;"><label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="d-a-signature" style="width:auto;" /> Signature Move</label></div>
+        </div>
+        <div class="field"><label>Descrizione</label><textarea id="d-a-desc" placeholder="effetto della mossa..."></textarea></div>
+        <button class="btn ghost small" id="d-a-add" style="width:100%;">+ Aggiungi Mossa</button>
+      </div>` : ''}
+    </div>`;
   }
 
   function renderPage(){
@@ -284,11 +406,11 @@
       target = players.find(p=>p.username===selected) || players[0] || null;
       selectorHTML = `
       <div class="hud-frame card">
-        <div class="section-title">Seleziona Giocatore</div>
+        <div class="section-title"><span>Seleziona Giocatore</span></div>
         <select id="d-select-player">
           ${players.length===0 ? '<option>— nessun giocatore —</option>' : players.map(p=>`<option value="${escapeAttr(p.username)}" ${target && target.username===p.username?'selected':''}>${escapeHTML(p.username)} — ${escapeHTML(p.digimon.name||'(senza Digimon)')}</option>`).join('')}
         </select>
-        <div class="muted" style="margin-top:8px;">Come Master vedi la scheda in sola lettura. Per una modifica completa usa "Gestisci" nel Tavolo o il Digidex.</div>
+        <div class="muted" style="margin-top:8px;">Come Master vedi la scheda in sola lettura.</div>
       </div>`;
     } else {
       target = cachedRoster.find(m=>m.username===session.username);
@@ -305,15 +427,17 @@
           ${portraitBlockHTML(target, editable)}
         </div>
         <div class="hud-frame card">
-          <div class="section-title">Punteggi Base</div>
+          <div class="section-title"><span>Punteggi Base</span></div>
           <div class="grid-stats">
             ${STAT_DEFS.map(d=>statBoxHTML(target, d.key, d.label, editable)).join('')}
           </div>
         </div>
-        ${readonlyBlockHTML(target)}
+        ${statoBlockHTML(target, editable)}
+        ${qualitiesBlockHTML(target, editable)}
+        ${attacksBlockHTML(target, editable)}
         ${editable ? `
-        <div class="hud-frame card">
-          <button class="btn solid" id="d-save" style="width:100%;padding:12px;">💾 Salva Punteggi e Immagine</button>
+        <div class="save-bar">
+          <button class="btn solid" id="d-save" style="width:100%;padding:12px;">💾 Salva Scheda</button>
           <div id="d-save-msg" style="margin-top:8px;"></div>
         </div>` : ''}
         `}
@@ -328,6 +452,7 @@
 
     if(target && editable){
       bindImageUpload(target);
+      bindListEditors(target);
       document.getElementById('d-save').onclick = async ()=>{
         STAT_DEFS.forEach(d=>{
           const el = document.getElementById('d-stat-'+d.key);
@@ -335,6 +460,25 @@
         });
         const imgEl = document.getElementById('d-imageUrl');
         if(imgEl) target.digimon.imageUrl = imgEl.value.trim();
+        target.digimon.name = document.getElementById('d-name').value.trim();
+        target.digimon.stage = document.getElementById('d-stage').value;
+        target.digimon.personality = document.getElementById('d-personality').value.trim();
+        target.digimon.currentWounds = Math.max(0, Number(document.getElementById('d-currentWounds').value)||0);
+        target.digimon.maxWounds = Math.max(0, Number(document.getElementById('d-maxWounds').value)||0);
+        target.digimon.currentMp = Math.max(0, Number(document.getElementById('d-currentMp').value)||0);
+        target.digimon.maxMp = Math.max(0, Number(document.getElementById('d-maxMp').value)||0);
+        target.digimon.resolveCurrent = Math.max(0, Number(document.getElementById('d-resolveCurrent').value)||0);
+        target.digimon.resolveMax = Math.max(0, Number(document.getElementById('d-resolveMax').value)||0);
+        target.digimon.battery = Number(document.getElementById('d-battery').value)||0;
+        target.digimon.size = document.getElementById('d-size').value;
+        target.digimon.stance = document.getElementById('d-stance').value.trim();
+        target.digimon.chatColor = document.getElementById('d-chatColor').value;
+        target.digimon.dpTotal = Number(document.getElementById('d-dpTotal').value)||0;
+        target.digimon.defaultRange = Number(document.getElementById('d-defaultRange').value)||0;
+        target.digimon.evolutionPoints = Number(document.getElementById('d-evolutionPoints').value)||0;
+        target.digimon.forcedEvoRoundsLeft = Number(document.getElementById('d-forcedEvoRoundsLeft').value)||0;
+        target.digimon.defaultStage = document.getElementById('d-defaultStage').value;
+        target.digimon.hybridMode = document.getElementById('d-hybridMode').checked;
 
         const msgEl = document.getElementById('d-save-msg');
         msgEl.innerHTML = '<span class="muted">Salvataggio...</span>';
@@ -343,6 +487,49 @@
         if(ok) cachedRoster = await getRoster(session.code);
       };
     }
+
+    enableCollapsibleCards(root);
+  }
+
+  function bindListEditors(target){
+    root.querySelectorAll('[data-q-remove]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        target.digimon.qualities.splice(Number(btn.getAttribute('data-q-remove')),1);
+        await saveMember(session.code, target);
+        renderPage();
+      };
+    });
+    const qAdd = document.getElementById('d-q-add');
+    if(qAdd) qAdd.onclick = async ()=>{
+      const name = document.getElementById('d-q-name').value.trim();
+      if(!name) return;
+      const cost = Number(document.getElementById('d-q-cost').value)||0;
+      const category = document.getElementById('d-q-category').value.trim();
+      const description = document.getElementById('d-q-desc').value.trim();
+      target.digimon.qualities.push({ name, cost, category, description });
+      await saveMember(session.code, target);
+      renderPage();
+    };
+    root.querySelectorAll('[data-a-remove]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        target.digimon.attacks.splice(Number(btn.getAttribute('data-a-remove')),1);
+        await saveMember(session.code, target);
+        renderPage();
+      };
+    });
+    const aAdd = document.getElementById('d-a-add');
+    if(aAdd) aAdd.onclick = async ()=>{
+      const name = document.getElementById('d-a-name').value.trim();
+      if(!name) return;
+      const shape = document.getElementById('d-a-shape').value;
+      const type = document.getElementById('d-a-type').value;
+      const reach = Number(document.getElementById('d-a-reach').value)||0;
+      const signature = document.getElementById('d-a-signature').checked;
+      const desc = document.getElementById('d-a-desc').value.trim();
+      target.digimon.attacks.push({ name, shape, type, effectKey:'', extraTags:'', desc, signature, reach, areaAttack:false });
+      await saveMember(session.code, target);
+      renderPage();
+    };
   }
 
   function bindImageUpload(target){
