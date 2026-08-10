@@ -228,6 +228,7 @@
   .batt-cell.filled{background:linear-gradient(180deg,#e6cbff,#8a4fe0 55%,#5c2ba3);border-color:#c299f5;
     box-shadow:0 0 9px rgba(168,121,232,0.75), 0 0 2px rgba(230,203,255,0.9), inset 0 0 4px rgba(255,255,255,0.35);
     animation:battcharge 2.4s ease-in-out infinite;}
+  .batt-cell.locked{opacity:0.3;box-shadow:none;background:repeating-linear-gradient(135deg, var(--panel-2) 0 3px, var(--bg) 3px 6px);}
   .batt-cells.mini .batt-cell{height:11px;}
 
   /* ---- Compact HP readout for the Scene and Combat tracker ---- */
@@ -946,6 +947,16 @@
     return { label:'Fallimento', cls:'fail' };
   }
 
+  function tormentBoxesHTML(boxes){
+    boxes = Math.max(0, Math.min(10, Number(boxes)||0));
+    let out = '<span style="display:inline-flex;gap:2px;vertical-align:middle;">';
+    for(let i=1;i<=10;i++){
+      out += `<span style="width:11px;height:11px;border:1px solid var(--cyan-dim);${i<=boxes?'background:var(--cyan);':'background:transparent;'}display:inline-block;border-radius:1px;"></span>`;
+    }
+    out += '</span>';
+    return out;
+  }
+
   function rollTormentCheck(boxes){
     const dice = [rollD6(), rollD6(), rollD6()];
     const total = dice.reduce((a,b)=>a+b,0);
@@ -1309,12 +1320,16 @@
   }
 
   // ---------- battery cells (visual redesign: segmented cells instead of a plain bar) ----------
+  const BATTERY_ABSOLUTE_MAX = 6; // pari al cap a Stage Mega — le celle oltre il cap dello Stage attuale sono mostrate "bloccate"
   function batteryCellsHTML(current, max, mini){
     const m = Math.max(0, Number(max)||0);
     const c = Math.max(0, Number(current)||0);
     if(m<=0) return `<div class="muted" style="font-size:10px;">—</div>`;
     let cells = '';
-    for(let i=0;i<m;i++) cells += `<div class="batt-cell ${i<c?'filled':''}"></div>`;
+    for(let i=0;i<BATTERY_ABSOLUTE_MAX;i++){
+      if(i<m) cells += `<div class="batt-cell ${i<c?'filled':''}"></div>`;
+      else cells += `<div class="batt-cell locked" title="Si sblocca a uno Stage superiore"></div>`;
+    }
     return `<div class="batt-cells${mini?' mini':''}">${cells}</div>`;
   }
 
@@ -2225,7 +2240,14 @@
         <div id="torments-list">
           ${(t.torments||[]).length===0 ? '<div class="muted">Nessun Torment registrato.</div>' : t.torments.map((tor,ti)=>`
             <div class="roster-item" style="padding:8px;margin-bottom:6px;">
-              <div class="flex-between"><b>${escapeHTML(tor.name)}</b><span class="mono">${tor.boxes}/10 Caselle</span></div>
+              <div class="flex-between"><b>${escapeHTML(tor.name)}</b><span class="mono">${tor.boxes}/10</span></div>
+              <div class="flex-between" style="margin-top:6px;">
+                ${tormentBoxesHTML(tor.boxes)}
+                <span style="display:flex;gap:4px;">
+                  <button class="btn ghost small" data-torment-minus="${ti}" style="padding:3px 9px;">−</button>
+                  <button class="btn ghost small" data-torment-plus="${ti}" style="padding:3px 9px;">+</button>
+                </span>
+              </div>
               <div class="row" style="margin-top:6px;">
                 <button class="btn ghost small" data-torment-remove="${ti}" style="flex:1;">Rimuovi</button>
                 <button class="btn small" data-torment-check="${ti}" style="flex:1;" ${tor.usedThisRest?'disabled':''}>${tor.usedThisRest?'Già tentato (Rest)':'Torment Check'}</button>
@@ -2298,6 +2320,22 @@
       cardEl.querySelectorAll('[data-torment-remove]').forEach(btn=>{
         btn.onclick = async ()=>{
           me.tamer.torments.splice(Number(btn.getAttribute('data-torment-remove')),1);
+          await saveMember(session.code, me);
+          renderTamerCard(me);
+        };
+      });
+      cardEl.querySelectorAll('[data-torment-plus]').forEach(btn=>{
+        btn.onclick = async ()=>{
+          const tor = me.tamer.torments[Number(btn.getAttribute('data-torment-plus'))];
+          tor.boxes = Math.min(10, (Number(tor.boxes)||0)+1);
+          await saveMember(session.code, me);
+          renderTamerCard(me);
+        };
+      });
+      cardEl.querySelectorAll('[data-torment-minus]').forEach(btn=>{
+        btn.onclick = async ()=>{
+          const tor = me.tamer.torments[Number(btn.getAttribute('data-torment-minus'))];
+          tor.boxes = Math.max(0, (Number(tor.boxes)||0)-1);
           await saveMember(session.code, me);
           renderTamerCard(me);
         };
