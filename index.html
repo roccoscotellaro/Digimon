@@ -862,17 +862,17 @@
   async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]) : []; }
 
   // ---------- Avvisi (notice) ----------
-  async function getNotices(code){ const d = await apiGet('/api/feedback?resource=notice&code=' + encodeURIComponent(code)); return d ? (d.notices||[]) : []; }
+  async function getNotices(code){ const d = await apiGet('/api/notice?code=' + encodeURIComponent(code)); return d ? (d.notices||[]) : []; }
   async function createNotice(code, { text, imageUrl, targetType, targetUsernames, createdBy }){
-    return apiPost('/api/feedback', { resource:'notice', action:'create', code, text, imageUrl, targetType, targetUsernames, createdBy });
+    return apiPost('/api/notice', { code, text, imageUrl, targetType, targetUsernames, createdBy });
   }
-  async function confirmNotice(code, id, username){ return apiPost('/api/feedback', { resource:'notice', action:'confirm', code, id, username }); }
-  async function closeNotice(code, id){ return apiPost('/api/feedback', { resource:'notice', action:'close', code, id }); }
+  async function confirmNotice(code, id, username){ return apiPut('/api/notice', { code, id, ack: username }); }
+  async function closeNotice(code, id){ return apiPut('/api/notice', { code, id, deactivate: true }); }
 
   // ---------- Segnalazioni Bug ----------
-  async function getBugReports(code){ const d = await apiGet('/api/feedback?resource=bugreport&code=' + encodeURIComponent(code)); return d ? (d.reports||[]) : []; }
-  async function createBugReport(code, username, text){ return apiPost('/api/feedback', { resource:'bugreport', action:'create', code, username, text }); }
-  async function resolveBugReport(code, id, resolved){ return apiPost('/api/feedback', { resource:'bugreport', action:'resolve', code, id, resolved }); }
+  async function getBugReports(code){ const d = await apiGet('/api/notice?resource=bugreport&code=' + encodeURIComponent(code)); return d ? (d.reports||[]) : []; }
+  async function createBugReport(code, username, text){ return apiPost('/api/notice', { resource:'bugreport', code, username, text }); }
+  async function resolveBugReport(code, id, resolved){ return apiPut('/api/notice', { resource:'bugreport', code, id, resolved }); }
   async function getScanLog(code){ const d = await apiGet('/api/upload?resource=scan&code=' + encodeURIComponent(code)); return d ? (d.allLog||[]) : []; }
   async function deleteScanEntry(code, id){ return apiDelete('/api/upload?resource=scan&code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
@@ -4325,7 +4325,7 @@
     }
     function confirmProgressHTML(n){
       const targetUsers = n.target_type==='all' ? players.map(p=>p.username) : (n.target_usernames||[]);
-      const confirmed = (n.confirmations||[]).map(c=>c.username);
+      const confirmed = Array.isArray(n.acked_by) ? n.acked_by : [];
       const pending = targetUsers.filter(u=>!confirmed.includes(u));
       return `
         <div class="muted" style="margin-top:6px;font-size:11px;">
@@ -6591,8 +6591,8 @@
     return list.includes(session.username);
   }
   function isNoticeConfirmedByMe(n){
-    const confs = Array.isArray(n.confirmations) ? n.confirmations : [];
-    return confs.some(c=>c.username===session.username);
+    const acked = Array.isArray(n.acked_by) ? n.acked_by : [];
+    return acked.includes(session.username);
   }
 
   async function checkNoticesForMe(){

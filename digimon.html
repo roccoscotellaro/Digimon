@@ -178,6 +178,13 @@
       lastApiError = null; return data;
     }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
   }
+  async function apiPut(path, body){
+    try{ const r = await fetch(path, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const data = await r.json();
+      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
+      lastApiError = null; return data;
+    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
+  }
   async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]).map(normalizeMember) : []; }
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
   async function uploadImage(code, dataUrl){ return apiPost('/api/upload', { code, dataUrl }); }
@@ -214,11 +221,11 @@
   }
 
   // ---------- Avvisi (notice) ----------
-  async function getNotices(code){ const d = await apiGet('/api/feedback?resource=notice&code=' + encodeURIComponent(code)); return d ? (d.notices||[]) : []; }
-  async function confirmNotice(code, id, username){ return apiPost('/api/feedback', { resource:'notice', action:'confirm', code, id, username }); }
+  async function getNotices(code){ const d = await apiGet('/api/notice?code=' + encodeURIComponent(code)); return d ? (d.notices||[]) : []; }
+  async function confirmNotice(code, id, username){ return apiPut('/api/notice', { code, id, ack: username }); }
 
   // ---------- Segnalazioni Bug ----------
-  async function createBugReport(code, username, text){ return apiPost('/api/feedback', { resource:'bugreport', action:'create', code, username, text }); }
+  async function createBugReport(code, username, text){ return apiPost('/api/notice', { resource:'bugreport', code, username, text }); }
 
   // ---------- Coda Avvisi bloccanti (stessa logica di index.html) ----------
   let noticeQueue = [];
@@ -230,8 +237,8 @@
     return list.includes(session.username);
   }
   function isNoticeConfirmedByMe(n){
-    const confs = Array.isArray(n.confirmations) ? n.confirmations : [];
-    return confs.some(c=>c.username===session.username);
+    const acked = Array.isArray(n.acked_by) ? n.acked_by : [];
+    return acked.includes(session.username);
   }
   async function checkNoticesForMe(){
     if(!session) return;
