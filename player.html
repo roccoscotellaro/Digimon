@@ -757,7 +757,7 @@
     // Il form completo (Punteggi/Skill/Inventario/ecc.) è quello con campi editabili non ancora
     // salvati — mentre è aperto, il polling non deve ridisegnare la pagina sopra le modifiche
     // in corso, altrimenti si perdono silenziosamente ad ogni refresh di 4s.
-    isEditingFullForm = (bodyHTML === null);
+    isEditingFullForm = (bodyHTML === null) || !!creationDraft;
 
     root.innerHTML = `
       <div style="max-width:760px;margin:0 auto;">

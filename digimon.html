@@ -728,8 +728,6 @@
     </div>`;
   }
 
-  // Menu del catalogo Qualities raggruppato per categoria (Attack/Static/Clash/ecc.) invece di
-  // una lista piatta di 228 voci — più facile da scorrere. Ogni categoria è un <optgroup>.
   // Il catalogo indica il requisito di Stage direttamente nel testo della descrizione, con
   // marcatori tipo "STAGE 2+"/"STAGE 3+"/"STAGE 4+" (rispettivamente Rookie/Champion/Ultimate —
   // stesso indice 0-based di STAGES: Fresh,Baby,Rookie,Champion,Ultimate,Mega). Le Qualities senza
@@ -744,13 +742,81 @@
     if(n>=2) return 'Da Rookie (Stage 2+)';
     return 'Sempre disponibili';
   }
-  function qualityCatalogSelectHTML(){
-    const groupOrder = ['Sempre disponibili', 'Da Rookie (Stage 2+)', 'Da Champion (Stage 3+)', 'Da Ultimate (Stage 4+)'];
-    return `<option value="">— scegli una Quality —</option>` + groupOrder.map(grp=>`
-      <optgroup label="${escapeAttr(grp)}">
-        ${QUALITY_CATALOG.map((q,qi)=>({q,qi})).filter(x=>qualityMinStageLabel(x.q)===grp).map(({q,qi})=>`<option value="${qi}">${escapeHTML(q.name)} (${q.category}, ${q.dpPerRank} DP/Rank, max Rank ${q.maxRank})</option>`).join('')}
-      </optgroup>
-    `).join('');
+  const QUALITY_TIER_GROUPS = ['Sempre disponibili', 'Da Rookie (Stage 2+)', 'Da Champion (Stage 3+)', 'Da Ultimate (Stage 4+)'];
+  const QUALITY_TIER_SUFFIX = { 'Sempre disponibili':'always', 'Da Rookie (Stage 2+)':'rookie', 'Da Champion (Stage 3+)':'champion', 'Da Ultimate (Stage 4+)':'ultimate' };
+
+  // Un menu a tendina SEPARATO per ciascuna fascia di Stage (invece di un unico menu enorme con
+  // 228 voci) + un riquadro laterale che mostra nome/categoria/costo/descrizione completa appena
+  // scegli qualcosa — così sai cosa stai per aggiungere prima di confermare.
+  function qualityPickerHTML(prefix){
+    return `
+    <div style="display:flex;gap:14px;flex-wrap:wrap;">
+      <div style="flex:1 1 260px;min-width:220px;">
+        ${QUALITY_TIER_GROUPS.map(grp=>{
+          const suffix = QUALITY_TIER_SUFFIX[grp];
+          const opts = QUALITY_CATALOG.map((q,qi)=>({q,qi})).filter(x=>qualityMinStageLabel(x.q)===grp);
+          if(opts.length===0) return '';
+          return `<div class="field"><label>${escapeHTML(grp)} (${opts.length})</label>
+            <select id="${prefix}-sel-${suffix}" data-quality-tier-select="${prefix}">
+              <option value="">— nessuna —</option>
+              ${opts.map(({q,qi})=>`<option value="${qi}">${escapeHTML(q.name)} (${q.category})</option>`).join('')}
+            </select>
+          </div>`;
+        }).join('')}
+        <div class="row">
+          <div class="field" style="max-width:110px;"><label>Rank</label><input type="number" id="${prefix}-rank" value="1" min="1" /></div>
+          <div class="field" id="${prefix}-stattarget-wrap" style="display:none;"><label>Stat bonus (Naturewalk)</label>
+            <select id="${prefix}-stattarget">
+              <option value="accuracy">Accuracy</option><option value="damage">Damage</option><option value="dodge">Dodge</option><option value="armor">Armor</option><option value="health">Health (manuale)</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn solid small" id="${prefix}-add-catalog" style="width:100%;" disabled>+ Aggiungi Quality</button>
+      </div>
+      <div style="flex:1 1 220px;min-width:200px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:12px;" id="${prefix}-preview">
+        <div class="muted">Seleziona una Quality da uno dei menu per vedere qui nome, categoria, costo e cosa fa esattamente.</div>
+      </div>
+    </div>`;
+  }
+
+  function bindQualityPicker(prefix, onAdd){
+    const selects = QUALITY_TIER_GROUPS.map(g=>document.getElementById(prefix+'-sel-'+QUALITY_TIER_SUFFIX[g])).filter(Boolean);
+    const previewEl = document.getElementById(prefix+'-preview');
+    const statWrap = document.getElementById(prefix+'-stattarget-wrap');
+    const addBtn = document.getElementById(prefix+'-add-catalog');
+    const rankInp = document.getElementById(prefix+'-rank');
+
+    function currentQuality(){
+      for(const sel of selects){ if(sel.value!=='') return QUALITY_CATALOG[Number(sel.value)]; }
+      return null;
+    }
+    function refresh(changedSel){
+      // Solo un menu alla volta può avere una selezione attiva: sceglierne uno svuota gli altri.
+      selects.forEach(sel=>{ if(sel!==changedSel) sel.value=''; });
+      const q = currentQuality();
+      if(addBtn) addBtn.disabled = !q;
+      if(statWrap) statWrap.style.display = (q && q.mechanic==='naturewalk') ? 'block' : 'none';
+      if(rankInp && q) rankInp.max = q.maxRank;
+      if(previewEl){
+        previewEl.innerHTML = q ? `
+          <div style="font-weight:700;color:var(--dchroma);margin-bottom:4px;">${escapeHTML(q.name)}</div>
+          <div class="muted" style="margin-bottom:8px;">${escapeHTML(q.category)} · ${q.dpPerRank} DP/Rank · max Rank ${q.maxRank}</div>
+          <div style="font-size:12px;line-height:1.5;">${escapeHTML(q.desc)}</div>
+        ` : `<div class="muted">Seleziona una Quality da uno dei menu per vedere qui nome, categoria, costo e cosa fa esattamente.</div>`;
+      }
+    }
+    selects.forEach(sel=>{ sel.onchange = ()=>refresh(sel); });
+    if(addBtn){
+      addBtn.onclick = ()=>{
+        const q = currentQuality();
+        if(!q) return;
+        const rank = Math.max(1, Math.min(q.maxRank, Number(rankInp.value)||1));
+        const statTarget = document.getElementById(prefix+'-stattarget') ? document.getElementById(prefix+'-stattarget').value : null;
+        onAdd(q, rank, statTarget);
+        selects.forEach(sel=>{ sel.value=''; });
+        refresh(null);
+      };
+    }
   }
 
   function qualitiesBlockHTML(m, editable){
@@ -774,21 +840,7 @@
       `).join('')}
       ${editable ? `
       <div class="add-row">
-        <div class="field"><label>Scegli dal Catalogo</label>
-          <select id="d-q-catalog">
-            ${qualityCatalogSelectHTML()}
-          </select>
-        </div>
-        <div class="muted" id="d-q-preview" style="margin-bottom:8px;min-height:14px;"></div>
-        <div class="row">
-          <div class="field" style="max-width:110px;"><label>Rank</label><input type="number" id="d-q-rank" value="1" min="1" /></div>
-          <div class="field" id="d-q-stattarget-wrap" style="display:none;"><label>Stat bonus (Naturewalk)</label>
-            <select id="d-q-stattarget">
-              <option value="accuracy">Accuracy</option><option value="damage">Damage</option><option value="dodge">Dodge</option><option value="armor">Armor</option><option value="health">Health (manuale)</option>
-            </select>
-          </div>
-        </div>
-        <button class="btn solid small" id="d-q-add-catalog" style="width:100%;">+ Aggiungi dal Catalogo</button>
+        ${qualityPickerHTML('d-q')}
         <details style="margin-top:10px;">
           <summary class="muted" style="cursor:pointer;">Oppure inserisci una Quality homebrew manualmente</summary>
           <div class="row" style="margin-top:8px;">
@@ -914,21 +966,7 @@
             </div>
           </div>
         `).join('')}
-        <div class="field" style="margin-top:8px;"><label>Scegli dal Catalogo</label>
-          <select id="wiz-q-catalog">
-            ${qualityCatalogSelectHTML()}
-          </select>
-        </div>
-        <div class="muted" id="wiz-q-preview" style="margin-bottom:8px;min-height:14px;"></div>
-        <div class="row">
-          <div class="field" style="max-width:110px;"><label>Rank</label><input type="number" id="wiz-q-rank" value="1" min="1" /></div>
-          <div class="field" id="wiz-q-stattarget-wrap" style="display:none;"><label>Stat bonus (Naturewalk)</label>
-            <select id="wiz-q-stattarget">
-              <option value="accuracy">Accuracy</option><option value="damage">Damage</option><option value="dodge">Dodge</option><option value="armor">Armor</option><option value="health">Health (manuale)</option>
-            </select>
-          </div>
-        </div>
-        <button class="btn ghost small" id="btn-wiz-q-add" style="width:100%;">+ Aggiungi Quality</button>
+        ${qualityPickerHTML('wiz-q')}
         `;
       })()}
       <div style="border-top:1px dashed var(--line);margin:12px 0;"></div>
@@ -978,36 +1016,15 @@
         renderPage();
       };
     });
-    const wizQCatalogSel = document.getElementById('wiz-q-catalog');
-    const wizQStatWrap = document.getElementById('wiz-q-stattarget-wrap');
-    if(wizQCatalogSel){
-      wizQCatalogSel.onchange = ()=>{
-        const q = wizQCatalogSel.value!=='' ? QUALITY_CATALOG[Number(wizQCatalogSel.value)] : null;
-        if(wizQStatWrap) wizQStatWrap.style.display = (q && q.mechanic==='naturewalk') ? 'block' : 'none';
-        const rankInp = document.getElementById('wiz-q-rank');
-        if(rankInp && q) rankInp.max = q.maxRank;
-        const preview = document.getElementById('wiz-q-preview');
-        if(preview) preview.textContent = q ? q.desc : '';
-      };
-    }
-    const wizQAddBtn = document.getElementById('btn-wiz-q-add');
-    if(wizQAddBtn){
-      wizQAddBtn.onclick = ()=>{
-        const idx = document.getElementById('wiz-q-catalog').value;
-        if(idx==='') return;
-        const q = QUALITY_CATALOG[Number(idx)];
-        if(!q) return;
-        const rank = Math.max(1, Math.min(q.maxRank, Number(document.getElementById('wiz-q-rank').value)||1));
-        const statTarget = document.getElementById('wiz-q-stattarget') ? document.getElementById('wiz-q-stattarget').value : null;
-        const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health (manuale)' };
-        const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}`;
-        const cost = q.dpPerRank * rank;
-        const entry = { name, cost, category:q.category, description:q.desc, mechanic:q.mechanic, rank };
-        if(q.mechanic==='naturewalk') entry.statTarget = statTarget;
-        draft.qualities.push(entry);
-        renderPage();
-      };
-    }
+    bindQualityPicker('wiz-q', (q, rank, statTarget)=>{
+      const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health (manuale)' };
+      const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}`;
+      const cost = q.dpPerRank * rank;
+      const entry = { name, cost, category:q.category, description:q.desc, mechanic:q.mechanic, rank };
+      if(q.mechanic==='naturewalk') entry.statTarget = statTarget;
+      draft.qualities.push(entry);
+      renderPage();
+    });
     document.getElementById('btn-wiz-cancel').onclick = ()=>{ creationDraft = null; renderPage(); };
     const saveBtn = document.getElementById('btn-wiz-save');
     if(saveBtn){
@@ -1288,7 +1305,7 @@
     } else {
       bodyHTML = null;
     }
-    isEditingFullForm = (bodyHTML === null);
+    isEditingFullForm = (bodyHTML === null) || !!creationDraft || !!stageBuildDraft;
 
     root.innerHTML = `
       <div style="max-width:760px;margin:0 auto;">
@@ -1449,26 +1466,7 @@
       await saveMember(session.code, target);
       renderPage();
     };
-    const qCatalogSel = document.getElementById('d-q-catalog');
-    const qStatWrap = document.getElementById('d-q-stattarget-wrap');
-    if(qCatalogSel){
-      qCatalogSel.onchange = ()=>{
-        const q = qCatalogSel.value!=='' ? QUALITY_CATALOG[Number(qCatalogSel.value)] : null;
-        if(qStatWrap) qStatWrap.style.display = (q && q.mechanic==='naturewalk') ? 'block' : 'none';
-        const rankInp = document.getElementById('d-q-rank');
-        if(rankInp && q) rankInp.max = q.maxRank;
-        const preview = document.getElementById('d-q-preview');
-        if(preview) preview.textContent = q ? q.desc : '';
-      };
-    }
-    const qAddCatalog = document.getElementById('d-q-add-catalog');
-    if(qAddCatalog) qAddCatalog.onclick = async ()=>{
-      const idx = document.getElementById('d-q-catalog').value;
-      if(idx===''){ return; }
-      const q = QUALITY_CATALOG[Number(idx)];
-      if(!q) return;
-      const rank = Math.max(1, Math.min(q.maxRank, Number(document.getElementById('d-q-rank').value)||1));
-      const statTarget = document.getElementById('d-q-stattarget') ? document.getElementById('d-q-stattarget').value : null;
+    bindQualityPicker('d-q', async (q, rank, statTarget)=>{
       const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health (manuale)' };
       const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}`;
       const cost = q.dpPerRank * rank;
@@ -1477,7 +1475,7 @@
       target.digimon.qualities.push(entry);
       await saveMember(session.code, target);
       renderPage();
-    };
+    });
     root.querySelectorAll('[data-a-remove]').forEach(btn=>{
       btn.onclick = async ()=>{
         target.digimon.attacks.splice(Number(btn.getAttribute('data-a-remove')),1);
