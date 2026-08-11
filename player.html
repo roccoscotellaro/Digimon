@@ -631,7 +631,7 @@
       <div class="grid-stats">
         ${attrs.map(a=>`
           <div class="stat-box">
-            <div class="l">${ATTR_ABBR[a]}</div>
+            <div class="l">${ATTR_ABBR[a]} <span class="muted" style="font-size:9px;">(max ${cap})</span></div>
             <input type="number" data-wiz-attr="${a}" min="1" max="${cap}" value="${draft[a]}" />
           </div>
         `).join('')}
