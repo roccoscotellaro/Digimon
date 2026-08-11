@@ -2451,6 +2451,7 @@
   function snapshotCurrentStatsToStage(d, stage){
     if(!d.stageStats) d.stageStats = {};
     d.stageStats[stage] = {
+      name: d.name,
       baseAccuracy: d.baseAccuracy, baseDamage: d.baseDamage, baseDodge: d.baseDodge,
       baseArmor: d.baseArmor, baseHealth: d.baseHealth, maxWounds: d.maxWounds, maxMp: d.maxMp, size: d.size
     };
@@ -2466,6 +2467,7 @@
       d.baseArmor = saved.baseArmor; d.baseHealth = saved.baseHealth;
       d.maxWounds = saved.maxWounds; d.maxMp = saved.maxMp;
       d.size = saved.size || allowedSizes(newStage)[0] || 'Medium';
+      if(saved.name) d.name = saved.name;
     } else {
       const cfg = STAGE_CREATION[newStage] || { startStat:1 };
       d.baseAccuracy = cfg.startStat; d.baseDamage = cfg.startStat; d.baseDodge = cfg.startStat;
@@ -2788,35 +2790,26 @@
     const cardEl = document.getElementById(containerId);
     if(!cardEl) return;
     const d = me.digimon;
-    // Finché il Master non approva, la scheda Digimon mostra SOLO l'Uovo — nessun nome, stat,
-    // Qualities o altro testo. Il Master vede in più il bottone per approvare.
-    if(!d.approved){
-      const isMasterCtx = containerId && containerId.indexOf('m-digimon-')===0;
+    const isMasterCtx = containerId && containerId.indexOf('m-digimon-')===0;
+    // Finché il Master non approva, la scheda Digimon mostra SOLO l'Uovo al giocatore — nessun nome,
+    // stat, Qualities o altro testo. Il Master invece deve poter vedere tutto per decidere se
+    // approvare, quindi per lui la scheda resta sempre completa.
+    if(!d.approved && !isMasterCtx){
       cardEl.innerHTML = `
         <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 0;gap:14px;">
           ${EGG_IMAGE_URL
             ? `<img src="${escapeAttr(EGG_IMAGE_URL)}" style="width:96px;height:96px;object-fit:contain;" />`
             : `<div style="width:96px;height:96px;border-radius:50%;background:radial-gradient(circle at 35% 30%, #fff8e6, #f0d9a0 60%, #d9b976);display:flex;align-items:center;justify-content:center;font-size:44px;">🥚</div>`}
-          ${isMasterCtx ? `<button class="btn small" id="btn-approve-digimon-${containerId}" style="color:var(--cyan);border-color:var(--cyan-dim);">✅ Approva</button>` : ''}
         </div>
       `;
-      const approveBtn = document.getElementById('btn-approve-digimon-'+containerId);
-      if(approveBtn){
-        approveBtn.onclick = async ()=>{
-          me.digimon.approved = true;
-          await saveMember(session.code, me);
-          await pushLog(session.code, { who:'Master', role:'gm', text: `Il Digimon di ${me.username} (${me.digimon.name||'senza nome'}) è stato approvato dal Master.` });
-          renderDigimonCard(me, containerId);
-          refreshLiveParts();
-        };
-      }
       return;
     }
     const der = computeDerivedStats(d);
     if(!editingDigimon){
       cardEl.innerHTML = `
         <div class="flex-between"><div class="section-title" style="margin:0;border:none;padding:0;">Scheda Digimon</div>
-        <span><a href="digimon.html" target="_blank" class="btn ghost small" style="margin-right:4px;text-decoration:none;">✏️ Scheda Completa</a><button class="btn small" id="btn-edit-digimon-${containerId}">Modifica</button>${containerId && containerId.indexOf('m-digimon-')===0 ? `<button class="btn ghost small" id="btn-reset-digimon-${containerId}" style="margin-left:4px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera</button>` : ''}</span></div>
+        <span><a href="digimon.html" target="_blank" class="btn ghost small" style="margin-right:4px;text-decoration:none;">✏️ Scheda Completa</a>${isMasterCtx && !d.approved ? `<button class="btn small" id="btn-approve-digimon-${containerId}" style="margin-right:4px;color:var(--cyan);border-color:var(--cyan-dim);">✅ Approva</button>` : ''}<button class="btn small" id="btn-edit-digimon-${containerId}">Modifica</button>${isMasterCtx ? `<button class="btn ghost small" id="btn-reset-digimon-${containerId}" style="margin-left:4px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera</button>` : ''}</span></div>
+        ${!d.approved ? `<div class="muted" style="margin:4px 0 0;color:var(--amber);">🥚 In attesa di approvazione — il giocatore vede solo l'Uovo finché non premi Approva.</div>` : ''}
         <div class="sheet-head" style="margin-top:12px;">
           ${digimonPortraitHTML(d)}
           <div class="info"><div class="nm">${escapeHTML(d.name||'(senza nome)')}</div><div class="tg">${escapeHTML(d.stage)}</div></div>
@@ -2863,7 +2856,7 @@
         ${barHTML('Resolve', d.resolveCurrent||0, d.resolveMax||4, 'mp', 'dig-res-minus-'+containerId, 'dig-res-plus-'+containerId)}
         <div class="muted" style="font-size:10px;">Risorsa da alcune Qualities (es. Combat Monster) — Max impostabile in "Modifica".</div>
         <div class="divider"></div>
-        <div class="muted" style="margin-bottom:4px;">Evoluzione ${!isMasterCtx && !d.evolveUnlocked ? '' : `<button class="btn ghost small" id="btn-toggle-evolve-${containerId}" style="margin-left:8px;${d.evolveUnlocked?'color:var(--cyan);border-color:var(--cyan-dim);':'color:var(--danger);border-color:var(--danger);'}">${d.evolveUnlocked?'🔓 Sbloccata per il giocatore':'🔒 Bloccata per il giocatore'}</button>`}</div>
+        <div class="muted" style="margin-bottom:4px;">Evoluzione ${isMasterCtx ? `<button class="btn ghost small" id="btn-toggle-evolve-${containerId}" style="margin-left:8px;${d.evolveUnlocked?'color:var(--cyan);border-color:var(--cyan-dim);':'color:var(--danger);border-color:var(--danger);'}">${d.evolveUnlocked?'🔓 Sbloccata per il giocatore':'🔒 Bloccata per il giocatore'}</button>` : ''}</div>
         ${!isMasterCtx && !d.evolveUnlocked ? `
         <div class="sub" style="margin-bottom:6px;">Il Master non ha ancora sbloccato l'Evoluzione — quando lo farà, qui compariranno i controlli per evolvere.</div>
         ` : `
@@ -2932,6 +2925,16 @@
         ${qualitiesReadonlyHTML(d.qualities)}
       `;
       document.getElementById('btn-edit-digimon-'+containerId).onclick = ()=>{ editingDigimon = true; renderDigimonCard(me, containerId); };
+      const approveDigimonBtn = document.getElementById('btn-approve-digimon-'+containerId);
+      if(approveDigimonBtn){
+        approveDigimonBtn.onclick = async ()=>{
+          me.digimon.approved = true;
+          await saveMember(session.code, me);
+          await pushLog(session.code, { who:'Master', role:'gm', text: `Il Digimon di ${me.username} (${me.digimon.name||'senza nome'}) è stato approvato dal Master.` });
+          renderDigimonCard(me, containerId);
+          refreshLiveParts();
+        };
+      }
       const resetDigimonBtn = document.getElementById('btn-reset-digimon-'+containerId);
       if(resetDigimonBtn){
         resetDigimonBtn.onclick = async ()=>{

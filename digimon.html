@@ -119,6 +119,9 @@
   function stageIndex(s){ const i = STAGES.indexOf(s); return i<0?0:i; }
   function maxSizeIndexForStage(stage){ return Math.min(SIZES.length-1, stageIndex(stage)+1); }
   function allowedSizes(stage){ return SIZES.slice(0, maxSizeIndexForStage(stage)+1); }
+  // Regola 3.01: "il valore Base minimo è 1, il massimo è 20. Sale a 30 per i Digimon capaci
+  // di raggiungere Stage 4+ (Ultimate/Mega)".
+  function statHardCap(stage){ return stageIndex(stage)>=4 ? 30 : 20; }
 
   const QUALITY_CATALOG = [
     { name:'Certain Strike', category:'Attack', dpPerRank:2, maxRank:3, mechanic:'certainStrike', desc:'Aggiunge Successi automatici garantiti alla Pool Accuracy pari ai Ranks, su un Attacco [DAMAGE].' },
@@ -365,6 +368,7 @@
     Extreme:  { ap:15, sp:30, cap:7, thresholds:[4,6,8,10], tnShift:2, startTorment:10 }
   };
   let cachedProgression = null;
+  let cachedDex = [];
   function campaignConfig(){
     const level = (cachedProgression && cachedProgression.campaignLevel) || 'Standard';
     return CAMPAIGN_LEVELS[level] || CAMPAIGN_LEVELS.Standard;
@@ -429,6 +433,7 @@
     }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
   }
   async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]).map(normalizeMember) : []; }
+  async function getDex(code){ const d = await apiGet('/api/dex?code=' + encodeURIComponent(code)); return d ? (d.entries||[]) : []; }
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
   async function uploadImage(code, dataUrl){ return apiPost('/api/upload', { code, dataUrl }); }
   async function getProgression(code){
@@ -612,6 +617,7 @@
       saveSession(session);
       cachedRoster = await getRoster(code);
       cachedProgression = await getProgression(code);
+      cachedDex = await getDex(code);
       startPolling();
       render();
     };
@@ -748,7 +754,10 @@
   // Un menu a tendina SEPARATO per ciascuna fascia di Stage (invece di un unico menu enorme con
   // 228 voci) + un riquadro laterale che mostra nome/categoria/costo/descrizione completa appena
   // scegli qualcosa — così sai cosa stai per aggiungere prima di confermare.
-  function qualityPickerHTML(prefix){
+  const QUALITY_TIER_MIN_STAGE_IDX = { 'Sempre disponibili':0, 'Da Rookie (Stage 2+)':2, 'Da Champion (Stage 3+)':3, 'Da Ultimate (Stage 4+)':4 };
+
+  function qualityPickerHTML(prefix, buildStage){
+    const buildIdx = stageIndex(buildStage||'Rookie');
     return `
     <div style="display:flex;gap:14px;flex-wrap:wrap;">
       <div style="flex:1 1 260px;min-width:220px;">
@@ -756,9 +765,10 @@
           const suffix = QUALITY_TIER_SUFFIX[grp];
           const opts = QUALITY_CATALOG.map((q,qi)=>({q,qi})).filter(x=>qualityMinStageLabel(x.q)===grp);
           if(opts.length===0) return '';
-          return `<div class="field"><label>${escapeHTML(grp)} (${opts.length})</label>
-            <select id="${prefix}-sel-${suffix}" data-quality-tier-select="${prefix}">
-              <option value="">— nessuna —</option>
+          const locked = buildIdx < QUALITY_TIER_MIN_STAGE_IDX[grp];
+          return `<div class="field"><label>${escapeHTML(grp)} (${opts.length})${locked?' <span class="muted" style="text-transform:none;">— serve uno Stage più alto</span>':''}</label>
+            <select id="${prefix}-sel-${suffix}" data-quality-tier-select="${prefix}" ${locked?'disabled':''} style="${locked?'opacity:0.4;':''}">
+              <option value="">${locked?'🔒 non ancora disponibile a questo Stage':'— nessuna —'}</option>
               ${opts.map(({q,qi})=>`<option value="${qi}">${escapeHTML(q.name)} (${q.category})</option>`).join('')}
             </select>
           </div>`;
@@ -840,7 +850,7 @@
       `).join('')}
       ${editable ? `
       <div class="add-row">
-        ${qualityPickerHTML('d-q')}
+        ${qualityPickerHTML('d-q', d.stage)}
         <details style="margin-top:10px;">
           <summary class="muted" style="cursor:pointer;">Oppure inserisci una Quality homebrew manualmente</summary>
           <div class="row" style="margin-top:8px;">
@@ -922,6 +932,7 @@
     const dpSpent = statKeys.reduce((s,k)=>s+(draft[k]-cfg.startStat),0);
     const dpRemaining = cfg.dp - dpSpent;
     const errors = [];
+    if(!draft.name || !draft.name.trim()) errors.push('Il Digimon deve avere un nome prima di poter salvare.');
     if(dpRemaining<0) errors.push(`Hai speso troppi DP sulle Stat (sforo di ${-dpRemaining}).`);
     const qBudgetCheck = Math.max(0, dpRemaining);
     const qSpentCheck = (draft.qualities||[]).reduce((s,q)=>s+(Number(q.cost)||0),0);
@@ -946,7 +957,7 @@
         ${statKeys.map(k=>`
           <div class="stat-box">
             <div class="l">${statLabels[k]}</div>
-            <input type="number" data-wiz-stat="${k}" min="${cfg.startStat}" value="${draft[k]}" />
+            <input type="number" data-wiz-stat="${k}" min="${cfg.startStat}" max="${statHardCap(draft.stage)}" value="${draft[k]}" />
           </div>
         `).join('')}
       </div>
@@ -966,7 +977,7 @@
             </div>
           </div>
         `).join('')}
-        ${qualityPickerHTML('wiz-q')}
+        ${qualityPickerHTML('wiz-q', draft.stage)}
         `;
       })()}
       <div style="border-top:1px dashed var(--line);margin:12px 0;"></div>
@@ -990,7 +1001,7 @@
   function bindDigimonWizard(target){
     const draft = creationDraft;
     const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
-    document.getElementById('wiz-d-name').onchange = (e)=>{ draft.name = e.target.value; };
+    document.getElementById('wiz-d-name').onchange = (e)=>{ draft.name = e.target.value; renderPage(); };
     document.getElementById('wiz-d-personality').onchange = (e)=>{ draft.personality = e.target.value; };
     document.getElementById('wiz-d-img').onchange = (e)=>{ draft.imageUrl = e.target.value; };
     document.getElementById('wiz-d-attribute').onchange = (e)=>{ draft.attribute = e.target.value; };
@@ -1005,7 +1016,7 @@
     root.querySelectorAll('[data-wiz-stat]').forEach(inp=>{
       inp.onchange = ()=>{
         const cfg = STAGE_CREATION[draft.stage];
-        draft[inp.getAttribute('data-wiz-stat')] = Math.max(cfg.startStat, Number(inp.value)||cfg.startStat);
+        draft[inp.getAttribute('data-wiz-stat')] = Math.min(statHardCap(draft.stage), Math.max(cfg.startStat, Number(inp.value)||cfg.startStat));
         renderPage();
       };
     });
@@ -1029,6 +1040,11 @@
     const saveBtn = document.getElementById('btn-wiz-save');
     if(saveBtn){
       saveBtn.onclick = async ()=>{
+        if(!draft.name || !draft.name.trim()){
+          const st0 = document.getElementById('wiz-status');
+          if(st0){ st0.style.color='var(--danger)'; st0.textContent = 'Il Digimon deve avere un nome prima di poter salvare.'; }
+          return;
+        }
         const cfg = STAGE_CREATION[draft.stage];
         const dpSpent = statKeys.reduce((s,k)=>s+(draft[k]-cfg.startStat),0);
         const dpRemaining = cfg.dp - dpSpent;
@@ -1050,6 +1066,7 @@
         target.digimon.approved = false; // si "chiude" nell'Uovo finché il Master non lo schiude
         if(!target.digimon.stageStats) target.digimon.stageStats = {};
         target.digimon.stageStats[draft.stage] = {
+          name: draft.name,
           baseAccuracy: draft.baseAccuracy, baseDamage: draft.baseDamage, baseDodge: draft.baseDodge,
           baseArmor: draft.baseArmor, baseHealth: draft.baseHealth,
           maxWounds: target.digimon.maxWounds, maxMp: target.digimon.maxMp, size: draft.size
@@ -1085,7 +1102,19 @@
 
   function isStageBuilt(d, stage){ return !!(d.stageStats && d.stageStats[stage]); }
 
-  function stageBuilderHTML(m){
+  // Regola 3.0: "All'inizio della partita, ci si aspetta un Digimon costruito almeno fino a
+  // Champion" — quindi Fresh/Baby/Rookie/Champion sono sempre costruibili liberamente. Ultimate e
+  // Mega invece richiedono che il Master abbia alzato il Default Range fin lì (è lui a decidere
+  // a quali Milestone succede, per regola 8.05b) — coerente con l'indice di STAGES che coincide
+  // con lo Stage Value (SV) usato nel manuale.
+  function isStageUnlockedForBuilding(d, stage, isMaster){
+    if(isMaster) return true; // il Master può sempre preparare in anticipo qualunque Stage
+    const idx = stageIndex(stage);
+    if(idx<=3) return true; // Fresh, Baby, Rookie, Champion
+    return Number(d.defaultRange||0) >= idx;
+  }
+
+  function stageBuilderHTML(m, isMaster){
     const d = m.digimon;
     if(stageBuildDraft){
       const draft = stageBuildDraft;
@@ -1095,11 +1124,21 @@
       const dpSpent = statKeys.reduce((s,k)=>s+(draft[k]-cfg.startStat),0);
       const dpRemaining = cfg.dp - dpSpent;
       const errors = [];
+      if(!draft.name || !draft.name.trim()) errors.push('Serve un nome anche per questo Stage.');
       if(dpRemaining<0) errors.push(`Hai speso troppi DP sulle Stat (sforo di ${-dpRemaining}).`);
+      // Se il Digimon di partenza (o lo Stage precedente) esiste già nel Digidex, suggerisce le sue
+      // evoluzioni già registrate — utile soprattutto per chi è stato assegnato via Bio-Resonance Scan.
+      const fromName = d.name || '';
+      const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===fromName.toLowerCase());
+      const suggestions = dexEntry && Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean) : [];
       return `
       <div class="hud-frame card">
         <div class="section-title"><span>🛠️ Costruisci Stage: ${escapeHTML(draft.stage)}</span></div>
         <div class="muted" style="margin-bottom:6px;">DP di partenza per ${escapeHTML(draft.stage)}: <b>${cfg.dp}</b> · Stat base: <b>${cfg.startStat}</b> ciascuna prima di spendere DP.</div>
+        <div class="field"><label>Nome a questo Stage</label><input type="text" id="sb-name" value="${escapeAttr(draft.name)}" placeholder="es. Greymon" /></div>
+        ${suggestions.length ? `
+        <div class="muted" style="margin-bottom:8px;">Evoluzioni di ${escapeHTML(fromName)} già nel Digidex: ${suggestions.map(s=>`<button class="btn ghost small" data-sb-name-suggest="${escapeAttr(s)}" style="margin:2px;">${escapeHTML(s)}</button>`).join('')}</div>
+        ` : ''}
         <div class="field"><label>Size</label>
           <select id="sb-size">${allowedSizes(draft.stage).map(s=>`<option ${draft.size===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
@@ -1108,7 +1147,7 @@
           ${statKeys.map(k=>`
             <div class="stat-box">
               <div class="l">${statLabels[k]}</div>
-              <input type="number" data-sb-stat="${k}" min="${cfg.startStat}" value="${draft[k]}" />
+              <input type="number" data-sb-stat="${k}" min="${cfg.startStat}" max="${statHardCap(draft.stage)}" value="${draft[k]}" />
             </div>
           `).join('')}
         </div>
@@ -1126,13 +1165,14 @@
     return `
     <div class="hud-frame card">
       <div class="section-title"><span>🛠️ Costruisci Nuovo Stage</span></div>
-      <div class="muted" style="margin-bottom:10px;">Prima di poter evolvere a uno Stage mai raggiunto, va costruito qui — è come creare un Digimon nuovo (regola 3.19), con un suo budget DP.</div>
+      <div class="muted" style="margin-bottom:10px;">Prima di poter evolvere a uno Stage mai raggiunto, va costruito qui — è come creare un Digimon nuovo (regola 3.19), con un suo budget DP. Per regola, il tuo Digimon dovrebbe già avere Fresh–Champion pronti; Ultimate e Mega li sblocca il Master aumentando il Default Range.</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;">
         ${STAGES.map(s=>{
           const built = isStageBuilt(d, s);
-          return built
-            ? `<span class="tag" style="background:var(--panel-2);border-color:var(--dchroma);color:var(--dchroma);">✅ ${s}</span>`
-            : `<button class="btn ghost small" data-sb-start="${s}">🛠️ ${s}</button>`;
+          if(built) return `<button class="btn small" disabled style="opacity:1;color:var(--dchroma);border-color:var(--dchroma);background:rgba(200,150,255,0.12);">✅ ${s}</button>`;
+          const unlocked = isStageUnlockedForBuilding(d, s, isMaster);
+          if(!unlocked) return `<button class="btn ghost small" disabled style="opacity:0.4;" title="Il Master deve aumentare il Default Range per sbloccare questo Stage">🔒 ${s}</button>`;
+          return `<button class="btn ghost small" data-sb-start="${s}">🛠️ ${s}</button>`;
         }).join('')}
       </div>
     </div>`;
@@ -1144,20 +1184,31 @@
       root.querySelectorAll('[data-sb-stat]').forEach(inp=>{
         inp.onchange = ()=>{
           const cfg = STAGE_CREATION[draft.stage];
-          draft[inp.getAttribute('data-sb-stat')] = Math.max(cfg.startStat, Number(inp.value)||cfg.startStat);
+          draft[inp.getAttribute('data-sb-stat')] = Math.min(statHardCap(draft.stage), Math.max(cfg.startStat, Number(inp.value)||cfg.startStat));
           renderPage();
         };
       });
       const sizeSel = document.getElementById('sb-size');
       if(sizeSel) sizeSel.onchange = (e)=>{ draft.size = e.target.value; };
+      const nameInp = document.getElementById('sb-name');
+      if(nameInp) nameInp.onchange = (e)=>{ draft.name = e.target.value; renderPage(); };
+      root.querySelectorAll('[data-sb-name-suggest]').forEach(btn=>{
+        btn.onclick = ()=>{ draft.name = btn.getAttribute('data-sb-name-suggest'); renderPage(); };
+      });
       const cancelBtn = document.getElementById('btn-sb-cancel');
       if(cancelBtn) cancelBtn.onclick = ()=>{ stageBuildDraft = null; renderPage(); };
       const saveBtn = document.getElementById('btn-sb-save');
       if(saveBtn){
         saveBtn.onclick = async ()=>{
+          if(!draft.name || !draft.name.trim()){
+            const st0 = document.getElementById('sb-status');
+            if(st0){ st0.style.color='var(--danger)'; st0.textContent = 'Serve un nome anche per questo Stage.'; }
+            return;
+          }
           const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
           if(!target.digimon.stageStats) target.digimon.stageStats = {};
           target.digimon.stageStats[draft.stage] = {
+            name: draft.name.trim(),
             baseAccuracy: draft.baseAccuracy, baseDamage: draft.baseDamage, baseDodge: draft.baseDodge,
             baseArmor: draft.baseArmor, baseHealth: draft.baseHealth,
             maxWounds: stageIndex(draft.stage) + Number(draft.baseHealth)*2,
@@ -1183,7 +1234,7 @@
         const stage = btn.getAttribute('data-sb-start');
         const cfg = STAGE_CREATION[stage];
         stageBuildDraft = {
-          stage, size: allowedSizes(stage)[0] || 'Medium',
+          stage, size: allowedSizes(stage)[0] || 'Medium', name: target.digimon.name || '',
           baseAccuracy: cfg.startStat, baseDamage: cfg.startStat, baseDodge: cfg.startStat,
           baseArmor: cfg.startStat, baseHealth: cfg.startStat
         };
@@ -1281,7 +1332,7 @@
     if(creationDraft && target){
       bodyHTML = digimonWizardHTML();
     } else if(stageBuildDraft && target){
-      bodyHTML = stageBuilderHTML(target);
+      bodyHTML = stageBuilderHTML(target, isMaster);
     } else if(!target || !target.digimon.name){
       bodyHTML = `
         <div class="hud-frame card muted">
@@ -1316,7 +1367,7 @@
           ${portraitBlockHTML(target, editable, isMaster)}
         </div>
         ${bonusDpBlockHTML(target)}
-        ${stageBuilderHTML(target)}
+        ${stageBuilderHTML(target, isMaster)}
         <div class="hud-frame card">
           <div class="section-title"><span>Punteggi Base</span></div>
           <div class="grid-stats">
@@ -1538,6 +1589,7 @@
     if(session){
       cachedRoster = await getRoster(session.code);
       cachedProgression = await getProgression(session.code);
+      cachedDex = await getDex(session.code);
       startPolling();
     }
     render();
