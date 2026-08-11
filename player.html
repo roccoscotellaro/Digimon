@@ -294,6 +294,7 @@
       if(!session) return;
       cachedRoster = await getRoster(session.code);
       checkNoticesForMe();
+      if(isEditingFullForm) return;
       if(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
       render();
     }, 4000);
@@ -537,6 +538,7 @@
   // ---------- Creazione Guidata: Tamer (incorporata direttamente in questa pagina) ----------
   let creationDraft = null;
   let justBuiltTamer = false;
+  let isEditingFullForm = false;
 
   function startTamerWizard(existingTamer){
     creationDraft = {
@@ -741,7 +743,10 @@
     } else if(!target || !target.tamer.built){
       bodyHTML = `
         <div class="hud-frame card muted">
-          ${isMaster ? (target ? `${escapeHTML(target.username)} non ha ancora completato la Creazione Guidata.` : 'Nessuna scheda trovata. Seleziona un giocatore.') : `
+          ${isMaster ? (target ? `
+            <div style="margin-bottom:10px;">${escapeHTML(target.username)} non ha ancora completato la Creazione Guidata.</div>
+            <button class="btn solid" id="btn-start-wizard" style="padding:10px 16px;">🧙 Apri Creazione Guidata</button>
+          ` : 'Nessuna scheda trovata. Seleziona un giocatore.') : `
             <div style="margin-bottom:10px;">Non hai ancora una scheda. Puoi crearla subito con la Creazione Guidata.</div>
             <button class="btn solid" id="btn-start-wizard" style="padding:10px 16px;">🧙 Apri Creazione Guidata</button>
           `}
@@ -749,6 +754,10 @@
     } else {
       bodyHTML = null; // usa il ramo completo sotto
     }
+    // Il form completo (Punteggi/Skill/Inventario/ecc.) è quello con campi editabili non ancora
+    // salvati — mentre è aperto, il polling non deve ridisegnare la pagina sopra le modifiche
+    // in corso, altrimenti si perdono silenziosamente ad ogni refresh di 4s.
+    isEditingFullForm = (bodyHTML === null);
 
     root.innerHTML = `
       <div style="max-width:760px;margin:0 auto;">
