@@ -408,11 +408,11 @@
       return { error: 'Il server ha risposto con un errore non-JSON (HTTP ' + r.status + '): ' + String(raw).replace(/<[^>]*>/g,' ').trim().slice(0,160) };
     }
   }
-  async function apiGet(path){
+  async function apiGet(path, silent){
     try{ const r = await fetch(path); const data = await readJson(r);
-      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
-      lastApiError = null; return data;
-    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
+      if(!r.ok){ if(!silent) lastApiError = data.error || ('Errore ' + r.status); return null; }
+      if(!silent) lastApiError = null; return data;
+    }catch(e){ if(!silent) lastApiError = 'Errore di rete: ' + e.message; return null; }
   }
   async function apiPost(path, body){
     try{ const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
@@ -464,7 +464,7 @@
   }
 
   // ---------- Avvisi (notice) ----------
-  async function getNotices(code){ const d = await apiGet('/api/notice?code=' + encodeURIComponent(code)); return d ? (d.notices||[]) : []; }
+  async function getNotices(code){ const d = await apiGet('/api/notice?code=' + encodeURIComponent(code), true); return d ? (d.notices||[]) : []; }
   async function confirmNotice(code, id, username){ return apiPut('/api/notice', { code, id, ack: username }); }
 
   // ---------- Segnalazioni Bug ----------
@@ -727,6 +727,18 @@
     </div>`;
   }
 
+  // Menu del catalogo Qualities raggruppato per categoria (Attack/Static/Clash/ecc.) invece di
+  // una lista piatta di 228 voci — più facile da scorrere. Ogni categoria è un <optgroup>.
+  function qualityCatalogSelectHTML(){
+    const categories = [];
+    QUALITY_CATALOG.forEach(q=>{ if(!categories.includes(q.category)) categories.push(q.category); });
+    return `<option value="">— scegli una Quality —</option>` + categories.map(cat=>`
+      <optgroup label="${escapeAttr(cat)}">
+        ${QUALITY_CATALOG.map((q,qi)=>({q,qi})).filter(x=>x.q.category===cat).map(({q,qi})=>`<option value="${qi}">${escapeHTML(q.name)} (${q.dpPerRank} DP/Rank, max Rank ${q.maxRank})</option>`).join('')}
+      </optgroup>
+    `).join('');
+  }
+
   function qualitiesBlockHTML(m, editable){
     const d = m.digimon;
     const items = d.qualities || [];
@@ -750,10 +762,10 @@
       <div class="add-row">
         <div class="field"><label>Scegli dal Catalogo</label>
           <select id="d-q-catalog">
-            <option value="">— scegli una Quality —</option>
-            ${QUALITY_CATALOG.map((q,qi)=>`<option value="${qi}">${escapeHTML(q.name)} (${q.category}, ${q.dpPerRank} DP/Rank)</option>`).join('')}
+            ${qualityCatalogSelectHTML()}
           </select>
         </div>
+        <div class="muted" id="d-q-preview" style="margin-bottom:8px;min-height:14px;"></div>
         <div class="row">
           <div class="field" style="max-width:110px;"><label>Rank</label><input type="number" id="d-q-rank" value="1" min="1" /></div>
           <div class="field" id="d-q-stattarget-wrap" style="display:none;"><label>Stat bonus (Naturewalk)</label>
@@ -889,10 +901,10 @@
         `).join('')}
         <div class="field" style="margin-top:8px;"><label>Scegli dal Catalogo</label>
           <select id="wiz-q-catalog">
-            <option value="">— scegli una Quality —</option>
-            ${QUALITY_CATALOG.map((q,i)=>`<option value="${i}">${escapeHTML(q.name)} (${q.category}, ${q.dpPerRank} DP/Rank)</option>`).join('')}
+            ${qualityCatalogSelectHTML()}
           </select>
         </div>
+        <div class="muted" id="wiz-q-preview" style="margin-bottom:8px;min-height:14px;"></div>
         <div class="row">
           <div class="field" style="max-width:110px;"><label>Rank</label><input type="number" id="wiz-q-rank" value="1" min="1" /></div>
           <div class="field" id="wiz-q-stattarget-wrap" style="display:none;"><label>Stat bonus (Naturewalk)</label>
@@ -959,6 +971,8 @@
         if(wizQStatWrap) wizQStatWrap.style.display = (q && q.mechanic==='naturewalk') ? 'block' : 'none';
         const rankInp = document.getElementById('wiz-q-rank');
         if(rankInp && q) rankInp.max = q.maxRank;
+        const preview = document.getElementById('wiz-q-preview');
+        if(preview) preview.textContent = q ? q.desc : '';
       };
     }
     const wizQAddBtn = document.getElementById('btn-wiz-q-add');
@@ -1427,6 +1441,8 @@
         if(qStatWrap) qStatWrap.style.display = (q && q.mechanic==='naturewalk') ? 'block' : 'none';
         const rankInp = document.getElementById('d-q-rank');
         if(rankInp && q) rankInp.max = q.maxRank;
+        const preview = document.getElementById('d-q-preview');
+        if(preview) preview.textContent = q ? q.desc : '';
       };
     }
     const qAddCatalog = document.getElementById('d-q-add-catalog');

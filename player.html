@@ -174,11 +174,11 @@
   function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
 
   // ---------- api ----------
-  async function apiGet(path){
+  async function apiGet(path, silent){
     try{ const r = await fetch(path); const data = await r.json();
-      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
-      lastApiError = null; return data;
-    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
+      if(!r.ok){ if(!silent) lastApiError = data.error || ('Errore ' + r.status); return null; }
+      if(!silent) lastApiError = null; return data;
+    }catch(e){ if(!silent) lastApiError = 'Errore di rete: ' + e.message; return null; }
   }
   async function apiPost(path, body){
     try{ const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
@@ -205,7 +205,7 @@
   async function pushLog(code, entry){ return apiPost('/api/log', { code, ...entry }); }
 
   // ---------- Avvisi (notice) ----------
-  async function getNotices(code){ const d = await apiGet('/api/notice?code=' + encodeURIComponent(code)); return d ? (d.notices||[]) : []; }
+  async function getNotices(code){ const d = await apiGet('/api/notice?code=' + encodeURIComponent(code), true); return d ? (d.notices||[]) : []; }
   async function confirmNotice(code, id, username){ return apiPut('/api/notice', { code, id, ack: username }); }
 
   // ---------- Segnalazioni Bug ----------

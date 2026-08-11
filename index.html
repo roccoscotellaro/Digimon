@@ -297,19 +297,14 @@
   let pendingGmImageUrl = null;
 
   async function getProgression(code){
-    const d = await apiGet('/api/state?resource=progression&code=' + encodeURIComponent(code));
+    const d = await apiGet('/api/progression?code=' + encodeURIComponent(code));
     const p = d ? d.progression : { milestone:0, xp:0, inspiration:0, campaign_level:'Standard' };
     return { milestone: p.milestone||0, xp: p.xp||0, inspiration: p.inspiration||0, campaignLevel: p.campaign_level || 'Standard', attributeAdvantage: p.attributeAdvantage || p.attribute_advantage || '', naturalCriticalResults: !!(p.naturalCriticalResults || p.natural_critical_results), blastEvolutionEnabled: !!(p.blastEvolutionEnabled || p.blast_evolution_enabled), slideEvolutionEnabled: !!(p.slideEvolutionEnabled || p.slide_evolution_enabled), darkEvolutionEnabled: !!(p.darkEvolutionEnabled || p.dark_evolution_enabled) };
   }
-  async function saveProgression(code, data){
-    const d = await apiPost('/api/state', { resource:'progression', code, ...data });
-    // warning = salvato solo in parte: mancano le colonne extra sulla tabella progression
-    if(d && d.warning) console.warn('[progression]', d.warning);
-    return d;
-  }
+  async function saveProgression(code, data){ return apiPost('/api/progression', { code, ...data }); }
 
-  async function getCombat(code){ const d = await apiGet('/api/state?resource=combat&code=' + encodeURIComponent(code)); return d ? d.combat : null; }
-  async function saveCombat(code, data){ return apiPost('/api/state', { resource:'combat', code, data }); }
+  async function getCombat(code){ const d = await apiGet('/api/combat?code=' + encodeURIComponent(code)); return d ? d.combat : null; }
+  async function saveCombat(code, data){ return apiPost('/api/combat', { code, data }); }
 
   function buildInitiativeOrder(participants){
     const sideA = participants.filter(p=>p.side==='ally').slice().sort((a,b)=>b.initiative-a.initiative);
@@ -775,37 +770,25 @@
   function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
 
   // ---------- API helpers ----------
-  // Legge la risposta come testo e poi prova a interpretarla come JSON. Se una funzione
-  // serverless va in crash, Vercel risponde con testo ("A server error has occurred") o HTML:
-  // prima r.json() lanciava "Unexpected token 'A' ... is not valid JSON" e il messaggio a video
-  // era incomprensibile. Ora si vede il vero errore restituito dal server.
-  async function readJson(r){
-    let raw = '';
-    try{ raw = await r.text(); }catch(e){ raw = ''; }
-    try{ return JSON.parse(raw); }
-    catch(e){
-      return { error: 'Il server ha risposto con un errore non-JSON (HTTP ' + r.status + '): ' + String(raw).replace(/<[^>]*>/g,' ').trim().slice(0,160) };
-    }
-  }
-  async function apiGet(path){
+  async function apiGet(path, silent){
     try{
       const r = await fetch(path);
-      const data = await readJson(r);
-      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
-      lastApiError = null;
+      const data = await r.json();
+      if(!r.ok){ if(!silent) lastApiError = data.error || ('Errore ' + r.status); return null; }
+      if(!silent) lastApiError = null;
       return data;
-    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
+    }catch(e){ if(!silent) lastApiError = 'Errore di rete: ' + e.message; return null; }
   }
   async function apiPost(path, body){
     try{
       const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-      const data = await readJson(r);
+      const data = await r.json();
       if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
       lastApiError = null;
       return data;
     }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
   }
-  // ---------- CHAT/AVVISO IMAGE ATTACH (bucket chat-uploads, endpoint /api/upload con target:'chat') ----------
+  // ---------- CHAT/AVVISO IMAGE ATTACH (bucket chat-uploads, endpoint /api/upload-chat) ----------
   function chatAttachHTML(prefix){
     return `<div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
       <input type="file" accept="image/*" id="${prefix}-img-file" style="display:none;" />
@@ -842,7 +825,7 @@
           reader.onerror = reject;
           reader.readAsDataURL(file);
         });
-        const res = await apiPost('/api/upload', { code, dataUrl, folder, target:'chat' });
+        const res = await apiPost('/api/upload-chat', { code, dataUrl, folder });
         if(res && res.ok && res.url){
           setPending(res.url);
           renderPreview();
@@ -860,7 +843,7 @@
   async function apiPut(path, body){
     try{
       const r = await fetch(path, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-      const data = await readJson(r);
+      const data = await r.json();
       if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
       lastApiError = null;
       return data;
@@ -869,7 +852,7 @@
   async function apiDelete(path){
     try{
       const r = await fetch(path, { method:'DELETE' });
-      const data = await readJson(r);
+      const data = await r.json();
       if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
       lastApiError = null;
       return data;
@@ -879,7 +862,7 @@
   async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]) : []; }
 
   // ---------- Avvisi (notice) ----------
-  async function getNotices(code){ const d = await apiGet('/api/notice?code=' + encodeURIComponent(code)); return d ? (d.notices||[]) : []; }
+  async function getNotices(code){ const d = await apiGet('/api/notice?code=' + encodeURIComponent(code), true); return d ? (d.notices||[]) : []; }
   async function createNotice(code, { text, imageUrl, targetType, targetUsernames, createdBy }){
     return apiPost('/api/notice', { code, text, imageUrl, targetType, targetUsernames, createdBy });
   }
@@ -895,7 +878,7 @@
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
   async function deleteMember(code, username){ return apiDelete('/api/roster?code=' + encodeURIComponent(code) + '&username=' + encodeURIComponent(username)); }
   async function getScene(code){
-    const d = await apiGet('/api/state?resource=scene&code=' + encodeURIComponent(code));
+    const d = await apiGet('/api/scene?code=' + encodeURIComponent(code));
     const s = d ? d.scene : { title:'', background:'', music:'', encounters:[] };
     if(!Array.isArray(s.encounters)) s.encounters = [];
     s.encounters = s.encounters.map(normalizeEncounter);
@@ -913,19 +896,19 @@
     return s;
   }
   function sceneLog(){ const sid = cachedScene && cachedScene.id; return (cachedLog||[]).filter(l=> !sid || !l.sceneId || l.sceneId===sid); }
-  async function saveScene(code, scene){ const d = await apiPost('/api/state', { resource:'scene', code, ...scene }); return !!(d && d.ok); }
+  async function saveScene(code, scene){ const d = await apiPost('/api/scene', { code, ...scene }); return !!(d && d.ok); }
   async function getLog(code){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code)); return d ? (d.log||[]) : []; }
   async function pushLog(code, entry){ return apiPost('/api/log', { code, ...entry, sceneId: entry.sceneId || (cachedScene && cachedScene.id) || null }); }
   async function editLogEntry(code, id, text){ return apiPut('/api/log', { code, id, text }); }
   async function deleteLogEntry(code, id){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
-  async function heartbeat(code, username){ return apiPost('/api/roster', { resource:'heartbeat', code, username }); }
-  async function getPrivateLog(code, thread){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code) + '&thread=' + encodeURIComponent(thread)); return d ? (d.log||[]) : []; }
-  async function pushPrivateLog(code, thread, entry){ return apiPost('/api/log', { code, thread, ...entry }); }
+  async function heartbeat(code, username){ return apiPost('/api/heartbeat', { code, username }); }
+  async function getPrivateLog(code, thread){ const d = await apiGet('/api/private-log?code=' + encodeURIComponent(code) + '&thread=' + encodeURIComponent(thread)); return d ? (d.log||[]) : []; }
+  async function pushPrivateLog(code, thread, entry){ return apiPost('/api/private-log', { code, thread, ...entry }); }
   async function getDex(code){ const d = await apiGet('/api/dex?code=' + encodeURIComponent(code)); return d ? (d.entries||[]) : []; }
   async function addDexEntry(code, entry){ return apiPost('/api/dex', { code, ...entry }); }
   async function updateDexEntry(code, id, fields){ return apiPut('/api/dex', { code, id, ...fields }); }
-  async function correggiItaliano(testo){ const d = await apiPost('/api/ai', { mode:'correzione', text: testo }); return d && d.corrected ? d.corrected : testo; }
-  async function suggerisciBattute(digimonName, personality, contesto){ const d = await apiPost('/api/ai', { digimonName, personality, context: contesto }); return d && d.lines ? d.lines : ['(errore nel generare suggerimenti, riprova)']; }
+  async function correggiItaliano(testo){ const d = await apiPost('/api/ai-correct', { text: testo }); return d && d.corrected ? d.corrected : testo; }
+  async function suggerisciBattute(digimonName, personality, contesto){ const d = await apiPost('/api/ai-suggest', { digimonName, personality, context: contesto }); return d && d.lines ? d.lines : ['(errore nel generare suggerimenti, riprova)']; }
 
   function sanitizeKeyPart(s){ return String(s||'').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 48); }
 
@@ -1825,6 +1808,19 @@
   const ATTR_ABBR = { agility:'AGI', body:'BODY', charisma:'CAR', intelligence:'INT', willpower:'WILL' };
   let editingSkills = false;
 
+  // Nel pannello Master ogni card di un giocatore ha un containerId tipo 'm-tamer-3', 'm-skills-3',
+  // 'm-digimon-3', 'm-inventory-3' (stesso indice, prefisso diverso). Quando una card deve
+  // aggiornarne un'altra "gemella" dello stesso giocatore (es. Skills che aggiorna anche Tamer),
+  // serve derivare il containerId corretto — altrimenti si rischia di aggiornare il default
+  // 'tamer-card' che nel pannello Master non esiste, e la chiamata non fa nulla silenziosamente.
+  function siblingCardId(containerId, targetCard){
+    if(containerId && containerId.indexOf('m-')===0){
+      const idx = containerId.split('-').pop();
+      return 'm-'+targetCard+'-'+idx;
+    }
+    return targetCard+'-card';
+  }
+
   function renderSkillsCard(me, containerId){
     containerId = containerId || 'skills-card';
     const cardEl = document.getElementById(containerId);
@@ -1868,7 +1864,7 @@
         </div>
         <div id="skill-roll-panel-${containerId}" style="margin-top:12px;"></div>
       `;
-      document.getElementById('btn-edit-skills').onclick = ()=>{ editingSkills = true; renderSkillsCard(me); };
+      document.getElementById('btn-edit-skills').onclick = ()=>{ editingSkills = true; renderSkillsCard(me, containerId); };
       const gpSkillBtn = document.getElementById('btn-gp-skill');
       if(gpSkillBtn){
         gpSkillBtn.onclick = async ()=>{
@@ -1897,7 +1893,7 @@
           t.unspentGrowthPoints = Number(t.unspentGrowthPoints||0) - 3;
           await saveMember(session.code, me);
           renderSkillsCard(me, containerId);
-          renderTamerCard(me);
+          renderTamerCard(me, siblingCardId(containerId,'tamer'));
         };
       }
       cardEl.querySelectorAll('[data-roll-skill]').forEach(btn=>{
@@ -1923,7 +1919,7 @@
         </div>
         <div class="muted" id="save-status-skills" style="margin-top:6px;"></div>
       `;
-      document.getElementById('btn-cancel-skills').onclick = ()=>{ editingSkills = false; renderSkillsCard(me); };
+      document.getElementById('btn-cancel-skills').onclick = ()=>{ editingSkills = false; renderSkillsCard(me, containerId); };
       document.getElementById('btn-save-skills').onclick = async ()=>{
         SKILL_DEFS.forEach(def=>{
           const el = document.getElementById('e-sk-'+def.key);
@@ -1940,7 +1936,7 @@
         const st = document.getElementById('save-status-skills');
         st.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
         st.textContent = ok ? 'Salvato.' : ('Errore: '+(lastApiError||''));
-        if(ok){ editingSkills = false; renderSkillsCard(me); renderTamerCard(me); }
+        if(ok){ editingSkills = false; renderSkillsCard(me, containerId); renderTamerCard(me, siblingCardId(containerId,'tamer')); }
       };
     }
   }
@@ -1995,8 +1991,8 @@
         <div class="flex-between"><div class="section-title" style="margin:0;border:none;padding:0;">Scheda Tamer</div>
         <span><a href="player.html" target="_blank" class="btn ghost small" style="margin-right:4px;text-decoration:none;">✏️ Scheda Completa</a><button class="btn small" id="btn-edit-tamer">Modifica</button>${containerId && containerId.indexOf('m-tamer-')===0 ? `<button class="btn ghost small" id="btn-reset-tamer" style="margin-left:4px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera</button>` : ''}</span></div>
         <div class="sheet-head" style="margin-top:12px;">
-          ${portraitHTML(t.imageUrl, session.username)}
-          <div class="info"><div class="nm">${escapeHTML(session.username)}</div><div class="tg">AGI ${t.agility} · BODY ${t.body} · CAR ${t.charisma} · INT ${t.intelligence} · WILL ${t.willpower}</div></div>
+          ${portraitHTML(t.imageUrl, me.username)}
+          <div class="info"><div class="nm">${escapeHTML(me.username)}</div><div class="tg">AGI ${t.agility} · BODY ${t.body} · CAR ${t.charisma} · INT ${t.intelligence} · WILL ${t.willpower}</div></div>
           <div style="margin-left:auto;text-align:center;">
             ${t.digiviceImageUrl
               ? `<img src="${escapeAttr(t.digiviceImageUrl)}" onerror="this.style.visibility='hidden'" style="width:44px;height:44px;object-fit:contain;border:1px solid var(--cyan-dim);border-radius:var(--radius);background:var(--panel-2);padding:3px;" />`
@@ -2062,7 +2058,7 @@
           </details>
         </div>
       `;
-      document.getElementById('btn-edit-tamer').onclick = ()=>{ editingTamer = true; renderTamerCard(me); };
+      document.getElementById('btn-edit-tamer').onclick = ()=>{ editingTamer = true; renderTamerCard(me, containerId); };
       const resetTamerBtn = document.getElementById('btn-reset-tamer');
       if(resetTamerBtn){
         resetTamerBtn.onclick = async ()=>{
@@ -2075,10 +2071,10 @@
           refreshLiveParts();
         };
       }
-      document.getElementById('tamer-w-minus').onclick = async ()=>{ me.tamer.currentWounds = Math.max(0, me.tamer.currentWounds-1); await saveMember(session.code, me); renderTamerCard(me); };
-      document.getElementById('tamer-w-plus').onclick = async ()=>{ me.tamer.currentWounds = Math.min(maxW, me.tamer.currentWounds+1); await saveMember(session.code, me); renderTamerCard(me); };
-      document.getElementById('ip-minus').onclick = async ()=>{ me.tamer.inspirationPoints = Math.max(0, (me.tamer.inspirationPoints||0)-1); await saveMember(session.code, me); renderTamerCard(me); };
-      document.getElementById('ip-plus').onclick = async ()=>{ me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1; await saveMember(session.code, me); renderTamerCard(me); };
+      document.getElementById('tamer-w-minus').onclick = async ()=>{ me.tamer.currentWounds = Math.max(0, me.tamer.currentWounds-1); await saveMember(session.code, me); renderTamerCard(me, containerId); };
+      document.getElementById('tamer-w-plus').onclick = async ()=>{ me.tamer.currentWounds = Math.min(maxW, me.tamer.currentWounds+1); await saveMember(session.code, me); renderTamerCard(me, containerId); };
+      document.getElementById('ip-minus').onclick = async ()=>{ me.tamer.inspirationPoints = Math.max(0, (me.tamer.inspirationPoints||0)-1); await saveMember(session.code, me); renderTamerCard(me, containerId); };
+      document.getElementById('ip-plus').onclick = async ()=>{ me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1; await saveMember(session.code, me); renderTamerCard(me, containerId); };
       const majorBtn = document.getElementById('btn-aspect-major-use');
       if(majorBtn) majorBtn.onclick = async ()=>{
         const asPenalty = window.confirm('OK = usa come bonus (+4, consuma 1 uso). Annulla = invoca la penalità (-4, ripristina l\'uso e guadagni 1 IP).');
@@ -2091,7 +2087,7 @@
           await pushLog(session.code, { who: session.username, role:'player', text: `Invoca la penalità del Major Aspect "${me.tamer.majorAspect.text}" (-4), ripristina l'uso e guadagna 1 IP.` });
         }
         await saveMember(session.code, me);
-        renderTamerCard(me);
+        renderTamerCard(me, containerId);
         refreshLiveParts();
       };
       const minorBtn = document.getElementById('btn-aspect-minor-use');
@@ -2105,7 +2101,7 @@
           await pushLog(session.code, { who: session.username, role:'player', text: `Invoca la penalità del Minor Aspect "${me.tamer.minorAspect.text}" (-2), ripristina entrambi gli usi.` });
         }
         await saveMember(session.code, me);
-        renderTamerCard(me);
+        renderTamerCard(me, containerId);
         refreshLiveParts();
       };
       document.getElementById('btn-add-torment').onclick = async ()=>{
@@ -2116,13 +2112,13 @@
         if(!me.tamer.torments) me.tamer.torments = [];
         me.tamer.torments.push({ name, boxes, usedThisRest:false });
         await saveMember(session.code, me);
-        renderTamerCard(me);
+        renderTamerCard(me, containerId);
       };
       cardEl.querySelectorAll('[data-torment-remove]').forEach(btn=>{
         btn.onclick = async ()=>{
           me.tamer.torments.splice(Number(btn.getAttribute('data-torment-remove')),1);
           await saveMember(session.code, me);
-          renderTamerCard(me);
+          renderTamerCard(me, containerId);
         };
       });
       cardEl.querySelectorAll('[data-torment-plus]').forEach(btn=>{
@@ -2130,7 +2126,7 @@
           const tor = me.tamer.torments[Number(btn.getAttribute('data-torment-plus'))];
           tor.boxes = Math.min(10, (Number(tor.boxes)||0)+1);
           await saveMember(session.code, me);
-          renderTamerCard(me);
+          renderTamerCard(me, containerId);
         };
       });
       cardEl.querySelectorAll('[data-torment-minus]').forEach(btn=>{
@@ -2138,7 +2134,7 @@
           const tor = me.tamer.torments[Number(btn.getAttribute('data-torment-minus'))];
           tor.boxes = Math.max(0, (Number(tor.boxes)||0)-1);
           await saveMember(session.code, me);
-          renderTamerCard(me);
+          renderTamerCard(me, containerId);
         };
       });
       cardEl.querySelectorAll('[data-torment-check]').forEach(btn=>{
@@ -2199,7 +2195,7 @@
         </div>
         <div class="muted" id="save-status-tamer" style="margin-top:6px;"></div>
       `;
-      document.getElementById('btn-cancel-tamer').onclick = ()=>{ editingTamer = false; renderTamerCard(me); };
+      document.getElementById('btn-cancel-tamer').onclick = ()=>{ editingTamer = false; renderTamerCard(me, containerId); };
       document.getElementById('btn-save-tamer').onclick = async ()=>{
         ['agility','body','charisma','intelligence','willpower'].forEach(k=>{
           const el = document.getElementById('e-t-'+k);
@@ -2220,7 +2216,7 @@
         const st = document.getElementById('save-status-tamer');
         st.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
         st.textContent = ok ? 'Salvato.' : ('Errore: '+(lastApiError||''));
-        if(ok){ editingTamer = false; renderTamerCard(me); renderSkillsCard(me); }
+        if(ok){ editingTamer = false; renderTamerCard(me, containerId); renderSkillsCard(me, siblingCardId(containerId,'skills')); }
       };
     }
   }
@@ -2254,7 +2250,7 @@
         const idx = Number(btn.getAttribute('data-remove-item'));
         me.tamer.inventory.splice(idx,1);
         await saveMember(session.code, me);
-        renderInventoryCard(me);
+        renderInventoryCard(me, containerId);
       };
     });
     document.getElementById('btn-inv-add').onclick = async ()=>{
@@ -2264,7 +2260,7 @@
       const desc = document.getElementById('inv-desc').value.trim();
       me.tamer.inventory.push({ name, qty, desc });
       await saveMember(session.code, me);
-      renderInventoryCard(me);
+      renderInventoryCard(me, containerId);
     };
   }
 
@@ -3026,7 +3022,7 @@
           await pushLog(session.code, { who: session.username, role:'roll', text: `⚡ Forza Evoluzione (TN ${tn}): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText}`, meta:{ dice } });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = outcomeText;
           renderDigimonCard(me, containerId);
-          renderTamerCard(me);
+          renderTamerCard(me, siblingCardId(containerId,'tamer'));
           refreshLiveParts();
         };
       }
@@ -3067,7 +3063,7 @@
           await pushLog(session.code, { who: session.username, role:'roll', text: `💥 Blast Evolution a ${target} — Willpower Check (TN ${tn}): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText} (Usi rimasti: ${me.digimon.blastEvolutionUses})`, meta:{ dice } });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = outcomeText;
           renderDigimonCard(me, containerId);
-          renderTamerCard(me);
+          renderTamerCard(me, siblingCardId(containerId,'tamer'));
           refreshLiveParts();
         };
       }
@@ -4641,8 +4637,8 @@
       const ok = await saveProgression(code, prog);
       cachedProgression = prog;
       const st = document.getElementById('prog-status');
-      st.style.color = ok ? (ok.warning ? 'var(--amber)' : 'var(--text-mute)') : 'var(--danger)';
-      st.textContent = ok ? (ok.warning ? ('⚠ ' + ok.warning) : 'Salvato.') : ('Errore: '+(lastApiError||''));
+      st.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
+      st.textContent = ok ? 'Salvato.' : ('Errore: '+(lastApiError||''));
       renderProgressionMaster(code);
     };
   }
