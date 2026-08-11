@@ -1021,7 +1021,7 @@
       }
     }
 
-    if(target && editable && target.digimon.approved){
+    if(target && editable && bodyHTML===null){
       bindImageUpload(target);
       bindListEditors(target);
       document.getElementById('d-save').onclick = async ()=>{

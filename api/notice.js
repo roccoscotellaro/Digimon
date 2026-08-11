@@ -7,13 +7,10 @@
 //                                      tutti i giocatori / solo alcuni / un solo giocatore.
 //   resource: 'bugreport'          -> Segnalazioni bug inviate dai giocatori.
 //
-// IMPORTANTE: si usa lo stesso client condiviso di ../lib/db, come tutti gli altri endpoint.
-// Prima questo file creava un client suo con createClient(process.env.SUPABASE_URL,
-// process.env.SUPABASE_SERVICE_ROLE_KEY): se anche solo una di quelle due variabili non esiste
-// con QUEL nome esatto su Vercel, createClient lancia un errore a livello di modulo, cioe' fuori
-// dal try/catch dell'handler. Vercel in quel caso non risponde JSON ma il testo
-// "A server error has occurred", e il client va in errore con
-// "Unexpected token 'A' ... is not valid JSON". Con lib/db il problema non si pone.
+// Usa lo stesso client Supabase condiviso di lib/db.js (SUPABASE_SERVICE_KEY) di tutto il resto
+// del progetto — la versione precedente si creava un client a sé con SUPABASE_SERVICE_ROLE_KEY,
+// una variabile d'ambiente mai configurata su Vercel, che faceva crashare la funzione al
+// caricamento del modulo (prima ancora del try/catch, da qui l'errore HTML invece di JSON).
 const { supabase } = require('../lib/db');
 
 // ---------------- AVVISI (comportamento originale + targeting) ----------------
