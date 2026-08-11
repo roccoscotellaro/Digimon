@@ -770,46 +770,24 @@
   function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
 
   // ---------- API helpers ----------
-  // apiRequest centralizza fetch + parsing delle risposte. Due differenze rispetto a prima:
-  //  1) se il server risponde con HTML invece che con JSON (tipico: pagina 404 di Vercel quando
-  //     un endpoint non e' deployato) non esplode piu' con "Unexpected token ... is not valid JSON",
-  //     ma dice chiaramente quale endpoint non risponde;
-  //  2) le chiamate di background (polling) passano { silent:true } e non scrivono mai sul banner
-  //     d'errore: cosi' un errore di polling non puo' piu' comparire "in ritardo" al primo
-  //     re-render locale (es. quando si cambia una stat nella Creazione Guidata).
-  const API_ERROR_TTL = 12000;
-  let lastApiErrorAt = 0;
-  function setApiError(msg, silent){
-    if(silent) return null;
-    lastApiError = msg; lastApiErrorAt = Date.now();
-    return null;
-  }
-  function clearApiError(){ lastApiError = null; lastApiErrorAt = 0; }
-  function currentApiError(){
-    if(lastApiError && (Date.now() - lastApiErrorAt) > API_ERROR_TTL) clearApiError();
-    return lastApiError;
-  }
-  async function apiRequest(path, options, silent){
-    const endpoint = String(path).split('?')[0];
+  async function apiGet(path){
     try{
-      const r = await fetch(path, options || {});
-      const raw = await r.text();
-      let data = null;
-      if(raw){ try{ data = JSON.parse(raw); }catch(_){ data = null; } }
-      if(!r.ok){
-        const msg = (data && data.error) ? data.error
-          : (r.status === 404 ? 'Endpoint non disponibile: ' + endpoint + ' (404)'
-                              : 'Errore ' + r.status + ' su ' + endpoint);
-        return setApiError(msg, silent);
-      }
-      if(data === null) return setApiError('Risposta non valida da ' + endpoint + ' (il server non ha risposto in JSON)', silent);
-      clearApiError();
+      const r = await fetch(path);
+      const data = await r.json();
+      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
+      lastApiError = null;
       return data;
-    }catch(e){ return setApiError('Errore di rete su ' + endpoint + ': ' + e.message, silent); }
+    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
   }
-  const JSON_HEADERS = { 'Content-Type':'application/json' };
-  async function apiGet(path, opts){ return apiRequest(path, null, !!(opts && opts.silent)); }
-  async function apiPost(path, body, opts){ return apiRequest(path, { method:'POST', headers:JSON_HEADERS, body: JSON.stringify(body) }, !!(opts && opts.silent)); }
+  async function apiPost(path, body){
+    try{
+      const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const data = await r.json();
+      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
+      lastApiError = null;
+      return data;
+    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
+  }
   // ---------- CHAT/AVVISO IMAGE ATTACH (bucket chat-uploads, endpoint /api/upload-chat) ----------
   function chatAttachHTML(prefix){
     return `<div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
@@ -862,13 +840,29 @@
       fileInput.value = '';
     };
   }
-  async function apiPut(path, body, opts){ return apiRequest(path, { method:'PUT', headers:JSON_HEADERS, body: JSON.stringify(body) }, !!(opts && opts.silent)); }
-  async function apiDelete(path, opts){ return apiRequest(path, { method:'DELETE' }, !!(opts && opts.silent)); }
+  async function apiPut(path, body){
+    try{
+      const r = await fetch(path, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const data = await r.json();
+      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
+      lastApiError = null;
+      return data;
+    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
+  }
+  async function apiDelete(path){
+    try{
+      const r = await fetch(path, { method:'DELETE' });
+      const data = await r.json();
+      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
+      lastApiError = null;
+      return data;
+    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
+  }
 
   async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]) : []; }
 
   // ---------- Avvisi (notice) ----------
-  async function getNotices(code){ const d = await apiGet('/api/feedback?resource=notice&code=' + encodeURIComponent(code), { silent:true }); return d ? (d.notices||[]) : []; }
+  async function getNotices(code){ const d = await apiGet('/api/feedback?resource=notice&code=' + encodeURIComponent(code)); return d ? (d.notices||[]) : []; }
   async function createNotice(code, { text, imageUrl, targetType, targetUsernames, createdBy }){
     return apiPost('/api/feedback', { resource:'notice', action:'create', code, text, imageUrl, targetType, targetUsernames, createdBy });
   }
@@ -1116,7 +1110,7 @@
         ${session ? `&nbsp;<button class="btn ghost small" id="btn-logout" style="margin-left:10px;">Esci</button>` : ''}
       </div>
     </div>
-    ${(()=>{ const e = currentApiError(); return e ? `<div id="api-err-banner" class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(e)}</div>` : '<div id="api-err-banner"></div>'; })()}`;
+    ${lastApiError ? `<div class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(lastApiError)}</div>` : ''}`;
   }
 
   // ---------- LOGIN ----------
@@ -1293,7 +1287,7 @@
       if(wasAtBottom) privateLogLiveMaster.scrollTop = privateLogLiveMaster.scrollHeight;
     }
     const errBanner = document.getElementById('api-err-banner');
-    if(errBanner){ const e = currentApiError(); errBanner.outerHTML = e ? `<div id="api-err-banner" class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(e)}</div>` : '<div id="api-err-banner"></div>'; }
+    if(errBanner) errBanner.outerHTML = lastApiError ? `<div id="api-err-banner" class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(lastApiError)}</div>` : '<div id="api-err-banner"></div>';
   }
 
   function bindRosterSuggestButtons(players){
