@@ -165,22 +165,34 @@
   function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
   function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
 
+  // Legge la risposta come testo e poi prova a interpretarla come JSON. Se una funzione
+  // serverless va in crash, Vercel risponde con testo ("A server error has occurred") o HTML:
+  // prima r.json() lanciava "Unexpected token 'A' ... is not valid JSON" e il messaggio a video
+  // era incomprensibile. Ora si vede il vero errore restituito dal server.
+  async function readJson(r){
+    let raw = '';
+    try{ raw = await r.text(); }catch(e){ raw = ''; }
+    try{ return JSON.parse(raw); }
+    catch(e){
+      return { error: 'Il server ha risposto con un errore non-JSON (HTTP ' + r.status + '): ' + String(raw).replace(/<[^>]*>/g,' ').trim().slice(0,160) };
+    }
+  }
   async function apiGet(path){
-    try{ const r = await fetch(path); const data = await r.json();
+    try{ const r = await fetch(path); const data = await readJson(r);
       if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
       lastApiError = null; return data;
     }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
   }
   async function apiPost(path, body){
     try{ const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-      const data = await r.json();
+      const data = await readJson(r);
       if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
       lastApiError = null; return data;
     }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
   }
   async function apiPut(path, body){
     try{ const r = await fetch(path, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-      const data = await r.json();
+      const data = await readJson(r);
       if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
       lastApiError = null; return data;
     }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
@@ -189,7 +201,7 @@
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
   async function uploadImage(code, dataUrl){ return apiPost('/api/upload', { code, dataUrl }); }
   async function getProgression(code){
-    const d = await apiGet('/api/progression?code=' + encodeURIComponent(code));
+    const d = await apiGet('/api/state?resource=progression&code=' + encodeURIComponent(code));
     const p = d ? d.progression : { milestone:0, xp:0, inspiration:0, campaign_level:'Standard' };
     return { milestone: p.milestone||0, xp: p.xp||0, inspiration: p.inspiration||0, campaignLevel: p.campaign_level || 'Standard' };
   }

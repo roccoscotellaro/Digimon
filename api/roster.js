@@ -1,3 +1,7 @@
+// /api/roster.js
+// Accorpa il vecchio /api/heartbeat: POST con { resource:'heartbeat', code, username }
+// aggiorna solo last_seen del membro, senza toccare tamer/digimon.
+// Serve a restare sotto il limite di 12 Serverless Functions del piano Vercel Hobby.
 const { supabase, cleanCode } = require('../lib/db');
 
 module.exports = async (req, res) => {
@@ -14,7 +18,23 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'POST') {
-      const { code, member } = req.body || {};
+      const body = req.body || {};
+
+      // ---- HEARTBEAT (ex /api/heartbeat) ----
+      if (body.resource === 'heartbeat') {
+        const campaignCode = cleanCode(body.code);
+        if (!campaignCode || !body.username) return res.status(400).json({ error: 'missing code or username' });
+        const { error } = await supabase
+          .from('members')
+          .update({ last_seen: new Date().toISOString() })
+          .eq('campaign_code', campaignCode)
+          .eq('username', String(body.username).slice(0, 60));
+        if (error) return res.status(500).json({ error: error.message });
+        return res.status(200).json({ ok: true });
+      }
+
+      // ---- SALVATAGGIO MEMBRO (comportamento originale) ----
+      const { code, member } = body;
       const campaignCode = cleanCode(code);
       if (!campaignCode || !member || !member.username) {
         return res.status(400).json({ error: 'missing code or member.username' });

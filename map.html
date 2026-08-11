@@ -229,10 +229,22 @@
   function saveSession(s){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }catch(e){} }
   function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
 
+  // Legge la risposta come testo e poi prova a interpretarla come JSON. Se una funzione
+  // serverless va in crash, Vercel risponde con testo ("A server error has occurred") o HTML:
+  // prima r.json() lanciava "Unexpected token 'A' ... is not valid JSON" e il messaggio a video
+  // era incomprensibile. Ora si vede il vero errore restituito dal server.
+  async function readJson(r){
+    let raw = '';
+    try{ raw = await r.text(); }catch(e){ raw = ''; }
+    try{ return JSON.parse(raw); }
+    catch(e){
+      return { error: 'Il server ha risposto con un errore non-JSON (HTTP ' + r.status + '): ' + String(raw).replace(/<[^>]*>/g,' ').trim().slice(0,160) };
+    }
+  }
   async function apiGet(path){
     try{
       const r = await fetch(path);
-      const data = await r.json();
+      const data = await readJson(r);
       if(!r.ok){ lastApiError = (data && data.error) || ('Errore di rete (' + r.status + ')'); return null; }
       lastApiError = null;
       return data;
@@ -241,33 +253,33 @@
   async function apiPost(path, body){
     try{
       const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-      const data = await r.json();
+      const data = await readJson(r);
       if(!r.ok){ lastApiError = (data && data.error) || ('Errore di salvataggio (' + r.status + ')'); return null; }
       lastApiError = null;
       return data;
     }catch(e){ lastApiError = 'Impossibile contattare il server.'; return null; }
   }
   async function getScene(code){
-    const d = await apiGet('/api/scene?code=' + encodeURIComponent(code));
+    const d = await apiGet('/api/state?resource=scene&code=' + encodeURIComponent(code));
     const s = d ? d.scene : { title:'', background:'', music:'', encounters:[] };
     if(!Array.isArray(s.macroScenes)) s.macroScenes = [];
     if(s.currentMacroSceneId===undefined) s.currentMacroSceneId = null;
     return s;
   }
   async function saveScene(code, scene){
-    let d = await apiPost('/api/scene', { code, ...scene });
-    if(!d){ d = await apiPost('/api/scene', { code, ...scene }); } // one retry, in case of a transient failure
+    let d = await apiPost('/api/state', { resource:'scene', code, ...scene });
+    if(!d){ d = await apiPost('/api/state', { resource:'scene', code, ...scene }); } // one retry, in case of a transient failure
     if(!d || !d.ok) return false;
     lastSaveAt = Date.now();
     // The API can report ok:true without actually persisting every field (e.g. if the backend
     // wasn't updated to store macroScenes). Re-fetch and do a light structural check to catch that —
     // NOT a strict deep-equal, since jsonb storage can reorder object keys on a round-trip.
     try{
-      const verify = await apiGet('/api/scene?code=' + encodeURIComponent(code));
+      const verify = await apiGet('/api/state?resource=scene&code=' + encodeURIComponent(code));
       const verifiedMacros = (verify && verify.scene && Array.isArray(verify.scene.macroScenes)) ? verify.scene.macroScenes : null;
       const sentMacros = Array.isArray(scene.macroScenes) ? scene.macroScenes : [];
       if(!verifiedMacros || verifiedMacros.length !== sentMacros.length){
-        lastApiError = 'Il server ha accettato la richiesta ma le Macroscene non risultano salvate correttamente. È quasi certo un bug nel backend (api/scene) che non gestisce ancora il campo "macroScenes".';
+        lastApiError = 'Il server ha accettato la richiesta ma le Macroscene non risultano salvate correttamente. È quasi certo un bug nel backend (api/state?resource=scene) che non gestisce ancora il campo "macroScenes".';
         return false;
       }
       if(scene.currentMacroSceneId){

@@ -297,14 +297,19 @@
   let pendingGmImageUrl = null;
 
   async function getProgression(code){
-    const d = await apiGet('/api/progression?code=' + encodeURIComponent(code));
+    const d = await apiGet('/api/state?resource=progression&code=' + encodeURIComponent(code));
     const p = d ? d.progression : { milestone:0, xp:0, inspiration:0, campaign_level:'Standard' };
     return { milestone: p.milestone||0, xp: p.xp||0, inspiration: p.inspiration||0, campaignLevel: p.campaign_level || 'Standard', attributeAdvantage: p.attributeAdvantage || p.attribute_advantage || '', naturalCriticalResults: !!(p.naturalCriticalResults || p.natural_critical_results), blastEvolutionEnabled: !!(p.blastEvolutionEnabled || p.blast_evolution_enabled), slideEvolutionEnabled: !!(p.slideEvolutionEnabled || p.slide_evolution_enabled), darkEvolutionEnabled: !!(p.darkEvolutionEnabled || p.dark_evolution_enabled) };
   }
-  async function saveProgression(code, data){ return apiPost('/api/progression', { code, ...data }); }
+  async function saveProgression(code, data){
+    const d = await apiPost('/api/state', { resource:'progression', code, ...data });
+    // warning = salvato solo in parte: mancano le colonne extra sulla tabella progression
+    if(d && d.warning) console.warn('[progression]', d.warning);
+    return d;
+  }
 
-  async function getCombat(code){ const d = await apiGet('/api/combat?code=' + encodeURIComponent(code)); return d ? d.combat : null; }
-  async function saveCombat(code, data){ return apiPost('/api/combat', { code, data }); }
+  async function getCombat(code){ const d = await apiGet('/api/state?resource=combat&code=' + encodeURIComponent(code)); return d ? d.combat : null; }
+  async function saveCombat(code, data){ return apiPost('/api/state', { resource:'combat', code, data }); }
 
   function buildInitiativeOrder(participants){
     const sideA = participants.filter(p=>p.side==='ally').slice().sort((a,b)=>b.initiative-a.initiative);
@@ -770,10 +775,22 @@
   function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
 
   // ---------- API helpers ----------
+  // Legge la risposta come testo e poi prova a interpretarla come JSON. Se una funzione
+  // serverless va in crash, Vercel risponde con testo ("A server error has occurred") o HTML:
+  // prima r.json() lanciava "Unexpected token 'A' ... is not valid JSON" e il messaggio a video
+  // era incomprensibile. Ora si vede il vero errore restituito dal server.
+  async function readJson(r){
+    let raw = '';
+    try{ raw = await r.text(); }catch(e){ raw = ''; }
+    try{ return JSON.parse(raw); }
+    catch(e){
+      return { error: 'Il server ha risposto con un errore non-JSON (HTTP ' + r.status + '): ' + String(raw).replace(/<[^>]*>/g,' ').trim().slice(0,160) };
+    }
+  }
   async function apiGet(path){
     try{
       const r = await fetch(path);
-      const data = await r.json();
+      const data = await readJson(r);
       if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
       lastApiError = null;
       return data;
@@ -782,13 +799,13 @@
   async function apiPost(path, body){
     try{
       const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-      const data = await r.json();
+      const data = await readJson(r);
       if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
       lastApiError = null;
       return data;
     }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
   }
-  // ---------- CHAT/AVVISO IMAGE ATTACH (bucket chat-uploads, endpoint /api/upload-chat) ----------
+  // ---------- CHAT/AVVISO IMAGE ATTACH (bucket chat-uploads, endpoint /api/upload con target:'chat') ----------
   function chatAttachHTML(prefix){
     return `<div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
       <input type="file" accept="image/*" id="${prefix}-img-file" style="display:none;" />
@@ -825,7 +842,7 @@
           reader.onerror = reject;
           reader.readAsDataURL(file);
         });
-        const res = await apiPost('/api/upload-chat', { code, dataUrl, folder });
+        const res = await apiPost('/api/upload', { code, dataUrl, folder, target:'chat' });
         if(res && res.ok && res.url){
           setPending(res.url);
           renderPreview();
@@ -843,7 +860,7 @@
   async function apiPut(path, body){
     try{
       const r = await fetch(path, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-      const data = await r.json();
+      const data = await readJson(r);
       if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
       lastApiError = null;
       return data;
@@ -852,7 +869,7 @@
   async function apiDelete(path){
     try{
       const r = await fetch(path, { method:'DELETE' });
-      const data = await r.json();
+      const data = await readJson(r);
       if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
       lastApiError = null;
       return data;
@@ -878,7 +895,7 @@
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
   async function deleteMember(code, username){ return apiDelete('/api/roster?code=' + encodeURIComponent(code) + '&username=' + encodeURIComponent(username)); }
   async function getScene(code){
-    const d = await apiGet('/api/scene?code=' + encodeURIComponent(code));
+    const d = await apiGet('/api/state?resource=scene&code=' + encodeURIComponent(code));
     const s = d ? d.scene : { title:'', background:'', music:'', encounters:[] };
     if(!Array.isArray(s.encounters)) s.encounters = [];
     s.encounters = s.encounters.map(normalizeEncounter);
@@ -896,19 +913,19 @@
     return s;
   }
   function sceneLog(){ const sid = cachedScene && cachedScene.id; return (cachedLog||[]).filter(l=> !sid || !l.sceneId || l.sceneId===sid); }
-  async function saveScene(code, scene){ const d = await apiPost('/api/scene', { code, ...scene }); return !!(d && d.ok); }
+  async function saveScene(code, scene){ const d = await apiPost('/api/state', { resource:'scene', code, ...scene }); return !!(d && d.ok); }
   async function getLog(code){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code)); return d ? (d.log||[]) : []; }
   async function pushLog(code, entry){ return apiPost('/api/log', { code, ...entry, sceneId: entry.sceneId || (cachedScene && cachedScene.id) || null }); }
   async function editLogEntry(code, id, text){ return apiPut('/api/log', { code, id, text }); }
   async function deleteLogEntry(code, id){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
-  async function heartbeat(code, username){ return apiPost('/api/heartbeat', { code, username }); }
-  async function getPrivateLog(code, thread){ const d = await apiGet('/api/private-log?code=' + encodeURIComponent(code) + '&thread=' + encodeURIComponent(thread)); return d ? (d.log||[]) : []; }
-  async function pushPrivateLog(code, thread, entry){ return apiPost('/api/private-log', { code, thread, ...entry }); }
+  async function heartbeat(code, username){ return apiPost('/api/roster', { resource:'heartbeat', code, username }); }
+  async function getPrivateLog(code, thread){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code) + '&thread=' + encodeURIComponent(thread)); return d ? (d.log||[]) : []; }
+  async function pushPrivateLog(code, thread, entry){ return apiPost('/api/log', { code, thread, ...entry }); }
   async function getDex(code){ const d = await apiGet('/api/dex?code=' + encodeURIComponent(code)); return d ? (d.entries||[]) : []; }
   async function addDexEntry(code, entry){ return apiPost('/api/dex', { code, ...entry }); }
   async function updateDexEntry(code, id, fields){ return apiPut('/api/dex', { code, id, ...fields }); }
-  async function correggiItaliano(testo){ const d = await apiPost('/api/ai-correct', { text: testo }); return d && d.corrected ? d.corrected : testo; }
-  async function suggerisciBattute(digimonName, personality, contesto){ const d = await apiPost('/api/ai-suggest', { digimonName, personality, context: contesto }); return d && d.lines ? d.lines : ['(errore nel generare suggerimenti, riprova)']; }
+  async function correggiItaliano(testo){ const d = await apiPost('/api/ai', { mode:'correzione', text: testo }); return d && d.corrected ? d.corrected : testo; }
+  async function suggerisciBattute(digimonName, personality, contesto){ const d = await apiPost('/api/ai', { digimonName, personality, context: contesto }); return d && d.lines ? d.lines : ['(errore nel generare suggerimenti, riprova)']; }
 
   function sanitizeKeyPart(s){ return String(s||'').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 48); }
 
@@ -4624,8 +4641,8 @@
       const ok = await saveProgression(code, prog);
       cachedProgression = prog;
       const st = document.getElementById('prog-status');
-      st.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
-      st.textContent = ok ? 'Salvato.' : ('Errore: '+(lastApiError||''));
+      st.style.color = ok ? (ok.warning ? 'var(--amber)' : 'var(--text-mute)') : 'var(--danger)';
+      st.textContent = ok ? (ok.warning ? ('⚠ ' + ok.warning) : 'Salvato.') : ('Errore: '+(lastApiError||''));
       renderProgressionMaster(code);
     };
   }
