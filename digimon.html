@@ -906,8 +906,6 @@
     }
 
     const editable = true;
-    if(isMaster && creationDraft) creationDraft = null;
-    if(isMaster && stageBuildDraft) stageBuildDraft = null;
 
     let bodyHTML;
     if(creationDraft && target){
@@ -992,7 +990,12 @@
 
     if(isMaster){
       const sel = document.getElementById('d-select-player');
-      if(sel) sel.onchange = ()=>{ window.__digimonSelected = sel.value; renderPage(); };
+      if(sel) sel.onchange = ()=>{
+        window.__digimonSelected = sel.value;
+        creationDraft = null;
+        stageBuildDraft = null;
+        renderPage();
+      };
     }
 
     const startWizBtn = document.getElementById('btn-start-wizard');
