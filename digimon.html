@@ -969,9 +969,10 @@
     const dexMatch = prefill && prefill.name ? cachedDex.find(e=>(e.name||'').toLowerCase()===prefill.name.toLowerCase()) : null;
     const attackDesc = (prefill && prefill.attackDesc) || 'Attacco caratteristico portato dal Bio-Resonance Scan.';
     // Le Stat passate dallo Scan sono già "pure" (senza il bonus di eventuali Qualities incluse qui
-    // sotto): le aggiungiamo subito al draft così il budget DP è corretto fin dall'inizio, invece di
-    // richiedere che sia il giocatore a ricordarsi di sceglierle a mano dal catalogo.
-    const scannedQualities = (prefill && Array.isArray(prefill.qualities) ? prefill.qualities : [])
+    // sotto). NON le aggiungiamo direttamente al draft: restano un suggerimento (nome + testo
+    // completo + costo) finché il giocatore non decide lui di accettarle — solo allora entrano
+    // davvero in draft.qualities e il budget si aggiorna di conseguenza.
+    const suggestedQualities = (prefill && Array.isArray(prefill.qualities) ? prefill.qualities : [])
       .map(buildQualityEntryFromScanHint).filter(Boolean);
     creationDraft = {
       stage:'Rookie', size:'Medium',
@@ -986,7 +987,8 @@
       baseHealth: (prefill && prefill.baseHealth) || STAGE_CREATION.Rookie.startStat,
       signatureMove: (prefill && prefill.signatureMove) || '',
       attackDesc,
-      qualities: scannedQualities
+      qualities: [],
+      suggestedQualities
     };
     renderPage();
   }
@@ -1008,7 +1010,7 @@
     return `
     <div class="hud-frame card">
       <div class="section-title"><span>🧙 Creazione Guidata — Digimon</span></div>
-      ${draft.signatureMove ? `<div class="muted" style="margin-bottom:10px;color:var(--dchroma);">📡 Dati importati dalla Bio-Resonance Scan${(draft.qualities||[]).length ? ` (incluse ${draft.qualities.length===1?'la Quality':`le ${draft.qualities.length} Qualities`} già note per questo Digimon, aggiunte qui sotto)` : ''} — puoi comunque modificarli.</div>` : ''}
+      ${draft.signatureMove ? `<div class="muted" style="margin-bottom:10px;color:var(--dchroma);">📡 Dati importati dalla Bio-Resonance Scan — puoi comunque modificarli.</div>` : ''}
       <div class="field"><label>Nome</label><input type="text" id="wiz-d-name" value="${escapeAttr(draft.name)}" /></div>
       ${(()=>{
         const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===(draft.name||'').trim().toLowerCase());
@@ -1039,6 +1041,20 @@
       </div>
       <div class="muted" style="margin-top:6px;">DP non spesi in Stat verranno riservati come budget Qualities (${Math.max(0,dpRemaining)} DP).</div>
       <div style="border-top:1px dashed var(--line);margin:12px 0;"></div>
+      ${(draft.suggestedQualities||[]).length ? `
+      <div class="section-title" style="font-size:12px;"><span>📡 Qualities suggerite dallo Scan</span></div>
+      <div class="muted" style="margin-bottom:8px;">Questo Digimon ha di norma queste Qualities — decidi tu se aggiungerle: se accetti, il costo si scala subito dal budget qui sotto.</div>
+      ${draft.suggestedQualities.map((q,qi)=>`
+        <div class="list-item" style="border-color:var(--dchroma);margin-bottom:8px;">
+          <div class="top-row">
+            <span class="name">${escapeHTML(q.name)} <span class="muted">(${q.cost} DP)</span></span>
+            <button class="btn small" data-wiz-suggested-add="${qi}">+ Aggiungi</button>
+          </div>
+          <div style="font-size:12px;line-height:1.5;margin-top:6px;">${escapeHTML(q.description)}</div>
+        </div>
+      `).join('')}
+      <div style="border-top:1px dashed var(--line);margin:12px 0;"></div>
+      ` : ''}
       <div class="section-title" style="font-size:12px;"><span>Qualities di partenza</span></div>
       ${(()=>{
         const qBudget = Math.max(0, dpRemaining);
@@ -1100,6 +1116,17 @@
     root.querySelectorAll('[data-wiz-q-remove]').forEach(btn=>{
       btn.onclick = ()=>{
         draft.qualities.splice(Number(btn.getAttribute('data-wiz-q-remove')),1);
+        renderPage();
+      };
+    });
+    root.querySelectorAll('[data-wiz-suggested-add]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const idx = Number(btn.getAttribute('data-wiz-suggested-add'));
+        const q = (draft.suggestedQualities||[])[idx];
+        if(!q) return;
+        // Accettata: sposta dal suggerimento alla lista vera, così il costo si scala dal budget.
+        draft.suggestedQualities.splice(idx,1);
+        draft.qualities.push(q);
         renderPage();
       };
     });

@@ -1184,9 +1184,20 @@ function renderTiebreak(tb, wasEarly){
 function renderResult(wasEarly, forcedBest){
   const mismatch = computeMismatches();
   // Ordina per minor numero di mismatch tra i soli candidati ANCORA DISPONIBILI (esclude chi
-  // è già stato assegnato a un altro Tamer della campagna); a parità, ordine di inserimento (stabile).
+  // è già stato assegnato a un altro Tamer della campagna).
   const ranked = availableNames().sort((a,b)=> mismatch[a]-mismatch[b]);
-  const best = (forcedBest && !takenNames.includes(forcedBest)) ? forcedBest : (forcedBest && takenNames.includes(forcedBest) ? ranked[0] : (forcedBest || ranked[0]));
+  let best;
+  if(forcedBest && !takenNames.includes(forcedBest)){
+    best = forcedBest;
+  } else if(forcedBest && takenNames.includes(forcedBest)){
+    best = ranked[0];
+  } else {
+    // Nessuna domanda di spareggio a decidere: se più candidati sono a pari merito, scegliamo a
+    // caso tra loro invece di prendere sempre lo stesso per ordine di inserimento nella lista.
+    const topScore = mismatch[ranked[0]];
+    const tiedBest = ranked.filter(n=>mismatch[n]===topScore);
+    best = tiedBest[Math.floor(Math.random()*tiedBest.length)];
+  }
   const second = ranked.find(n=>n!==best) || ranked[1];
   const d = DIGIMON[best];
 
@@ -1205,15 +1216,10 @@ function renderResult(wasEarly, forcedBest){
   });
   if(forcedBest){
     document.getElementById('runnerUp').innerHTML = 'Deciso dalla domanda di spareggio — il candidato alternativo era <b>' + second + '</b>.';
+  } else if(second){
+    document.getElementById('runnerUp').innerHTML = 'Il più vicino tra gli altri candidati: <b>' + second + '</b>.';
   } else {
-    const tiedWithBest = ranked.filter(n=>mismatch[n]===mismatch[best] && n!==best);
-    if(tiedWithBest.length > 0){
-      document.getElementById('runnerUp').innerHTML = 'Corrispondenza equivalente anche con <b>' + tiedWithBest.join(', ') + '</b> — scegli quello che ti convince di più, o lascia decidere il GM.';
-    } else if(second){
-      document.getElementById('runnerUp').innerHTML = 'Il più vicino tra gli altri candidati: <b>' + second + '</b>.';
-    } else {
-      document.getElementById('runnerUp').innerHTML = '';
-    }
+    document.getElementById('runnerUp').innerHTML = '';
   }
 
   document.getElementById('crestCard').classList.add('hidden');
@@ -1279,7 +1285,7 @@ document.getElementById('addStarterBtn').onclick = ()=>{
   const params = new URLSearchParams({
     prefillName: bestName,
     prefillAttribute: d.attribute || 'Free',
-    prefillPersonality: d.why.slice(0, 180),
+    prefillPersonality: d.why,
     prefillAcc: pureStats.baseAccuracy,
     prefillDmg: pureStats.baseDamage,
     prefillDodge: pureStats.baseDodge,
