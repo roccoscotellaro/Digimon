@@ -385,7 +385,13 @@
   // scorporiamo qui, un Digimon che arriva già con lo Stat gonfiato (es. dal Bio-Resonance Scan)
   // e a cui viene POI aggiunta la Quality Naturewalk finisce per pagare quel +1 due volte.
   function naturewalkBonusFromQualities(qualities){
-    return (qualities||[]).filter(q=>q.mechanic==='naturewalk').reduce((s,q)=>s+(Number(q.rank)||1),0);
+    // Naturewalk: +1 alla Stat scelta. Instinct: +1 automatico a Dodge (stessa eccezione "gratis"
+    // rispetto al budget Stat, vedi regola 4.0x — Rank max = Stage, qui sempre 1 dal Wizard).
+    return (qualities||[]).reduce((s,q)=>{
+      if(q.mechanic==='naturewalk') return s + (Number(q.rank)||1);
+      if(q.mechanic==='instinct') return s + (Number(q.rank)||1);
+      return s;
+    }, 0);
   }
   // Risale la catena evolutiva nel Digidex: trova la voce che elenca `name` fra le proprie
   // evoluzioni (es. da "Gekkomon" risale a "Otamamon", la sua pre-evoluzione registrata).
