@@ -1039,7 +1039,9 @@
       maxWounds:5, currentWounds:5, maxMp:3, currentMp:3,
       baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:1,
       dpTotal:0, unspentBonusDP:0, qualities:[],
-      defaultStage:'Rookie', defaultRange:2, evolutionPoints:0, forcedEvoRoundsLeft:0,
+      // Il "riposo di default" parte da Fresh: con Default Range 2 sblocca Fresh → Baby → Rookie
+      // senza Evolution Points (regola 3.0/8.05b) — coerente con digimon.html.
+      defaultStage:'Fresh', defaultRange:2, evolutionPoints:0, forcedEvoRoundsLeft:0,
       evolveUnlocked:false,
       unlockedEvolutions:[], // nomi delle evoluzioni (dal Digidex) che il Master ha sbloccato per il giocatore
       battery:0, usedSigMoveThisTurn:false,
@@ -2861,7 +2863,7 @@
         <div class="muted" style="margin-bottom:4px;">Evoluzione ${isMasterCtx ? `<button class="btn ghost small" id="btn-toggle-evolve-${containerId}" style="margin-left:8px;${d.evolveUnlocked?'color:var(--cyan);border-color:var(--cyan-dim);':'color:var(--danger);border-color:var(--danger);'}">${d.evolveUnlocked?'🔓 Sbloccata per il giocatore':'🔒 Bloccata per il giocatore'}</button>` : ''}</div>
         ${isMasterCtx ? (()=>{
           const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===(d.name||'').toLowerCase());
-          const options = dexEntry && Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean) : [];
+          const options = dexEntry && Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean).map(evoName).filter(Boolean) : [];
           if(options.length===0) return '';
           return `
           <div class="sub" style="margin-bottom:6px;">Linee evolutive sbloccate per ${escapeHTML(d.name||'il Digimon')} (dal Digidex) — solo quelle spuntate compariranno come scelta quando il giocatore costruirà lo Stage successivo:</div>
@@ -6449,6 +6451,10 @@
 
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s){ return escapeHTML(s); }
+  // Le "evolutions" di una voce Digidex sono oggetti { name, imageUrl, ... }, non semplici stringhe.
+  // Estrae sempre il nome in modo sicuro, altrimenti finisce per stampare "[object Object]" a video
+  // (ed è quello che finiva salvato dentro unlockedEvolutions dalla checkbox del Master).
+  function evoName(ev){ if(ev==null) return ''; return typeof ev==='string' ? ev : String(ev.name||''); }
 
   // ---------- SCENE ENCOUNTERS: name-only strings (legacy) vs full Dex-linked objects ----------
   function normalizeEncounter(e){

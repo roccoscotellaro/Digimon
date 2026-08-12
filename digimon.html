@@ -376,6 +376,10 @@
 
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s){ return escapeHTML(s); }
+  // Le "evolutions" di una voce Digidex sono oggetti { name, imageUrl, ... }, non semplici stringhe
+  // (vedi dex-add-evolist / evolutionsEditableHTML in index.html). Qui estraiamo sempre il nome
+  // in modo sicuro, altrimenti finisce per stampare letteralmente "[object Object]" a video.
+  function evoName(ev){ if(ev==null) return ''; return typeof ev==='string' ? ev : String(ev.name||''); }
 
   function defaultDigimon(){
     return {
@@ -383,7 +387,9 @@
       maxWounds:5, currentWounds:5, maxMp:3, currentMp:3,
       baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:1,
       dpTotal:0, unspentBonusDP:0, qualities:[],
-      defaultStage:'Rookie', defaultRange:2, evolutionPoints:0, forcedEvoRoundsLeft:0,
+      // Il "riposo di default" del Digimon parte da Fresh: con Default Range 2 arriva a Rookie
+      // (Fresh → Baby → Rookie) senza spendere Evolution Points, come da regola 3.0/8.05b.
+      defaultStage:'Fresh', defaultRange:2, evolutionPoints:0, forcedEvoRoundsLeft:0,
       evolveUnlocked:false, unlockedEvolutions:[],
       battery:0, size:'Medium', stance:'Neutral', chatColor:'#c896ff',
       resolveCurrent:0, resolveMax:4, hybridMode:false,
@@ -948,7 +954,7 @@
       ${(()=>{
         const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===(draft.name||'').trim().toLowerCase());
         if(!dexEntry) return draft.name ? `<div class="muted" style="margin-bottom:8px;">Nessuna voce "${escapeHTML(draft.name)}" trovata nel Digidex — sarà una scheda nuova.</div>` : '';
-        const evos = Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean) : [];
+        const evos = Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean).map(evoName).filter(Boolean) : [];
         return `<div class="muted" style="margin-bottom:8px;color:var(--dchroma);">✅ Trovato nel Digidex${dexEntry.stage?` (${escapeHTML(dexEntry.stage)})`:''}.${evos.length?` Evoluzioni già note: ${evos.map(e=>escapeHTML(e)).join(', ')} — le vedrai come suggerimento quando costruirai lo Stage successivo.`:''}</div>`;
       })()}
       <div class="row">
@@ -1059,7 +1065,9 @@
 
         target.digimon.name = draft.name;
         target.digimon.stage = draft.stage;
-        target.digimon.defaultStage = draft.stage;
+        // Riposo di default fisso a Fresh (non allo Stage costruito in Wizard): con Default Range 2
+        // sblocca Fresh → Baby → Rookie senza Evolution Points, coerente con "Stage Attuale".
+        target.digimon.defaultStage = 'Fresh';
         target.digimon.size = draft.size;
         target.digimon.personality = draft.personality;
         target.digimon.imageUrl = draft.imageUrl;
@@ -1079,6 +1087,26 @@
           baseArmor: draft.baseArmor, baseHealth: draft.baseHealth,
           maxWounds: target.digimon.maxWounds, maxMp: target.digimon.maxMp, size: draft.size
         };
+        // Fresh e Baby (In-Training/Baby II) hanno valori di partenza fissi/prevedibili (regola 3.0):
+        // si costruiscono da soli qui invece di far ripetere la Creazione Guidata da capo per ognuno.
+        // Restano comunque modificabili in seguito da "Costruisci Nuovo Stage".
+        if(!target.digimon.stageStats.Fresh){
+          target.digimon.stageStats.Fresh = {
+            name: draft.name,
+            baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:1,
+            maxWounds: stageIndex('Fresh') + 1*2, maxMp: target.digimon.maxMp, size:'Small'
+          };
+        }
+        if(!target.digimon.stageStats.Baby){
+          const babyCfg = STAGE_CREATION.Baby;
+          target.digimon.stageStats.Baby = {
+            name: draft.name,
+            baseAccuracy: babyCfg.startStat, baseDamage: babyCfg.startStat, baseDodge: babyCfg.startStat,
+            baseArmor: babyCfg.startStat, baseHealth: babyCfg.startStat,
+            maxWounds: stageIndex('Baby') + babyCfg.startStat*2, maxMp: target.digimon.maxMp,
+            size: (allowedSizes('Baby')[0] || 'Small')
+          };
+        }
         if(draft.signatureMove){
           target.digimon.attacks = [
             { name: draft.signatureMove, shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc:'Attacco caratteristico portato dal Bio-Resonance Scan.', signature:true, reach:1, areaAttack:false },
@@ -1138,7 +1166,7 @@
       // evoluzioni già registrate — utile soprattutto per chi è stato assegnato via Bio-Resonance Scan.
       const fromName = d.name || '';
       const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===fromName.toLowerCase());
-      const suggestions = dexEntry && Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean) : [];
+      const suggestions = dexEntry && Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean).map(evoName).filter(Boolean) : [];
       const hasKnownLine = suggestions.length > 0;
       const unlockedSuggestions = suggestions.filter(s=>(d.unlockedEvolutions||[]).includes(s));
       const lineLocked = hasKnownLine && unlockedSuggestions.length===0;
@@ -1379,6 +1407,11 @@
     }
     isEditingFullForm = (bodyHTML === null) || !!creationDraft || !!stageBuildDraft;
 
+    // Ogni renderPage() ricostruisce da zero root.innerHTML: senza salvare/ripristinare lo scroll,
+    // azioni come "+ Aggiungi Quality" nel wizard fanno tornare la pagina in cima, dando l'impressione
+    // che la Quality selezionata sia sparita nel nulla (in realtà è stata aggiunta, solo fuori vista).
+    const __savedScrollY = window.scrollY;
+
     root.innerHTML = `
       <div style="max-width:760px;margin:0 auto;">
         ${topbar()}
@@ -1517,6 +1550,8 @@
     }
 
     enableCollapsibleCards(root);
+    // Ripristina la posizione di scroll dopo aver ricostruito root.innerHTML (vedi nota sopra).
+    requestAnimationFrame(()=>{ window.scrollTo(0, __savedScrollY); });
   }
 
   function bindListEditors(target){
