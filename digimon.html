@@ -464,14 +464,16 @@
         baseDodge: Number(params.get('prefillDodge'))||2,
         baseArmor: Number(params.get('prefillArmor'))||2,
         baseHealth: Number(params.get('prefillHp'))||2,
-        signatureMove: params.get('prefillSig') || ''
+        signatureMove: params.get('prefillSig') || '',
+        attackDesc: params.get('prefillAttackDesc') || '',
+        imageUrl: params.get('prefillImg') || ''
       };
     }catch(e){ return null; }
   }
   function clearStarterPrefillFromURL(){
     try{
       const url = new URL(location.href);
-      ['prefillName','prefillAttribute','prefillPersonality','prefillAcc','prefillDmg','prefillDodge','prefillArmor','prefillHp','prefillSig'].forEach(k=>url.searchParams.delete(k));
+      ['prefillName','prefillAttribute','prefillPersonality','prefillAcc','prefillDmg','prefillDodge','prefillArmor','prefillHp','prefillSig','prefillAttackDesc','prefillImg'].forEach(k=>url.searchParams.delete(k));
       history.replaceState(null, '', url.toString());
     }catch(e){}
   }
@@ -915,10 +917,14 @@
   let justBuiltDigimon = false;
 
   function startDigimonWizard(prefill){
+    // Se lo Scan non ha passato un'immagine ma il nome combacia con una voce già presente nel
+    // Digidex, agganciala subito da lì invece di lasciare il campo vuoto.
+    const dexMatch = prefill && prefill.name ? cachedDex.find(e=>(e.name||'').toLowerCase()===prefill.name.toLowerCase()) : null;
+    const attackDesc = (prefill && prefill.attackDesc) || 'Attacco caratteristico portato dal Bio-Resonance Scan.';
     creationDraft = {
       stage:'Rookie', size:'Medium',
       name: (prefill && prefill.name) || '',
-      imageUrl: '',
+      imageUrl: (prefill && prefill.imageUrl) || (dexMatch && dexMatch.image_url) || '',
       personality: (prefill && prefill.personality) || '',
       attribute: (prefill && prefill.attribute) || 'Free',
       baseAccuracy: (prefill && prefill.baseAccuracy) || STAGE_CREATION.Rookie.startStat,
@@ -927,12 +933,13 @@
       baseArmor: (prefill && prefill.baseArmor) || STAGE_CREATION.Rookie.startStat,
       baseHealth: (prefill && prefill.baseHealth) || STAGE_CREATION.Rookie.startStat,
       signatureMove: (prefill && prefill.signatureMove) || '',
+      attackDesc,
       qualities: []
     };
     renderPage();
   }
 
-  function digimonWizardHTML(){
+  function digimonWizardHTML(isMaster){
     const draft = creationDraft;
     const cfg = STAGE_CREATION[draft.stage];
     const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
@@ -954,8 +961,11 @@
       ${(()=>{
         const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===(draft.name||'').trim().toLowerCase());
         if(!dexEntry) return draft.name ? `<div class="muted" style="margin-bottom:8px;">Nessuna voce "${escapeHTML(draft.name)}" trovata nel Digidex — sarà una scheda nuova.</div>` : '';
+        // Le evoluzioni note si mostrano solo al Master: spoilerarle subito al giocatore toglie
+        // la sorpresa della prima Evoluzione (le vedrà comunque quando il Master le sbloccherà).
+        if(!isMaster) return `<div class="muted" style="margin-bottom:8px;color:var(--dchroma);">✅ Trovato nel Digidex${dexEntry.stage?` (${escapeHTML(dexEntry.stage)})`:''}.</div>`;
         const evos = Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean).map(evoName).filter(Boolean) : [];
-        return `<div class="muted" style="margin-bottom:8px;color:var(--dchroma);">✅ Trovato nel Digidex${dexEntry.stage?` (${escapeHTML(dexEntry.stage)})`:''}.${evos.length?` Evoluzioni già note: ${evos.map(e=>escapeHTML(e)).join(', ')} — le vedrai come suggerimento quando costruirai lo Stage successivo.`:''}</div>`;
+        return `<div class="muted" style="margin-bottom:8px;color:var(--dchroma);">✅ Trovato nel Digidex${dexEntry.stage?` (${escapeHTML(dexEntry.stage)})`:''} (visibile solo a te come Master).${evos.length?` Evoluzioni già note: ${evos.map(e=>escapeHTML(e)).join(', ')} — le vedrai come suggerimento quando costruirai lo Stage successivo.`:''}</div>`;
       })()}
       <div class="row">
         <div class="field"><label>Stage</label>
@@ -1109,7 +1119,7 @@
         }
         if(draft.signatureMove){
           target.digimon.attacks = [
-            { name: draft.signatureMove, shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc:'Attacco caratteristico portato dal Bio-Resonance Scan.', signature:true, reach:1, areaAttack:false },
+            { name: draft.signatureMove, shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc: draft.attackDesc || 'Attacco caratteristico portato dal Bio-Resonance Scan.', signature:true, reach:1, areaAttack:false },
             { name:'Raggio a Distanza', shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc:'Un colpo dalla distanza.', signature:false, reach:1, areaAttack:false }
           ];
         }
@@ -1451,7 +1461,7 @@
 
     let bodyHTML;
     if(creationDraft && target){
-      bodyHTML = digimonWizardHTML();
+      bodyHTML = digimonWizardHTML(isMaster);
     } else if(stageBuildDraft && target){
       bodyHTML = stageBuilderHTML(target, isMaster);
     } else if(!target || !target.digimon.name){
@@ -1565,6 +1575,9 @@
       if(approveBtn){
         approveBtn.onclick = async ()=>{
           target.digimon.approved = true;
+          // Appena "schiuso" l'Uovo, il Digimon riparte da Fresh (aggancia stat/nome/immagine
+          // salvati per quello Stage) invece di restare fermo allo Stage costruito nel Wizard.
+          if(target.digimon.stage !== 'Fresh') applyStageChange(target.digimon, target.digimon.stage, 'Fresh');
           await saveMember(session.code, target);
           cachedRoster = await getRoster(session.code);
           renderPage();
@@ -1601,6 +1614,9 @@
         target.digimon.forcedEvoRoundsLeft = Number(document.getElementById('d-forcedEvoRoundsLeft').value)||0;
         target.digimon.defaultStage = document.getElementById('d-defaultStage').value;
         target.digimon.hybridMode = document.getElementById('d-hybridMode').checked;
+        // Fissa Nome/Immagine/Stat appena modificati sullo Stage attualmente attivo, altrimenti al
+        // prossimo switch da "Stage Attuale" applyStageChange li sovrascrive con i valori vecchi.
+        snapshotCurrentStatsToStage(target.digimon, target.digimon.stage);
 
         const msgEl = document.getElementById('d-save-msg');
         msgEl.innerHTML = '<span class="muted">Salvataggio...</span>';

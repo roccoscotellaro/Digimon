@@ -59,7 +59,7 @@
   .progress-seg.done{ background:var(--cyan-dim); }
   .progress-seg.current{ background:var(--cyan); }
 
-  .body-pad{ padding:22px 22px 26px 22px; overflow-wrap:break-word; word-wrap:break-word; }
+  .body-pad{ padding:22px 22px 26px 22px; }
 
   .qnum{
     font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--cyan);
@@ -125,61 +125,6 @@
 
   .hidden{ display:none !important; }
   .footer-note{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-mute); text-align:center; margin-top:6px; letter-spacing:0.05em; }
-
-  .id-block{ background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:16px; }
-  .id-label{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--cyan-dim); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:8px; }
-  .id-row{ display:flex; gap:8px; flex-wrap:wrap; }
-  .id-identity{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:var(--bg); border:1px solid var(--line); border-radius:var(--radius); padding:11px 12px; font-size:14px; }
-  .id-identity b{ color:var(--cyan); }
-  .id-identity .id-swap{ margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--text-mute); text-decoration:underline; cursor:pointer; background:none; border:none; padding:0; }
-  .id-identity .id-swap:hover{ color:var(--cyan-dim); }
-  .id-input{ flex:1; min-width:180px; background:var(--bg); border:1px solid var(--line); border-radius:var(--radius); color:var(--text); padding:11px 12px; font-family:'Manrope',sans-serif; font-size:14px; }
-  .id-input:focus{ outline:none; border-color:var(--cyan-dim); }
-  .id-verify-btn{ background:var(--cyan-dim); color:#04110d; border:none; border-radius:var(--radius); padding:0 16px; font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; cursor:pointer; }
-  .id-verify-btn:hover{ filter:brightness(1.15); }
-  .id-status{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-mute); margin-top:10px; line-height:1.6; }
-  .id-status.err{ color:var(--danger); }
-  .id-status.ok{ color:var(--cyan); }
-  .medaglione-badge{ display:inline-flex; align-items:center; gap:6px; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#ffd76a; border:1px solid #6b5a1f; background:rgba(255,215,106,0.08); border-radius:20px; padding:5px 10px; margin-top:10px; }
-  .attempts-pill{ display:inline-block; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--cyan); border:1px solid var(--cyan-dim); border-radius:20px; padding:5px 10px; margin-top:10px; margin-right:6px; }
-  .log-list{ margin-top:12px; border-top:1px solid var(--line); padding-top:10px; }
-  .log-item{ display:flex; justify-content:space-between; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-mute); padding:5px 0; }
-  .log-item b{ color:var(--text); }
-  .crest-card{ background:linear-gradient(180deg, rgba(255,215,106,0.08), transparent); border:1px solid #6b5a1f; border-radius:var(--radius); padding:16px 18px; margin-bottom:16px; }
-  .crest-card .h{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#ffd76a; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:6px; }
-  .crest-card .name{ font-size:18px; font-weight:800; color:#ffd76a; margin-bottom:6px; }
-  .crest-card .b{ font-size:13.5px; line-height:1.55; color:var(--text); }
-  .crest-portrait{ width:84px; height:84px; margin:4px auto 10px auto; border-radius:16px; overflow:hidden; border:2px solid #6b5a1f; box-shadow:0 0 16px rgba(255,215,106,0.25); background:var(--panel-2); display:flex; align-items:center; justify-content:center; }
-  .crest-portrait img{ width:100%; height:100%; object-fit:contain; }
-  .crest-portrait .placeholder{ font-family:'JetBrains Mono',monospace; font-size:30px; color:#6b5a1f; }
-  .crest-reasoning{ margin-top:12px; border-top:1px solid #6b5a1f; padding-top:8px; }
-  .crest-reasoning summary{ cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:#ffd76a; text-transform:uppercase; letter-spacing:0.05em; }
-  .crest-reasoning-item{ display:flex; gap:8px; align-items:flex-start; font-size:12px; line-height:1.5; padding:6px 0; border-bottom:1px solid rgba(107,90,31,0.4); }
-  .crest-reasoning-item .mark{ font-family:'JetBrains Mono',monospace; font-size:13px; flex-shrink:0; width:16px; text-align:center; }
-  .crest-reasoning-item .mark.yes{ color:#ffd76a; }
-  .crest-reasoning-item .mark.no{ color:var(--text-mute); }
-  .crest-reasoning-item .q{ color:var(--text-mute); }
-  .crest-reasoning-item .a{ color:var(--text); }
-
-  .gm-panel{ margin-top:22px; padding-top:16px; border-top:2px dashed #6b5a1f; overflow-wrap:break-word; word-wrap:break-word; }
-  .gm-panel .gm-title{ font-family:'JetBrains Mono',monospace; font-size:11px; color:#ffd76a; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:10px; }
-  .gm-section{ background:var(--panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:14px; margin-bottom:14px; max-width:100%; }
-  .gm-section .gm-section-h{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--cyan-dim); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:10px; }
-  .gm-crest-row{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }
-  .gm-crest-row label{ width:100%; flex-shrink:0; font-size:12px; color:var(--text); font-weight:700; }
-  .gm-crest-row input{ flex:1; min-width:140px; background:var(--bg); border:1px solid var(--line); border-radius:6px; color:var(--text); padding:8px 10px; font-size:12.5px; }
-  .gm-crest-row button{ background:var(--cyan-dim); color:#04110d; border:none; border-radius:6px; padding:8px 12px; font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:700; cursor:pointer; flex-shrink:0; }
-  .gm-crest-row .gm-thumb{ width:28px; height:28px; border-radius:6px; object-fit:cover; border:1px solid var(--line); flex-shrink:0; }
-  .gm-status{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--text-mute); margin-top:4px; overflow-wrap:break-word; }
-  .gm-ref-table{ font-size:11.5px; }
-  .gm-ref-crest{ margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid var(--line); }
-  .gm-ref-crest:last-child{ border-bottom:none; margin-bottom:0; padding-bottom:0; }
-  .gm-ref-crest .gm-ref-name{ font-weight:800; color:#ffd76a; margin-bottom:4px; }
-  .gm-ref-crest .gm-ref-line{ color:var(--text-mute); padding:2px 0; overflow-wrap:break-word; }
-  .gm-ref-crest .gm-ref-line b{ color:var(--text); font-weight:600; }
-  .gm-test-btn{ width:100%; background:var(--cyan-dim); color:#04110d; border:none; border-radius:var(--radius); padding:12px; font-family:'JetBrains Mono',monospace; font-weight:700; font-size:12px; letter-spacing:0.04em; cursor:pointer; }
-  .gm-test-btn:hover{ filter:brightness(1.15); }
-  .gm-back-btn{ width:100%; margin-top:14px; background:transparent; color:var(--text-mute); border:1px solid var(--line); border-radius:var(--radius); padding:11px; font-family:'JetBrains Mono',monospace; font-size:11px; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -188,7 +133,6 @@
   <div class="topbar">
     <span class="tag"><span class="dot"></span>DIGIVICE OS · MODULO SCAN</span>
     <span class="tag" id="stepLabel">INIT</span>
-    <a href="index.html" class="tag" style="text-decoration:none;">← Tavolo</a>
   </div>
   <div class="progress-row" id="progressRow"></div>
 
@@ -202,20 +146,7 @@
       <br><br>
       Fino a 10 domande, ma se il Digivice trova un match chiaro prima, si ferma subito. Percorsi diversi per persone diverse — nessun risultato "vince" solo perché appare più spesso.
     </div>
-
-    <div class="id-block">
-      <div class="id-label">Identificazione Tamer</div>
-      <div class="id-identity hidden" id="idIdentity"></div>
-      <div class="id-row hidden" id="idRow">
-        <input class="id-input" id="usernameInput" type="text" placeholder="Il tuo nome utente nella campagna..." autocomplete="off" />
-        <button class="id-verify-btn" id="verifyBtn">Verifica</button>
-      </div>
-      <div class="id-status" id="idStatus">Sincronizzazione con Digivice OS...</div>
-    </div>
-
-    <button class="btn hidden" id="startBtn">Avvia la Scansione</button>
-
-    <div class="hidden" id="gmPanel"></div>
+    <button class="btn" id="startBtn">Avvia la Scansione</button>
   </div>
 
   <!-- QUESTION -->
@@ -243,23 +174,9 @@
       <div class="b" id="resWhy"></div>
     </div>
     <div class="traits-row" id="resTraits"></div>
-
-    <div class="crest-card hidden" id="crestCard">
-      <div class="h">🔶 Risonanza del Digimedaglione</div>
-      <div class="crest-portrait" id="crestPortrait"></div>
-      <div class="name" id="crestName"></div>
-      <div class="b" id="crestDesc"></div>
-      <div class="b" id="crestDigimental" style="margin-top:8px;font-weight:700;"></div>
-      <details class="crest-reasoning" id="crestReasoningWrap">
-        <summary>Perché questo Crest? Le domande che l'hanno determinato</summary>
-        <div id="crestReasoning"></div>
-      </details>
-    </div>
-
     <div class="runner-up" id="runnerUp"></div>
     <button class="btn" id="addStarterBtn" style="margin-bottom:10px;">🧬 Aggiungi come Starter</button>
     <button class="btn ghost" id="restartBtn">Ripeti la Scansione</button>
-    <button class="gm-back-btn hidden" id="gmPreviewBackBtn">← Torna al Pannello Master</button>
     <div class="footer-note" id="starterNote" style="display:none;">Apri Digivice OS con il Digimon e le statistiche già pronte nella Creation Wizard — dovrai comunque accedere con codice campagna e nome utente.</div>
     <div class="footer-note">Il risultato è un punto di partenza narrativo, non un vincolo: il GM ha sempre l'ultima parola.</div>
   </div>
@@ -497,174 +414,8 @@ const ALL_NAMES = Object.keys(DIGIMON);
 // il ritratto vero del Digimon invece di un'icona generica. Se il fetch fallisce
 // (offline, codice campagna diverso, immagine non ancora caricata) mostra un placeholder
 // con l'iniziale del nome, senza bloccare il resto della scansione.
-// L'identità NON si reinserisce qui: si eredita dal login fatto sul Tavolo (index.html),
-// che salva la sessione in localStorage sotto 'digivice_session_v1'. Codice campagna e nome
-// utente vengono da lì; 'FRONTIER1' resta solo come fallback per aperture dirette senza sessione.
-function loadSharedSession(){
-  try{ const raw = localStorage.getItem('digivice_session_v1'); return raw ? JSON.parse(raw) : null; }
-  catch(e){ return null; }
-}
-const SHARED_SESSION = loadSharedSession();
-const CAMPAIGN_CODE = (SHARED_SESSION && SHARED_SESSION.code) ? SHARED_SESSION.code : 'FRONTIER1';
+const CAMPAIGN_CODE = 'FRONTIER1'; // aggiorna qui se cambia il codice della campagna
 let DEX_IMAGES = {};
-
-// Immagini dei Crest: NON le genero/scarico io, sono asset ufficiali della serie (copyright
-// Toei/Bandai) e non posso riprodurli. Il Master le imposta dal pannello GM (?gm=1 nell'URL),
-// che le salva sul server (tabella crest_images) così sono visibili a TUTTI i Tamer della
-// campagna, non solo nel browser di chi le ha caricate. Se un nome resta senza URL, viene
-// mostrato un placeholder con l'iniziale.
-let CREST_IMAGES = {
-  Coraggio: '', Amicizia: '', Amore: '', Conoscenza: '',
-  Sincerità: '', Affidabilità: '', Speranza: '', Luce: ''
-};
-async function loadCrestImages(){
-  try{
-    const res = await fetch('/api/upload?resource=crestImages&code=' + encodeURIComponent(CAMPAIGN_CODE));
-    if(!res.ok) return;
-    const data = await res.json();
-    Object.assign(CREST_IMAGES, data.images || {});
-  }catch(e){ /* nessuna immagine disponibile, si userà il placeholder */ }
-}
-loadCrestImages();
-
-async function apiPostCrestImage(crestName, imageUrl){
-  try{
-    const r = await fetch('/api/upload', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ resource:'crestImages', code: CAMPAIGN_CODE, crestName, imageUrl }) });
-    const data = await r.json();
-    if(!r.ok) return { error: data.error || ('Errore ' + r.status) };
-    return data;
-  }catch(e){ return { error: 'Errore di rete: ' + e.message }; }
-}
-
-// ---------- PANNELLO MASTER (visibile solo con ?gm=1 nell'URL) ----------
-// Tre strumenti in uno:
-//  1) Editor immagini Crest — salva sul server, visibile subito a tutti i Tamer.
-//  2) Tabella di riferimento — per ogni Crest, quale risposta di ogni domanda lo allinea.
-//  3) "Prova il quiz per intero" — avvia il VERO mini-quiz dedicato al Crest (8 domande, una
-//     schermata alla volta, esattamente come lo vede un giocatore), senza dover prima passare
-//     dal Digimon-match e senza registrare nulla sul backend. Utile per verificare che le
-//     domande e il risultato abbiano senso prima di farlo giocare al gruppo.
-function checkSharedSessionForGM(){
-  return !!(SHARED_SESSION && SHARED_SESSION.role === 'master');
-}
-// Sblocco automatico se arriviamo da una sessione condivisa (Tavolo/Digidex/Mappa/ecc.) con ruolo Master.
-// Resta comunque disponibile ?gm=1 per accessi diretti senza sessione salvata.
-const isGmMode = new URLSearchParams(location.search).get('gm') === '1' || checkSharedSessionForGM();
-
-function startGmCrestQuizPreview(){
-  document.getElementById('gmPanel').classList.add('hidden');
-  document.getElementById('starterNote').style.display = 'none';
-  document.getElementById('addStarterBtn').classList.add('hidden');
-  document.getElementById('restartBtn').classList.add('hidden');
-  runCrestQuiz((crestAnswers)=>{
-    const matchedCrest = bestCrestMatch(crestAnswers);
-    const matchedDigimental = digimentalFor(matchedCrest);
-    document.getElementById('resultTag').textContent = 'Anteprima Master — nessun dato salvato';
-    document.getElementById('resPortrait').innerHTML = '<span class="placeholder">🔶</span>';
-    document.getElementById('resName').textContent = '';
-    document.getElementById('resStage').textContent = '';
-    document.getElementById('resWhy').textContent = '';
-    document.getElementById('resTraits').innerHTML = '';
-    document.getElementById('runnerUp').innerHTML = '';
-    renderCrestPortrait(matchedCrest);
-    document.getElementById('crestName').textContent = matchedCrest;
-    document.getElementById('crestDesc').textContent = CRESTS[matchedCrest].desc;
-    document.getElementById('crestDigimental').textContent = matchedDigimental ? ('🗡️ ' + matchedDigimental + ' sbloccato') : '';
-    buildCrestReasoning(matchedCrest, crestAnswers);
-    document.getElementById('crestCard').classList.remove('hidden');
-    const backBtn = document.getElementById('gmPreviewBackBtn');
-    backBtn.classList.remove('hidden');
-    showScreen('result');
-  });
-}
-
-function recomputeGmTest(host){
-  const axisMap = {};
-  host.querySelectorAll('[data-test-axis]').forEach(sel=>{
-    const axis = Number(sel.getAttribute('data-test-axis'));
-    if(sel.value) axisMap[axis] = sel.value;
-  });
-  const resultEl = document.getElementById('gmTestResult');
-  if(Object.keys(axisMap).length === 0){
-    resultEl.innerHTML = 'Seleziona qualche risposta per vedere il Crest risultante.';
-    return;
-  }
-  const crest = bestCrestMatch(axisMap);
-  resultEl.innerHTML = 'Crest risultante: <b style="color:#ffd76a;">' + crest + '</b><div id="gmTestReasoning" style="margin-top:8px;"></div>';
-  buildCrestReasoning(crest, axisMap, 'gmTestReasoning');
-}
-
-async function renderGmPanel(){
-  if(!isGmMode) return;
-  await loadCrestImages();
-  const host = document.getElementById('gmPanel');
-  host.classList.remove('hidden');
-  const crestNames = Object.keys(CRESTS);
-
-  const imagesHTML = '<div class="gm-section"><div class="gm-section-h">🖼 Immagini Crest — salvate qui sono visibili a tutti i Tamer della campagna</div>'
-    + crestNames.map(name => (
-        '<div class="gm-crest-row">'
-        + '<label>' + name + '</label>'
-        + (CREST_IMAGES[name] ? ('<img class="gm-thumb" src="' + CREST_IMAGES[name].replace(/"/g,'&quot;') + '" onerror="this.style.visibility=\'hidden\'" />') : '<div class="gm-thumb"></div>')
-        + '<input type="text" data-crest-img="' + name + '" value="' + (CREST_IMAGES[name]||'').replace(/"/g,'&quot;') + '" placeholder="https://..." />'
-        + '<button data-save-crest-img="' + name + '">Salva</button>'
-        + '</div>'
-      )).join('')
-    + '<div class="gm-status" id="gmImgStatus"></div>'
-    + '</div>';
-
-  const refHTML = '<div class="gm-section"><div class="gm-section-h">📋 Riferimento — quale risposta allinea a quale Crest</div><div class="gm-ref-table">'
-    + NORMAL_CRESTS.map(name=>{
-        const tags = CRESTS[name].tags;
-        const lines = CREST_QUESTIONS.map(q =>
-          '<div class="gm-ref-line">' + q.text + ' → <b>' + (tags[q.axis]==='A'?q.a:q.b) + '</b></div>'
-        ).join('');
-        const dig = digimentalFor(name);
-        return '<div class="gm-ref-crest"><div class="gm-ref-name">' + name + (dig ? ' <span class="muted" style="font-weight:400;">→ ' + dig + '</span>' : '') + '</div>' + lines + '</div>';
-      }).join('')
-    + '<div class="gm-ref-crest"><div class="gm-ref-name">🔒 Miracoli <span class="muted" style="font-weight:400;">→ ' + digimentalFor('Miracoli') + '</span></div>'
-    + '<div class="gm-ref-line">SEGRETO — mai annunciato al giocatore in alcuna forma. Si ottiene SOLO rispondendo "A" a tutte e 9 le domande del Crest, senza eccezioni. Una sola risposta diversa esclude il segreto e assegna il Crest normale più vicino.</div></div>'
-    + '<div class="gm-ref-crest"><div class="gm-ref-name">🔒 Destino <span class="muted" style="font-weight:400;">→ ' + digimentalFor('Destino') + '</span></div>'
-    + '<div class="gm-ref-line">SEGRETO — mai annunciato al giocatore in alcuna forma. Si ottiene SOLO rispondendo "B" a tutte e 9 le domande del Crest, senza eccezioni. Una sola risposta diversa esclude il segreto e assegna il Crest normale più vicino.</div></div>'
-    + '</div></div>';
-
-  const testHTML = '<div class="gm-section"><div class="gm-section-h">🧪 Prova il quiz per intero</div>'
-    + '<div class="gm-status" style="margin-top:0;margin-bottom:10px;">Le 9 domande del Crest sono DIVERSE da quelle del match col Digimon (qui sopra vedi quali). Il pulsante qui sotto avvia il vero quiz, una domanda alla volta — nessun dato viene salvato. Rispondi sempre "A" o sempre "B" per testare i due segreti.</div>'
-    + '<button class="gm-test-btn" id="gmStartCrestPreview">▶ Avvia il quiz Crest per intero</button>'
-    + '</div>';
-
-  host.innerHTML = '<div class="gm-title">⚙ Pannello Master (?gm=1 — non visibile ai giocatori)</div>' + imagesHTML + refHTML + testHTML;
-
-  host.querySelectorAll('[data-save-crest-img]').forEach(btn=>{
-    btn.onclick = async ()=>{
-      const name = btn.getAttribute('data-save-crest-img');
-      const input = host.querySelector('[data-crest-img="' + name + '"]');
-      const url = input.value.trim();
-      const statusEl = document.getElementById('gmImgStatus');
-      statusEl.textContent = 'Salvataggio "' + name + '"...';
-      const res = await apiPostCrestImage(name, url);
-      if(res && !res.error){
-        CREST_IMAGES[name] = url;
-        statusEl.textContent = '✓ "' + name + '" salvato — visibile a tutti i Tamer da ora.';
-        renderGmPanel();
-      } else {
-        statusEl.textContent = '⚠ Errore salvando "' + name + '": ' + (res && res.error);
-      }
-    };
-  });
-
-  document.getElementById('gmStartCrestPreview').onclick = startGmCrestQuizPreview;
-}
-renderGmPanel();
-function renderCrestPortrait(name){
-  const host = document.getElementById('crestPortrait');
-  const url = CREST_IMAGES[name];
-  if(url){
-    host.innerHTML = '<img src="' + url.replace(/"/g,'&quot;') + '" alt="' + name + '" onerror="this.parentNode.innerHTML=\'<span class=&quot;placeholder&quot;>' + name.charAt(0) + '</span>\'" />';
-  } else {
-    host.innerHTML = '<span class="placeholder">' + name.charAt(0) + '</span>';
-  }
-}
 
 async function loadDexImages(){
   try{
@@ -689,343 +440,15 @@ function renderPortrait(name){
 }
 const PRIMARY_NAMES = ALL_NAMES.filter(n=>!SECONDARY_ONLY.includes(n));
 
-// ---------- IDENTIFICAZIONE TAMER, TENTATIVI, LOG E ANTI-DOPPIONE ----------
-// Lo scan ora richiede il nome utente (lo stesso della campagna in Digivice OS) prima di poter
-// partire. Il backend (/api/upload?resource=scan) tiene traccia di: quanti tentativi ha già usato quel Tamer
-// (max 2), quali Digimon sono già stati assegnati a QUALSIASI Tamer della campagna (per non
-// avere doppioni), e viene interrogato anche /api/roster per controllare se il Tamer possiede
-// il Digimedaglione in inventario (sblocca la rivelazione del Crest).
-const MAX_ATTEMPTS = 2;
-let currentUsername = '';
-let attemptsUsed = 0;
-let myLog = [];
-let takenNames = [];      // nomi già assegnati a QUALSIASI Tamer della campagna (esclusi dal pool)
-let takenCrests = [];     // Crest/esiti già assegnati a QUALSIASI Tamer (incl. Miracoli/Destino se già usciti)
-let hasMedaglione = false;
-let identityVerified = false;
-
-// NOTA: lo scan è accorpato dentro /api/upload.js (?resource=scan) per restare sotto il limite
-// di Serverless Functions del piano Vercel — vedi commento in cima a upload.js sul server.
-async function apiGetScan(qs){
-  try{
-    const r = await fetch('/api/upload?resource=scan&' + qs);
-    const data = await r.json();
-    if(!r.ok) return { error: data.error || ('Errore ' + r.status) };
-    return data;
-  }catch(e){ return { error: 'Errore di rete: ' + e.message }; }
-}
-async function apiPostScan(body){
-  try{
-    const r = await fetch('/api/upload', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ resource:'scan', ...body }) });
-    const data = await r.json();
-    if(!r.ok) return { error: data.error || ('Errore ' + r.status) };
-    return data;
-  }catch(e){ return { error: 'Errore di rete: ' + e.message }; }
-}
-
-async function checkMedaglione(username){
-  try{
-    const r = await fetch('/api/roster?code=' + encodeURIComponent(CAMPAIGN_CODE));
-    if(!r.ok) return false;
-    const data = await r.json();
-    const member = (data.members || []).find(m => m.username === username);
-    const inv = member && member.tamer && Array.isArray(member.tamer.inventory) ? member.tamer.inventory : [];
-    return inv.some(it => (it.name || '').toLowerCase().includes('digimedaglione') && Number(it.qty||0) > 0);
-  }catch(e){ return false; }
-}
-
-function renderIdStatus(){
-  const el = document.getElementById('idStatus');
-  const remaining = Math.max(0, MAX_ATTEMPTS - attemptsUsed);
-  let html = '';
-  if(remaining > 0){
-    html += '<span class="attempts-pill">Tentativi disponibili: ' + remaining + '/' + MAX_ATTEMPTS + '</span>';
-  } else {
-    html += '<span class="attempts-pill" style="color:var(--danger);border-color:var(--danger);">Tentativi esauriti (0/' + MAX_ATTEMPTS + ')</span>';
-  }
-  if(hasMedaglione){
-    html += '<span class="medaglione-badge">🔶 Digimedaglione rilevato — sblocca la rivelazione del Crest</span>';
-  }
-  if(myLog.length){
-    html += '<div class="log-list">' + myLog.map(l =>
-      '<div class="log-item"><span>Tentativo ' + l.attempt_number + '</span><b>' + l.digimon_name + (l.crest_name ? ' · Crest: ' + l.crest_name : '') + '</b></div>'
-    ).join('') + '</div>';
-  }
-  el.className = 'id-status ' + (remaining > 0 ? 'ok' : 'err');
-  el.innerHTML = html;
-}
-
-// Verifica dell'identità: unica funzione usata sia dall'avvio automatico (sessione ereditata
-// dal login sul Tavolo) sia dal fallback manuale per chi apre la pagina senza sessione.
-async function verifyIdentity(uname){
-  const statusEl = document.getElementById('idStatus');
-  const startBtn = document.getElementById('startBtn');
-  uname = String(uname||'').trim();
-  if(!uname){ statusEl.className='id-status err'; statusEl.textContent='Inserisci un nome utente prima di verificare.'; return false; }
-  statusEl.className = 'id-status';
-  statusEl.textContent = 'Sincronizzazione con Digivice OS in corso...';
-  const [scanData, medaglione] = await Promise.all([
-    apiGetScan('code=' + encodeURIComponent(CAMPAIGN_CODE) + '&username=' + encodeURIComponent(uname)),
-    checkMedaglione(uname)
-  ]);
-  if(scanData.error){
-    statusEl.className = 'id-status err';
-    statusEl.innerHTML = '⚠ ' + scanData.error
-      + '<br/><button class="id-verify-btn" id="idRetryBtn" style="margin-top:8px;">Riprova</button>'
-      + '<div style="margin-top:6px;">Se l\'errore resta, avvisa il GM.</div>';
-    const retry = document.getElementById('idRetryBtn');
-    if(retry) retry.onclick = ()=> verifyIdentity(uname);
-    startBtn.classList.add('hidden');
-    return false;
-  }
-  currentUsername = uname;
-  attemptsUsed = scanData.attemptsUsed || 0;
-  myLog = scanData.myLog || [];
-  takenNames = scanData.takenNames || [];
-  takenCrests = scanData.takenCrests || [];
-  hasMedaglione = medaglione;
-  identityVerified = true;
-  renderIdStatus();
-  if(attemptsUsed >= MAX_ATTEMPTS){
-    startBtn.classList.add('hidden');
-  } else {
-    startBtn.classList.remove('hidden');
-    startBtn.textContent = 'Avvia la Scansione (tentativo ' + (attemptsUsed+1) + '/' + MAX_ATTEMPTS + ')';
-  }
-  return true;
-}
-
-document.getElementById('verifyBtn').onclick = ()=> verifyIdentity(document.getElementById('usernameInput').value);
-document.getElementById('usernameInput').addEventListener('keydown', (e)=>{
-  if(e.key === 'Enter') verifyIdentity(e.target.value);
-});
-
-function showManualIdentity(message){
-  document.getElementById('idIdentity').classList.add('hidden');
-  document.getElementById('idRow').classList.remove('hidden');
-  const statusEl = document.getElementById('idStatus');
-  statusEl.className = 'id-status';
-  statusEl.innerHTML = message;
-}
-
-// Avvio: se c'è una sessione di login la usiamo direttamente, senza far ridigitare il nome.
-function bootIdentity(){
-  if(SHARED_SESSION && SHARED_SESSION.username){
-    const idEl = document.getElementById('idIdentity');
-    idEl.classList.remove('hidden');
-    idEl.innerHTML = 'Identificato come <b>' + escapeHtmlText(SHARED_SESSION.username) + '</b>'
-      + '<span class="muted" style="font-size:11px;"> · campagna ' + escapeHtmlText(CAMPAIGN_CODE) + '</span>'
-      + '<button class="id-swap" id="idSwapBtn" type="button">non sei tu?</button>';
-    const swap = document.getElementById('idSwapBtn');
-    if(swap) swap.onclick = ()=>{
-      identityVerified = false;
-      document.getElementById('startBtn').classList.add('hidden');
-      showManualIdentity('Inserisci un altro nome utente della campagna e premi Verifica.');
-      document.getElementById('usernameInput').value = '';
-      document.getElementById('usernameInput').focus();
-    };
-    verifyIdentity(SHARED_SESSION.username);
-  } else {
-    showManualIdentity('Nessuna sessione attiva: <a href="index.html" style="color:var(--cyan);">accedi dal Tavolo</a> per identificarti automaticamente, oppure inserisci qui il tuo nome utente.');
-  }
-}
-function escapeHtmlText(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-bootIdentity();
-
-// Pool di candidati realmente disponibili: esclude chi è già stato assegnato a un altro Tamer
-// della campagna. Se per qualche motivo il pool si svuotasse del tutto (praticamente impossibile
-// con 40 candidati), si ricade sul pool completo piuttosto che bloccare lo scan.
-function availableNames(){
-  const filtered = PRIMARY_NAMES.filter(n => !takenNames.includes(n));
-  return filtered.length ? filtered : PRIMARY_NAMES.slice();
-}
-
 function findTiebreakForTop(ranked, mismatch){
   const best = ranked[0];
   return TIEBREAK_QUESTIONS.find(tb=>{
     if(!tb.group.includes(best)) return false;
-    // Le "controparti" di spareggio proposte devono anch'esse essere ancora disponibili
-    // (non già assegnate a un altro Tamer), altrimenti non ha senso proporle come opzione.
-    const others = tb.group.filter(n=> n!==best && !takenNames.includes(n));
+    const others = tb.group.filter(n=>n!==best);
+    // Trigger se ALMENO un altro membro del gruppo è entro 1 mismatch dal migliore attuale:
+    // non serve che siano esattamente i primi due, basta che siano vicinissimi tra loro.
     return others.some(o => (mismatch[o] - mismatch[best]) <= 1);
   });
-}
-
-// ---------- CREST (sbloccato solo con il Digimedaglione in inventario) ----------
-// Domande DEDICATE, diverse da quelle del Digimon-match qui sopra: ognuna delle 8 mette il
-// giocatore davanti a un dilemma legato al "nucleo" di un singolo Crest classico. Rispondere
-// "A" (la scelta che incarna quel valore) pesa a favore di quel Crest; rispondere "B" no.
-// Non c'è vincolo di unicità tra Tamer: più persone possono convergere sullo stesso Crest,
-// è narrativamente corretto.
-const CREST_QUESTIONS = [
-  { axis:0, crest:'Coraggio',
-    text:"Devi decidere in una frazione di secondo, senza tempo per pensarci.",
-    a:"Agisco subito, di petto — poi si vedrà.", b:"Mi blocco un istante e cerco un'alternativa più sicura." },
-  { axis:1, crest:'Amicizia',
-    text:"Un amico ti chiede un favore grosso, che ti costerà caro.",
-    a:"Lo aiuto comunque — gli amici vengono prima di tutto.", b:"Valuto bene i costi prima di impegnarmi davvero." },
-  { axis:2, crest:'Amore',
-    text:"Vedi qualcuno soffrire in silenzio, senza chiedere aiuto.",
-    a:"Mi avvicino e mi prendo cura di lui/lei comunque.", b:"Aspetto che sia lui/lei a cercarmi, se vuole parlarne." },
-  { axis:3, crest:'Conoscenza',
-    text:"Ti trovi davanti a un problema che non capisci ancora del tutto.",
-    a:"Voglio prima capirlo a fondo, prima di agire.", b:"Provo e imparo facendo — capirò strada facendo." },
-  { axis:4, crest:'Sincerità',
-    text:"Un'opinione scomoda potrebbe ferire qualcuno a cui tieni.",
-    a:"Gliela dico comunque — la verità viene prima.", b:"Scelgo le parole con cura, o taccio se serve." },
-  { axis:5, crest:'Affidabilità',
-    text:"Ti hanno affidato un compito importante per il gruppo.",
-    a:"Lo porto a termine qualunque cosa succeda — è una promessa.", b:"Faccio il possibile, ma le circostanze possono cambiare le cose." },
-  { axis:6, crest:'Speranza',
-    text:"Le cose sembrano perse, tutto va storto.",
-    a:"Continuo a crederci, e lo dico agli altri per tenerli su.", b:"Mi preparo al peggio — meglio essere realisti." },
-  { axis:7, crest:'Luce',
-    text:"Un compagno è confuso, non sa che scelta fare.",
-    a:"Gli sto vicino in silenzio — la mia presenza basta.", b:"Gli parlo, provo ad aiutarlo a vedere le cose chiaramente." },
-  { axis:8, crest:'Gentilezza',
-    text:"Un rivale che non ti ha mai trattato bene è nei guai, e nessun altro muoverebbe un dito per lui/lei.",
-    a:"Lo aiuto comunque, anche se non se lo aspetta da me.", b:"Non sono affari miei — ognuno raccoglie quello che semina." }
-];
-
-// Ogni Crest "normale" è 'A' solo sul proprio asse-dilemma e 'B' su tutti gli altri: il Crest che
-// esce è semplicemente quello il cui dilemma hai risolto "in modo eroico" (risposta A). Se hai
-// risposto A a più di un dilemma, vince quello con priorità più alta nell'ordine qui sotto
-// (Coraggio in cima); se non hai risposto A a nessuno, il Digivice assegna Coraggio di default.
-// Semplice e trasparente da verificare — vedi la tabella di riferimento nel pannello Master.
-//
-// Miracoli e Destino sono contenuti SEGRETI (mai annunciati al giocatore, in nessuna forma): si
-// ottengono SOLO rispondendo esattamente "A" a tutte e 9 le domande (Miracoli) o esattamente "B"
-// a tutte e 9 (Destino) — non c'è punteggio parziale, una sola risposta diversa esclude entrambi
-// e si torna al Crest "normale" più vicino. La logica è in bestCrestMatch, non qui.
-const CRESTS = {
-  Coraggio:      { tags:'ABBBBBBBB', desc:'Agisci d\'istinto per chi ami, ti butti al centro della scena e non hai paura di sbagliare in pubblico. La tua è una spinta pura, diretta, quasi mai calcolata.' },
-  Amicizia:      { tags:'BABBBBBBB', desc:'Ti fidi lentamente ma quando lo fai è per sempre — proteggi chi ti sta vicino piegando anche le regole, restando però riservato/a su come lo vivi davvero.' },
-  Amore:         { tags:'BBABBBBBB', desc:'Ti prendi cura degli altri con calore e fiducia immediata, ma tieni le tue emozioni più profonde per te, dimostrandole con la presenza più che con le parole.' },
-  Conoscenza:    { tags:'BBBABBBBB', desc:'Osservi, rifletti, analizzi prima di agire. Preferisci capire davvero una situazione piuttosto che reagire d\'istinto, e agisci meglio lontano dai riflettori.' },
-  Sincerità:     { tags:'BBBBABBBB', desc:'Dici quello che pensi, ti fidi facilmente e vivi le emozioni apertamente. Il tuo ottimismo e la tua spontaneità sono la tua forma più onesta di affetto.' },
-  Affidabilità:  { tags:'BBBBBABBB', desc:'Sei prudente, rispetti le regole e ti prepari sempre al peggio — non per pessimismo, ma perché qualcuno deve pensare a tutto. Su di te si può sempre contare.' },
-  Speranza:      { tags:'BBBBBBABB', desc:'Credi che le cose si risolveranno anche quando le prove dicono il contrario, e lo dici apertamente per sostenere chi ti sta vicino. Il tuo ottimismo è contagioso, non ingenuo.' },
-  Luce:          { tags:'BBBBBBBAB', desc:'Sei riflessivo/a ma caloroso/a, empatico/a e gentile — non cerchi l\'attenzione, ma la tua presenza discreta cambia le cose per chi ti circonda.' },
-  Gentilezza:    { tags:'BBBBBBBBA', desc:'Aiuti anche chi non se lo merita e non te lo chiede, senza cercare nulla in cambio. La tua bontà non ha condizioni — è la forma più disarmante di forza.' },
-  Miracoli:      { tags:'AAAAAAAAA', desc:'Ogni singola scelta, senza eccezioni, è stata quella più coraggiosa, generosa e istintiva possibile. Il Digivice non ha mai visto una risonanza così totale — qualcosa di eccezionale si è appena risvegliato.' },
-  Destino:       { tags:'BBBBBBBBB', desc:'Ogni singola scelta, senza eccezioni, è stata quella più prudente e ponderata possibile. Una costanza così assoluta non è indecisione: è il segno di chi è destinato a guidare, non a seguire.' }
-};
-
-// Crest "normali" ottenibili tramite punteggio (Miracoli e Destino ne sono esclusi: si ottengono
-// SOLO tramite corrispondenza esatta, mai per punteggio più vicino).
-const NORMAL_CRESTS = Object.keys(CRESTS).filter(n => n !== 'Miracoli' && n !== 'Destino');
-
-// Ogni Crest "normale" corrisponde 1:1 a uno dei 9 Digimental "core" (tutti tranne Oscurità, che
-// resta escluso perché non canonico/non abbinato a un Crest). Miracoli e Destino sono anche i
-// nomi dei rispettivi Digimental — non serve una mappa separata per quei due.
-const CREST_TO_DIGIMENTAL = {
-  Coraggio: 'Digimental del Coraggio', Amicizia: 'Digimental dell\'Amicizia', Amore: 'Digimental dell\'Amore',
-  Conoscenza: 'Digimental della Conoscenza', Sincerità: 'Digimental della Sincerità', Affidabilità: 'Digimental dell\'Affidabilità',
-  Speranza: 'Digimental della Speranza', Luce: 'Digimental della Luce', Gentilezza: 'Digimental della Gentilezza',
-  Miracoli: 'Digimental dei Miracoli', Destino: 'Digimental del Destino'
-};
-function digimentalFor(crestName){ return CREST_TO_DIGIMENTAL[crestName] || null; }
-
-function bestCrestMatch(axisMapOverride){
-  const axisMap = axisMapOverride || answersByAxisCrest;
-
-  // 1) Controllo dei due esiti SEGRETI: corrispondenza ESATTA su tutte e 9 le domande, nessuna
-  // eccezione ammessa (una sola risposta diversa esclude il segreto). Solo se non già assegnato
-  // a un altro Tamer della campagna — altrimenti si ricade sul Crest normale più vicino.
-  const answeredAll = CREST_QUESTIONS.every(q => axisMap[q.axis] !== undefined);
-  if(answeredAll){
-    const allA = CREST_QUESTIONS.every(q => axisMap[q.axis] === 'A');
-    const allB = CREST_QUESTIONS.every(q => axisMap[q.axis] === 'B');
-    if(allA && !takenCrests.includes('Miracoli')) return 'Miracoli';
-    if(allB && !takenCrests.includes('Destino')) return 'Destino';
-  }
-
-  // 2) Punteggio normale sui 9 Crest "normali", escludendo quelli già assegnati a un altro Tamer
-  // (se per assurdo fossero tutti presi, si ricade sul set completo piuttosto che bloccarsi).
-  const available = NORMAL_CRESTS.filter(n => !takenCrests.includes(n));
-  const pool = available.length ? available : NORMAL_CRESTS;
-  const mismatch = {};
-  pool.forEach(name=>{
-    const tags = CRESTS[name].tags;
-    let m = 0;
-    for(let axis=0; axis<CREST_QUESTIONS.length; axis++){
-      const given = axisMap[axis];
-      if(given === undefined) continue;
-      if(given !== tags[axis]) m++;
-    }
-    mismatch[name] = m;
-  });
-  // IMPORTANTE per l'equità: quando più Crest sono a pari merito (es. hai risposto "A" a più di
-  // una domanda), la scelta tra i pareggiati è CASUALE, non "il primo della lista". Con un ordine
-  // fisso, Coraggio (primo) vincerebbe ogni pareggio che lo coinvolge — circa metà delle scansioni
-  // — mentre Gentilezza (ultimo) vincerebbe solo rispondendo "A" a lei sola e "B" a tutte le altre
-  // otto. Scegliendo a caso tra i pareggiati, ogni Crest ha invece la stessa probabilità di uscire.
-  const minMismatch = Math.min(...pool.map(n => mismatch[n]));
-  const tied = pool.filter(n => mismatch[n] === minMismatch);
-  return tied[Math.floor(Math.random() * tied.length)];
-}
-
-// Elenca, per il Crest assegnato, tutte le domande DEDICATE (CREST_QUESTIONS) a cui il
-// giocatore ha risposto: mostra la domanda, la risposta data, e se è allineata (✔) o meno (·)
-// col profilo del Crest — così chi ha il Digimedaglione può vedere "perché" gli è uscito quel
-// Crest, non solo il nome.
-function buildCrestReasoning(crestName, axisMapOverride, targetId){
-  const tags = CRESTS[crestName].tags;
-  const axisMap = axisMapOverride || answersByAxisCrest;
-  const wrap = document.getElementById(targetId || 'crestReasoning');
-  const rows = CREST_QUESTIONS
-    .filter(q => axisMap[q.axis] !== undefined)
-    .map(q=>{
-      const given = axisMap[q.axis];
-      const aligned = given === tags[q.axis];
-      const answerText = given === 'A' ? q.a : q.b;
-      return '<div class="crest-reasoning-item">'
-        + '<span class="mark ' + (aligned ? 'yes' : 'no') + '">' + (aligned ? '✔' : '·') + '</span>'
-        + '<span><span class="q">' + q.text + '</span><br/><span class="a">' + answerText + '</span></span>'
-        + '</div>';
-    });
-  wrap.innerHTML = rows.join('') || '<div class="muted" style="font-size:11px;">Nessuna domanda registrata per questo scan.</div>';
-}
-
-let answersByAxisCrest = {}; // { [axis]: 'A'|'B' } — risposte al mini-quiz dedicato al Crest
-let crestQuizPending = null; // stato in sospeso mentre gira il mini-quiz Crest (vedi runCrestQuiz)
-
-// Motore condiviso del mini-quiz Crest: usato sia dal flusso reale (dopo il match Digimon, se il
-// Tamer ha il Digimedaglione) sia dal "Prova il quiz per intero" nel pannello Master. Riusa le
-// STESSE schermate (screen-question/screen-scanning) della scansione principale — non un modulo
-// separato — così testare col Master equivale esattamente a quello che vede un giocatore.
-function runCrestQuiz(onDone){
-  const order = shuffledIndices(CREST_QUESTIONS.length);
-  let idx = 0;
-  const answers = {};
-  function step(){
-    const q = CREST_QUESTIONS[order[idx]];
-    document.getElementById('qnum').textContent = 'RISONANZA DEL CREST — Domanda ' + (idx+1) + '/' + CREST_QUESTIONS.length;
-    document.getElementById('candidatesLeft').textContent = '🔶 Il Digimedaglione reagisce...';
-    document.getElementById('qtext').textContent = q.text;
-    const wrap = document.getElementById('optsWrap');
-    wrap.innerHTML = '';
-    [['A', q.a], ['B', q.b]].forEach(([letter, text])=>{
-      const btn = document.createElement('button');
-      btn.className = 'opt';
-      btn.innerHTML = '<span class="k">' + letter + '</span>' + text;
-      btn.onclick = ()=>{
-        answers[q.axis] = letter;
-        idx++;
-        if(idx < CREST_QUESTIONS.length){
-          step();
-        } else {
-          showScreen('scanning');
-          stepLabel.textContent = 'CREST';
-          document.getElementById('scanLabel').textContent = 'RISONANZA DEL DIGIMEDAGLIONE...';
-          setTimeout(()=>{ onDone(answers); }, 900);
-        }
-      };
-      wrap.appendChild(btn);
-    });
-    showScreen('question');
-  }
-  step();
 }
 
 let current = 0;
@@ -1085,7 +508,7 @@ function computeMismatches(){
 
 function remainingPerfectMatches(){
   const mismatch = computeMismatches();
-  return availableNames().filter(n=>mismatch[n]===0);
+  return PRIMARY_NAMES.filter(n=>mismatch[n]===0);
 }
 
 function updateProgress(){
@@ -1144,7 +567,7 @@ function selectOption(letter, axis){
 // se sì e non abbiamo già usato la domanda di spareggio in questa scansione, la mostra prima del risultato.
 function proceedToResult(wasEarly){
   const mismatch = computeMismatches();
-  const ranked = availableNames().sort((a,b)=> mismatch[a]-mismatch[b]);
+  const ranked = PRIMARY_NAMES.slice().sort((a,b)=> mismatch[a]-mismatch[b]);
   const tb = (!tiebreakUsed && ranked.length>=1) ? findTiebreakForTop(ranked, mismatch) : null;
   if(tb){
     tiebreakUsed = true;
@@ -1161,12 +584,7 @@ function renderTiebreak(tb, wasEarly){
   document.getElementById('qtext').textContent = tb.text;
   const wrap = document.getElementById('optsWrap');
   wrap.innerHTML = '';
-  // Non propone come opzione una "controparte" già assegnata a un altro Tamer della campagna
-  // (a meno che, per un pool quasi esaurito, non resti nessuna opzione disponibile: in quel
-  // caso mostra comunque tutte le opzioni piuttosto che bloccare lo spareggio).
-  const availableOpts = tb.options.filter(opt => !takenNames.includes(opt.forName));
-  const opts = availableOpts.length ? availableOpts : tb.options;
-  opts.forEach(opt=>{
+  tb.options.forEach(opt=>{
     const btn = document.createElement('button');
     btn.className = 'opt';
     btn.innerHTML = '<span class="k">'+opt.letter+'</span>' + opt.text;
@@ -1183,10 +601,9 @@ function renderTiebreak(tb, wasEarly){
 
 function renderResult(wasEarly, forcedBest){
   const mismatch = computeMismatches();
-  // Ordina per minor numero di mismatch tra i soli candidati ANCORA DISPONIBILI (esclude chi
-  // è già stato assegnato a un altro Tamer della campagna); a parità, ordine di inserimento (stabile).
-  const ranked = availableNames().sort((a,b)=> mismatch[a]-mismatch[b]);
-  const best = (forcedBest && !takenNames.includes(forcedBest)) ? forcedBest : (forcedBest && takenNames.includes(forcedBest) ? ranked[0] : (forcedBest || ranked[0]));
+  // Ordina per minor numero di mismatch tra i soli candidati primari; a parità, ordine di inserimento (stabile).
+  const ranked = PRIMARY_NAMES.slice().sort((a,b)=> mismatch[a]-mismatch[b]);
+  const best = forcedBest || ranked[0];
   const second = ranked.find(n=>n!==best) || ranked[1];
   const d = DIGIMON[best];
 
@@ -1215,56 +632,9 @@ function renderResult(wasEarly, forcedBest){
       document.getElementById('runnerUp').innerHTML = '';
     }
   }
-
-  document.getElementById('crestCard').classList.add('hidden');
   stepLabel.textContent = 'MATCH';
   document.getElementById('starterNote').style.display = 'block';
   showScreen('result');
-
-  if(hasMedaglione){
-    // Il Digimedaglione si attiva SOLO dopo che il match col Digimon è già stato mostrato: il
-    // Tamer vede prima il suo Digimon, poi (con una breve pausa) parte il mini-quiz dedicato
-    // al Crest (8 domande diverse da quelle del match, una per Crest). Il salvataggio sul
-    // backend avviene solo alla fine, con Digimon e Crest già decisi entrambi.
-    setTimeout(()=>{
-      runCrestQuiz((crestAnswers)=>{
-        answersByAxisCrest = crestAnswers;
-        const matchedCrest = bestCrestMatch(crestAnswers);
-        const matchedDigimental = digimentalFor(matchedCrest);
-        renderCrestPortrait(matchedCrest);
-        document.getElementById('crestName').textContent = matchedCrest;
-        document.getElementById('crestDesc').textContent = CRESTS[matchedCrest].desc;
-        document.getElementById('crestDigimental').textContent = matchedDigimental ? ('🗡️ ' + matchedDigimental + ' sbloccato') : '';
-        buildCrestReasoning(matchedCrest, crestAnswers);
-        document.getElementById('crestCard').classList.remove('hidden');
-        showScreen('result');
-        logScanAttempt(best, matchedCrest);
-      });
-    }, 1400);
-  } else {
-    logScanAttempt(best, null);
-  }
-}
-
-// Registra il tentativo sul backend: aggiorna il conteggio tentativi, il log e la lista dei
-// nomi presi, così il prossimo giocatore (o un secondo tentativo dello stesso) non può più
-// ricevere questo stesso Digimon (né lo stesso Crest, se assegnato).
-function logScanAttempt(best, matchedCrest){
-  if(identityVerified && currentUsername){
-    const nextAttempt = attemptsUsed + 1;
-    const matchedDigimental = matchedCrest ? digimentalFor(matchedCrest) : null;
-    apiPostScan({ code: CAMPAIGN_CODE, username: currentUsername, digimonName: best, crestName: matchedCrest, digimentalName: matchedDigimental, attemptNumber: nextAttempt })
-      .then(res=>{
-        if(res && !res.error){
-          attemptsUsed = nextAttempt;
-          takenNames.push(best);
-          if(matchedCrest) takenCrests.push(matchedCrest);
-          myLog.push({ attempt_number: nextAttempt, digimon_name: best, crest_name: matchedCrest, digimental_name: matchedDigimental });
-        }
-        // Se il salvataggio fallisce (rete assente, race condition su un doppione), il risultato
-        // resta comunque visibile al giocatore: è il GM a dover risolvere manualmente il conflitto.
-      });
-  }
 }
 
 document.getElementById('addStarterBtn').onclick = ()=>{
@@ -1281,18 +651,16 @@ document.getElementById('addStarterBtn').onclick = ()=>{
     prefillArmor: d.stats.baseArmor,
     prefillHp: d.stats.baseHealth,
     prefillSig: d.signatureMove || '',
-    prefillAttackDesc: d.attackDesc || ''
+    prefillAttackDesc: d.attackDesc || '',
+    prefillImg: DEX_IMAGES[bestName] || ''
   });
+  // La Creazione Guidata vive in digimon.html, non in index.html (il Tavolo) — prima puntava lì
+  // per errore e i parametri di prefill (nome, stat, immagine...) venivano semplicemente ignorati.
   // NB: assume digimon.html si trova nella stessa cartella di questo file (stesso deploy Vercel).
-  // La Creazione Guidata del Digimon vive ora su digimon.html, non più su index.html.
   window.open('digimon.html?' + params.toString(), '_blank');
 };
 
 document.getElementById('startBtn').onclick = ()=>{
-  if(!identityVerified || attemptsUsed >= MAX_ATTEMPTS){
-    renderIdStatus();
-    return;
-  }
   current = 0;
   answersByAxis = {};
   sessionOrder = shuffledIndices(QUESTIONS.length);
@@ -1300,43 +668,13 @@ document.getElementById('startBtn').onclick = ()=>{
   renderQuestion();
 };
 
-document.getElementById('restartBtn').onclick = async ()=>{
+document.getElementById('restartBtn').onclick = ()=>{
   current = 0;
   answersByAxis = {};
   sessionOrder = shuffledIndices(QUESTIONS.length);
   tiebreakUsed = false;
   stepLabel.textContent = 'INIT';
   showScreen('intro');
-  // Ri-sincronizza tentativi/log/nomi presi (nel frattempo potrebbero essere cambiati, es. un
-  // altro giocatore ha completato uno scan) prima di lasciare che riprovi.
-  if(identityVerified && currentUsername){
-    const scanData = await apiGetScan('code=' + encodeURIComponent(CAMPAIGN_CODE) + '&username=' + encodeURIComponent(currentUsername));
-    if(!scanData.error){
-      attemptsUsed = scanData.attemptsUsed || 0;
-      myLog = scanData.myLog || [];
-      takenNames = scanData.takenNames || [];
-      takenCrests = scanData.takenCrests || [];
-    }
-    renderIdStatus();
-    const startBtn = document.getElementById('startBtn');
-    if(attemptsUsed >= MAX_ATTEMPTS){
-      startBtn.classList.add('hidden');
-    } else {
-      startBtn.classList.remove('hidden');
-      startBtn.textContent = 'Avvia la Scansione (tentativo ' + (attemptsUsed+1) + '/' + MAX_ATTEMPTS + ')';
-    }
-  }
-};
-
-document.getElementById('gmPreviewBackBtn').onclick = ()=>{
-  document.getElementById('gmPreviewBackBtn').classList.add('hidden');
-  document.getElementById('addStarterBtn').classList.remove('hidden');
-  document.getElementById('restartBtn').classList.remove('hidden');
-  document.getElementById('starterNote').style.display = '';
-  document.getElementById('crestCard').classList.add('hidden');
-  stepLabel.textContent = 'INIT';
-  showScreen('intro');
-  document.getElementById('gmPanel').classList.remove('hidden');
 };
 </script>
 

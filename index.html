@@ -3496,6 +3496,9 @@
         me.digimon.qualities = d.qualities || [];
         if(me.digimon.currentWounds > me.digimon.maxWounds) me.digimon.currentWounds = me.digimon.maxWounds;
         if(me.digimon.currentMp > me.digimon.maxMp) me.digimon.currentMp = me.digimon.maxMp;
+        // Fissa Nome/Immagine/Stat appena modificati sullo Stage attivo, altrimenti al prossimo
+        // switch/Evoluzione applyStageChange li sovrascrive con i valori vecchi salvati per quello Stage.
+        snapshotCurrentStatsToStage(me.digimon, me.digimon.stage);
         const ok = await saveMember(session.code, me);
         const st = document.getElementById('save-status-digimon-'+containerId);
         st.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
