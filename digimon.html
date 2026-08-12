@@ -384,6 +384,7 @@
       baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:1,
       dpTotal:0, unspentBonusDP:0, qualities:[],
       defaultStage:'Rookie', defaultRange:2, evolutionPoints:0, forcedEvoRoundsLeft:0,
+      evolveUnlocked:false, unlockedEvolutions:[],
       battery:0, size:'Medium', stance:'Neutral', chatColor:'#c896ff',
       resolveCurrent:0, resolveMax:4, hybridMode:false,
       attacks:[]
@@ -393,6 +394,7 @@
     m.digimon = Object.assign(defaultDigimon(), m.digimon||{});
     if(!Array.isArray(m.digimon.qualities)) m.digimon.qualities = [];
     if(!Array.isArray(m.digimon.attacks)) m.digimon.attacks = [];
+    if(!Array.isArray(m.digimon.unlockedEvolutions)) m.digimon.unlockedEvolutions = [];
     return m;
   }
 
@@ -943,6 +945,12 @@
       <div class="section-title"><span>🧙 Creazione Guidata — Digimon</span></div>
       ${draft.signatureMove ? `<div class="muted" style="margin-bottom:10px;color:var(--dchroma);">📡 Dati importati dalla Bio-Resonance Scan — puoi comunque modificarli.</div>` : ''}
       <div class="field"><label>Nome</label><input type="text" id="wiz-d-name" value="${escapeAttr(draft.name)}" /></div>
+      ${(()=>{
+        const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===(draft.name||'').trim().toLowerCase());
+        if(!dexEntry) return draft.name ? `<div class="muted" style="margin-bottom:8px;">Nessuna voce "${escapeHTML(draft.name)}" trovata nel Digidex — sarà una scheda nuova.</div>` : '';
+        const evos = Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean) : [];
+        return `<div class="muted" style="margin-bottom:8px;color:var(--dchroma);">✅ Trovato nel Digidex${dexEntry.stage?` (${escapeHTML(dexEntry.stage)})`:''}.${evos.length?` Evoluzioni già note: ${evos.map(e=>escapeHTML(e)).join(', ')} — le vedrai come suggerimento quando costruirai lo Stage successivo.`:''}</div>`;
+      })()}
       <div class="row">
         <div class="field"><label>Stage</label>
           <select id="wiz-d-stage">${STAGES.map(s=>`<option ${draft.stage===s?'selected':''}>${s}</option>`).join('')}</select>
@@ -1131,14 +1139,27 @@
       const fromName = d.name || '';
       const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===fromName.toLowerCase());
       const suggestions = dexEntry && Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean) : [];
+      const hasKnownLine = suggestions.length > 0;
+      const unlockedSuggestions = suggestions.filter(s=>(d.unlockedEvolutions||[]).includes(s));
+      const lineLocked = hasKnownLine && unlockedSuggestions.length===0;
+      if(lineLocked) errors.push(`Il Master non ha ancora sbloccato nessuna linea evolutiva per ${fromName}.`);
+      else if(hasKnownLine && draft.name && !unlockedSuggestions.includes(draft.name)) errors.push('Puoi scegliere solo una delle evoluzioni sbloccate dal Master.');
       return `
       <div class="hud-frame card">
         <div class="section-title"><span>🛠️ Costruisci Stage: ${escapeHTML(draft.stage)}</span></div>
         <div class="muted" style="margin-bottom:6px;">DP di partenza per ${escapeHTML(draft.stage)}: <b>${cfg.dp}</b> · Stat base: <b>${cfg.startStat}</b> ciascuna prima di spendere DP.</div>
+        ${lineLocked ? `
+        <div class="hud-frame" style="border-color:var(--danger);padding:10px;margin-bottom:10px;">
+          <div style="color:var(--danger);">🔒 Il Master non ha ancora sbloccato nessuna linea evolutiva per ${escapeHTML(fromName)}. Chiedi a lui di scegliere tra: ${suggestions.map(s=>escapeHTML(s)).join(', ')} — prima di poter continuare.</div>
+        </div>
+        <div class="field"><label>Nome a questo Stage</label><input type="text" id="sb-name" value="" disabled placeholder="in attesa del Master..." /></div>
+        ` : hasKnownLine ? `
+        <div class="muted" style="margin-bottom:8px;">Il Master ha sbloccato queste evoluzioni per ${escapeHTML(fromName)} — scegline una:</div>
+        <div style="margin-bottom:8px;">${unlockedSuggestions.map(s=>`<button class="btn ${draft.name===s?'solid':'ghost'} small" data-sb-name-suggest="${escapeAttr(s)}" style="margin:2px;">${escapeHTML(s)}</button>`).join('')}</div>
+        <input type="hidden" id="sb-name" value="${escapeAttr(draft.name)}" />
+        ` : `
         <div class="field"><label>Nome a questo Stage</label><input type="text" id="sb-name" value="${escapeAttr(draft.name)}" placeholder="es. Greymon" /></div>
-        ${suggestions.length ? `
-        <div class="muted" style="margin-bottom:8px;">Evoluzioni di ${escapeHTML(fromName)} già nel Digidex: ${suggestions.map(s=>`<button class="btn ghost small" data-sb-name-suggest="${escapeAttr(s)}" style="margin:2px;">${escapeHTML(s)}</button>`).join('')}</div>
-        ` : ''}
+        `}
         <div class="field"><label>Size</label>
           <select id="sb-size">${allowedSizes(draft.stage).map(s=>`<option ${draft.size===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>

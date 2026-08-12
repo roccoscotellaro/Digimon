@@ -1041,6 +1041,7 @@
       dpTotal:0, unspentBonusDP:0, qualities:[],
       defaultStage:'Rookie', defaultRange:2, evolutionPoints:0, forcedEvoRoundsLeft:0,
       evolveUnlocked:false,
+      unlockedEvolutions:[], // nomi delle evoluzioni (dal Digidex) che il Master ha sbloccato per il giocatore
       battery:0, usedSigMoveThisTurn:false,
       size:'Medium', stance:'Neutral', chatColor:'#c896ff',
       resolveCurrent:0, resolveMax:4,
@@ -1066,6 +1067,7 @@
     if(!Array.isArray(m.tamer.inventory)) m.tamer.inventory = [];
     m.digimon = Object.assign(defaultDigimon(), m.digimon||{});
     if(!m.digimon.attacks || !m.digimon.attacks.length) m.digimon.attacks = defaultDigimon().attacks;
+    if(!Array.isArray(m.digimon.unlockedEvolutions)) m.digimon.unlockedEvolutions = [];
     return m;
   }
 
@@ -2857,8 +2859,18 @@
         <div class="muted" style="font-size:10px;">Risorsa da alcune Qualities (es. Combat Monster) — Max impostabile in "Modifica".</div>
         <div class="divider"></div>
         <div class="muted" style="margin-bottom:4px;">Evoluzione ${isMasterCtx ? `<button class="btn ghost small" id="btn-toggle-evolve-${containerId}" style="margin-left:8px;${d.evolveUnlocked?'color:var(--cyan);border-color:var(--cyan-dim);':'color:var(--danger);border-color:var(--danger);'}">${d.evolveUnlocked?'🔓 Sbloccata per il giocatore':'🔒 Bloccata per il giocatore'}</button>` : ''}</div>
+        ${isMasterCtx ? (()=>{
+          const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===(d.name||'').toLowerCase());
+          const options = dexEntry && Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean) : [];
+          if(options.length===0) return '';
+          return `
+          <div class="sub" style="margin-bottom:6px;">Linee evolutive sbloccate per ${escapeHTML(d.name||'il Digimon')} (dal Digidex) — solo quelle spuntate compariranno come scelta quando il giocatore costruirà lo Stage successivo:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px;">
+            ${options.map(name=>`<label style="display:flex;align-items:center;gap:5px;font-size:12px;"><input type="checkbox" data-unlock-evo="${escapeAttr(name)}" data-unlock-evo-container="${containerId}" ${(d.unlockedEvolutions||[]).includes(name)?'checked':''} /> ${escapeHTML(name)}</label>`).join('')}
+          </div>`;
+        })() : ''}
         ${!isMasterCtx && !d.evolveUnlocked ? `
-        <div class="sub" style="margin-bottom:6px;">Il Master non ha ancora sbloccato l'Evoluzione — quando lo farà, qui compariranno i controlli per evolvere.</div>
+        <div class="sub" style="margin-bottom:6px;">Il Master non ha ancora sbloccato l'Evoluzione (né normale né forzata) — quando lo farà, qui compariranno i controlli per evolvere.</div>
         ` : `
         <div class="sub" style="margin-bottom:6px;">Il tuo Digimon riposa normalmente a <b>${escapeHTML(d.defaultStage)}</b> e può salire fino a <b>${STAGES[Math.min(5, stageIndex(d.defaultStage)+Number(d.defaultRange||0))]}</b> senza spendere Evolution Points (Default Range: ${d.defaultRange}). Evolution Points disponibili: ${d.evolutionPoints||0}${d.forcedEvoRoundsLeft>0?` · <span style="color:var(--danger);">Evoluzione Forzata: ${d.forcedEvoRoundsLeft} round rimasti</span>`:''}</div>
         ${d.hybridMode ? `<div class="muted" style="margin-bottom:6px;color:var(--cyan);">🔀 Hybrid/Bio-Merge attiva: 3 Azioni in combattimento invece di 2 (ancora 1 Attacco a round). Il Tamer non può Dirigere se stesso.</div>` : ''}
@@ -3044,6 +3056,19 @@
           refreshLiveParts();
         };
       }
+      cardEl.querySelectorAll(`[data-unlock-evo-container="${containerId}"]`).forEach(chk=>{
+        chk.onchange = async ()=>{
+          const name = chk.getAttribute('data-unlock-evo');
+          if(!Array.isArray(me.digimon.unlockedEvolutions)) me.digimon.unlockedEvolutions = [];
+          if(chk.checked){
+            if(!me.digimon.unlockedEvolutions.includes(name)) me.digimon.unlockedEvolutions.push(name);
+          } else {
+            me.digimon.unlockedEvolutions = me.digimon.unlockedEvolutions.filter(n=>n!==name);
+          }
+          await saveMember(session.code, me);
+          await pushLog(session.code, { who:'Master', role:'gm', text: `Il Master ha ${chk.checked?'sbloccato':'bloccato'} la linea evolutiva "${name}" per ${me.username}.` });
+        };
+      });
       const blastBtn = document.getElementById('btn-blast-evolve-'+containerId);
       if(blastBtn){
         blastBtn.onclick = async ()=>{
