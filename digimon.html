@@ -380,6 +380,12 @@
   // (vedi dex-add-evolist / evolutionsEditableHTML in index.html). Qui estraiamo sempre il nome
   // in modo sicuro, altrimenti finisce per stampare letteralmente "[object Object]" a video.
   function evoName(ev){ if(ev==null) return ''; return typeof ev==='string' ? ev : String(ev.name||''); }
+  // Risale la catena evolutiva nel Digidex: trova la voce che elenca `name` fra le proprie
+  // evoluzioni (es. da "Gekkomon" risale a "Otamamon", la sua pre-evoluzione registrata).
+  function findPreEvolutionEntry(name){
+    if(!name) return null;
+    return cachedDex.find(e=>Array.isArray(e.evolutions) && e.evolutions.some(ev=>evoName(ev).toLowerCase()===String(name).toLowerCase())) || null;
+  }
 
   function defaultDigimon(){
     return {
@@ -1097,12 +1103,16 @@
           baseArmor: draft.baseArmor, baseHealth: draft.baseHealth,
           maxWounds: target.digimon.maxWounds, maxMp: target.digimon.maxMp, size: draft.size
         };
-        // Fresh e Baby (In-Training/Baby II) hanno valori di partenza fissi/prevedibili (regola 3.0):
-        // si costruiscono da soli qui invece di far ripetere la Creazione Guidata da capo per ognuno.
-        // Restano comunque modificabili in seguito da "Costruisci Nuovo Stage".
+        // Fresh e Baby (In-Training/Baby II) hanno valori di partenza fissi/prevedibili (regola 3.0),
+        // ma nome/immagine NON sono gli stessi del Rookie: risaliamo la catena nel Digidex (es.
+        // Gekkomon → Otamamon → Pabumon) per agganciare le vere pre-evoluzioni, quando censite.
+        // Se il Digidex non le conosce ancora, si riusa il nome/immagine del Rookie come fallback.
+        const babyEntry = findPreEvolutionEntry(draft.name);
+        const freshEntry = babyEntry ? findPreEvolutionEntry(babyEntry.name) : null;
         if(!target.digimon.stageStats.Fresh){
           target.digimon.stageStats.Fresh = {
-            name: draft.name, imageUrl: draft.imageUrl || '',
+            name: (freshEntry && freshEntry.name) || (babyEntry && babyEntry.name) || draft.name,
+            imageUrl: (freshEntry && freshEntry.image_url) || (babyEntry && babyEntry.image_url) || draft.imageUrl || '',
             baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:1,
             maxWounds: stageIndex('Fresh') + 1*2, maxMp: target.digimon.maxMp, size:'Small'
           };
@@ -1110,7 +1120,8 @@
         if(!target.digimon.stageStats.Baby){
           const babyCfg = STAGE_CREATION.Baby;
           target.digimon.stageStats.Baby = {
-            name: draft.name, imageUrl: draft.imageUrl || '',
+            name: (babyEntry && babyEntry.name) || draft.name,
+            imageUrl: (babyEntry && babyEntry.image_url) || draft.imageUrl || '',
             baseAccuracy: babyCfg.startStat, baseDamage: babyCfg.startStat, baseDodge: babyCfg.startStat,
             baseArmor: babyCfg.startStat, baseHealth: babyCfg.startStat,
             maxWounds: stageIndex('Baby') + babyCfg.startStat*2, maxMp: target.digimon.maxMp,
