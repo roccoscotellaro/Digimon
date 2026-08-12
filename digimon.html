@@ -384,6 +384,21 @@
   // costo della Quality stessa (dal budget Qualities), non un secondo DP dalle Stat. Se non lo
   // scorporiamo qui, un Digimon che arriva già con lo Stat gonfiato (es. dal Bio-Resonance Scan)
   // e a cui viene POI aggiunta la Quality Naturewalk finisce per pagare quel +1 due volte.
+  const STAT_SHORT_TO_KEY = { accuracy:'baseAccuracy', damage:'baseDamage', dodge:'baseDodge', armor:'baseArmor', health:'baseHealth' };
+  // Naturewalk (+1 alla Stat scelta) e Instinct (+1 automatico a Dodge) davano un bonus "sulla
+  // carta" nel calcolo del budget DP, ma non venivano MAI applicati al numero della Stat mostrato
+  // e salvato: la Quality costava 1 DP e non faceva letteralmente nulla. Questa funzione applica
+  // (o toglie, con sign=-1) il bonus vero e proprio al numero, in aggiunta/rimozione della Quality.
+  function applyQualityStatBonus(statObj, q, sign, hardCap){
+    if(!q) return;
+    let key = null;
+    if(q.mechanic==='naturewalk' && q.statTarget) key = STAT_SHORT_TO_KEY[q.statTarget];
+    else if(q.mechanic==='instinct') key = 'baseDodge';
+    if(!key) return;
+    const amount = (Number(q.rank)||1) * sign;
+    const next = (Number(statObj[key])||0) + amount;
+    statObj[key] = hardCap ? Math.max(0, Math.min(hardCap, next)) : Math.max(0, next);
+  }
   function naturewalkBonusFromQualities(qualities){
     // Naturewalk: +1 alla Stat scelta. Instinct: +1 automatico a Dodge (stessa eccezione "gratis"
     // rispetto al budget Stat, vedi regola 4.0x — Rank max = Stage, qui sempre 1 dal Wizard).
@@ -823,7 +838,7 @@
           <div class="field" style="max-width:110px;"><label>Rank</label><input type="number" id="${prefix}-rank" value="1" min="1" /></div>
           <div class="field" id="${prefix}-stattarget-wrap" style="display:none;"><label>Stat bonus (Naturewalk)</label>
             <select id="${prefix}-stattarget">
-              <option value="accuracy">Accuracy</option><option value="damage">Damage</option><option value="dodge">Dodge</option><option value="armor">Armor</option><option value="health">Health (manuale)</option>
+              <option value="accuracy">Accuracy</option><option value="damage">Damage</option><option value="dodge">Dodge</option><option value="armor">Armor</option><option value="health">Health</option>
             </select>
           </div>
         </div>
@@ -960,8 +975,10 @@
     const q = QUALITY_CATALOG.find(c=>c.name===hint.name);
     if(!q) return null;
     const statKeyToTarget = { baseAccuracy:'accuracy', baseDamage:'damage', baseDodge:'dodge', baseArmor:'armor', baseHealth:'health' };
-    const statTarget = q.mechanic==='naturewalk' ? (statKeyToTarget[hint.stat] || null) : null;
-    const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health (manuale)' };
+    // Naturewalk: la Stat la sceglie lo Scan (hint.stat). Instinct: il bonus va SEMPRE a Dodge,
+    // non è una scelta (regola 4.0x) — altrimenti il +1 non saprebbe dove applicarsi.
+    const statTarget = q.mechanic==='naturewalk' ? (statKeyToTarget[hint.stat] || null) : (q.mechanic==='instinct' ? 'dodge' : null);
+    const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health' };
     const rank = 1;
     const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}${statTarget?` [+1 ${statLabels[statTarget]}]`:''}`;
     const entry = { name, cost:q.dpPerRank*rank, category:q.category, description:q.desc, mechanic:q.mechanic, rank };
@@ -1121,7 +1138,10 @@
     if(!draft.qualities) draft.qualities = [];
     root.querySelectorAll('[data-wiz-q-remove]').forEach(btn=>{
       btn.onclick = ()=>{
-        draft.qualities.splice(Number(btn.getAttribute('data-wiz-q-remove')),1);
+        const idx = Number(btn.getAttribute('data-wiz-q-remove'));
+        const removed = draft.qualities[idx];
+        applyQualityStatBonus(draft, removed, -1, statHardCap(draft.stage));
+        draft.qualities.splice(idx,1);
         renderPage();
       };
     });
@@ -1130,19 +1150,22 @@
         const idx = Number(btn.getAttribute('data-wiz-suggested-add'));
         const q = (draft.suggestedQualities||[])[idx];
         if(!q) return;
-        // Accettata: sposta dal suggerimento alla lista vera, così il costo si scala dal budget.
+        // Accettata: sposta dal suggerimento alla lista vera, scala il costo dal budget E applica
+        // davvero il +1 alla Stat che questa Quality promette.
         draft.suggestedQualities.splice(idx,1);
         draft.qualities.push(q);
+        applyQualityStatBonus(draft, q, 1, statHardCap(draft.stage));
         renderPage();
       };
     });
     bindQualityPicker('wiz-q', (q, rank, statTarget)=>{
-      const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health (manuale)' };
+      const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health' };
       const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}`;
       const cost = q.dpPerRank * rank;
       const entry = { name, cost, category:q.category, description:q.desc, mechanic:q.mechanic, rank };
       if(q.mechanic==='naturewalk') entry.statTarget = statTarget;
       draft.qualities.push(entry);
+      applyQualityStatBonus(draft, entry, 1, statHardCap(draft.stage));
       renderPage();
     });
     document.getElementById('btn-wiz-cancel').onclick = ()=>{ creationDraft = null; renderPage(); };
@@ -1735,7 +1758,10 @@
   function bindListEditors(target){
     root.querySelectorAll('[data-q-remove]').forEach(btn=>{
       btn.onclick = async ()=>{
-        target.digimon.qualities.splice(Number(btn.getAttribute('data-q-remove')),1);
+        const idx = Number(btn.getAttribute('data-q-remove'));
+        const removed = target.digimon.qualities[idx];
+        applyQualityStatBonus(target.digimon, removed, -1);
+        target.digimon.qualities.splice(idx,1);
         await saveMember(session.code, target);
         renderPage();
       };
@@ -1752,12 +1778,13 @@
       renderPage();
     };
     bindQualityPicker('d-q', async (q, rank, statTarget)=>{
-      const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health (manuale)' };
+      const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health' };
       const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}`;
       const cost = q.dpPerRank * rank;
       const entry = { name, cost, category:q.category, description:q.desc, mechanic:q.mechanic, rank };
       if(q.mechanic==='naturewalk') entry.statTarget = statTarget;
       target.digimon.qualities.push(entry);
+      applyQualityStatBonus(target.digimon, entry, 1);
       await saveMember(session.code, target);
       renderPage();
     });
