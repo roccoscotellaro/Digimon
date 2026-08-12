@@ -386,6 +386,20 @@
     if(!name) return null;
     return cachedDex.find(e=>Array.isArray(e.evolutions) && e.evolutions.some(ev=>evoName(ev).toLowerCase()===String(name).toLowerCase())) || null;
   }
+  // Risale la catena di pre-evoluzioni nel Digidex finché non trova una voce il cui campo Stage
+  // combacia davvero con quello cercato — un semplice "1 salto = Baby, 2 salti = Fresh" è sbagliato
+  // perché non tutte le catene hanno esattamente una voce per Stage (si può saltare, o servirne più
+  // di una prima di trovare quella giusta).
+  function findAncestorAtStage(name, targetStage, maxHops){
+    let current = name;
+    for(let i=0; i<(maxHops||6); i++){
+      const entry = findPreEvolutionEntry(current);
+      if(!entry) return null;
+      if(String(entry.stage||'').toLowerCase() === targetStage.toLowerCase()) return entry;
+      current = entry.name;
+    }
+    return null;
+  }
 
   function defaultDigimon(){
     return {
@@ -1107,8 +1121,8 @@
         // ma nome/immagine NON sono gli stessi del Rookie: risaliamo la catena nel Digidex (es.
         // Gekkomon → Otamamon → Pabumon) per agganciare le vere pre-evoluzioni, quando censite.
         // Se il Digidex non le conosce ancora, si riusa il nome/immagine del Rookie come fallback.
-        const babyEntry = findPreEvolutionEntry(draft.name);
-        const freshEntry = babyEntry ? findPreEvolutionEntry(babyEntry.name) : null;
+        const babyEntry = findAncestorAtStage(draft.name, 'Baby');
+        const freshEntry = findAncestorAtStage(draft.name, 'Fresh');
         if(!target.digimon.stageStats.Fresh){
           target.digimon.stageStats.Fresh = {
             name: (freshEntry && freshEntry.name) || (babyEntry && babyEntry.name) || draft.name,
