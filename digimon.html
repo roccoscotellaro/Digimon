@@ -1082,7 +1082,7 @@
         target.digimon.approved = false; // si "chiude" nell'Uovo finché il Master non lo schiude
         if(!target.digimon.stageStats) target.digimon.stageStats = {};
         target.digimon.stageStats[draft.stage] = {
-          name: draft.name,
+          name: draft.name, imageUrl: draft.imageUrl || '',
           baseAccuracy: draft.baseAccuracy, baseDamage: draft.baseDamage, baseDodge: draft.baseDodge,
           baseArmor: draft.baseArmor, baseHealth: draft.baseHealth,
           maxWounds: target.digimon.maxWounds, maxMp: target.digimon.maxMp, size: draft.size
@@ -1092,7 +1092,7 @@
         // Restano comunque modificabili in seguito da "Costruisci Nuovo Stage".
         if(!target.digimon.stageStats.Fresh){
           target.digimon.stageStats.Fresh = {
-            name: draft.name,
+            name: draft.name, imageUrl: draft.imageUrl || '',
             baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:1,
             maxWounds: stageIndex('Fresh') + 1*2, maxMp: target.digimon.maxMp, size:'Small'
           };
@@ -1100,7 +1100,7 @@
         if(!target.digimon.stageStats.Baby){
           const babyCfg = STAGE_CREATION.Baby;
           target.digimon.stageStats.Baby = {
-            name: draft.name,
+            name: draft.name, imageUrl: draft.imageUrl || '',
             baseAccuracy: babyCfg.startStat, baseDamage: babyCfg.startStat, baseDodge: babyCfg.startStat,
             baseArmor: babyCfg.startStat, baseHealth: babyCfg.startStat,
             maxWounds: stageIndex('Baby') + babyCfg.startStat*2, maxMp: target.digimon.maxMp,
@@ -1138,6 +1138,42 @@
 
   function isStageBuilt(d, stage){ return !!(d.stageStats && d.stageStats[stage]); }
 
+  // Specchio di applyStageChange/snapshotCurrentStatsToStage in index.html: qui in digimon.html
+  // servono per far sì che lo switch rapido "Stage Attuale" agganci davvero Nome/Immagine/Stat
+  // salvati per quello Stage, invece di limitarsi a cambiare l'etichetta d.stage.
+  function snapshotCurrentStatsToStage(d, stage){
+    if(!d.stageStats) d.stageStats = {};
+    d.stageStats[stage] = {
+      name: d.name, imageUrl: d.imageUrl || '',
+      baseAccuracy: d.baseAccuracy, baseDamage: d.baseDamage, baseDodge: d.baseDodge,
+      baseArmor: d.baseArmor, baseHealth: d.baseHealth, maxWounds: d.maxWounds, maxMp: d.maxMp, size: d.size
+    };
+  }
+  function applyStageChange(d, oldStage, newStage){
+    if(oldStage === newStage) return;
+    snapshotCurrentStatsToStage(d, oldStage);
+    if(!d.stageStats) d.stageStats = {};
+    const saved = d.stageStats[newStage];
+    if(saved){
+      d.baseAccuracy = saved.baseAccuracy; d.baseDamage = saved.baseDamage; d.baseDodge = saved.baseDodge;
+      d.baseArmor = saved.baseArmor; d.baseHealth = saved.baseHealth;
+      d.maxWounds = saved.maxWounds; d.maxMp = saved.maxMp;
+      d.size = saved.size || allowedSizes(newStage)[0] || 'Medium';
+      if(saved.name) d.name = saved.name;
+      if(saved.imageUrl) d.imageUrl = saved.imageUrl;
+    } else {
+      const cfg = STAGE_CREATION[newStage] || { startStat:1 };
+      d.baseAccuracy = cfg.startStat; d.baseDamage = cfg.startStat; d.baseDodge = cfg.startStat;
+      d.baseArmor = cfg.startStat; d.baseHealth = cfg.startStat;
+      d.maxWounds = stageIndex(newStage) + cfg.startStat*2;
+      d.size = allowedSizes(newStage)[0] || 'Medium';
+    }
+    d.stage = newStage;
+    if(d.currentWounds > d.maxWounds) d.currentWounds = d.maxWounds;
+    if(d.currentMp > d.maxMp) d.currentMp = d.maxMp;
+    if(!allowedSizes(newStage).includes(d.size)) d.size = allowedSizes(newStage)[0] || 'Medium';
+  }
+
   // Regola 3.0: "All'inizio della partita, ci si aspetta un Digimon costruito almeno fino a
   // Champion" — quindi Fresh/Baby/Rookie/Champion sono sempre costruibili liberamente. Ultimate e
   // Mega invece richiedono che il Master abbia alzato il Default Range fin lì (è lui a decidere
@@ -1166,28 +1202,42 @@
       // evoluzioni già registrate — utile soprattutto per chi è stato assegnato via Bio-Resonance Scan.
       const fromName = d.name || '';
       const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===fromName.toLowerCase());
-      const suggestions = dexEntry && Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean).map(evoName).filter(Boolean) : [];
+      const evoObjs = dexEntry && Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean) : [];
+      const suggestions = evoObjs.map(evoName).filter(Boolean);
+      // Nome → imageUrl noto dal Digidex, per "agganciare" subito il ritratto giusto quando si
+      // sceglie un'evoluzione suggerita, invece di lasciarlo vuoto finché qualcuno non lo carica a mano.
+      const evoImageByName = {};
+      evoObjs.forEach(ev=>{ const n = evoName(ev); if(n && ev && ev.imageUrl) evoImageByName[n] = ev.imageUrl; });
       const hasKnownLine = suggestions.length > 0;
       const unlockedSuggestions = suggestions.filter(s=>(d.unlockedEvolutions||[]).includes(s));
       const lineLocked = hasKnownLine && unlockedSuggestions.length===0;
-      if(lineLocked) errors.push(`Il Master non ha ancora sbloccato nessuna linea evolutiva per ${fromName}.`);
+      if(lineLocked && !isMaster) errors.push(`Il Master non ha ancora sbloccato nessuna linea evolutiva per ${fromName}.`);
       else if(hasKnownLine && draft.name && !unlockedSuggestions.includes(draft.name)) errors.push('Puoi scegliere solo una delle evoluzioni sbloccate dal Master.');
       return `
       <div class="hud-frame card">
         <div class="section-title"><span>🛠️ Costruisci Stage: ${escapeHTML(draft.stage)}</span></div>
         <div class="muted" style="margin-bottom:6px;">DP di partenza per ${escapeHTML(draft.stage)}: <b>${cfg.dp}</b> · Stat base: <b>${cfg.startStat}</b> ciascuna prima di spendere DP.</div>
+        ${hasKnownLine && isMaster ? `
+        <div class="hud-frame" style="border-color:var(--dchroma);padding:10px;margin-bottom:10px;">
+          <div class="muted" style="margin-bottom:6px;">🔓 Come Master, sblocca qui le linee evolutive di ${escapeHTML(fromName)} per ${escapeHTML(m.username)} — solo quelle spuntate saranno scelte da lui/lei:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;">
+            ${suggestions.map(s=>`<label style="display:flex;align-items:center;gap:5px;font-size:12px;"><input type="checkbox" data-sb-unlock-evo="${escapeAttr(s)}" ${(d.unlockedEvolutions||[]).includes(s)?'checked':''} /> ${escapeHTML(s)}</label>`).join('')}
+          </div>
+        </div>
+        ` : ''}
         ${lineLocked ? `
         <div class="hud-frame" style="border-color:var(--danger);padding:10px;margin-bottom:10px;">
-          <div style="color:var(--danger);">🔒 Il Master non ha ancora sbloccato nessuna linea evolutiva per ${escapeHTML(fromName)}. Chiedi a lui di scegliere tra: ${suggestions.map(s=>escapeHTML(s)).join(', ')} — prima di poter continuare.</div>
+          <div style="color:var(--danger);">🔒 ${isMaster ? `Nessuna linea evolutiva ancora sbloccata per ${escapeHTML(fromName)} — spunta una casella qui sopra.` : `Il Master non ha ancora sbloccato nessuna linea evolutiva per ${escapeHTML(fromName)}. Chiedi a lui di scegliere tra: ${suggestions.map(s=>escapeHTML(s)).join(', ')} — prima di poter continuare.`}</div>
         </div>
         <div class="field"><label>Nome a questo Stage</label><input type="text" id="sb-name" value="" disabled placeholder="in attesa del Master..." /></div>
         ` : hasKnownLine ? `
-        <div class="muted" style="margin-bottom:8px;">Il Master ha sbloccato queste evoluzioni per ${escapeHTML(fromName)} — scegline una:</div>
-        <div style="margin-bottom:8px;">${unlockedSuggestions.map(s=>`<button class="btn ${draft.name===s?'solid':'ghost'} small" data-sb-name-suggest="${escapeAttr(s)}" style="margin:2px;">${escapeHTML(s)}</button>`).join('')}</div>
+        <div class="muted" style="margin-bottom:8px;">Evoluzioni sbloccate per ${escapeHTML(fromName)} — scegline una (nome e immagine si aggancieranno da soli dal Digidex):</div>
+        <div style="margin-bottom:8px;">${unlockedSuggestions.map(s=>`<button class="btn ${draft.name===s?'solid':'ghost'} small" data-sb-name-suggest="${escapeAttr(s)}" data-sb-name-suggest-img="${escapeAttr(evoImageByName[s]||'')}" style="margin:2px;">${escapeHTML(s)}</button>`).join('')}</div>
         <input type="hidden" id="sb-name" value="${escapeAttr(draft.name)}" />
         ` : `
         <div class="field"><label>Nome a questo Stage</label><input type="text" id="sb-name" value="${escapeAttr(draft.name)}" placeholder="es. Greymon" /></div>
         `}
+        <div class="field"><label>URL Immagine</label><input type="text" id="sb-imageUrl" value="${escapeAttr(draft.imageUrl||'')}" placeholder="https://..." /></div>
         <div class="field"><label>Size</label>
           <select id="sb-size">${allowedSizes(draft.stage).map(s=>`<option ${draft.size===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
@@ -1239,10 +1289,32 @@
       });
       const sizeSel = document.getElementById('sb-size');
       if(sizeSel) sizeSel.onchange = (e)=>{ draft.size = e.target.value; };
+      const imgInp = document.getElementById('sb-imageUrl');
+      if(imgInp) imgInp.onchange = (e)=>{ draft.imageUrl = e.target.value.trim(); };
       const nameInp = document.getElementById('sb-name');
       if(nameInp) nameInp.onchange = (e)=>{ draft.name = e.target.value; renderPage(); };
       root.querySelectorAll('[data-sb-name-suggest]').forEach(btn=>{
-        btn.onclick = ()=>{ draft.name = btn.getAttribute('data-sb-name-suggest'); renderPage(); };
+        btn.onclick = ()=>{
+          draft.name = btn.getAttribute('data-sb-name-suggest');
+          // Aggancia anche l'immagine nota dal Digidex per questa evoluzione, se presente.
+          const img = btn.getAttribute('data-sb-name-suggest-img');
+          if(img) draft.imageUrl = img;
+          renderPage();
+        };
+      });
+      root.querySelectorAll('[data-sb-unlock-evo]').forEach(chk=>{
+        chk.onchange = async ()=>{
+          const name = chk.getAttribute('data-sb-unlock-evo');
+          if(!Array.isArray(target.digimon.unlockedEvolutions)) target.digimon.unlockedEvolutions = [];
+          if(chk.checked){
+            if(!target.digimon.unlockedEvolutions.includes(name)) target.digimon.unlockedEvolutions.push(name);
+          } else {
+            target.digimon.unlockedEvolutions = target.digimon.unlockedEvolutions.filter(n=>n!==name);
+          }
+          await saveMember(session.code, target);
+          await pushLog(session.code, { who:'Master', role:'gm', text: `Il Master ha ${chk.checked?'sbloccato':'bloccato'} la linea evolutiva "${name}" per ${target.username}.` });
+          renderPage();
+        };
       });
       const cancelBtn = document.getElementById('btn-sb-cancel');
       if(cancelBtn) cancelBtn.onclick = ()=>{ stageBuildDraft = null; renderPage(); };
@@ -1257,7 +1329,7 @@
           const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
           if(!target.digimon.stageStats) target.digimon.stageStats = {};
           target.digimon.stageStats[draft.stage] = {
-            name: draft.name.trim(),
+            name: draft.name.trim(), imageUrl: draft.imageUrl || '',
             baseAccuracy: draft.baseAccuracy, baseDamage: draft.baseDamage, baseDodge: draft.baseDodge,
             baseArmor: draft.baseArmor, baseHealth: draft.baseHealth,
             maxWounds: stageIndex(draft.stage) + Number(draft.baseHealth)*2,
@@ -1283,7 +1355,7 @@
         const stage = btn.getAttribute('data-sb-start');
         const cfg = STAGE_CREATION[stage];
         stageBuildDraft = {
-          stage, size: allowedSizes(stage)[0] || 'Medium', name: target.digimon.name || '',
+          stage, size: allowedSizes(stage)[0] || 'Medium', name: target.digimon.name || '', imageUrl: '',
           baseAccuracy: cfg.startStat, baseDamage: cfg.startStat, baseDodge: cfg.startStat,
           baseArmor: cfg.startStat, baseHealth: cfg.startStat
         };
@@ -1483,7 +1555,7 @@
     if(target){
       root.querySelectorAll('[data-stage-switch]').forEach(btn=>{
         btn.onclick = async ()=>{
-          target.digimon.stage = btn.getAttribute('data-stage-switch');
+          applyStageChange(target.digimon, target.digimon.stage, btn.getAttribute('data-stage-switch'));
           await saveMember(session.code, target);
           cachedRoster = await getRoster(session.code);
           renderPage();

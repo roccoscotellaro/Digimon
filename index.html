@@ -2455,7 +2455,7 @@
   function snapshotCurrentStatsToStage(d, stage){
     if(!d.stageStats) d.stageStats = {};
     d.stageStats[stage] = {
-      name: d.name,
+      name: d.name, imageUrl: d.imageUrl || '',
       baseAccuracy: d.baseAccuracy, baseDamage: d.baseDamage, baseDodge: d.baseDodge,
       baseArmor: d.baseArmor, baseHealth: d.baseHealth, maxWounds: d.maxWounds, maxMp: d.maxMp, size: d.size
     };
@@ -2472,6 +2472,7 @@
       d.maxWounds = saved.maxWounds; d.maxMp = saved.maxMp;
       d.size = saved.size || allowedSizes(newStage)[0] || 'Medium';
       if(saved.name) d.name = saved.name;
+      if(saved.imageUrl) d.imageUrl = saved.imageUrl;
     } else {
       const cfg = STAGE_CREATION[newStage] || { startStat:1 };
       d.baseAccuracy = cfg.startStat; d.baseDamage = cfg.startStat; d.baseDodge = cfg.startStat;
