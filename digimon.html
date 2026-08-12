@@ -380,6 +380,13 @@
   // (vedi dex-add-evolist / evolutionsEditableHTML in index.html). Qui estraiamo sempre il nome
   // in modo sicuro, altrimenti finisce per stampare letteralmente "[object Object]" a video.
   function evoName(ev){ if(ev==null) return ''; return typeof ev==='string' ? ev : String(ev.name||''); }
+  // Il bonus di Naturewalk (+1 a una Stat) è "gratis" rispetto al budget Stat: si paga solo il
+  // costo della Quality stessa (dal budget Qualities), non un secondo DP dalle Stat. Se non lo
+  // scorporiamo qui, un Digimon che arriva già con lo Stat gonfiato (es. dal Bio-Resonance Scan)
+  // e a cui viene POI aggiunta la Quality Naturewalk finisce per pagare quel +1 due volte.
+  function naturewalkBonusFromQualities(qualities){
+    return (qualities||[]).filter(q=>q.mechanic==='naturewalk').reduce((s,q)=>s+(Number(q.rank)||1),0);
+  }
   // Risale la catena evolutiva nel Digidex: trova la voce che elenca `name` fra le proprie
   // evoluzioni (es. da "Gekkomon" risale a "Otamamon", la sua pre-evoluzione registrata).
   function findPreEvolutionEntry(name){
@@ -475,6 +482,8 @@
     try{
       const params = new URLSearchParams(location.search);
       if(!params.has('prefillName')) return null;
+      let qualities = [];
+      try{ qualities = JSON.parse(params.get('prefillQ') || '[]'); }catch(e){ qualities = []; }
       return {
         name: params.get('prefillName') || '',
         attribute: params.get('prefillAttribute') || 'Free',
@@ -486,14 +495,15 @@
         baseHealth: Number(params.get('prefillHp'))||2,
         signatureMove: params.get('prefillSig') || '',
         attackDesc: params.get('prefillAttackDesc') || '',
-        imageUrl: params.get('prefillImg') || ''
+        imageUrl: params.get('prefillImg') || '',
+        qualities: Array.isArray(qualities) ? qualities : []
       };
     }catch(e){ return null; }
   }
   function clearStarterPrefillFromURL(){
     try{
       const url = new URL(location.href);
-      ['prefillName','prefillAttribute','prefillPersonality','prefillAcc','prefillDmg','prefillDodge','prefillArmor','prefillHp','prefillSig','prefillAttackDesc','prefillImg'].forEach(k=>url.searchParams.delete(k));
+      ['prefillName','prefillAttribute','prefillPersonality','prefillAcc','prefillDmg','prefillDodge','prefillArmor','prefillHp','prefillSig','prefillAttackDesc','prefillImg','prefillQ'].forEach(k=>url.searchParams.delete(k));
       history.replaceState(null, '', url.toString());
     }catch(e){}
   }
@@ -936,11 +946,33 @@
   let isEditingFullForm = false;
   let justBuiltDigimon = false;
 
+  // Traduce una Quality "suggerita" dallo Scan (solo nome + Stat interessata) in una voce vera del
+  // catalogo, nello stesso formato che produce bindQualityPicker quando la aggiungi a mano — così il
+  // Wizard la mostra e la conta nel budget esattamente come se l'avessi scelta tu.
+  function buildQualityEntryFromScanHint(hint){
+    if(!hint || !hint.name) return null;
+    const q = QUALITY_CATALOG.find(c=>c.name===hint.name);
+    if(!q) return null;
+    const statKeyToTarget = { baseAccuracy:'accuracy', baseDamage:'damage', baseDodge:'dodge', baseArmor:'armor', baseHealth:'health' };
+    const statTarget = q.mechanic==='naturewalk' ? (statKeyToTarget[hint.stat] || null) : null;
+    const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health (manuale)' };
+    const rank = 1;
+    const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}${statTarget?` [+1 ${statLabels[statTarget]}]`:''}`;
+    const entry = { name, cost:q.dpPerRank*rank, category:q.category, description:q.desc, mechanic:q.mechanic, rank };
+    if(statTarget) entry.statTarget = statTarget;
+    return entry;
+  }
+
   function startDigimonWizard(prefill){
     // Se lo Scan non ha passato un'immagine ma il nome combacia con una voce già presente nel
     // Digidex, agganciala subito da lì invece di lasciare il campo vuoto.
     const dexMatch = prefill && prefill.name ? cachedDex.find(e=>(e.name||'').toLowerCase()===prefill.name.toLowerCase()) : null;
     const attackDesc = (prefill && prefill.attackDesc) || 'Attacco caratteristico portato dal Bio-Resonance Scan.';
+    // Le Stat passate dallo Scan sono già "pure" (senza il bonus di eventuali Qualities incluse qui
+    // sotto): le aggiungiamo subito al draft così il budget DP è corretto fin dall'inizio, invece di
+    // richiedere che sia il giocatore a ricordarsi di sceglierle a mano dal catalogo.
+    const scannedQualities = (prefill && Array.isArray(prefill.qualities) ? prefill.qualities : [])
+      .map(buildQualityEntryFromScanHint).filter(Boolean);
     creationDraft = {
       stage:'Rookie', size:'Medium',
       name: (prefill && prefill.name) || '',
@@ -954,7 +986,7 @@
       baseHealth: (prefill && prefill.baseHealth) || STAGE_CREATION.Rookie.startStat,
       signatureMove: (prefill && prefill.signatureMove) || '',
       attackDesc,
-      qualities: []
+      qualities: scannedQualities
     };
     renderPage();
   }
@@ -964,7 +996,7 @@
     const cfg = STAGE_CREATION[draft.stage];
     const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
     const statLabels = { baseAccuracy:'ACC', baseDamage:'DMG', baseDodge:'DODGE', baseArmor:'ARM', baseHealth:'HP' };
-    const dpSpent = statKeys.reduce((s,k)=>s+(draft[k]-cfg.startStat),0);
+    const dpSpent = Math.max(0, statKeys.reduce((s,k)=>s+(draft[k]-cfg.startStat),0) - naturewalkBonusFromQualities(draft.qualities));
     const dpRemaining = cfg.dp - dpSpent;
     const errors = [];
     if(!draft.name || !draft.name.trim()) errors.push('Il Digimon deve avere un nome prima di poter salvare.');
@@ -976,7 +1008,7 @@
     return `
     <div class="hud-frame card">
       <div class="section-title"><span>🧙 Creazione Guidata — Digimon</span></div>
-      ${draft.signatureMove ? `<div class="muted" style="margin-bottom:10px;color:var(--dchroma);">📡 Dati importati dalla Bio-Resonance Scan — puoi comunque modificarli.</div>` : ''}
+      ${draft.signatureMove ? `<div class="muted" style="margin-bottom:10px;color:var(--dchroma);">📡 Dati importati dalla Bio-Resonance Scan${(draft.qualities||[]).length ? ` (incluse ${draft.qualities.length===1?'la Quality':`le ${draft.qualities.length} Qualities`} già note per questo Digimon, aggiunte qui sotto)` : ''} — puoi comunque modificarli.</div>` : ''}
       <div class="field"><label>Nome</label><input type="text" id="wiz-d-name" value="${escapeAttr(draft.name)}" /></div>
       ${(()=>{
         const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===(draft.name||'').trim().toLowerCase());
@@ -1090,7 +1122,7 @@
           return;
         }
         const cfg = STAGE_CREATION[draft.stage];
-        const dpSpent = statKeys.reduce((s,k)=>s+(draft[k]-cfg.startStat),0);
+        const dpSpent = Math.max(0, statKeys.reduce((s,k)=>s+(draft[k]-cfg.startStat),0) - naturewalkBonusFromQualities(draft.qualities));
         const dpRemaining = cfg.dp - dpSpent;
 
         target.digimon.name = draft.name;
