@@ -399,6 +399,14 @@
     const next = (Number(statObj[key])||0) + amount;
     statObj[key] = hardCap ? Math.max(0, Math.min(hardCap, next)) : Math.max(0, next);
   }
+  // Se il bonus tocca Health, le Ferite Massime (= Indice Stage + Health×2) vanno ricalcolate subito:
+  // altrimenti la scheda approvata (e la card nel Tavolo, che legge lo stesso dato) restano ferme
+  // al vecchio valore anche dopo aver aggiunto/tolto la Quality.
+  function recalcMaxWoundsIfHealthChanged(d, q){
+    if(!q || !(q.mechanic==='naturewalk' && q.statTarget==='health')) return;
+    d.maxWounds = stageIndex(d.stage) + Number(d.baseHealth)*2;
+    if(d.currentWounds > d.maxWounds) d.currentWounds = d.maxWounds;
+  }
   function naturewalkBonusFromQualities(qualities){
     // Naturewalk: +1 alla Stat scelta. Instinct: +1 automatico a Dodge (stessa eccezione "gratis"
     // rispetto al budget Stat, vedi regola 4.0x — Rank max = Stage, qui sempre 1 dal Wizard).
@@ -771,7 +779,7 @@
       <div class="grid-3">
         <div class="row" style="grid-column:1/-1;">
           <div class="field"><label>Ferite Attuali</label><input type="number" id="d-currentWounds" value="${d.currentWounds ?? 0}" /></div>
-          <div class="field"><label>Ferite Massime</label><input type="number" id="d-maxWounds" value="${d.maxWounds ?? 0}" /></div>
+          <div class="field"><label>Ferite Massime</label><input type="number" id="d-maxWounds" value="${d.maxWounds ?? 0}" /><div class="muted" style="font-size:10.5px;margin-top:3px;">Si ricalcola da sola (Stage + Health×2) a ogni salvataggio.</div></div>
           <div class="field"><label>MP Attuali</label><input type="number" id="d-currentMp" value="${d.currentMp ?? 0}" /></div>
           <div class="field"><label>MP Massimi</label><input type="number" id="d-maxMp" value="${d.maxMp ?? 0}" /></div>
         </div>
@@ -1021,14 +1029,15 @@
     const cfg = STAGE_CREATION[draft.stage];
     const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
     const statLabels = { baseAccuracy:'ACC', baseDamage:'DMG', baseDodge:'DODGE', baseArmor:'ARM', baseHealth:'HP' };
-    const dpSpent = Math.max(0, statKeys.reduce((s,k)=>s+(draft[k]-cfg.startStat),0) - naturewalkBonusFromQualities(draft.qualities));
-    const dpRemaining = cfg.dp - dpSpent;
+    const statDpSpent = Math.max(0, statKeys.reduce((s,k)=>s+(draft[k]-cfg.startStat),0) - naturewalkBonusFromQualities(draft.qualities));
+    const qSpent = (draft.qualities||[]).reduce((s,q)=>s+(Number(q.cost)||0),0);
+    // UN SOLO contatore di DP condiviso tra Stat e Qualities (non due budget separati): così quando
+    // accetti una Quality il numero scende per davvero, invece di "sparire" in un sotto-contatore
+    // diverso da quello mostrato accanto alle Stat.
+    const dpRemaining = cfg.dp - statDpSpent - qSpent;
     const errors = [];
     if(!draft.name || !draft.name.trim()) errors.push('Il Digimon deve avere un nome prima di poter salvare.');
-    if(dpRemaining<0) errors.push(`Hai speso troppi DP sulle Stat (sforo di ${-dpRemaining}).`);
-    const qBudgetCheck = Math.max(0, dpRemaining);
-    const qSpentCheck = (draft.qualities||[]).reduce((s,q)=>s+(Number(q.cost)||0),0);
-    if(qSpentCheck > qBudgetCheck) errors.push(`Hai speso troppi DP sulle Qualities (sforo di ${qSpentCheck-qBudgetCheck}).`);
+    if(dpRemaining<0) errors.push(`Hai speso troppi DP in totale (sforo di ${-dpRemaining}).`);
 
     return `
     <div class="hud-frame card">
@@ -1053,7 +1062,7 @@
         </div>
       </div>
       <div class="muted" style="margin-bottom:6px;">DP di partenza per ${escapeHTML(draft.stage)}: <b>${cfg.dp}</b> · Stat base: <b>${cfg.startStat}</b> ciascuna prima di spendere DP.</div>
-      <div class="flex-between" style="margin-bottom:6px;"><span class="muted">DP rimasti per le Stat</span><span class="mono" style="color:${dpRemaining>=0?'var(--dchroma)':'var(--danger)'};">${dpRemaining}</span></div>
+      <div class="flex-between" style="margin-bottom:6px;"><span class="muted">DP Totali Rimasti (Stat + Qualities)</span><span class="mono" style="color:${dpRemaining>=0?'var(--dchroma)':'var(--danger)'};">${dpRemaining} / ${cfg.dp}</span></div>
       <div class="grid-stats">
         ${statKeys.map(k=>`
           <div class="stat-box">
@@ -1062,11 +1071,11 @@
           </div>
         `).join('')}
       </div>
-      <div class="muted" style="margin-top:6px;">DP non spesi in Stat verranno riservati come budget Qualities (${Math.max(0,dpRemaining)} DP).</div>
+      <div class="muted" style="margin-top:6px;">Stessi DP per Stat e Qualities: alza una Stat o aggiungi una Quality e il contatore sopra scende subito, di conseguenza.</div>
       <div style="border-top:1px dashed var(--line);margin:12px 0;"></div>
       ${(draft.suggestedQualities||[]).length ? `
       <div class="section-title" style="font-size:12px;"><span>📡 Qualities suggerite dallo Scan</span></div>
-      <div class="muted" style="margin-bottom:8px;">Questo Digimon ha di norma queste Qualities — decidi tu se aggiungerle: se accetti, il costo si scala subito dal budget qui sotto.</div>
+      <div class="muted" style="margin-bottom:8px;">Questo Digimon ha di norma queste Qualities — decidi tu se aggiungerle: se accetti, il costo si scala subito dal contatore DP qui sopra.</div>
       ${draft.suggestedQualities.map((q,qi)=>`
         <div class="list-item" style="border-color:var(--dchroma);margin-bottom:8px;">
           <div class="top-row">
@@ -1080,10 +1089,12 @@
       ` : ''}
       <div class="section-title" style="font-size:12px;"><span>Qualities di partenza</span></div>
       ${(()=>{
-        const qBudget = Math.max(0, dpRemaining);
-        const qSpent = (draft.qualities||[]).reduce((s,q)=>s+(Number(q.cost)||0),0);
+        // "Budget Qualities" qui è solo informativo: quanto della riserva attuale è già andato in
+        // Qualities. Il tetto reale è UNICO con le Stat (vedi contatore in alto), non un sotto-budget
+        // separato — altrimenti si torna al bug per cui il numero sopra non scendeva mai per davvero.
+        const qBudgetDisplay = dpRemaining + qSpent;
         return `
-        <div class="flex-between" style="margin-bottom:8px;"><span class="muted">Budget Qualities</span><span class="mono" style="color:${qSpent>qBudget?'var(--danger)':'var(--dchroma)'};">${qSpent} / ${qBudget} DP</span></div>
+        <div class="flex-between" style="margin-bottom:8px;"><span class="muted">Di cui già in Qualities</span><span class="mono" style="color:var(--dchroma);">${qSpent} / ${qBudgetDisplay} DP</span></div>
         ${(draft.qualities||[]).length===0 ? '<div class="muted" style="margin-bottom:8px;">Nessuna Quality scelta — puoi anche saltare questo passo e aggiungerle più avanti.</div>' : (draft.qualities||[]).map((q,qi)=>`
           <div class="list-item">
             <div class="top-row">
@@ -1712,7 +1723,11 @@
         target.digimon.stage = document.getElementById('d-stage').value;
         target.digimon.personality = document.getElementById('d-personality').value.trim();
         target.digimon.currentWounds = Math.max(0, Number(document.getElementById('d-currentWounds').value)||0);
-        target.digimon.maxWounds = Math.max(0, Number(document.getElementById('d-maxWounds').value)||0);
+        // Ferite Massime NON si legge più dalla casella: si ricalcola sempre da Stage + Health×2,
+        // così un cambio di Stat Health (a mano o via bonus di una Quality) si riflette per davvero
+        // invece di restare un numero statico scollegato dalla Stat che dovrebbe rappresentare.
+        target.digimon.maxWounds = stageIndex(target.digimon.stage) + Number(target.digimon.baseHealth||0)*2;
+        if(target.digimon.currentWounds > target.digimon.maxWounds) target.digimon.currentWounds = target.digimon.maxWounds;
         target.digimon.currentMp = Math.max(0, Number(document.getElementById('d-currentMp').value)||0);
         target.digimon.maxMp = Math.max(0, Number(document.getElementById('d-maxMp').value)||0);
         target.digimon.resolveCurrent = Math.max(0, Number(document.getElementById('d-resolveCurrent').value)||0);
@@ -1761,6 +1776,7 @@
         const idx = Number(btn.getAttribute('data-q-remove'));
         const removed = target.digimon.qualities[idx];
         applyQualityStatBonus(target.digimon, removed, -1);
+        recalcMaxWoundsIfHealthChanged(target.digimon, removed);
         target.digimon.qualities.splice(idx,1);
         await saveMember(session.code, target);
         renderPage();
@@ -1785,6 +1801,7 @@
       if(q.mechanic==='naturewalk') entry.statTarget = statTarget;
       target.digimon.qualities.push(entry);
       applyQualityStatBonus(target.digimon, entry, 1);
+      recalcMaxWoundsIfHealthChanged(target.digimon, entry);
       await saveMember(session.code, target);
       renderPage();
     });
