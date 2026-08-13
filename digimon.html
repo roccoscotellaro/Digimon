@@ -436,6 +436,36 @@
     }
     return null;
   }
+  // Ricalcola Fresh/Baby di un singolo Digimon risalendo la catena nel Digidex a partire dal nome
+  // dello Stage Rookie salvato (o dal nome principale se il Rookie non è stato costruito). Torna
+  // {changed, before, after} solo se ha trovato e applicato una correzione reale.
+  function refixFreshBabyForMember(member){
+    const d = member.digimon;
+    if(!d || !d.stageStats) return null;
+    const anchorName = (d.stageStats.Rookie && d.stageStats.Rookie.name) || d.name;
+    if(!anchorName) return null;
+    const babyEntry = findAncestorAtStage(anchorName, 'Baby');
+    const freshEntry = babyEntry ? findAncestorAtStage(babyEntry.name, 'Fresh') : findAncestorAtStage(anchorName, 'Fresh');
+    let changed = false;
+    const before = { fresh: d.stageStats.Fresh && d.stageStats.Fresh.name, baby: d.stageStats.Baby && d.stageStats.Baby.name };
+    if(babyEntry && d.stageStats.Baby && d.stageStats.Baby.name !== babyEntry.name){
+      d.stageStats.Baby.name = babyEntry.name;
+      if(babyEntry.image_url) d.stageStats.Baby.imageUrl = babyEntry.image_url;
+      changed = true;
+    }
+    if(freshEntry && d.stageStats.Fresh && d.stageStats.Fresh.name !== freshEntry.name){
+      d.stageStats.Fresh.name = freshEntry.name;
+      if(freshEntry.image_url) d.stageStats.Fresh.imageUrl = freshEntry.image_url;
+      changed = true;
+    }
+    // Se lo Stage attivo è Fresh o Baby, riallinea anche nome/immagine visibili subito.
+    if(changed){
+      if(d.stage==='Fresh' && d.stageStats.Fresh){ d.name = d.stageStats.Fresh.name; if(d.stageStats.Fresh.imageUrl) d.imageUrl = d.stageStats.Fresh.imageUrl; }
+      if(d.stage==='Baby' && d.stageStats.Baby){ d.name = d.stageStats.Baby.name; if(d.stageStats.Baby.imageUrl) d.imageUrl = d.stageStats.Baby.imageUrl; }
+    }
+    if(!changed) return null;
+    return { username: member.username, before, after: { fresh: d.stageStats.Fresh && d.stageStats.Fresh.name, baby: d.stageStats.Baby && d.stageStats.Baby.name } };
+  }
 
   function defaultDigimon(){
     return {
@@ -525,14 +555,16 @@
         signatureMove: params.get('prefillSig') || '',
         attackDesc: params.get('prefillAttackDesc') || '',
         imageUrl: params.get('prefillImg') || '',
-        qualities: Array.isArray(qualities) ? qualities : []
+        qualities: Array.isArray(qualities) ? qualities : [],
+        babyName: params.get('prefillBabyName') || '',
+        freshName: params.get('prefillFreshName') || ''
       };
     }catch(e){ return null; }
   }
   function clearStarterPrefillFromURL(){
     try{
       const url = new URL(location.href);
-      ['prefillName','prefillAttribute','prefillPersonality','prefillAcc','prefillDmg','prefillDodge','prefillArmor','prefillHp','prefillSig','prefillAttackDesc','prefillImg','prefillQ'].forEach(k=>url.searchParams.delete(k));
+      ['prefillName','prefillAttribute','prefillPersonality','prefillAcc','prefillDmg','prefillDodge','prefillArmor','prefillHp','prefillSig','prefillAttackDesc','prefillImg','prefillQ','prefillBabyName','prefillFreshName'].forEach(k=>url.searchParams.delete(k));
       history.replaceState(null, '', url.toString());
     }catch(e){}
   }
@@ -1019,7 +1051,9 @@
       signatureMove: (prefill && prefill.signatureMove) || '',
       attackDesc,
       qualities: [],
-      suggestedQualities
+      suggestedQualities,
+      scanBabyName: (prefill && prefill.babyName) || '',
+      scanFreshName: (prefill && prefill.freshName) || ''
     };
     renderPage();
   }
@@ -1217,11 +1251,14 @@
           maxWounds: target.digimon.maxWounds, maxMp: target.digimon.maxMp, size: draft.size
         };
         // Fresh e Baby (In-Training/Baby II) hanno valori di partenza fissi/prevedibili (regola 3.0),
-        // ma nome/immagine NON sono gli stessi del Rookie: risaliamo la catena nel Digidex (es.
-        // Gekkomon → Otamamon → Pabumon) per agganciare le vere pre-evoluzioni, quando censite.
-        // Se il Digidex non le conosce ancora, si riusa il nome/immagine del Rookie come fallback.
-        const babyEntry = findAncestorAtStage(draft.name, 'Baby');
-        const freshEntry = findAncestorAtStage(draft.name, 'Fresh');
+        // ma nome/immagine NON sono gli stessi del Rookie: se lo Scan ha già indicato le vere
+        // pre-evoluzioni (verificate a mano nel Digidex), usiamo quelle come priorità; altrimenti
+        // risaliamo la catena a runtime (es. Gekkomon → Kekkomon → Kekomon). Se nemmeno il Digidex le
+        // conosce, si riusa il nome/immagine del Rookie come fallback finale.
+        const babyEntry = (draft.scanBabyName && cachedDex.find(e=>(e.name||'').toLowerCase()===draft.scanBabyName.toLowerCase()))
+          || findAncestorAtStage(draft.name, 'Baby');
+        const freshEntry = (draft.scanFreshName && cachedDex.find(e=>(e.name||'').toLowerCase()===draft.scanFreshName.toLowerCase()))
+          || (babyEntry ? findAncestorAtStage(babyEntry.name, 'Fresh') : findAncestorAtStage(draft.name, 'Fresh'));
         if(!target.digimon.stageStats.Fresh){
           target.digimon.stageStats.Fresh = {
             name: (freshEntry && freshEntry.name) || (babyEntry && babyEntry.name) || draft.name,
@@ -1361,7 +1398,7 @@
         ` : ''}
         ${lineLocked ? `
         <div class="hud-frame" style="border-color:var(--danger);padding:10px;margin-bottom:10px;">
-          <div style="color:var(--danger);">🔒 ${isMaster ? `Nessuna linea evolutiva ancora sbloccata per ${escapeHTML(fromName)} — spunta una casella qui sopra.` : `Il Master non ha ancora sbloccato nessuna linea evolutiva per ${escapeHTML(fromName)}. Chiedi a lui di scegliere tra: ${suggestions.map(s=>escapeHTML(s)).join(', ')} — prima di poter continuare.`}</div>
+          <div style="color:var(--danger);">🔒 ${isMaster ? `Nessuna linea evolutiva ancora sbloccata per ${escapeHTML(fromName)} — spunta una casella qui sopra.` : `Il Master non ha ancora sbloccato la prossima evoluzione di ${escapeHTML(fromName)}. Chiedigli di sbloccarla quando sarà il momento — prima non puoi continuare qui.`}</div>
         </div>
         <div class="field"><label>Nome a questo Stage</label><input type="text" id="sb-name" value="" disabled placeholder="in attesa del Master..." /></div>
         ` : hasKnownLine ? `
@@ -1576,6 +1613,10 @@
           ${players.length===0 ? '<option>— nessun giocatore —</option>' : players.map(p=>`<option value="${escapeAttr(p.username)}" ${target && target.username===p.username?'selected':''}>${escapeHTML(p.username)} — ${escapeHTML(p.digimon.name||'(senza Digimon)')}</option>`).join('')}
         </select>
         <div class="muted" style="margin-top:8px;">Come Master puoi modificare direttamente la scheda selezionata.</div>
+        <div style="border-top:1px dashed var(--line);margin:10px 0;"></div>
+        <button class="btn ghost small" id="btn-refix-freshbaby">🔧 Ricalcola Fresh/Baby per tutta la squadra</button>
+        <div class="muted" style="margin-top:6px;">Per le schede create prima che il Wizard risalisse da solo la catena evolutiva nel Digidex — riprova ad agganciare le vere pre-evoluzioni (es. Puyomon/Puyoyomon per Jellymon) a chi ancora ha Fresh/Baby col nome del Rookie ripetuto.</div>
+        <div class="muted" id="refix-freshbaby-status" style="margin-top:6px;"></div>
       </div>`;
     } else {
       target = cachedRoster.find(m=>m.username===session.username);
@@ -1676,6 +1717,30 @@
         window.__digimonSelected = sel.value;
         creationDraft = null;
         stageBuildDraft = null;
+        renderPage();
+      };
+      const refixBtn = document.getElementById('btn-refix-freshbaby');
+      if(refixBtn) refixBtn.onclick = async ()=>{
+        const statusEl = document.getElementById('refix-freshbaby-status');
+        const players = cachedRoster.filter(m=>m.role==='player' && m.digimon && m.digimon.name);
+        if(!window.confirm(`Ricalcolo Fresh/Baby per ${players.length} Digimon dal Digidex attuale. Verranno sovrascritti solo Nome/Immagine di Fresh e Baby dove trovo una pre-evoluzione diversa da quella salvata. Procedere?`)) return;
+        refixBtn.disabled = true;
+        if(statusEl) statusEl.textContent = 'Ricalcolo in corso...';
+        const results = [];
+        for(const member of players){
+          const r = refixFreshBabyForMember(member);
+          if(r){
+            await saveMember(session.code, member);
+            results.push(r);
+          }
+        }
+        cachedRoster = await getRoster(session.code);
+        if(statusEl){
+          statusEl.textContent = results.length===0
+            ? 'Nessuna correzione trovata: tutti i Fresh/Baby già combaciano con la catena attuale nel Digidex.'
+            : `Corretti ${results.length}: ` + results.map(r=>`${r.username} (Fresh: ${r.before.fresh||'—'}→${r.after.fresh||'—'}, Baby: ${r.before.baby||'—'}→${r.after.baby||'—'})`).join(' · ');
+        }
+        refixBtn.disabled = false;
         renderPage();
       };
     }
