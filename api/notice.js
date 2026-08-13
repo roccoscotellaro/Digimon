@@ -6,6 +6,9 @@
 //   (default, nessun resource)     -> Avvisi Pop-up del Master, con targeting granulare:
 //                                      tutti i giocatori / solo alcuni / un solo giocatore.
 //   resource: 'bugreport'          -> Segnalazioni bug inviate dai giocatori.
+//   resource: 'mission'            -> Report Missioni (obiettivi, ricompense, PG assegnati,
+//                                      stato avanzamento). Master e giocatori possono entrambi
+//                                      aggiornare lo stato/obiettivi.
 //
 // Usa lo stesso client Supabase condiviso di lib/db.js (SUPABASE_SERVICE_KEY) di tutto il resto
 // del progetto — la versione precedente si creava un client a sé con SUPABASE_SERVICE_ROLE_KEY,
@@ -164,6 +167,85 @@ async function handleBugReportPut(req, res) {
   return res.status(200).json({ ok: true });
 }
 
+// ---------------- MISSIONI (report obiettivi/ricompense/PG assegnati) ----------------
+async function handleMissionGet(req, res) {
+  const { code } = req.query;
+  if (!code) return res.status(400).json({ error: 'code mancante' });
+  const { data, error } = await supabase
+    .from('missions')
+    .select('*')
+    .eq('code', code)
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  return res.status(200).json({ missions: data || [] });
+}
+
+async function handleMissionPost(req, res) {
+  const { code, title, description, objectives, rewards, assignedTo, createdBy } = req.body || {};
+  if (!code || !title || !String(title).trim()) return res.status(400).json({ error: 'code e title sono obbligatori' });
+  const cleanObjectives = Array.isArray(objectives)
+    ? objectives.filter(o => o && String(o.text || '').trim()).map(o => ({ text: String(o.text).trim(), done: !!o.done }))
+    : [];
+  const { data, error } = await supabase
+    .from('missions')
+    .insert({
+      code,
+      title: String(title).trim(),
+      description: description || '',
+      objectives: cleanObjectives,
+      rewards: rewards || '',
+      assigned_to: Array.isArray(assignedTo) ? assignedTo : [],
+      status: 'non_iniziata',
+      created_by: createdBy || 'Master'
+    })
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  return res.status(200).json({ ok: true, mission: data });
+}
+
+async function handleMissionPut(req, res) {
+  const { code, id, title, description, objectives, rewards, assignedTo, status, toggleObjectiveIndex } = req.body || {};
+  if (!code || !id) return res.status(400).json({ error: 'code e id sono obbligatori' });
+
+  // Caso frequente: spuntare/togliere un singolo obiettivo. Va letto e riscritto
+  // per intero perché objectives è una colonna JSONB, non righe separate.
+  if (toggleObjectiveIndex !== undefined && toggleObjectiveIndex !== null) {
+    const { data: existing, error: readErr } = await supabase
+      .from('missions').select('objectives').eq('id', id).eq('code', code).single();
+    if (readErr) return res.status(500).json({ error: readErr.message });
+    const objs = Array.isArray(existing.objectives) ? existing.objectives.slice() : [];
+    const idx = Number(toggleObjectiveIndex);
+    if (!objs[idx]) return res.status(400).json({ error: 'obiettivo non trovato' });
+    objs[idx] = { ...objs[idx], done: !objs[idx].done };
+    const { error } = await supabase.from('missions')
+      .update({ objectives: objs, updated_at: new Date().toISOString() })
+      .eq('id', id).eq('code', code);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ ok: true });
+  }
+
+  const patch = { updated_at: new Date().toISOString() };
+  if (title !== undefined) patch.title = String(title).trim();
+  if (description !== undefined) patch.description = description;
+  if (rewards !== undefined) patch.rewards = rewards;
+  if (Array.isArray(assignedTo)) patch.assigned_to = assignedTo;
+  if (Array.isArray(objectives)) patch.objectives = objectives.map(o => ({ text: String(o.text || '').trim(), done: !!o.done })).filter(o => o.text);
+  if (status && ['non_iniziata', 'in_corso', 'completata', 'fallita'].includes(status)) patch.status = status;
+
+  const { error } = await supabase.from('missions').update(patch).eq('id', id).eq('code', code);
+  if (error) return res.status(500).json({ error: error.message });
+  return res.status(200).json({ ok: true });
+}
+
+async function handleMissionDelete(req, res) {
+  const { code, id } = req.query;
+  if (!code || !id) return res.status(400).json({ error: 'code e id sono obbligatori' });
+  const { error } = await supabase.from('missions').delete().eq('id', id).eq('code', code);
+  if (error) return res.status(500).json({ error: error.message });
+  return res.status(200).json({ ok: true });
+}
+
 // ---------------- ROUTER ----------------
 module.exports = async (req, res) => {
   try {
@@ -176,6 +258,15 @@ module.exports = async (req, res) => {
       if (req.method === 'POST') return await handleBugReportPost(req, res);
       if (req.method === 'PUT') return await handleBugReportPut(req, res);
       res.setHeader('Allow', ['GET', 'POST', 'PUT']);
+      return res.status(405).json({ error: 'Metodo non permesso' });
+    }
+
+    if (resource === 'mission') {
+      if (req.method === 'GET') return await handleMissionGet(req, res);
+      if (req.method === 'POST') return await handleMissionPost(req, res);
+      if (req.method === 'PUT') return await handleMissionPut(req, res);
+      if (req.method === 'DELETE') return await handleMissionDelete(req, res);
+      res.setHeader('Allow', ['GET', 'POST', 'PUT', 'DELETE']);
       return res.status(405).json({ error: 'Metodo non permesso' });
     }
 
