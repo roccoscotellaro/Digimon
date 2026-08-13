@@ -189,6 +189,44 @@ async function handleImageUpload(req, res) {
   return res.status(200).json({ ok: true, url: publicUrlData.publicUrl });
 }
 
+// ---------- BLOCCO NUOVO: upload tracce audio Scena (bucket dedicato campaign-audio) ----------
+// Stesso schema del blocco immagini sopra, ma con mime/limite dedicati all'audio e bucket
+// separato. Attivo solo con resource === 'audio'; il resto del file resta invariato.
+const AUDIO_BUCKET = 'campaign-audio';
+const MAX_AUDIO_BYTES = 3 * 1024 * 1024; // stesso tetto delle immagini, per restare sotto al body limit ~4.5MB di Vercel dopo l'inflazione base64
+
+async function handleAudioUpload(req, res) {
+  const { code, dataUrl } = req.body || {};
+  const campaignCode = cleanCode(code);
+  if (!campaignCode) return res.status(400).json({ error: 'missing code' });
+
+  if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
+    return res.status(400).json({ error: 'missing or invalid audio data' });
+  }
+  const match = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
+  if (!match) return res.status(400).json({ error: 'unsupported audio encoding' });
+
+  const mime = match[1];
+  if (!mime.startsWith('audio/')) return res.status(400).json({ error: 'only audio files are allowed' });
+
+  const buffer = Buffer.from(match[2], 'base64');
+  if (buffer.length > MAX_AUDIO_BYTES) {
+    return res.status(400).json({ error: 'traccia troppo grande (limite ~3MB): comprimi il file o abbassa il bitrate e riprova' });
+  }
+
+  const ext = (mime.split('/')[1] || 'mp3').split('+')[0].toLowerCase();
+  const fileName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const path = `${campaignCode}/${fileName}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(AUDIO_BUCKET)
+    .upload(path, buffer, { contentType: mime, upsert: false });
+  if (uploadError) return res.status(500).json({ error: uploadError.message });
+
+  const { data: publicUrlData } = supabase.storage.from(AUDIO_BUCKET).getPublicUrl(path);
+  return res.status(200).json({ ok: true, url: publicUrlData.publicUrl });
+}
+
 // ---------- ROUTER ----------
 module.exports = async (req, res) => {
   try {
@@ -206,6 +244,12 @@ module.exports = async (req, res) => {
       if (req.method === 'GET') return await handleCrestImagesGet(req, res);
       if (req.method === 'POST') return await handleCrestImagesPost(req, res);
       res.setHeader('Allow', 'GET, POST');
+      return res.status(405).json({ error: 'method not allowed' });
+    }
+
+    if (resourceGet === 'audio') {
+      if (req.method === 'POST') return await handleAudioUpload(req, res);
+      res.setHeader('Allow', 'POST');
       return res.status(405).json({ error: 'method not allowed' });
     }
 
