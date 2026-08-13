@@ -295,6 +295,9 @@
   let cachedProgression = null;
   let pendingActionImageUrl = null;
   let pendingGmImageUrl = null;
+  let cachedMissions = [];
+  let missionsModalOpen = false;
+  let missionDraftObjectives = ['']; // righe obiettivo nel form "Nuova Missione"
 
   async function getProgression(code){
     const d = await apiGet('/api/state?resource=progression&code=' + encodeURIComponent(code));
@@ -873,6 +876,14 @@
   async function getBugReports(code){ const d = await apiGet('/api/notice?resource=bugreport&code=' + encodeURIComponent(code)); return d ? (d.reports||[]) : []; }
   async function createBugReport(code, username, text){ return apiPost('/api/notice', { resource:'bugreport', code, username, text }); }
   async function resolveBugReport(code, id, resolved){ return apiPut('/api/notice', { resource:'bugreport', code, id, resolved }); }
+  // ---------- Missioni (report obiettivi/ricompense/PG assegnati) ----------
+  async function getMissions(code){ const d = await apiGet('/api/notice?resource=mission&code=' + encodeURIComponent(code), true); return d ? (d.missions||[]) : []; }
+  async function createMission(code, { title, description, objectives, rewards, assignedTo, createdBy }){
+    return apiPost('/api/notice', { resource:'mission', code, title, description, objectives, rewards, assignedTo, createdBy });
+  }
+  async function updateMission(code, id, patch){ return apiPut('/api/notice', { resource:'mission', code, id, ...patch }); }
+  async function toggleMissionObjective(code, id, index){ return apiPut('/api/notice', { resource:'mission', code, id, toggleObjectiveIndex: index }); }
+  async function deleteMission(code, id){ return apiDelete('/api/notice?resource=mission&code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
   async function getScanLog(code){ const d = await apiGet('/api/upload?resource=scan&code=' + encodeURIComponent(code)); return d ? (d.allLog||[]) : []; }
   async function deleteScanEntry(code, id){ return apiDelete('/api/upload?resource=scan&code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
@@ -1112,6 +1123,7 @@
         ${session ? `&nbsp;<a href="player.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">👤 Giocatore</a>` : ''}
         ${session ? `&nbsp;<a href="digimon.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">👾 Digimon</a>` : ''}
         ${session ? `&nbsp;<a href="DDA2E_Indice_Regole.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">📜 Regole</a>` : ''}
+        ${session ? `&nbsp;<button class="btn ghost small" id="btn-open-missions" style="margin-left:10px;">📋 Missioni</button>` : ''}
         ${session ? `&nbsp;<button class="btn ghost small" id="btn-logout" style="margin-left:10px;">Esci</button>` : ''}
       </div>
     </div>
@@ -1223,6 +1235,8 @@
     if(sceneLive){
       sceneLive.innerHTML = `<div class="muted mono" style="margin-bottom:8px;">${onlineSummary(cachedRoster)}</div>` + sceneHTML(cachedScene);
     }
+    bindSceneAudio(cachedScene);
+    if(missionsModalOpen) refreshMissionsModal();
     const sceneLuoghiLive = document.getElementById('scene-luoghi-live');
     if(sceneLuoghiLive){
       sceneLuoghiLive.innerHTML = sceneCurrentSectorLuoghiHTML();
@@ -1708,6 +1722,7 @@
             <div class="section-title">Scena Attuale</div>
             <div class="muted mono" style="margin-bottom:8px;">Milestone ${cachedProgression?cachedProgression.milestone:0} · Ispirazione ${cachedProgression?cachedProgression.inspiration:0}</div>
             <div id="scene-live">${sceneHTML(cachedScene)}</div>
+            ${sceneAudioWidgetHTML()}
           </div>
 
           <div class="hud-frame card">
@@ -1754,11 +1769,13 @@
     `;
 
     renderSidebar(me);
+    bindSceneAudio(cachedScene);
     document.getElementById('tab-scheda').onclick = ()=>{ sidebarTab='scheda'; renderSidebar(me); };
     document.getElementById('tab-inventario').onclick = ()=>{ sidebarTab='inventario'; renderSidebar(me); };
     document.getElementById('tab-bug').onclick = ()=>{ sidebarTab='bug'; renderSidebar(me); };
 
     document.getElementById('btn-logout').onclick = logout;
+    document.getElementById('btn-open-missions').onclick = openMissionsModal;
     bindChatAttach('action', code, 'chat', ()=>pendingActionImageUrl, (url)=>{ pendingActionImageUrl = url; });
     document.getElementById('btn-correct').onclick = async ()=>{
       const ta = document.getElementById('action-text');
@@ -3423,10 +3440,37 @@
         drawArmorQualDraft();
         renderArmorList();
       };
+      const STAT_TARGET_TO_INPUTID = { accuracy:'acc', damage:'dmg', dodge:'dodge', armor:'arm', health:'hp' };
+      // Naturewalk/Instinct danno un +1 "gratis" a una Stat — questa funzione lo applica per davvero
+      // alla casella visibile (e, se tocca Health, ricalcola anche Ferite Massime = Indice Stage +
+      // Health×2). Il Salva legge queste caselle così com'è: senza toccarle qui, il bonus resterebbe
+      // solo sulla carta e Ferite Massime non si aggiornerebbe mai.
+      const applyQualityStatBonusToForm = (entry, sign)=>{
+        if(!entry) return;
+        let targetKey = null;
+        if(entry.mechanic==='naturewalk' && entry.statTarget) targetKey = entry.statTarget;
+        else if(entry.mechanic==='instinct') targetKey = 'dodge';
+        if(!targetKey) return;
+        const suffix = STAT_TARGET_TO_INPUTID[targetKey];
+        const inp = suffix && document.getElementById(`e-d-${suffix}-${containerId}`);
+        if(!inp) return;
+        const amount = (Number(entry.rank)||1) * sign;
+        inp.value = Math.max(0, (Number(inp.value)||0) + amount);
+        if(targetKey==='health'){
+          const maxwInp = document.getElementById('e-d-maxw-'+containerId);
+          const stageSel = document.getElementById('e-d-stage-'+containerId);
+          if(maxwInp && stageSel){
+            maxwInp.value = stageIndex(stageSel.value) + Number(inp.value)*2;
+          }
+        }
+      };
       const bindQualRemove = ()=>{
         document.querySelectorAll(`#qual-list-${containerId} [data-rmquality]`).forEach(b=>{
           b.onclick = ()=>{
-            d.qualities.splice(Number(b.getAttribute('data-rmquality')),1);
+            const idx = Number(b.getAttribute('data-rmquality'));
+            const removed = d.qualities[idx];
+            applyQualityStatBonusToForm(removed, -1);
+            d.qualities.splice(idx,1);
             document.getElementById('qual-list-'+containerId).innerHTML = qualitiesEditableHTML(d.qualities);
             bindQualRemove();
           };
@@ -3452,6 +3496,7 @@
           const qualityEntry = { name, cost, category, description, mechanic, rank: clampedRank };
           if(q.mechanic==='naturewalk') qualityEntry.statTarget = statTarget;
           d.qualities.push(qualityEntry);
+          applyQualityStatBonusToForm(qualityEntry, 1);
         } else {
           name = document.getElementById('e-d-qual-name-'+containerId).value.trim();
           if(!name) return;
@@ -3703,6 +3748,7 @@
             <div class="muted" style="margin-top:4px;font-size:11px;">"Nuova Scena" azzera Titolo/Sfondo/Musica/Incontri/Settori e apre una chat vuota per questa Scena — la chat delle Scene precedenti resta salvata ma non più visibile qui.</div>
             <div class="muted" id="scene-status" style="margin-top:6px;"></div>
             ${cachedScene.music ? `<audio controls src="${escapeAttr(cachedScene.music)}" style="width:100%;margin-top:10px;"></audio>` : ''}
+            ${sceneAudioWidgetHTML()}
           </div>
 
           <div class="hud-frame card" id="sector-map-card"></div>
@@ -3815,7 +3861,9 @@
     renderSectorMap(code);
     renderMountingTN();
     attachLogModeration(document.getElementById('log-live'), code);
+    bindSceneAudio(cachedScene);
     document.getElementById('btn-logout').onclick = logout;
+    document.getElementById('btn-open-missions').onclick = openMissionsModal;
     document.getElementById('btn-save-scene').onclick = async ()=>{
       const newScene = {
         id: cachedScene.id,
@@ -6027,6 +6075,50 @@
     }
   }
 
+  // ---------- Player audio: la scena può avere una traccia, ma i browser bloccano
+  // l'autoplay finché l'utente non interagisce. Questo widget resta fuori da #scene-live
+  // (che viene ricreato ad ogni polling) così l'audio non riparte da capo ad ogni refresh:
+  // solo bindSceneAudio() aggiorna la sorgente quando il Master cambia traccia.
+  function sceneAudioWidgetHTML(){
+    return `<div class="row" id="scene-audio-wrap" style="align-items:center;gap:8px;margin-top:8px;">
+      <button class="btn small" id="scene-audio-toggle" disabled>🔇 Nessuna traccia</button>
+      <span class="muted" id="scene-audio-status" style="font-size:11px;"></span>
+      <audio id="scene-audio-el" style="display:none;"></audio>
+    </div>`;
+  }
+  function bindSceneAudio(scene){
+    const btn = document.getElementById('scene-audio-toggle');
+    const audioEl = document.getElementById('scene-audio-el');
+    const statusEl = document.getElementById('scene-audio-status');
+    if(!btn || !audioEl) return;
+    const url = (scene && scene.music) || '';
+    if(audioEl.dataset.src !== url){
+      const wasPlaying = !audioEl.paused && audioEl.dataset.src;
+      audioEl.pause();
+      audioEl.src = url;
+      audioEl.dataset.src = url;
+      btn.disabled = !url;
+      if(url){
+        btn.textContent = '▶️ Audio Scena';
+        if(statusEl) statusEl.textContent = wasPlaying ? '🔄 Traccia cambiata: premi play' : '';
+        if(wasPlaying){ audioEl.play().catch(()=>{ if(statusEl) statusEl.textContent = '⚠ Premi play per ascoltare'; }); if(audioEl && !audioEl.paused) btn.textContent = '⏸️ Pausa Audio'; }
+      } else {
+        btn.textContent = '🔇 Nessuna traccia';
+        if(statusEl) statusEl.textContent = '';
+      }
+    }
+    btn.onclick = ()=>{
+      if(!audioEl.src) return;
+      if(audioEl.paused){
+        audioEl.play().then(()=>{ btn.textContent = '⏸️ Pausa Audio'; if(statusEl) statusEl.textContent = ''; })
+          .catch(()=>{ if(statusEl) statusEl.textContent = '⚠ Riproduzione bloccata dal browser'; });
+      } else {
+        audioEl.pause();
+        btn.textContent = '▶️ Audio Scena';
+      }
+    };
+  }
+
   function sceneHTML(scene){
     const macroScenes = (scene && Array.isArray(scene.macroScenes)) ? scene.macroScenes : [];
     const activeMacro = scene && scene.currentMacroSceneId ? macroScenes.find(m=>m.id===scene.currentMacroSceneId) : null;
@@ -6725,6 +6817,194 @@
     modal.onclick = (ev)=>{ if(ev.target===modal) modal.remove(); };
   }
 
+  // ---------- MISSIONI: report obiettivi/ricompense/PG assegnati/stato ----------
+  const MISSION_STATUS_LABEL = { non_iniziata:'Non Iniziata', in_corso:'In Corso', completata:'Completata', fallita:'Fallita' };
+  const MISSION_STATUS_COLOR = { non_iniziata:'var(--text-mute)', in_corso:'var(--cyan)', completata:'#5cff8a', fallita:'var(--danger)' };
+
+  async function openMissionsModal(){
+    if(!session) return;
+    missionsModalOpen = true;
+    cachedMissions = await getMissions(session.code);
+    missionDraftObjectives = [''];
+    const old = document.getElementById('missions-modal');
+    if(old) old.remove();
+    const modal = document.createElement('div');
+    modal.id = 'missions-modal';
+    modal.className = 'enc-modal-backdrop';
+    modal.innerHTML = `
+      <div class="enc-modal-card hud-frame" style="max-width:640px;">
+        <button class="btn ghost small" id="missions-modal-close" style="position:absolute;top:8px;right:8px;">✕</button>
+        <div class="section-title">📋 Report Missioni</div>
+        <div id="missions-list">${missionsListHTML()}</div>
+        ${session.role==='master' ? `<div class="divider" style="margin:16px 0;"></div><div id="mission-create-form">${missionCreateFormHTML()}</div>` : ''}
+      </div>
+    `;
+    document.body.appendChild(modal);
+    document.getElementById('missions-modal-close').onclick = closeMissionsModal;
+    modal.onclick = (ev)=>{ if(ev.target===modal) closeMissionsModal(); };
+    bindMissionsListEvents();
+    if(session.role==='master') bindMissionCreateForm();
+  }
+
+  function closeMissionsModal(){
+    missionsModalOpen = false;
+    const modal = document.getElementById('missions-modal');
+    if(modal) modal.remove();
+  }
+
+  async function refreshMissionsModal(){
+    if(!missionsModalOpen || !session) return;
+    cachedMissions = await getMissions(session.code);
+    const listEl = document.getElementById('missions-list');
+    if(!listEl) return; // il modal è stato chiuso nel frattempo
+    listEl.innerHTML = missionsListHTML();
+    bindMissionsListEvents();
+  }
+
+  function missionsListHTML(){
+    if(cachedMissions.length===0) return `<div class="muted">Nessuna missione ancora registrata.</div>`;
+    const isMaster = session && session.role==='master';
+    // Per i giocatori mostra prima le missioni assegnate a loro (ma tutte restano visibili, come richiesto).
+    const sorted = isMaster ? cachedMissions : cachedMissions.slice().sort((a,b)=>{
+      const aMine = (a.assigned_to||[]).includes(session.username) ? 0 : 1;
+      const bMine = (b.assigned_to||[]).includes(session.username) ? 0 : 1;
+      return aMine - bMine;
+    });
+    return sorted.map(m=>missionCardHTML(m, isMaster)).join('');
+  }
+
+  function missionCardHTML(m, isMaster){
+    const objs = Array.isArray(m.objectives) ? m.objectives : [];
+    const doneCount = objs.filter(o=>o.done).length;
+    const assigned = Array.isArray(m.assigned_to) ? m.assigned_to : [];
+    return `
+      <div class="hud-frame card" style="padding:12px;margin-bottom:10px;" data-mission-id="${m.id}">
+        <div class="flex-between" style="align-items:flex-start;">
+          <div>
+            <div style="font-weight:700;color:var(--cyan);">${escapeHTML(m.title)}</div>
+            ${m.description ? `<div class="sub" style="margin-top:2px;">${escapeHTML(m.description)}</div>` : ''}
+          </div>
+          <span class="tag mono" style="color:${MISSION_STATUS_COLOR[m.status]||'var(--text-mute)'};border-color:${MISSION_STATUS_COLOR[m.status]||'var(--line)'};">${MISSION_STATUS_LABEL[m.status]||m.status}</span>
+        </div>
+        ${objs.length>0 ? `
+          <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin-top:10px;">Obiettivi (${doneCount}/${objs.length})</div>
+          <div style="margin-top:4px;">
+            ${objs.map((o,i)=>`
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-top:4px;cursor:pointer;${o.done?'opacity:0.6;text-decoration:line-through;':''}">
+                <input type="checkbox" data-mission-obj="${m.id}:${i}" ${o.done?'checked':''} style="width:auto;" />
+                ${escapeHTML(o.text)}
+              </label>
+            `).join('')}
+          </div>
+        ` : ''}
+        ${m.rewards ? `<div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin-top:10px;">Ricompense</div><div style="font-size:13px;margin-top:2px;">${escapeHTML(m.rewards)}</div>` : ''}
+        ${assigned.length>0 ? `<div class="muted" style="font-size:11px;margin-top:8px;">👥 Assegnata a: ${assigned.map(escapeHTML).join(', ')}</div>` : `<div class="muted" style="font-size:11px;margin-top:8px;">Nessun Tamer assegnato</div>`}
+        <div class="row" style="margin-top:10px;gap:8px;align-items:center;">
+          <select data-mission-status="${m.id}" style="flex:1;">
+            ${Object.keys(MISSION_STATUS_LABEL).map(s=>`<option value="${s}" ${m.status===s?'selected':''}>${MISSION_STATUS_LABEL[s]}</option>`).join('')}
+          </select>
+          ${isMaster ? `<button class="btn ghost small" data-mission-delete="${m.id}">🗑️</button>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  function bindMissionsListEvents(){
+    const code = session.code;
+    document.querySelectorAll('[data-mission-obj]').forEach(cb=>{
+      cb.onchange = async ()=>{
+        const [id, idx] = cb.getAttribute('data-mission-obj').split(':');
+        cb.disabled = true;
+        await toggleMissionObjective(code, id, Number(idx));
+        await refreshMissionsModal();
+      };
+    });
+    document.querySelectorAll('[data-mission-status]').forEach(sel=>{
+      sel.onchange = async ()=>{
+        const id = sel.getAttribute('data-mission-status');
+        sel.disabled = true;
+        await updateMission(code, id, { status: sel.value });
+        await refreshMissionsModal();
+      };
+    });
+    document.querySelectorAll('[data-mission-delete]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-mission-delete');
+        if(!window.confirm('Eliminare definitivamente questa missione?')) return;
+        await deleteMission(code, id);
+        await refreshMissionsModal();
+      };
+    });
+  }
+
+  function missionCreateFormHTML(){
+    const players = (cachedRoster||[]).filter(m=>m.role==='player');
+    return `
+      <div class="section-title" style="border:none;padding:0;margin-bottom:10px;">➕ Nuova Missione</div>
+      <div class="field"><label>Titolo</label><input type="text" id="mission-title" placeholder="es. Il Segreto della Torre di Infinity" /></div>
+      <div class="field"><label>Descrizione</label><textarea id="mission-desc" rows="2" placeholder="Contesto narrativo..."></textarea></div>
+      <label style="font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;">Obiettivi</label>
+      <div id="mission-objectives-rows" style="margin-top:4px;">${missionDraftObjectives.map((v,i)=>`
+        <div class="row" style="margin-top:6px;gap:6px;">
+          <input type="text" class="mission-obj-input" data-obj-idx="${i}" value="${escapeAttr(v)}" placeholder="es. Trova la chiave nel Settore Foresta" style="flex:1;" />
+          ${missionDraftObjectives.length>1 ? `<button type="button" class="btn ghost small" data-remove-obj="${i}">✕</button>` : ''}
+        </div>
+      `).join('')}</div>
+      <button type="button" class="btn ghost small" id="mission-add-obj" style="margin-top:8px;">+ Aggiungi Obiettivo</button>
+      <div class="field" style="margin-top:12px;"><label>Ricompense</label><input type="text" id="mission-rewards" placeholder="es. 200 Bit, Digicore Raro" /></div>
+      ${players.length>0 ? `
+        <label style="font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;">Assegna a</label>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;">
+          ${players.map(p=>`<label style="display:flex;align-items:center;gap:4px;font-size:13px;"><input type="checkbox" class="mission-assign-cb" value="${escapeAttr(p.username)}" style="width:auto;" />${escapeHTML(p.username)}</label>`).join('')}
+        </div>
+      ` : '<div class="muted" style="font-size:11px;">Nessun giocatore ancora presente nel roster.</div>'}
+      <button class="btn solid" id="mission-create-btn" style="width:100%;padding:10px;margin-top:14px;">Crea Missione</button>
+      <div class="muted" id="mission-create-status" style="margin-top:6px;"></div>
+    `;
+  }
+
+  function bindMissionCreateForm(){
+    const rerenderForm = ()=>{
+      const wrap = document.getElementById('mission-create-form');
+      if(wrap) wrap.innerHTML = missionCreateFormHTML();
+      bindMissionCreateForm();
+    };
+    document.getElementById('mission-add-obj').onclick = ()=>{
+      // Salva i valori digitati finora prima di rigenerare la riga in più.
+      document.querySelectorAll('.mission-obj-input').forEach(inp=>{ missionDraftObjectives[Number(inp.getAttribute('data-obj-idx'))] = inp.value; });
+      missionDraftObjectives.push('');
+      rerenderForm();
+    };
+    document.querySelectorAll('[data-remove-obj]').forEach(btn=>{
+      btn.onclick = ()=>{
+        document.querySelectorAll('.mission-obj-input').forEach(inp=>{ missionDraftObjectives[Number(inp.getAttribute('data-obj-idx'))] = inp.value; });
+        missionDraftObjectives.splice(Number(btn.getAttribute('data-remove-obj')), 1);
+        rerenderForm();
+      };
+    });
+    document.getElementById('mission-create-btn').onclick = async ()=>{
+      document.querySelectorAll('.mission-obj-input').forEach(inp=>{ missionDraftObjectives[Number(inp.getAttribute('data-obj-idx'))] = inp.value; });
+      const title = document.getElementById('mission-title').value.trim();
+      const statusEl = document.getElementById('mission-create-status');
+      if(!title){ statusEl.textContent = 'Il titolo è obbligatorio.'; return; }
+      const objectives = missionDraftObjectives.filter(t=>t.trim()).map(t=>({ text:t.trim(), done:false }));
+      const assignedTo = Array.from(document.querySelectorAll('.mission-assign-cb:checked')).map(cb=>cb.value);
+      const description = document.getElementById('mission-desc').value.trim();
+      const rewards = document.getElementById('mission-rewards').value.trim();
+      statusEl.textContent = 'Creazione in corso...';
+      const res = await createMission(session.code, { title, description, objectives, rewards, assignedTo, createdBy: session.username });
+      if(res && res.ok){
+        missionDraftObjectives = [''];
+        cachedMissions = await getMissions(session.code);
+        document.getElementById('missions-list').innerHTML = missionsListHTML();
+        bindMissionsListEvents();
+        rerenderForm();
+      } else {
+        statusEl.textContent = '⚠ Creazione fallita: ' + (lastApiError || 'errore sconosciuto');
+      }
+    };
+  }
+
   // ---------- DIGIMOJI: conversione fonetica italiana -> Hiragana ----------
   // Regole pensate per l'ortografia italiana (ca/co/cu = k, che/chi = k, ci = "chi",
   // ga/go/gu = g, ghe/ghi = g, gi = "ji", sci = "shi"), più le varianti standard
@@ -6900,6 +7180,33 @@
   });
   __collapseObserver.observe(document.body, { childList:true, subtree:true });
   window.addEventListener('resize', __refreshAllCollapsibleCards);
+
+  // ---------- SFX: blip elettronico ad ogni click (stile Digivice) ----------
+  // Generato via Web Audio, nessun file audio da caricare/ospitare. Il primo click crea/
+  // sblocca l'AudioContext (i browser bloccano l'audio finché non c'è un gesto dell'utente).
+  let __sfxCtx = null;
+  function __playClickSfx(){
+    try{
+      if(!__sfxCtx) __sfxCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if(__sfxCtx.state === 'suspended') __sfxCtx.resume();
+      const ctx = __sfxCtx;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(980, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(420, ctx.currentTime + 0.06);
+      gain.gain.setValueAtTime(0.05, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.07);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.08);
+    }catch(e){ /* alcuni browser bloccano l'audio: fallisce silenziosamente */ }
+  }
+  document.addEventListener('click', function(e){
+    // Niente blip quando si clicca dentro campi di testo (fastidioso mentre si scrive/seleziona).
+    if(e.target.closest('input, textarea, select')) return;
+    __playClickSfx();
+  }, true);
 
   // ---------- boot ----------
   const restored = loadSession();
