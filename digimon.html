@@ -815,17 +815,23 @@
   // Switch semplice tra gli Stage già sbloccati (tra Default Stage e Default Stage + Default Range,
   // gli Stage raggiungibili senza spendere Evolution Points). Non replica le meccaniche complete di
   // Evoluzione/Blast/Slide del Tavolo (che restano lì) — qui è solo un cambio rapido di visualizzazione/stato.
-  function stageSwitchBlockHTML(m, editable){
+  function stageSwitchBlockHTML(m, editable, isMaster){
     const d = m.digimon;
     if(!d.name) return '';
     const defIdx = STAGES.indexOf(d.defaultStage||'Rookie');
     const maxIdx = Math.min(STAGES.length-1, defIdx + Number(d.defaultRange||0));
-    const unlocked = STAGES.slice(Math.max(0,defIdx), maxIdx+1);
+    // Il giocatore vede solo gli Stage che il Master ha già sbloccato (Default Range); il Master
+    // vede invece SEMPRE tutti gli Stage già costruiti per questo Digimon (più quello attuale, nel
+    // caso sia diverso da tutti i costruiti) — deve poter passare da uno all'altro in ogni momento,
+    // a prescindere da cosa è visibile ai giocatori.
+    const unlocked = isMaster
+      ? STAGES.filter(s => (d.stageStats && d.stageStats[s]) || s===d.stage || (STAGES.indexOf(s)>=defIdx && STAGES.indexOf(s)<=maxIdx))
+      : STAGES.slice(Math.max(0,defIdx), maxIdx+1);
     if(unlocked.length<=1) return '';
     return `
     <div class="hud-frame card">
       <div class="section-title"><span>Stage Attuale</span></div>
-      <div class="muted" style="margin-bottom:10px;">Stage sbloccati senza spendere Evolution Points: ${unlocked.join(' → ')}.</div>
+      <div class="muted" style="margin-bottom:10px;">${isMaster ? `Stage già costruiti per questo Digimon (come Master puoi passare da uno all'altro liberamente): ${unlocked.join(' → ')}.` : `Stage sbloccati senza spendere Evolution Points: ${unlocked.join(' → ')}.`}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         ${unlocked.map(s=>`<button class="btn ${s===d.stage?'solid':'ghost'} small" data-stage-switch="${escapeAttr(s)}" ${s===d.stage?'disabled':''}>${s}</button>`).join('')}
       </div>
@@ -1765,7 +1771,7 @@
             ${STAT_DEFS.map(d=>statBoxHTML(target, d.key, d.label, editable)).join('')}
           </div>
         </div>
-        ${stageSwitchBlockHTML(target, editable)}
+        ${stageSwitchBlockHTML(target, editable, isMaster)}
         ${statoBlockHTML(target, editable)}
         ${qualitiesBlockHTML(target, editable)}
         ${attacksBlockHTML(target, editable)}
