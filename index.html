@@ -3896,11 +3896,6 @@
             <div id="mchat-private-slot" style="display:none;"></div>
           </div>
 
-          <div class="hud-frame card">
-            <div class="section-title">Combattimento</div>
-            <div id="combat-live">${combatDisplayHTML(cachedCombat)}</div>
-          </div>
-
           <div class="hud-frame card" id="encounter-balance-card"></div>
         </div>
 
@@ -3924,6 +3919,10 @@
             </div>
             <div class="field"><label>TN (opzionale, solo per Skill)</label><input type="number" id="req-tn" placeholder="es. 15" /></div>
             <button class="btn amber" id="btn-request-roll" style="width:100%;">Richiedi Tiro</button>
+          </div>
+          <div class="hud-frame card">
+            <div class="section-title">Combattimento — Ordine dei Turni</div>
+            <div id="combat-live">${combatDisplayHTML(cachedCombat)}</div>
           </div>
           <div class="hud-frame card" id="combat-mgr-card"></div>
           <div class="hud-frame card" id="notice-mgr-card"></div>
@@ -5123,7 +5122,7 @@
       <div class="row">
         <select id="combat-add-player" style="flex:2;">
           <option value="">Aggiungi giocatore...</option>
-          ${players.map(p=>`<option value="${escapeAttr(p.username)}">${escapeHTML(p.username)}</option>`).join('')}
+          ${players.map(p=>`<option value="${escapeAttr(p.username)}">${escapeHTML(p.username)}${p.digimon && p.digimon.name ? ' — '+escapeHTML(p.digimon.name) : ''}</option>`).join('')}
         </select>
         <button class="btn small" id="btn-combat-add-player" style="flex:1;">+ Aggiungi</button>
       </div>
@@ -5822,7 +5821,8 @@
       const member = cachedRoster.find(m=>m.username===username);
       const ram = member ? computeDerivedStats(member.digimon).ram : 0;
       const startActions = (member && member.digimon.hybridMode) ? 3 : 2;
-      combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:username, side:'ally', ram, initiative:0, actions:startActions, attackedThisRound:false, effects:[], zone: combat.startZone||'Medio', clashPinned:false, clashComebackBonus:0, isPC:true, username });
+      const fighterName = (member && member.digimon.name) ? member.digimon.name : username;
+      combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:fighterName, side:'ally', ram, initiative:0, actions:startActions, attackedThisRound:false, effects:[], zone: combat.startZone||'Medio', clashPinned:false, clashComebackBonus:0, isPC:true, username });
       await persistAndRefresh();
     };
     const addFromSceneBtn = document.getElementById('btn-combat-add-fromscene');
@@ -5885,16 +5885,23 @@
       await persistAndRefresh();
     };
     document.getElementById('btn-combat-roll-all').onclick = async ()=>{
-      combat.participants.forEach(p=>{
+      if(combat.participants.length===0) return;
+      const rollLines = combat.participants.map(p=>{
         const { dice, total } = rollSkillCheck(0, p.ram||0); // 3d6 + RAM (attrVal unused, pass 0)
         p.initiative = total;
+        return `${escapeHTML(p.name)}: [${dice.join(', ')}] + RAM ${p.ram||0} = <b>${total}</b>`;
       });
       await persistAndRefresh();
+      const statusEl = document.getElementById('combat-mgr-status');
+      if(statusEl) statusEl.innerHTML = `🎲 Iniziativa tirata per tutti:<br>${rollLines.join('<br>')}<br><span class="muted">Ora premi "Calcola Ordine" per stabilire chi agisce per primo.</span>`;
     };
     document.getElementById('btn-combat-calc-order').onclick = async ()=>{
       if(combat.participants.length===0) return;
       recalcCombatOrder(combat);
       await persistAndRefresh();
+      const statusEl = document.getElementById('combat-mgr-status');
+      const orderNames = (combat.order||[]).map(id=>{ const p = combat.participants.find(x=>x.id===id); return p ? p.name : '?'; });
+      if(statusEl) statusEl.innerHTML = orderNames.length ? `✅ Ordine dei turni calcolato: ${orderNames.map(escapeHTML).join(' → ')}<br><span class="muted">Vedi la scheda "Combattimento — Ordine dei Turni" qui sopra.</span>` : '<span class="err">Nessun ordine calcolabile.</span>';
     };
     document.getElementById('btn-combat-next-turn').onclick = async ()=>{
       if(!combat.order || combat.order.length===0) return;
