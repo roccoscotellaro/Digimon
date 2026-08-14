@@ -392,6 +392,15 @@
 
   // Avanza il turno / termina il combattimento — condiviso tra il pannello "Combattimento" (in alto)
   // e "Gestione Combattimento" più sotto, così i controlli funzionano identici da entrambi i punti.
+  function isParticipantDefeated(p){
+    if(!p) return false;
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      return !!(member && member.digimon.defeated);
+    }
+    return !!p.defeated;
+  }
+
   async function advanceCombatTurn(code, players){
     const combat = cachedCombat;
     if(!combat || !combat.order || combat.order.length===0) return;
@@ -412,11 +421,18 @@
         }
       }
     }
-    combat.currentIndex++;
-    if(combat.currentIndex >= combat.order.length){
-      combat.currentIndex = 0;
-      combat.round++;
-    }
+    // Regola 9.12a: chi è Sconfitto viene ignorato per il resto del combattimento — si salta
+    // automaticamente il suo turno. Il Master può comunque farlo "rientrare a rischio" con il
+    // tasto ↩️ sulla sua riga, il che lo rimette in lista qui.
+    let skipped = 0;
+    do {
+      combat.currentIndex++;
+      if(combat.currentIndex >= combat.order.length){
+        combat.currentIndex = 0;
+        combat.round++;
+      }
+      skipped++;
+    } while(isParticipantDefeated(combat.participants.find(p=>p.id===combat.order[combat.currentIndex])) && skipped < combat.order.length);
     const starting = combat.participants.find(p=>p.id===combat.order[combat.currentIndex]);
     if(starting){
       const tickLogs = await tickEffectsForParticipant(code, combat, starting);
@@ -456,18 +472,28 @@
   // Chiede una frase narrativa variabile all'AI per il risultato di un attacco (endpoint già esistente,
   // mode:'narrazione-attacco'), usata per il risultato compatto nel Combat Manager. In caso di errore
   // di rete o API non configurata, ritorna null e il chiamante mostra una frase di fallback.
-  async function narrateAttack(attacker, atk, hit, dealt){
+  // Descrive anche cosa succede al bersaglio: schiva, viene danneggiato, o viene Sconfitto.
+  async function narrateAttack(attacker, target, atk, hit, dealt, defeatInfo){
     try{
       const atkName = atk ? atk.name : 'Attacco generico';
       const tags = atk ? attackTagsPlain(atk) : '';
       const desc = (atk && atk.desc) ? atk.desc : '';
-      const esito = hit ? `Colpisce il bersaglio, infliggendo ${dealt} danni.` : 'Manca completamente il bersaglio.';
+      let esito;
+      if(!hit){
+        esito = `${target?target.name:'Il bersaglio'} schiva completamente l'attacco.`;
+      } else if(defeatInfo){
+        esito = defeatInfo.digitama
+          ? `Colpisce ${target?target.name:'il bersaglio'} per ${dealt} danni, riducendolo/a in fin di vita: crolla al suolo, sull'orlo di regredire a Digitama.`
+          : `Colpisce ${target?target.name:'il bersaglio'} per ${dealt} danni, sconfiggendolo/a: crolla esausto/a e regredisce a ${defeatInfo.toStage}.`;
+      } else {
+        esito = `Colpisce ${target?target.name:'il bersaglio'}, infliggendo ${dealt} danni.`;
+      }
       let personality = 'Nemico feroce e imprevedibile.';
       if(attacker.isPC){
         const member = cachedRoster.find(m=>m.username===attacker.username);
         if(member && member.tamer && member.tamer.personality) personality = member.tamer.personality;
       }
-      const context = `Attacco usato: ${atkName} ${tags}${desc?`\nDescrizione di riferimento: ${desc}`:''}\nEsito: ${esito}`;
+      const context = `Attacco usato: ${atkName} ${tags}${desc?`\nDescrizione di riferimento: ${desc}`:''}\nBersaglio: ${target?target.name:'sconosciuto'}\nEsito: ${esito}`;
       const d = await apiPost('/api/ai', { mode:'narrazione-attacco', digimonName: attacker.name, personality, context });
       return (d && Array.isArray(d.lines) && d.lines[0]) ? d.lines[0] : null;
     }catch(e){ return null; }
@@ -4510,6 +4536,35 @@
     return 1; // Medium default for enemies (Size not tracked for them)
   }
 
+  // Regola 9.12a — Sconfitta: un Digimon portato a 0 Wound Box scende al suo Default Stage,
+  // resta a 1 Wound Box, ed è "Sconfitto" (cosciente, ma di norma ignorato per il resto del
+  // combattimento salvo scelga di rientrare a proprio rischio — nessuna Azione speciale è
+  // definita da regolamento per questo caso, è a discrezione del Master).
+  // Se il Digimon è già al proprio Default Stage (o sotto), il caso limite è il Digitama:
+  // non è automatizzato da nessuna parte nell'app, va gestito a mano dal Master.
+  async function applyDefeatIfNeeded(code, participant){
+    if(participant.isPC){
+      const member = cachedRoster.find(m=>m.username===participant.username);
+      if(!member || member.digimon.defeated || member.digimon.currentWounds>0) return null;
+      const curIdx = stageIndex(member.digimon.stage);
+      const defIdx = stageIndex(member.digimon.defaultStage);
+      member.digimon.defeated = true;
+      if(curIdx>defIdx){
+        applyStageChange(member.digimon, member.digimon.stage, member.digimon.defaultStage);
+        member.digimon.currentWounds = 1;
+        await saveMember(code, member);
+        return { name: member.digimon.name||participant.name, digitama:false, toStage: member.digimon.defaultStage };
+      } else {
+        await saveMember(code, member);
+        return { name: member.digimon.name||participant.name, digitama:true };
+      }
+    } else {
+      if(participant.defeated || (participant.currentWounds||0)>0) return null;
+      participant.defeated = true;
+      return { name: participant.name, digitama:false, enemy:true };
+    }
+  }
+
   async function applyDamageToParticipant(code, combat, p, amount){
     if(p.isPC){
       const member = cachedRoster.find(m=>m.username===p.username);
@@ -4628,10 +4683,18 @@
         dealt = Math.max(0, raw - tStats.armor);
         await applyDamageToParticipant(code, combat, target, dealt);
         const w = getParticipantWounds(target);
-        logText = `⚔ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! (${excess}+DMG ${aStats.damage})${combatMonsterNote}-ARM ${tStats.armor} = ${dealt} danno → ${target.name} ${w.current}/${w.max} Ferite`;
+        const defeatInfo = await applyDefeatIfNeeded(code, target);
+        let defeatNote = '';
+        if(defeatInfo){
+          defeatNote = defeatInfo.digitama
+            ? ` 🥚 ${defeatInfo.name} è Sconfitto ed è già al Default Stage minimo: da regolamento diventerebbe Digitama — gestiscilo a mano.`
+            : ` 🏳️ ${defeatInfo.name} è Sconfitto! Retrocede a ${defeatInfo.toStage} con 1 Ferita.`;
+        }
+        logText = `⚔ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! (${excess}+DMG ${aStats.damage})${combatMonsterNote}-ARM ${tStats.armor} = ${dealt} danno → ${target.name} ${w.current}/${w.max} Ferite${defeatNote}`;
+        return { logText, dealt, accRoll, dodgeRoll, atkLabel, defeatInfo };
       }
     }
-    return { logText, dealt, accRoll, dodgeRoll, atkLabel };
+    return { logText, dealt, accRoll, dodgeRoll, atkLabel, defeatInfo: null };
   }
 
   let masterPrivateThread = null;
@@ -5164,12 +5227,14 @@
           const w = getParticipantWounds(p);
           const acts = p.actions===undefined?2:p.actions;
           const isCurrentTurn = !!(combat.order && combat.order.length && combat.order[combat.currentIndex]===p.id);
+          const defeated = isParticipantDefeated(p);
           const expanded = isCurrentTurn || combatExpandedIds.has(p.id);
           const header = `
             <div class="flex-between">
-              <span>${isCurrentTurn?'▶ ':''}${escapeHTML(p.name)} <span class="tag" style="margin-left:4px;">${p.side==='ally'?'Alleato':'Nemico'}</span> <span class="muted" style="margin-left:4px;font-size:10px;">${w.current}/${w.max} Ferite · Az. ${acts}/2</span></span>
+              <span>${isCurrentTurn?'▶ ':''}${escapeHTML(p.name)} <span class="tag" style="margin-left:4px;">${p.side==='ally'?'Alleato':'Nemico'}</span> ${defeated?'<span class="tag" style="margin-left:4px;color:var(--danger);border-color:rgba(255,93,93,0.4);">🏳️ Sconfitto</span>':''} <span class="muted" style="margin-left:4px;font-size:10px;">${w.current}/${w.max} Ferite · Az. ${acts}/2</span></span>
               <span style="display:flex;align-items:center;gap:6px;">
                 <input type="number" data-part-init="${p.id}" value="${p.initiative}" style="width:60px;padding:4px;" />
+                ${defeated ? `<button class="btn ghost small" data-part-reenter="${p.id}" title="Rientra a proprio rischio (a discrezione del Master)">↩️</button>` : ''}
                 ${isCurrentTurn ? '' : `<button class="btn ghost small" data-part-toggle="${p.id}">${expanded?'▲':'▼'}</button>`}
                 <button class="btn ghost small" data-part-remove="${p.id}">✕</button>
               </span>
@@ -5554,19 +5619,26 @@
           return;
         }
         if(resEl) resEl.innerHTML = '<div class="muted" style="font-size:11px;">Tiro...</div>';
-        const { logText, dealt, accRoll, dodgeRoll } = await performAttackRoll(code, combat, attacker, target, atk);
+        const { logText, dealt, accRoll, dodgeRoll, defeatInfo } = await performAttackRoll(code, combat, attacker, target, atk);
         const hit = accRoll.successes > dodgeRoll.successes;
         const detailHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">vs</span>${diceRowHTML(dodgeRoll.dice)}<div class="muted" style="margin-top:4px;font-size:10.5px;">${escapeHTML(logText)}</div>`;
         const fallbackCompact = attackResultCompactHTML(null, hit, dealt, detailHTML);
         await pushLog(code, { who:'Master', role:'roll', text: logText, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
+        if(defeatInfo){
+          const noticeText = defeatInfo.digitama
+            ? `🥚 ${defeatInfo.name} è Sconfitto ed è già al Default Stage minimo — da regolamento diventerebbe Digitama, gestiscilo a mano.`
+            : `🏳️ ${defeatInfo.name} è Sconfitto! Retrocede a ${defeatInfo.toStage} con 1 Ferita e viene ignorato per il resto del combattimento (a meno che il giocatore non scelga di rientrare a proprio rischio).`;
+          await pushLog(code, { who:'Sistema', role:'gm', text: noticeText });
+        }
         await persistAndRefresh();
         // persistAndRefresh ricostruisce l'intera card (quindi anche #combat-attack-result vuoto):
         // riapplico subito il risultato (dadi/danno) — non aspetta l'AI, così il tiro non resta mai bloccato.
         const resEl2 = document.getElementById('combat-attack-result');
         if(resEl2) resEl2.innerHTML = fallbackCompact;
-        // Narrazione AI: gareggia con un timeout di 6s e va in CHAT come messaggio a parte (non blocca il tiro sopra).
+        // Narrazione AI: gareggia con un timeout di 6s e va in CHAT come messaggio a parte, a nome
+        // del Digimon attaccante (non del Master) — non blocca il tiro sopra, già concluso.
         const narrTimeout = new Promise(resolve=>setTimeout(()=>resolve(null), 6000));
-        Promise.race([narrateAttack(attacker, atk, hit, dealt), narrTimeout]).then(async (narrLine)=>{
+        Promise.race([narrateAttack(attacker, target, atk, hit, dealt, defeatInfo), narrTimeout]).then(async (narrLine)=>{
           if(!narrLine) return;
           await pushLog(code, { who: attacker.name, role:'gm', text: `${narrLine}${hit?` (${dealt})`:''}` });
           refreshLiveParts();
@@ -5645,7 +5717,9 @@
             await applyDamageToParticipant(code, combat, v, dealt);
             if(dealt>0) combatMonsterGain += dealt;
             const w = getParticipantWounds(v);
-            lines.push(`— ${v.name}: COLPITO! ${dealt} danno (dimezzato da Area) → ${w.current}/${w.max} Ferite`);
+            const vDefeat = await applyDefeatIfNeeded(code, v);
+            const vDefeatNote = vDefeat ? (vDefeat.digitama ? ` 🥚 Sconfitto — già al Default Stage minimo, diventerebbe Digitama (gestisci a mano).` : ` 🏳️ Sconfitto! Retrocede a ${vDefeat.toStage} con 1 Ferita.`) : '';
+            lines.push(`— ${v.name}: COLPITO! ${dealt} danno (dimezzato da Area) → ${w.current}/${w.max} Ferite${vDefeatNote}`);
           }
         }
         if(attacker.isPC && atk.type!=='Support'){
@@ -5824,6 +5898,22 @@
         const id = btn.getAttribute('data-part-toggle');
         if(combatExpandedIds.has(id)) combatExpandedIds.delete(id); else combatExpandedIds.add(id);
         renderCombatManager(code, players);
+      };
+    });
+    cardEl.querySelectorAll('[data-part-reenter]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-part-reenter');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p) return;
+        if(!window.confirm(`${p.name} rientra in combattimento a proprio rischio (nessuna protezione da regolamento per questa scelta) — confermi?`)) return;
+        if(p.isPC){
+          const member = cachedRoster.find(m=>m.username===p.username);
+          if(member){ member.digimon.defeated = false; await saveMember(code, member); }
+        } else {
+          p.defeated = false;
+        }
+        await pushLog(code, { who:'Sistema', role:'gm', text: `↩️ ${p.name} rientra in combattimento a proprio rischio.` });
+        await persistAndRefresh();
       };
     });
     const attackToggleBtn = document.getElementById('btn-combat-attack-toggle');
