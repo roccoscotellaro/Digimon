@@ -362,6 +362,17 @@
     Ultimate: { dp:30, startStat:4 },
     Mega:     { dp:40, startStat:5 }
   };
+  // Regola 3.0 — numero di Attacchi in lista per Stage, prima di eventuali Rank di Memory Upgrade
+  // (+1 Attacco per Rank, fino a 3 Rank extra, Gratis).
+  const ATTACK_SLOTS_BY_STAGE = { Fresh:1, Baby:1, Rookie:3, Champion:3, Ultimate:3, Mega:4 };
+  function memoryUpgradeRanks(qualities){
+    const q = (qualities||[]).find(x=>x.name && x.name.indexOf('Memory Upgrade')===0);
+    return q ? (Number(q.rank)||1) : 0;
+  }
+  function maxAttackSlots(d){
+    const base = ATTACK_SLOTS_BY_STAGE[d && d.stage] ?? 3;
+    return base + memoryUpgradeRanks(d && d.qualities);
+  }
   const CAMPAIGN_LEVELS = {
     Standard: { ap:10, sp:25, cap:5, thresholds:[3,5,6,7], tnShift:0, startTorment:8 },
     Classic:  { ap:5,  sp:20, cap:3, thresholds:[2,3,4,5], tnShift:-2, startTorment:5 },
@@ -380,6 +391,38 @@
   // (vedi dex-add-evolist / evolutionsEditableHTML in index.html). Qui estraiamo sempre il nome
   // in modo sicuro, altrimenti finisce per stampare letteralmente "[object Object]" a video.
   function evoName(ev){ if(ev==null) return ''; return typeof ev==='string' ? ev : String(ev.name||''); }
+  // Il Digidex scrive le mosse come stringa unica ("Pepper Breath — [RANGE][DAMAGE 6-8]"): questa
+  // funzione la spacca in { name, shape, type, extraTags } compatibile con lo schema attacks del
+  // sito. Tag come [MELEE]/[RANGE] diventano `shape`, [DAMAGE ...] diventa `type`, il resto (incluso
+  // il range di Danno) resta leggibile come testo extra invece di sparire.
+  function parseDexAttackString(raw){
+    if(!raw) return null;
+    const dashSplit = raw.split(/\s+—\s+/);
+    const name = (dashSplit[0] || raw).trim();
+    if(!name) return null;
+    const tagBlock = dashSplit.slice(1).join(' — ');
+    const tags = Array.from(tagBlock.matchAll(/\[([^\]]+)\]/g)).map(m=>m[1].trim());
+    const shape = tags.some(t=>/^MELEE$/i.test(t)) ? 'Melee' : 'Range';
+    const hasDamage = tags.some(t=>/^DAMAGE/i.test(t));
+    const type = hasDamage ? 'Damage' : 'Support';
+    const extraTags = tags.filter(t=>!/^MELEE$/i.test(t) && !/^RANGE$/i.test(t)).join(' · ');
+    return { name, shape, type, extraTags };
+  }
+  // Costruisce l'elenco completo di Attacchi (Signature Move + Signature Move 2 + tutti gli Extra
+  // Attacks) a partire da una voce del Digidex, nel formato usato dalla scheda del Digimon.
+  function buildAttacksFromDexEntry(dexEntry){
+    if(!dexEntry) return [];
+    const list = [];
+    const addMove = (raw, desc, signature) => {
+      const parsed = parseDexAttackString(raw);
+      if(!parsed) return;
+      list.push({ name: parsed.name, shape: parsed.shape, type: parsed.type, effectKey:'', extraTags: parsed.extraTags, desc: desc||'', signature: !!signature, reach: parsed.shape==='Range'?1:0, areaAttack:false });
+    };
+    if(dexEntry.signature_move) addMove(dexEntry.signature_move, dexEntry.attack_desc, true);
+    (dexEntry.extra_attacks||[]).forEach(ea=>{ if(ea && ea.move) addMove(ea.move, ea.desc, false); });
+    if(dexEntry.signature_move_2) addMove(dexEntry.signature_move_2, dexEntry.attack_desc_2, false);
+    return list;
+  }
   // Il bonus di Naturewalk (+1 a una Stat) è "gratis" rispetto al budget Stat: si paga solo il
   // costo della Quality stessa (dal budget Qualities), non un secondo DP dalle Stat. Se non lo
   // scorporiamo qui, un Digimon che arriva già con lo Stat gonfiato (es. dal Bio-Resonance Scan)
@@ -824,7 +867,7 @@
         <div class="field"><label>Stance</label><input type="text" id="d-stance" value="${escapeAttr(d.stance||'')}" /></div>
         <div class="field"><label>Colore Chat</label><input type="color" id="d-chatColor" value="${escapeAttr(d.chatColor||'#c896ff')}" /></div>
         <div class="field"><label>DP Totali</label><input type="number" id="d-dpTotal" value="${d.dpTotal||0}" /></div>
-        <div class="field"><label>Default Range</label><input type="number" id="d-defaultRange" value="${d.defaultRange ?? 2}" /></div>
+        <div class="field"><label>Default Range</label><input type="number" id="d-defaultRange" value="${d.defaultRange ?? 0}" min="0" max="5" /><div class="muted" style="font-size:10.5px;margin-top:3px;">Quanti Stage oltre Default Stage sono già "sbloccati" da mostrare (0 = solo Fresh appena schiuso; 1 = anche Baby; 2 = anche Rookie...). Aumentalo quando narrativamente il giocatore raggiunge le prime evoluzioni.</div></div>
         <div class="field"><label>Evolution Points</label><input type="number" id="d-evolutionPoints" value="${d.evolutionPoints||0}" /></div>
         <div class="field"><label>Forced Evo Rounds</label><input type="number" id="d-forcedEvoRoundsLeft" value="${d.forcedEvoRoundsLeft||0}" /></div>
         <div class="field"><label>Default Stage</label>
@@ -968,17 +1011,26 @@
 
   function attacksBlockHTML(m, editable){
     const items = m.digimon.attacks || [];
+    const maxSlots = maxAttackSlots(m.digimon);
+    const overCap = items.length > maxSlots;
+    const battery = Number(m.digimon.battery)||0;
     return `
     <div class="hud-frame card">
       <div class="section-title"><span>Mosse</span></div>
+      <div class="flex-between" style="margin-bottom:8px;">
+        <span class="muted">Slot Attacco</span>
+        <span class="mono" style="color:${overCap?'var(--danger)':'var(--dchroma)'};">${items.length} / ${maxSlots}</span>
+      </div>
+      ${overCap ? `<div class="muted" style="color:var(--danger);margin-bottom:8px;">Sopra il limite per lo Stage attuale — serve Memory Upgrade (Free Quality, +1 Attacco/Rank) per tenerne di più, o rimuoverne una.</div>` : ''}
       ${items.length===0 ? '<div class="muted">Nessuna mossa.</div>' : items.map((a,i)=>`
-        <div class="list-item">
+        <div class="list-item" ${a.signature?'style="border-color:var(--dchroma);"':''}>
           <div class="top-row">
-            <span class="name">${escapeHTML(a.name||'')} ${a.signature?'⭐':''}</span>
+            <span class="name">${a.signature?'⭐ ':''}${escapeHTML(a.name||'')}${a.signature?' <span class="tag" style="color:var(--dchroma);border-color:var(--dchroma);" title="Il giocatore può scegliere di dichiararla e spendere Battery per potenziarla — non è automatico.">SIGNATURE MOVE</span>':''}</span>
             ${editable ? `<button class="btn ghost small" data-a-remove="${i}">Rimuovi</button>` : ''}
           </div>
-          <div class="sub">${escapeHTML(a.shape||'')} · ${escapeHTML(a.type||'')}${a.shape==='Range'?` · reach ${a.reach||1}`:''}</div>
+          <div class="sub">${escapeHTML(a.shape||'')} · ${escapeHTML(a.type||'')}${a.shape==='Range'?` · reach ${a.reach||1}`:''}${a.extraTags?` · ${escapeHTML(a.extraTags)}`:''}</div>
           ${a.desc ? `<div class="sub">${escapeHTML(a.desc)}</div>` : ''}
+          ${a.signature ? `<div class="muted" style="font-size:11px;margin-top:4px;">🔋 Battery attuale: <b>${battery}/3</b> — ogni punto si aggiunge ad Accuracy e Danno (o Potenza, se Support) quando la usi. Consuma tutta la Battery all'uso.</div>` : ''}
         </div>
       `).join('')}
       ${editable ? `
@@ -1241,15 +1293,21 @@
         target.digimon.dpTotal = Math.max(0, dpRemaining);
         target.digimon.qualities = draft.qualities || [];
         target.digimon.evolutionPoints = 0;
-        target.digimon.defaultRange = 2;
+        target.digimon.defaultRange = 0;
         target.digimon.approved = false; // si "chiude" nell'Uovo finché il Master non lo schiude
         if(!target.digimon.stageStats) target.digimon.stageStats = {};
+        // Se il nome combacia con una voce del Digidex, agganciamo qui anche gli attacchi di quello
+        // Stage — servirà sia per l'elenco attacchi attivo sia per riapplicarli quando in futuro si
+        // torna su questo Stage con lo switch rapido.
+        const rookieDexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===draft.name.toLowerCase());
+        const rookieDexAttacks = buildAttacksFromDexEntry(rookieDexEntry);
         target.digimon.stageStats[draft.stage] = {
           name: draft.name, imageUrl: draft.imageUrl || '',
           baseAccuracy: draft.baseAccuracy, baseDamage: draft.baseDamage, baseDodge: draft.baseDodge,
           baseArmor: draft.baseArmor, baseHealth: draft.baseHealth,
           maxWounds: target.digimon.maxWounds, maxMp: target.digimon.maxMp, size: draft.size
         };
+        if(rookieDexAttacks.length) target.digimon.stageStats[draft.stage].attacks = rookieDexAttacks;
         // Fresh e Baby (In-Training/Baby II) hanno valori di partenza fissi/prevedibili (regola 3.0),
         // ma nome/immagine NON sono gli stessi del Rookie: se lo Scan ha già indicato le vere
         // pre-evoluzioni (verificate a mano nel Digidex), usiamo quelle come priorità; altrimenti
@@ -1260,15 +1318,18 @@
         const freshEntry = (draft.scanFreshName && cachedDex.find(e=>(e.name||'').toLowerCase()===draft.scanFreshName.toLowerCase()))
           || (babyEntry ? findAncestorAtStage(babyEntry.name, 'Fresh') : findAncestorAtStage(draft.name, 'Fresh'));
         if(!target.digimon.stageStats.Fresh){
+          const freshDexAttacks = buildAttacksFromDexEntry(freshEntry);
           target.digimon.stageStats.Fresh = {
             name: (freshEntry && freshEntry.name) || (babyEntry && babyEntry.name) || draft.name,
             imageUrl: (freshEntry && freshEntry.image_url) || (babyEntry && babyEntry.image_url) || draft.imageUrl || '',
             baseAccuracy:1, baseDamage:1, baseDodge:1, baseArmor:1, baseHealth:1,
             maxWounds: stageIndex('Fresh') + 1*2, maxMp: target.digimon.maxMp, size:'Small'
           };
+          if(freshDexAttacks.length) target.digimon.stageStats.Fresh.attacks = freshDexAttacks;
         }
         if(!target.digimon.stageStats.Baby){
           const babyCfg = STAGE_CREATION.Baby;
+          const babyDexAttacks = buildAttacksFromDexEntry(babyEntry);
           target.digimon.stageStats.Baby = {
             name: (babyEntry && babyEntry.name) || draft.name,
             imageUrl: (babyEntry && babyEntry.image_url) || draft.imageUrl || '',
@@ -1277,8 +1338,15 @@
             maxWounds: stageIndex('Baby') + babyCfg.startStat*2, maxMp: target.digimon.maxMp,
             size: (allowedSizes('Baby')[0] || 'Small')
           };
+          if(babyDexAttacks.length) target.digimon.stageStats.Baby.attacks = babyDexAttacks;
         }
-        if(draft.signatureMove){
+        // Attacchi attivi ora: se il Rookie combacia con una voce del Digidex, importa TUTTI i suoi
+        // attacchi (Signature Move + Extra Attacks + Signature Move 2, se censiti) — non solo la mossa
+        // firma dello Scan — così il Digimon arriva già pronto per i combattimenti. Altrimenti,
+        // fallback minimo con la sola mossa dello Scan (o un attacco generico se manca pure quella).
+        if(rookieDexAttacks.length){
+          target.digimon.attacks = rookieDexAttacks;
+        } else if(draft.signatureMove){
           target.digimon.attacks = [
             { name: draft.signatureMove, shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc: draft.attackDesc || 'Attacco caratteristico portato dal Bio-Resonance Scan.', signature:true, reach:1, areaAttack:false },
             { name:'Raggio a Distanza', shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc:'Un colpo dalla distanza.', signature:false, reach:1, areaAttack:false }
@@ -1306,6 +1374,10 @@
   // Per regola (3.19): raggiungere per la prima volta uno Stage è come creare un nuovo Digimon —
   // va costruito con un budget DP proprio, non assegnato automaticamente.
   let stageBuildDraft = null;
+  // Sola lettura di default per il giocatore (evita modifiche per sbaglio), editabile di default
+  // per il Master (che ne ha bisogno spesso). null = usa il default per ruolo; true/false = scelta
+  // esplicita fatta col bottone "Modifica"/"Sola Lettura" in questa sessione di navigazione.
+  let digimonEditMode = null;
 
   function isStageBuilt(d, stage){ return !!(d.stageStats && d.stageStats[stage]); }
 
@@ -1314,10 +1386,14 @@
   // salvati per quello Stage, invece di limitarsi a cambiare l'etichetta d.stage.
   function snapshotCurrentStatsToStage(d, stage){
     if(!d.stageStats) d.stageStats = {};
+    const prevAttacks = d.stageStats[stage] && d.stageStats[stage].attacks;
     d.stageStats[stage] = {
       name: d.name, imageUrl: d.imageUrl || '',
       baseAccuracy: d.baseAccuracy, baseDamage: d.baseDamage, baseDodge: d.baseDodge,
-      baseArmor: d.baseArmor, baseHealth: d.baseHealth, maxWounds: d.maxWounds, maxMp: d.maxMp, size: d.size
+      baseArmor: d.baseArmor, baseHealth: d.baseHealth, maxWounds: d.maxWounds, maxMp: d.maxMp, size: d.size,
+      // Conserva gli Attacchi già noti per questo Stage se non stiamo per sovrascriverli con quelli
+      // correnti (che potrebbero essere di un altro Stage appena lasciato).
+      attacks: (Array.isArray(d.attacks) && d.attacks.length) ? d.attacks : prevAttacks
     };
   }
   function applyStageChange(d, oldStage, newStage){
@@ -1332,6 +1408,9 @@
       d.size = saved.size || allowedSizes(newStage)[0] || 'Medium';
       if(saved.name) d.name = saved.name;
       if(saved.imageUrl) d.imageUrl = saved.imageUrl;
+      // Evolvere cambia anche le mosse: se questo Stage ha un elenco Attacchi proprio (dal Digidex,
+      // salvato quando è stato costruito), lo usiamo al posto di quello dello Stage precedente.
+      if(Array.isArray(saved.attacks) && saved.attacks.length) d.attacks = saved.attacks;
     } else {
       const cfg = STAGE_CREATION[newStage] || { startStat:1 };
       d.baseAccuracy = cfg.startStat; d.baseDamage = cfg.startStat; d.baseDodge = cfg.startStat;
@@ -1499,6 +1578,11 @@
           }
           const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
           if(!target.digimon.stageStats) target.digimon.stageStats = {};
+          // Se il nome di questo Stage combacia con una voce del Digidex, gli attacchi di
+          // quello Stage vengono agganciati qui e verranno applicati non appena ci si evolve
+          // davvero (data-stage-switch/Evolvi) — evolvere cambia anche le mosse, non solo le Stat.
+          const stageDexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===draft.name.trim().toLowerCase());
+          const stageDexAttacks = buildAttacksFromDexEntry(stageDexEntry);
           target.digimon.stageStats[draft.stage] = {
             name: draft.name.trim(), imageUrl: draft.imageUrl || '',
             baseAccuracy: draft.baseAccuracy, baseDamage: draft.baseDamage, baseDodge: draft.baseDodge,
@@ -1506,6 +1590,7 @@
             maxWounds: stageIndex(draft.stage) + Number(draft.baseHealth)*2,
             maxMp: target.digimon.maxMp, size: draft.size
           };
+          if(stageDexAttacks.length) target.digimon.stageStats[draft.stage].attacks = stageDexAttacks;
           const st = document.getElementById('sb-status');
           st.textContent = 'Salvataggio...';
           const ok = await saveMember(session.code, target);
@@ -1622,7 +1707,7 @@
       target = cachedRoster.find(m=>m.username===session.username);
     }
 
-    const editable = true;
+    const editable = digimonEditMode===null ? isMaster : digimonEditMode;
 
     let bodyHTML;
     if(creationDraft && target){
@@ -1667,6 +1752,11 @@
         <div class="hud-frame card">
           ${portraitBlockHTML(target, editable, isMaster)}
         </div>
+        <div class="hud-frame card" style="padding:8px 12px;">
+          ${editable
+            ? `<button class="btn ghost small" id="btn-digimon-viewmode" style="width:100%;">👁️ Chiudi Modifica (torna a sola lettura)</button>`
+            : `<button class="btn small" id="btn-digimon-editmode" style="width:100%;">✏️ Modifica Scheda</button>`}
+        </div>
         ${bonusDpBlockHTML(target)}
         ${stageBuilderHTML(target, isMaster)}
         <div class="hud-frame card">
@@ -1696,6 +1786,10 @@
       </div>`;
 
     document.getElementById('btn-logout').onclick = logout;
+    const editModeBtn = document.getElementById('btn-digimon-editmode');
+    if(editModeBtn) editModeBtn.onclick = ()=>{ digimonEditMode = true; renderPage(); };
+    const viewModeBtn = document.getElementById('btn-digimon-viewmode');
+    if(viewModeBtn) viewModeBtn.onclick = ()=>{ digimonEditMode = false; renderPage(); };
     const bugBtn = document.getElementById('btn-send-bug');
     if(bugBtn) bugBtn.onclick = async ()=>{
       const text = document.getElementById('bug-text').value.trim();
@@ -1755,6 +1849,8 @@
       root.querySelectorAll('[data-stage-switch]').forEach(btn=>{
         btn.onclick = async ()=>{
           applyStageChange(target.digimon, target.digimon.stage, btn.getAttribute('data-stage-switch'));
+          // Regola 8.05: un Digimon che cambia Stage recupera tutte le Wound Box.
+          target.digimon.currentWounds = target.digimon.maxWounds;
           await saveMember(session.code, target);
           cachedRoster = await getRoster(session.code);
           renderPage();
@@ -1767,6 +1863,11 @@
           // Appena "schiuso" l'Uovo, il Digimon riparte da Fresh (aggancia stat/nome/immagine
           // salvati per quello Stage) invece di restare fermo allo Stage costruito nel Wizard.
           if(target.digimon.stage !== 'Fresh') applyStageChange(target.digimon, target.digimon.stage, 'Fresh');
+          target.digimon.currentWounds = target.digimon.maxWounds;
+          // Alla schiusa si vede solo Fresh: sta al Master decidere quando "sbloccare" (aumentando
+          // Default Range da qui, o dalla Scheda Digimon) anche Baby e Rookie, per simulare le prime
+          // evoluzioni quando narrativamente hanno senso — non tutte e tre insieme fin da subito.
+          target.digimon.defaultRange = 0;
           await saveMember(session.code, target);
           cachedRoster = await getRoster(session.code);
           renderPage();
@@ -1815,7 +1916,13 @@
         msgEl.innerHTML = '<span class="muted">Salvataggio...</span>';
         const ok = await saveMember(session.code, target);
         msgEl.innerHTML = ok ? '<span class="ok-msg">✔ Salvato.</span>' : `<span class="err">⚠ ${escapeHTML(lastApiError||'errore sconosciuto')}</span>`;
-        if(ok) cachedRoster = await getRoster(session.code);
+        if(ok){
+          cachedRoster = await getRoster(session.code);
+          // Torna alla sola lettura dopo un salvataggio riuscito, invece di restare aperta in
+          // modifica — soprattutto lato giocatore, per evitare tocchi accidentali successivi.
+          digimonEditMode = null;
+          renderPage();
+        }
       };
       const resetBtn = document.getElementById('d-reset');
       if(resetBtn){

@@ -2463,6 +2463,17 @@
     return `<span class="tag" style="color:${color};border-color:${color};">${escapeHTML(attribute)}</span>`;
   }
   function stageIndex(s){ const i = STAGES.indexOf(s); return i<0?0:i; }
+  // Specchio di digimon.html: slot Attacco massimi per Stage (regola 3.05a — 1 Signature + 2 extra
+  // agli Stage base, 4 a Mega), + i Rank di Memory Upgrade (Free Quality, +1 Attacco/Rank) se presenti.
+  const ATTACK_SLOTS_BY_STAGE = { Fresh:1, Baby:1, Rookie:3, Champion:3, Ultimate:3, Mega:4 };
+  function memoryUpgradeRanks(qualities){
+    const q = (qualities||[]).find(x=>x.name && x.name.indexOf('Memory Upgrade')===0);
+    return q ? (Number(q.rank)||1) : 0;
+  }
+  function maxAttackSlots(d){
+    const base = ATTACK_SLOTS_BY_STAGE[d && d.stage] ?? 3;
+    return base + memoryUpgradeRanks(d && d.qualities);
+  }
   function batteryCap(stage){ return stageIndex(stage)+1; }
   function evolutionCost(d, targetStage){
     const comfortableMax = stageIndex(d.defaultStage) + Number(d.defaultRange||0);
@@ -2471,10 +2482,12 @@
 
   function snapshotCurrentStatsToStage(d, stage){
     if(!d.stageStats) d.stageStats = {};
+    const prevAttacks = d.stageStats[stage] && d.stageStats[stage].attacks;
     d.stageStats[stage] = {
       name: d.name, imageUrl: d.imageUrl || '',
       baseAccuracy: d.baseAccuracy, baseDamage: d.baseDamage, baseDodge: d.baseDodge,
-      baseArmor: d.baseArmor, baseHealth: d.baseHealth, maxWounds: d.maxWounds, maxMp: d.maxMp, size: d.size
+      baseArmor: d.baseArmor, baseHealth: d.baseHealth, maxWounds: d.maxWounds, maxMp: d.maxMp, size: d.size,
+      attacks: (Array.isArray(d.attacks) && d.attacks.length) ? d.attacks : prevAttacks
     };
   }
 
@@ -2490,6 +2503,9 @@
       d.size = saved.size || allowedSizes(newStage)[0] || 'Medium';
       if(saved.name) d.name = saved.name;
       if(saved.imageUrl) d.imageUrl = saved.imageUrl;
+      // Evolvere cambia anche le mosse: se questo Stage ha un elenco Attacchi proprio (dal Digidex),
+      // lo usiamo al posto di quello dello Stage precedente.
+      if(Array.isArray(saved.attacks) && saved.attacks.length) d.attacks = saved.attacks;
     } else {
       const cfg = STAGE_CREATION[newStage] || { startStat:1 };
       d.baseAccuracy = cfg.startStat; d.baseDamage = cfg.startStat; d.baseDodge = cfg.startStat;
@@ -3030,6 +3046,8 @@
           }
           me.digimon.evolutionPoints = Number(me.digimon.evolutionPoints||0) - cost;
           applyStageChange(me.digimon, me.digimon.stage, target);
+          // Regola 8.05: un Digimon che evolve recupera tutte le Wound Box.
+          me.digimon.currentWounds = me.digimon.maxWounds;
           await saveMember(session.code, me);
           await pushLog(session.code, { who: session.username, role:'player', text: `${me.digimon.name||'Il Digimon'} evolve a ${target}${cost>0?` (spesi ${cost} Evolution Points)`:''} — Stat aggiornate automaticamente. Ricorda di segnare 1 Azione spesa.` });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Evoluzione applicata, Stat aggiornate.';
@@ -3050,9 +3068,11 @@
           let outcomeText;
           if(verdict.cls==='crit-success'){
             applyStageChange(me.digimon, me.digimon.stage, me.digimon.defaultStage);
+            me.digimon.currentWounds = me.digimon.maxWounds;
             outcomeText = `Successo Critico! Evolve e torna subito al Default Stage (${me.digimon.defaultStage}) — Stat aggiornate.`;
           } else if(verdict.cls==='success'){
             applyStageChange(me.digimon, me.digimon.stage, target);
+            me.digimon.currentWounds = me.digimon.maxWounds;
             me.digimon.forcedEvoRoundsLeft = 3;
             outcomeText = `Successo! Evolve a ${target} per 3 round (Stat aggiornate), poi tornerà sotto il Default Stage.`;
           } else {
@@ -3269,7 +3289,10 @@
         </div>
         <div class="field"><label>Health (base)</label><input type="number" id="e-d-hp-${containerId}" value="${d.baseHealth}" min="0" /></div>
         <div class="divider"></div>
-        <div class="muted" style="margin-bottom:6px;">Attacchi (Tag: [MELEE]/[RANGE] + [DAMAGE]/[SUPPORT])</div>
+        <div class="flex-between" style="margin-bottom:6px;">
+          <span class="muted">Attacchi (Tag: [MELEE]/[RANGE] + [DAMAGE]/[SUPPORT])</span>
+          <span class="mono" id="atk-slots-${containerId}" style="font-size:11px;"></span>
+        </div>
         <div id="atk-list-${containerId}"></div>
         <div class="row">
           <input type="text" id="atk-name-${containerId}" placeholder="Nome Attacco" style="flex:2;" />
@@ -3360,12 +3383,22 @@
       `;
       const renderAtkList = ()=>{
         const listEl = document.getElementById('atk-list-'+containerId);
+        const slotsEl = document.getElementById('atk-slots-'+containerId);
+        const maxSlots = maxAttackSlots(d);
+        const count = (d.attacks||[]).length;
+        if(slotsEl){
+          slotsEl.style.color = count>maxSlots ? 'var(--danger)' : 'var(--dchroma)';
+          slotsEl.textContent = `${count} / ${maxSlots} slot`;
+        }
         listEl.innerHTML = (d.attacks||[]).length===0 ? '<div class="muted" style="margin-bottom:6px;">Nessun Attacco.</div>' : d.attacks.map((a,i)=>`
-          <div class="flex-between" style="margin-bottom:6px;">
-            <span>${a.signature?'⭐ ':''}<b>${escapeHTML(a.name)}</b> ${attackTagsHTML(a)}</span>
+          <div class="flex-between" style="margin-bottom:6px;padding:4px 6px;${a.signature?'border:1px solid var(--dchroma);border-radius:4px;':''}">
+            <span>${a.signature?'⭐ ':''}<b>${escapeHTML(a.name)}</b>${a.signature?' <span class="tag" style="color:var(--dchroma);border-color:var(--dchroma);" title="Il giocatore può scegliere di dichiararla e spendere Battery per potenziarla — non è automatico.">SIGNATURE MOVE</span>':''} ${attackTagsHTML(a)}</span>
             <button class="btn ghost small" data-rmatk="${i}">Rimuovi</button>
           </div>
         `).join('');
+        if(count>maxSlots){
+          listEl.innerHTML += `<div class="muted" style="color:var(--danger);margin-top:4px;">Sopra il limite per lo Stage attuale — serve Memory Upgrade (Free Quality, +1 Attacco/Rank) per tenerne di più, o rimuoverne uno.</div>`;
+        }
         listEl.querySelectorAll('[data-rmatk]').forEach(b=>{
           b.onclick = ()=>{ d.attacks.splice(Number(b.getAttribute('data-rmatk')),1); renderAtkList(); };
         });
@@ -6256,6 +6289,18 @@
                 <button data-enchp-plus="${i}">+</button>
               </div>
             </div>
+            ${(e.attacks && e.attacks.length) ? `
+            <details style="margin-top:4px;">
+              <summary class="muted" style="font-size:11px;cursor:pointer;">⚔️ ${e.attacks.length} Attacchi (importati dal Digidex)</summary>
+              <div style="margin-top:4px;">
+                ${e.attacks.map(a=>`
+                  <div style="margin-bottom:4px;padding:4px 6px;background:var(--panel-2);border-radius:4px;">
+                    <div>${a.signature?'⭐ ':''}<b style="font-size:11px;">${escapeHTML(a.name)}</b> ${attackTagsHTML(a)}</div>
+                    ${a.desc ? `<div class="muted" style="font-size:10.5px;margin-top:2px;">${escapeHTML(a.desc)}</div>` : ''}
+                  </div>
+                `).join('')}
+              </div>
+            </details>` : ''}
           </div>
           <button class="btn ${e.isBoss?'':'ghost'} small" data-toggle-boss="${i}" style="padding:4px 8px;font-size:10px;">${e.isBoss?'👑 Rimuovi Boss':'👑 Segna Boss'}</button>
           <button class="btn ${visible?'ghost':''} small" data-toggle-reveal="${i}" style="padding:4px 8px;font-size:10px;">${visible?'🙈 Nascondi':'👁️ Mostra ai giocatori'}</button>
@@ -6330,7 +6375,7 @@
         baseArmor: Number(document.getElementById('draft-arm').value)||0,
         baseHealth: Number(document.getElementById('draft-hp').value)||0
       };
-      const finalEncounter = { id: encounterDraft.id, name, dexId: encounterDraft.dexId, stage, categories, image, description, baseStats, revealed:false, isBoss };
+      const finalEncounter = { id: encounterDraft.id, name, dexId: encounterDraft.dexId, stage, categories, image, description, baseStats, attacks: encounterDraft.attacks || [], revealed:false, isBoss };
       cachedScene.encounters = cachedScene.encounters || [];
       cachedScene.encounters.push(finalEncounter);
       encounterDraft = null;
@@ -6363,11 +6408,12 @@
           image: dexMatch.image_url || '',
           description: dexMatch.description || '',
           baseStats: Object.assign({baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, dexMatch.base_stats||{}),
+          attacks: buildAttacksFromDexEntry(dexMatch),
           revealed:false, isBoss:false
         } : {
           id:'enc'+Date.now()+Math.random().toString(36).slice(2,6),
           name, dexId:null, stage:'Rookie', categories:[], image:'', description:'',
-          baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, revealed:false, isBoss:false
+          baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:false, isBoss:false
         };
         renderEncounterDraftCard();
         bindEncounterDraftCard(code, username);
@@ -6593,13 +6639,40 @@
   // Estrae sempre il nome in modo sicuro, altrimenti finisce per stampare "[object Object]" a video
   // (ed è quello che finiva salvato dentro unlockedEvolutions dalla checkbox del Master).
   function evoName(ev){ if(ev==null) return ''; return typeof ev==='string' ? ev : String(ev.name||''); }
+  // Specchio di digimon.html: spacca le mosse del Digidex ("Nome — [TAG][TAG]") nello schema attacks.
+  function parseDexAttackString(raw){
+    if(!raw) return null;
+    const dashSplit = raw.split(/\s+—\s+/);
+    const name = (dashSplit[0] || raw).trim();
+    if(!name) return null;
+    const tagBlock = dashSplit.slice(1).join(' — ');
+    const tags = Array.from(tagBlock.matchAll(/\[([^\]]+)\]/g)).map(m=>m[1].trim());
+    const shape = tags.some(t=>/^MELEE$/i.test(t)) ? 'Melee' : 'Range';
+    const hasDamage = tags.some(t=>/^DAMAGE/i.test(t));
+    const type = hasDamage ? 'Damage' : 'Support';
+    const extraTags = tags.filter(t=>!/^MELEE$/i.test(t) && !/^RANGE$/i.test(t)).join(' · ');
+    return { name, shape, type, extraTags };
+  }
+  function buildAttacksFromDexEntry(dexEntry){
+    if(!dexEntry) return [];
+    const list = [];
+    const addMove = (raw, desc, signature) => {
+      const parsed = parseDexAttackString(raw);
+      if(!parsed) return;
+      list.push({ name: parsed.name, shape: parsed.shape, type: parsed.type, effectKey:'', extraTags: parsed.extraTags, desc: desc||'', signature: !!signature, reach: parsed.shape==='Range'?1:0, areaAttack:false });
+    };
+    if(dexEntry.signature_move) addMove(dexEntry.signature_move, dexEntry.attack_desc, true);
+    (dexEntry.extra_attacks||[]).forEach(ea=>{ if(ea && ea.move) addMove(ea.move, ea.desc, false); });
+    if(dexEntry.signature_move_2) addMove(dexEntry.signature_move_2, dexEntry.attack_desc_2, false);
+    return list;
+  }
 
   // ---------- SCENE ENCOUNTERS: name-only strings (legacy) vs full Dex-linked objects ----------
   function normalizeEncounter(e){
     if(typeof e === 'string'){
-      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, revealed:true, isBoss:false, currentWounds:null };
+      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null };
     }
-    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, revealed:true, isBoss:false, currentWounds:null }, e);
+    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null }, e);
   }
 
   // Caselle Ferita di un Incontro nella Scena, stessa formula usata per i Digimon dei giocatori (Stage + Health×2)
