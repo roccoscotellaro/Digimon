@@ -420,7 +420,9 @@
     };
     if(dexEntry.signature_move) addMove(dexEntry.signature_move, dexEntry.attack_desc, true);
     (dexEntry.extra_attacks||[]).forEach(ea=>{ if(ea && ea.move) addMove(ea.move, ea.desc, false); });
-    if(dexEntry.signature_move_2) addMove(dexEntry.signature_move_2, dexEntry.attack_desc_2, false);
+    // I Digimon Jogress hanno DUE Signature Move indipendenti, ciascuna con la propria Battery —
+    // anche questa va marcata signature:true, non trattata come un Attacco extra qualsiasi.
+    if(dexEntry.signature_move_2) addMove(dexEntry.signature_move_2, dexEntry.attack_desc_2, true);
     return list;
   }
   // Il bonus di Naturewalk (+1 a una Stat) è "gratis" rispetto al budget Stat: si paga solo il
@@ -1020,14 +1022,22 @@
     const maxSlots = maxAttackSlots(m.digimon);
     const overCap = items.length > maxSlots;
     const battery = Number(m.digimon.battery)||0;
+    const sigCount = items.filter(a=>a.signature).length;
+    const extraCount = items.length - sigCount;
+    const extraMax = Math.max(0, maxSlots - Math.max(sigCount,1)); // riserva almeno 1 slot alla Signature nel conteggio "extra"
     return `
     <div class="hud-frame card">
       <div class="section-title"><span>Mosse</span></div>
-      <div class="flex-between" style="margin-bottom:8px;">
-        <span class="muted">Slot Attacco</span>
-        <span class="mono" style="color:${overCap?'var(--danger)':'var(--dchroma)'};">${items.length} / ${maxSlots}</span>
+      <div class="flex-between" style="margin-bottom:4px;">
+        <span class="muted">⭐ Signature Move</span>
+        <span class="mono" style="color:${sigCount===0?'var(--danger)':'var(--dchroma)'};">${sigCount===0?'nessuna':(sigCount+(sigCount>1?' (Jogress?)':''))}</span>
       </div>
-      ${overCap ? `<div class="muted" style="color:var(--danger);margin-bottom:8px;">Sopra il limite per lo Stage attuale — serve Memory Upgrade (Free Quality, +1 Attacco/Rank) per tenerne di più, o rimuoverne una.</div>` : ''}
+      <div class="flex-between" style="margin-bottom:8px;">
+        <span class="muted">Attacchi extra</span>
+        <span class="mono" style="color:${overCap?'var(--danger)':'var(--dchroma)'};">${extraCount} / ${extraMax}</span>
+      </div>
+      ${overCap ? `<div class="muted" style="color:var(--danger);margin-bottom:8px;">Sopra il limite per lo Stage attuale (${items.length} mosse totali su ${maxSlots} slot) — serve Memory Upgrade (Free Quality, +1 Attacco/Rank) per tenerne di più, o rimuoverne una.</div>` : ''}
+      ${sigCount===0 ? `<div class="muted" style="margin-bottom:8px;">Nessuna Signature Move impostata — ogni Digimon dovrebbe averne almeno una (due se Jogress).</div>` : ''}
       ${items.length===0 ? '<div class="muted">Nessuna mossa.</div>' : items.map((a,i)=>`
         <div class="list-item" ${a.signature?'style="border-color:var(--dchroma);"':''}>
           <div class="top-row">

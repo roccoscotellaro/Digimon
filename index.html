@@ -3429,9 +3429,12 @@
         const slotsEl = document.getElementById('atk-slots-'+containerId);
         const maxSlots = maxAttackSlots(d);
         const count = (d.attacks||[]).length;
+        const sigCount = (d.attacks||[]).filter(a=>a.signature).length;
+        const extraCount = count - sigCount;
+        const extraMax = Math.max(0, maxSlots - Math.max(sigCount,1));
         if(slotsEl){
           slotsEl.style.color = count>maxSlots ? 'var(--danger)' : 'var(--dchroma)';
-          slotsEl.textContent = `${count} / ${maxSlots} slot`;
+          slotsEl.innerHTML = `⭐ ${sigCount===0?'<span style="color:var(--danger);">nessuna</span>':sigCount} · Extra ${extraCount}/${extraMax}`;
         }
         listEl.innerHTML = (d.attacks||[]).length===0 ? '<div class="muted" style="margin-bottom:6px;">Nessun Attacco.</div>' : d.attacks.map((a,i)=>`
           <div class="flex-between" style="margin-bottom:6px;padding:4px 6px;${a.signature?'border:1px solid var(--dchroma);border-radius:4px;':''}">
@@ -3440,7 +3443,10 @@
           </div>
         `).join('');
         if(count>maxSlots){
-          listEl.innerHTML += `<div class="muted" style="color:var(--danger);margin-top:4px;">Sopra il limite per lo Stage attuale — serve Memory Upgrade (Free Quality, +1 Attacco/Rank) per tenerne di più, o rimuoverne uno.</div>`;
+          listEl.innerHTML += `<div class="muted" style="color:var(--danger);margin-top:4px;">Sopra il limite per lo Stage attuale (${count} mosse totali su ${maxSlots} slot) — serve Memory Upgrade (Free Quality, +1 Attacco/Rank) per tenerne di più, o rimuoverne uno.</div>`;
+        }
+        if(sigCount===0){
+          listEl.innerHTML += `<div class="muted" style="margin-top:4px;">Nessuna Signature Move impostata — ogni Digimon dovrebbe averne almeno una (due se Jogress).</div>`;
         }
         listEl.querySelectorAll('[data-rmatk]').forEach(b=>{
           b.onclick = ()=>{ d.attacks.splice(Number(b.getAttribute('data-rmatk')),1); renderAtkList(); };
@@ -6777,7 +6783,7 @@
     };
     if(dexEntry.signature_move) addMove(dexEntry.signature_move, dexEntry.attack_desc, true);
     (dexEntry.extra_attacks||[]).forEach(ea=>{ if(ea && ea.move) addMove(ea.move, ea.desc, false); });
-    if(dexEntry.signature_move_2) addMove(dexEntry.signature_move_2, dexEntry.attack_desc_2, false);
+    if(dexEntry.signature_move_2) addMove(dexEntry.signature_move_2, dexEntry.attack_desc_2, true);
     return list;
   }
 
