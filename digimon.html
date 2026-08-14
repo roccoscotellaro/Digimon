@@ -1145,6 +1145,22 @@
         const evos = Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean).map(evoName).filter(Boolean) : [];
         return `<div class="muted" style="margin-bottom:8px;color:var(--dchroma);">✅ Trovato nel Digidex${dexEntry.stage?` (${escapeHTML(dexEntry.stage)})`:''} (visibile solo a te come Master).${evos.length?` Evoluzioni già note: ${evos.map(e=>escapeHTML(e)).join(', ')} — le vedrai come suggerimento quando costruirai lo Stage successivo.`:''}</div>`;
       })()}
+      ${(()=>{
+        // Anteprima di TUTTI gli attacchi che verranno importati dal Digidex al salvataggio (non
+        // solo la Signature Move) — così non si scopre solo dopo aver salvato cos'è arrivato davvero.
+        const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===(draft.name||'').trim().toLowerCase());
+        const previewAttacks = buildAttacksFromDexEntry(dexEntry);
+        if(!previewAttacks.length) return '';
+        return `
+        <div class="hud-frame card" style="margin-bottom:10px;padding:10px 12px;">
+          <div class="muted" style="margin-bottom:6px;">⚔️ Al salvataggio verranno importati ${previewAttacks.length} Attacchi dal Digidex (non solo la Signature Move):</div>
+          ${previewAttacks.map(a=>`
+            <div style="margin-bottom:4px;">
+              ${a.signature?'⭐ ':''}<b style="font-size:12px;">${escapeHTML(a.name)}</b> <span class="sub">${escapeHTML(a.shape||'')} · ${escapeHTML(a.type||'')}${a.extraTags?` · ${escapeHTML(a.extraTags)}`:''}</span>
+            </div>
+          `).join('')}
+        </div>`;
+      })()}
       <div class="row">
         <div class="field"><label>Stage</label>
           <select id="wiz-d-stage">${STAGES.map(s=>`<option ${draft.stage===s?'selected':''}>${s}</option>`).join('')}</select>
