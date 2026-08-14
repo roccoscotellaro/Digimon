@@ -3811,6 +3811,7 @@
             <div class="field" style="margin-top:10px;"><label>Titolo Scena</label><input type="text" id="scene-title" value="${escapeAttr(cachedScene.title)}" placeholder="es. Foresta di File" /></div>
             <div class="field"><label>URL Immagine di Sfondo</label><input type="text" id="scene-bg" value="${escapeAttr(cachedScene.background)}" placeholder="https://..." /></div>
             <div class="field"><label>URL Musica (mp3 diretto)</label><input type="text" id="scene-music" value="${escapeAttr(cachedScene.music)}" placeholder="https://.../traccia.mp3" /></div>
+            <div class="muted" style="margin-top:-6px;margin-bottom:8px;font-size:11px;">Se vuota, parte in automatico la musica del Settore attuale (o della Macroscena, se il Settore non ne ha una) — impostabili qui sotto nel pannello Mappa. Se compilata, questa vince sempre.</div>
             <div class="row" style="align-items:center;gap:8px;margin-top:-4px;margin-bottom:12px;">
               <input type="file" accept="audio/*" id="scene-audio-file" style="display:none;" />
               <button type="button" class="btn ghost small" id="scene-audio-upload-btn">🎵 Carica Traccia (mp3, max 3MB)</button>
@@ -5932,6 +5933,12 @@
     `;
   }
 
+  function getGridSize(macro){
+    const n = macro && Number(macro.gridSize);
+    if(!n || isNaN(n) || n<1 || n>6) return 3;
+    return n;
+  }
+
   function liveActiveMacro(){
     return (cachedScene.macroScenes||[]).find(m=>m.id===cachedScene.currentMacroSceneId) || null;
   }
@@ -5942,6 +5949,8 @@
     const macroScenes = cachedScene.macroScenes || [];
     const activeMacro = macroScenes.find(m=>m.id===cachedScene.currentMacroSceneId) || null;
     const sectors = activeMacro ? (activeMacro.sectors||[]) : [];
+    const gridSize = getGridSize(activeMacro);
+    const gridTotal = gridSize*gridSize;
     const terrainBadge = (t)=> t==='Dangerous' ? '<span class="tag" style="color:var(--danger);border-color:var(--danger);">☠ Pericoloso</span>' : (t==='Difficult' ? '<span class="tag" style="color:var(--amber);border-color:var(--amber);">⚠ Difficile</span>' : '<span class="tag">Normale</span>');
     const usedPositions = sectors.map(s=>s.gridPos).filter(p=>p!=null);
     if(sectors.length>0 && !sectors.find(s=>s.id===sectorMapSelectedId)){
@@ -5951,7 +5960,7 @@
     const selectedSector = sectors.find(s=>s.id===sectorMapSelectedId) || null;
     el.innerHTML = `
       <div class="section-title">🗺️ Mappa: Macroscene → Settori → Luoghi</div>
-      <div class="muted" style="margin-bottom:8px;">Una Macroscena rappresenta una regione/location ampia (es. "Foresta di File"); si divide in Settori collegati tra loro (es. "Radura Nord"), che a loro volta contengono Luoghi specifici (es. "Vecchia Quercia"). Non sostituisce le zone Corto/Medio/Lungo del Combattimento. Assegna un'immagine e una posizione (1-9) a ogni Settore per vederli nella griglia 3×3 di <b>map.html</b>.</div>
+      <div class="muted" style="margin-bottom:8px;">Una Macroscena rappresenta una regione/location ampia (es. "Foresta di File"); si divide in Settori collegati tra loro (es. "Radura Nord"), che a loro volta contengono Luoghi specifici (es. "Vecchia Quercia"). Non sostituisce le zone Corto/Medio/Lungo del Combattimento. Assegna un'immagine e una posizione a ogni Settore per vederli nella griglia (dimensione impostabile in <b>map.html</b>, attualmente ${gridSize}×${gridSize}).</div>
       <div class="field"><label>Macroscena attiva</label>
         <select id="macro-select">
           <option value="">— nessuna —</option>
@@ -5964,6 +5973,9 @@
       </div>
       ${activeMacro ? `
         <div class="muted" style="margin:8px 0 4px;">${escapeHTML(activeMacro.description||'')}</div>
+        <div class="field" style="margin-bottom:8px;"><label>🎵 Musica Macroscena (mp3 diretto, opzionale)</label>
+          <input type="text" id="macro-music" value="${escapeAttr(activeMacro.music||'')}" placeholder="https://.../traccia.mp3" style="width:100%;" />
+        </div>
         <div class="row" style="margin-bottom:8px;">
           <button class="btn ghost small" id="btn-remove-macro" style="width:100%;">🗑️ Elimina Macroscena "${escapeHTML(activeMacro.name)}"</button>
         </div>
@@ -5985,11 +5997,12 @@
             </div>
             ${selectedSector.description ? `<div class="sub" style="margin-top:2px;">${escapeHTML(selectedSector.description)}</div>` : ''}
             <div class="muted" style="margin-top:2px;font-size:11px;">Collegato a: ${(selectedSector.connections||[]).map(cid=>{ const c = sectors.find(x=>x.id===cid); return c?escapeHTML(c.name):''; }).filter(Boolean).join(', ') || 'nessuno'}</div>
+            <input type="text" data-sector-music="${selectedSector.id}" value="${escapeAttr(selectedSector.music||'')}" placeholder="🎵 URL Musica Settore (opzionale, sovrascrive quella della Macroscena)" style="width:100%;margin-top:4px;font-size:11px;" />
             <div class="row" style="margin-top:4px;">
               <button class="btn small" data-sector-activate="${selectedSector.id}" style="flex:1;">📍 Rendi Attuale</button>
               <button class="btn ghost small" data-sector-image="${selectedSector.id}" style="flex:1;">🖼️ Immagine</button>
               <select data-sector-gridpos="${selectedSector.id}" style="flex:1;">
-                ${[0,1,2,3,4,5,6,7,8].map(p=>`<option value="${p}" ${selectedSector.gridPos===p?'selected':''}>Casella ${p+1}${usedPositions.includes(p) && selectedSector.gridPos!==p?' (occupata)':''}</option>`).join('')}
+                ${(()=>{ const opts=[]; for(let p=0;p<gridTotal;p++) opts.push(p); if(selectedSector.gridPos!=null && selectedSector.gridPos>=gridTotal) opts.push(selectedSector.gridPos); return opts; })().map(p=>`<option value="${p}" ${selectedSector.gridPos===p?'selected':''}>Casella ${p+1}${p>=gridTotal?' (fuori griglia)':''}${usedPositions.includes(p) && selectedSector.gridPos!==p?' (occupata)':''}</option>`).join('')}
               </select>
               <button class="btn ghost small" data-sector-remove="${selectedSector.id}" style="flex:1;">🗑️</button>
             </div>
@@ -6023,9 +6036,10 @@
         </div>
         <input type="text" id="sector-desc" placeholder="Breve descrizione (opzionale)" style="width:100%;margin-top:6px;" />
         <input type="text" id="sector-image" placeholder="URL Immagine (opzionale)" style="width:100%;margin-top:6px;" />
-        <div class="field" style="margin-top:6px;"><label>Posizione in griglia (1-9)</label>
+        <input type="text" id="sector-music" placeholder="🎵 URL Musica Settore (opzionale)" style="width:100%;margin-top:6px;" />
+        <div class="field" style="margin-top:6px;"><label>Posizione in griglia (1-${gridTotal})</label>
           <select id="sector-gridpos">
-            ${[0,1,2,3,4,5,6,7,8].map(p=>`<option value="${p}" ${usedPositions.includes(p)?'disabled':''}>Casella ${p+1}${usedPositions.includes(p)?' (occupata)':''}</option>`).join('')}
+            ${Array.from({length:gridTotal},(_,p)=>p).map(p=>`<option value="${p}" ${usedPositions.includes(p)?'disabled':''}>Casella ${p+1}${usedPositions.includes(p)?' (occupata)':''}</option>`).join('')}
           </select>
         </div>
         ${sectors.length>0 ? `
@@ -6064,6 +6078,15 @@
       cachedScene.currentMacroSceneId = id;
       cachedScene.currentSectorId = null;
       cachedScene.currentLuogoId = null;
+      await saveScene(code, cachedScene);
+      renderSectorMap(code);
+      refreshLiveParts();
+    };
+    const macroMusicEl = document.getElementById('macro-music');
+    if(macroMusicEl) macroMusicEl.onchange = async ()=>{
+      const liveMacro = liveActiveMacro();
+      if(!liveMacro) return;
+      liveMacro.music = macroMusicEl.value.trim();
       await saveScene(code, cachedScene);
       renderSectorMap(code);
       refreshLiveParts();
@@ -6134,6 +6157,19 @@
         const s = (liveMacro.sectors||[]).find(x=>x.id===id);
         if(!s) return;
         s.gridPos = Number(sel.value);
+        await saveScene(code, cachedScene);
+        renderSectorMap(code);
+        refreshLiveParts();
+      };
+    });
+    el.querySelectorAll('[data-sector-music]').forEach(inp=>{
+      inp.onchange = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
+        const id = inp.getAttribute('data-sector-music');
+        const s = (liveMacro.sectors||[]).find(x=>x.id===id);
+        if(!s) return;
+        s.music = inp.value.trim();
         await saveScene(code, cachedScene);
         renderSectorMap(code);
         refreshLiveParts();
@@ -6216,12 +6252,13 @@
         const terrain = document.getElementById('sector-terrain').value;
         const description = document.getElementById('sector-desc').value.trim();
         const image = document.getElementById('sector-image').value.trim();
+        const music = document.getElementById('sector-music').value.trim();
         const gridPosSel = document.getElementById('sector-gridpos').value;
         const gridPos = gridPosSel!=='' ? Number(gridPosSel) : null;
         const connections = Array.from(el.querySelectorAll('.sector-connect-chk:checked')).map(c=>c.value);
         const id = 's'+Date.now()+Math.random().toString(36).slice(2,6);
         if(!liveMacro.sectors) liveMacro.sectors = [];
-        liveMacro.sectors.push({ id, name, description, terrain, connections, luoghi: [], image, gridPos, revealed:false });
+        liveMacro.sectors.push({ id, name, description, terrain, connections, luoghi: [], image, music, gridPos, revealed:false });
         connections.forEach(cid=>{
           const other = liveMacro.sectors.find(s=>s.id===cid);
           if(other){ if(!other.connections) other.connections=[]; if(!other.connections.includes(id)) other.connections.push(id); }
@@ -6281,12 +6318,28 @@
     };
   }
 
+  // La musica può arrivare da tre livelli, in ordine di priorità: il campo manuale
+  // "URL Musica" in Scena (sempre vince se compilato), la traccia del Settore attuale,
+  // la traccia della Macroscena attuale. Così il Master può impostare una musica di
+  // default per zona/stanza, ma può sempre forzarne una diversa a mano per la singola Scena.
+  function getEffectiveMusic(scene){
+    if(!scene) return '';
+    if(scene.music) return scene.music;
+    const macroScenes = Array.isArray(scene.macroScenes) ? scene.macroScenes : [];
+    const activeMacro = scene.currentMacroSceneId ? macroScenes.find(m=>m.id===scene.currentMacroSceneId) : null;
+    const sectors = activeMacro ? (activeMacro.sectors||[]) : [];
+    const current = scene.currentSectorId ? sectors.find(s=>s.id===scene.currentSectorId) : null;
+    if(current && current.music) return current.music;
+    if(activeMacro && activeMacro.music) return activeMacro.music;
+    return '';
+  }
+
   function bindSceneAudio(scene){
     const btn = document.getElementById('scene-audio-toggle');
     const audioEl = document.getElementById('scene-audio-el');
     const statusEl = document.getElementById('scene-audio-status');
     if(!btn || !audioEl) return;
-    const url = (scene && scene.music) || '';
+    const url = getEffectiveMusic(scene);
     if(audioEl.dataset.src !== url){
       const wasPlaying = !audioEl.paused && audioEl.dataset.src;
       audioEl.pause();
