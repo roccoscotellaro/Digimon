@@ -82,7 +82,7 @@
   .breadcrumb span{cursor:pointer;text-decoration:underline;}
   .breadcrumb span:hover{color:#4ffbe0;}
 
-  .map-grid{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:0;aspect-ratio:1/1;border:1px solid var(--line);}
+  .map-grid{display:grid;grid-template-columns:repeat(var(--grid-n,3),1fr);grid-template-rows:repeat(var(--grid-n,3),1fr);gap:0;aspect-ratio:1/1;border:1px solid var(--line);}
   .map-cell{position:relative;border:1px solid transparent;background:var(--panel-2);overflow:hidden;cursor:default;display:flex;align-items:flex-end;min-height:0;}
   .map-cell.filled{cursor:pointer;}
   .map-cell.filled:hover{border-color:var(--cyan);z-index:3;}
@@ -358,6 +358,12 @@
     return (cachedScene.macroScenes||[]).find(m=>m.id===cachedScene.currentMacroSceneId) || (cachedScene.macroScenes||[])[0] || null;
   }
 
+  function getGridSize(macro){
+    const n = macro && Number(macro.gridSize);
+    if(!n || isNaN(n) || n<2 || n>6) return 3;
+    return n;
+  }
+
   async function persist(){
     return await saveScene(session.code, cachedScene);
   }
@@ -413,6 +419,11 @@
         ${activeMacro ? `
           <div class="field" style="margin-top:8px;"><label>Nome Macroscena attiva</label><input type="text" id="edit-macro-name" value="${escapeAttr(activeMacro.name)}" /></div>
           <div class="field"><label>Descrizione</label><textarea id="edit-macro-desc" rows="2">${escapeHTML(activeMacro.description||'')}</textarea></div>
+          <div class="field"><label>Dimensione griglia</label>
+            <select id="edit-macro-gridsize">
+              ${[2,3,4,5,6].map(n=>`<option value="${n}" ${getGridSize(activeMacro)===n?'selected':''}>${n} × ${n} (${n*n} caselle)</option>`).join('')}
+            </select>
+          </div>
           <button class="btn ghost small" id="btn-map-remove-macro">🗑️ Elimina Macroscena "${escapeHTML(activeMacro.name)}"</button>
         ` : ''}
         <div class="err" id="map-master-status" style="margin-top:6px;"></div>
@@ -445,6 +456,23 @@
     const descEl = document.getElementById('edit-macro-desc');
     if(descEl) descEl.onchange = async ()=>{
       if(activeMacro) activeMacro.description = descEl.value;
+      await persist();
+      renderMap();
+    };
+    const gridSizeEl = document.getElementById('edit-macro-gridsize');
+    if(gridSizeEl) gridSizeEl.onchange = async ()=>{
+      if(!activeMacro) return;
+      const oldSize = getGridSize(activeMacro);
+      const newSize = Number(gridSizeEl.value);
+      const newTotal = newSize*newSize;
+      const sectors = activeMacro.sectors || [];
+      const hidden = sectors.filter(s=>s.gridPos!=null && s.gridPos>=newTotal);
+      if(hidden.length>0){
+        const names = hidden.map(s=>`"${s.name}"`).join(', ');
+        const ok = window.confirm(`Riducendo la griglia a ${newSize}×${newSize}, ${hidden.length} Settore${hidden.length>1?'i':''} (${names}) uscirebbe${hidden.length>1?'ro':''} dalla griglia visibile. Non verranno eliminati e torneranno visibili se riallarghi la griglia. Continuare?`);
+        if(!ok){ gridSizeEl.value = oldSize; return; }
+      }
+      activeMacro.gridSize = newSize;
       await persist();
       renderMap();
     };
@@ -520,8 +548,11 @@
     `;
   }
 
-  function sectorEditFormHTML(s, sectors){
+  function sectorEditFormHTML(s, sectors, gridTotal){
     const usedPositions = sectors.map(x=>x.gridPos).filter(p=>p!=null);
+    const posOptions = [];
+    for(let p=0;p<gridTotal;p++) posOptions.push(p);
+    if(s.gridPos!=null && s.gridPos>=gridTotal) posOptions.push(s.gridPos); // mantieni visibile la posizione attuale anche se fuori dalla griglia corrente
     return `
       <div class="hud-frame" style="padding:12px;margin-bottom:4px;">
         <div class="muted" style="margin-bottom:8px;">🛠️ Modifica Settore (solo Master)</div>
@@ -543,7 +574,7 @@
         </div>
         <div class="field"><label>Posizione in griglia</label>
           <select id="edit-sector-gridpos">
-            ${[0,1,2,3,4,5,6,7,8].map(p=>`<option value="${p}" ${s.gridPos===p?'selected':''} ${usedPositions.includes(p) && s.gridPos!==p?'disabled':''}>Casella ${p+1}${usedPositions.includes(p) && s.gridPos!==p?' (occupata)':''}</option>`).join('')}
+            ${posOptions.map(p=>`<option value="${p}" ${s.gridPos===p?'selected':''} ${usedPositions.includes(p) && s.gridPos!==p?'disabled':''}>Casella ${p+1}${p>=gridTotal?' (fuori griglia attuale)':''}${usedPositions.includes(p) && s.gridPos!==p?' (occupata)':''}</option>`).join('')}
           </select>
         </div>
         <button class="btn ${s.revealed?'ghost':''} small" id="btn-toggle-sector-reveal" style="margin-top:4px;">${s.revealed?'🙈 Nascondi ai giocatori':'👁️ Rivela ai giocatori'}</button>
@@ -561,8 +592,10 @@
     }
     const sectors = activeMacro.sectors || [];
     if(view==='sectors'){
+      const gridSize = getGridSize(activeMacro);
+      const gridTotal = gridSize*gridSize;
       const cells = [];
-      for(let i=0;i<9;i++){
+      for(let i=0;i<gridTotal;i++){
         const s = sectors.find(x=>x.gridPos===i);
         if(s){
           const revealed = !!s.revealed;
@@ -589,8 +622,9 @@
       bodyEl.innerHTML = `
         <div class="breadcrumb">📍 ${escapeHTML(activeMacro.name)}</div>
         ${activeMacro.description ? `<div class="muted" style="margin-bottom:10px;">${escapeHTML(activeMacro.description)}</div>` : ''}
-        <div class="map-grid">${cells.join('')}</div>
+        <div class="map-grid" style="--grid-n:${gridSize};">${cells.join('')}</div>
         <div class="muted" style="margin-top:10px;font-size:11px;">${master ? 'Clicca su un Settore per modificarlo, su una casella vuota (tratteggiata) per crearne uno nuovo. Il 👁️/🙈 su ogni Settore ne controlla la visibilità per i giocatori (i Settori più chiari non sono ancora rivelati).' : 'Clicca su un Settore per esplorarlo.'}</div>
+        ${master && sectors.some(s=>s.gridPos!=null && s.gridPos>=gridTotal) ? `<div class="muted" style="margin-top:6px;font-size:11px;color:var(--amber);">⚠️ ${sectors.filter(s=>s.gridPos!=null && s.gridPos>=gridTotal).length} Settore/i fuori dalla griglia attuale (nascosti, non eliminati). Aumenta la dimensione della griglia per rivederli.</div>` : ''}
         ${master && sectors.some(s=>!s.revealed) ? `<button class="btn ghost small" id="btn-reveal-all-sectors" style="margin-top:8px;">👁️ Rivela tutti i Settori di questa Macroscena</button>` : ''}
         ${master && addingSectorPos!=null ? newSectorFormHTML(addingSectorPos) : ''}
       `;
@@ -648,7 +682,7 @@
       const luoghi = s.luoghi || [];
       bodyEl.innerHTML = `
         <div class="breadcrumb"><span data-nav-macro>📍 ${escapeHTML(activeMacro.name)}</span> → ${escapeHTML(s.name)}</div>
-        ${master ? sectorEditFormHTML(s, sectors) : sectorReadOnlyHTML(s)}
+        ${master ? sectorEditFormHTML(s, sectors, getGridSize(activeMacro)*getGridSize(activeMacro)) : sectorReadOnlyHTML(s)}
         ${luoghi.length>0 || master ? `
           <div class="muted" style="margin-top:14px;">Luoghi:</div>
           <div class="luogo-grid">
