@@ -390,6 +390,68 @@
     return !!(p && p.isPC && p.username===username);
   }
 
+  // Avanza il turno / termina il combattimento — condiviso tra il pannello "Combattimento" (in alto)
+  // e "Gestione Combattimento" più sotto, così i controlli funzionano identici da entrambi i punti.
+  async function advanceCombatTurn(code, players){
+    const combat = cachedCombat;
+    if(!combat || !combat.order || combat.order.length===0) return;
+    const finishing = combat.participants.find(p=>p.id===combat.order[combat.currentIndex]);
+    if(finishing){
+      const fMemberEarly = finishing.isPC ? cachedRoster.find(m=>m.username===finishing.username) : null;
+      finishing.actions = (fMemberEarly && fMemberEarly.digimon.hybridMode) ? 3 : 2;
+      finishing.attackedThisRound = false;
+      if(finishing.isPC){
+        const fMember = cachedRoster.find(m=>m.username===finishing.username);
+        if(fMember){
+          if(!fMember.digimon.usedSigMoveThisTurn){
+            fMember.digimon.battery = Math.min(batteryCap(fMember.digimon.stage), Number(fMember.digimon.battery||0)+1);
+          }
+          fMember.digimon.usedSigMoveThisTurn = false;
+          await saveMember(code, fMember);
+        }
+      }
+    }
+    combat.currentIndex++;
+    if(combat.currentIndex >= combat.order.length){
+      combat.currentIndex = 0;
+      combat.round++;
+    }
+    const starting = combat.participants.find(p=>p.id===combat.order[combat.currentIndex]);
+    if(starting){
+      const tickLogs = await tickEffectsForParticipant(code, combat, starting);
+      for(const line of tickLogs){
+        await pushLog(code, { who:'Sistema', role:'gm', text: line });
+      }
+      if(starting.isPC){
+        const member = cachedRoster.find(m=>m.username===starting.username);
+        if(member){
+          if(member.digimon.forcedEvoRoundsLeft > 0){
+            member.digimon.forcedEvoRoundsLeft -= 1;
+            if(member.digimon.forcedEvoRoundsLeft <= 0){
+              const revertIdx = Math.max(0, stageIndex(member.digimon.defaultStage)-1);
+              const revertStage = STAGES[revertIdx];
+              applyStageChange(member.digimon, member.digimon.stage, revertStage);
+              await pushLog(code, { who:'Sistema', role:'gm', text: `${member.digimon.name||member.username} torna a ${member.digimon.stage} (fine Evoluzione Forzata) — Stat aggiornate.` });
+            }
+          }
+          await saveMember(code, member);
+        }
+      }
+    }
+    await saveCombat(code, combat);
+    renderCombatManager(code, players);
+    const combatLive = document.getElementById('combat-live');
+    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
+  }
+  async function endCombatNow(code, players){
+    if(!window.confirm('Terminare il combattimento e azzerare i partecipanti?')) return;
+    cachedCombat = defaultCombat();
+    await saveCombat(code, cachedCombat);
+    renderCombatManager(code, players);
+    const combatLive = document.getElementById('combat-live');
+    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
+  }
+
   function recalcCombatOrder(combat){
     combat.order = buildInitiativeOrder(combat.participants);
     combat.currentIndex = 0;
@@ -3896,6 +3958,15 @@
             <div id="mchat-private-slot" style="display:none;"></div>
           </div>
 
+          <div class="hud-frame card">
+            <div class="section-title">Combattimento</div>
+            <div id="combat-live">${combatDisplayHTML(cachedCombat)}</div>
+            <div class="row" style="margin-top:8px;" id="combat-live-turn-controls">
+              <button class="btn amber" id="btn-combat-next-turn-top" style="flex:1;">Turno Successivo</button>
+              <button class="btn ghost" id="btn-combat-end-top" style="flex:1;">Termina</button>
+            </div>
+          </div>
+
           <div class="hud-frame card" id="encounter-balance-card"></div>
         </div>
 
@@ -3919,10 +3990,6 @@
             </div>
             <div class="field"><label>TN (opzionale, solo per Skill)</label><input type="number" id="req-tn" placeholder="es. 15" /></div>
             <button class="btn amber" id="btn-request-roll" style="width:100%;">Richiedi Tiro</button>
-          </div>
-          <div class="hud-frame card">
-            <div class="section-title">Combattimento — Ordine dei Turni</div>
-            <div id="combat-live">${combatDisplayHTML(cachedCombat)}</div>
           </div>
           <div class="hud-frame card" id="combat-mgr-card"></div>
           <div class="hud-frame card" id="notice-mgr-card"></div>
@@ -3953,6 +4020,9 @@
         </div>
       </div>
     `;
+
+    document.getElementById('btn-combat-next-turn-top').onclick = ()=> advanceCombatTurn(code, players);
+    document.getElementById('btn-combat-end-top').onclick = ()=> endCombatNow(code, players);
 
     bindRosterSuggestButtons(players);
     bindRosterManageButtons(players);
@@ -4533,6 +4603,12 @@
 
   let masterPrivateThread = null;
   let masterChatMode = 'general';
+  // Stato UI del Combat Manager (non salvato su DB, resettato solo al refresh pagina):
+  // quali righe partecipante sono "espanse" (mostrano Azione/Muovi/Effetti), se il pannello
+  // "Risolvi Attacco" è aperto, e quale partecipante è pre-selezionato come Attaccante.
+  const combatExpandedIds = new Set();
+  let combatAttackPanelOpen = false;
+  let combatPresetAttackerId = null;
   let masterPrivateUnread = {}; // { username: true } — thread ha messaggi non ancora visti dal Master
 
   async function grantMilestoneRewards(code){
@@ -5048,15 +5124,23 @@
         ${combat.participants.length===0 ? '<div class="muted" style="margin-bottom:8px;">Nessun partecipante ancora aggiunto.</div>' : combat.participants.map((p,i)=>{
           const w = getParticipantWounds(p);
           const acts = p.actions===undefined?2:p.actions;
-          return `
-          <div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line);">
+          const isCurrentTurn = !!(combat.order && combat.order.length && combat.order[combat.currentIndex]===p.id);
+          const expanded = isCurrentTurn || combatExpandedIds.has(p.id);
+          const header = `
             <div class="flex-between">
-              <span>${escapeHTML(p.name)} <span class="tag" style="margin-left:4px;">${p.side==='ally'?'Alleato':'Nemico'}</span> <span class="muted" style="margin-left:4px;font-size:10px;">${w.current}/${w.max} Ferite · Az. ${acts}/2</span></span>
+              <span>${isCurrentTurn?'▶ ':''}${escapeHTML(p.name)} <span class="tag" style="margin-left:4px;">${p.side==='ally'?'Alleato':'Nemico'}</span> <span class="muted" style="margin-left:4px;font-size:10px;">${w.current}/${w.max} Ferite · Az. ${acts}/2</span></span>
               <span style="display:flex;align-items:center;gap:6px;">
                 <input type="number" data-part-init="${p.id}" value="${p.initiative}" style="width:60px;padding:4px;" />
+                ${isCurrentTurn ? '' : `<button class="btn ghost small" data-part-toggle="${p.id}">${expanded?'▲':'▼'}</button>`}
                 <button class="btn ghost small" data-part-remove="${p.id}">✕</button>
               </span>
-            </div>
+            </div>`;
+          if(!expanded){
+            return `<div style="margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--line);">${header}${(p.effects&&p.effects.length)?`<div style="margin-top:4px;">${effectTagsHTML(p)}</div>`:''}</div>`;
+          }
+          return `
+          <div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line);${isCurrentTurn?'background:rgba(53,232,201,0.06);border-radius:6px;padding:8px;':''}">
+            ${header}
             <div class="row" style="margin-top:6px;">
               <select data-action-select="${p.id}" style="flex:2;">${ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost})</option>`).join('')}</select>
               <button class="btn small" data-action-use="${p.id}" style="flex:1;">Usa</button>
@@ -5092,17 +5176,21 @@
         `;}).join('')}
       </div>
       <div class="divider"></div>
-      <div class="section-title" style="font-size:11px;">⚔ Risolvi Attacco</div>
       <div class="row">
-        <select id="combat-attacker" style="flex:1;">${combat.participants.map(p=>`<option value="${p.id}">${escapeHTML(p.name)}</option>`).join('')}</select>
+        <select id="combat-attacker" style="flex:1;">${combat.participants.map(p=>`<option value="${p.id}" ${combatPresetAttackerId===p.id?'selected':''}>${escapeHTML(p.name)}</option>`).join('')}</select>
         <select id="combat-target" style="flex:1;">${combat.participants.map(p=>`<option value="${p.id}">${escapeHTML(p.name)}</option>`).join('')}</select>
       </div>
-      <div class="row" style="margin-top:6px;">
-        <select id="combat-attack-choice" style="flex:1;"><option value="">(attacco generico)</option></select>
+      <div class="muted" style="font-size:10px;margin:4px 0;">Attaccante / Bersaglio — usati da Attacco, Clash e Jogress qui sotto.</div>
+      <button class="btn amber" id="btn-combat-attack-toggle" style="width:100%;margin-top:4px;">⚔ ${combatAttackPanelOpen?'Chiudi':'Attacca...'}</button>
+      <div id="combat-attack-panel" style="display:${combatAttackPanelOpen?'block':'none'};margin-top:6px;">
+        <div class="section-title" style="font-size:11px;">⚔ Risolvi Attacco</div>
+        <div class="row">
+          <select id="combat-attack-choice" style="flex:1;"><option value="">(attacco generico)</option></select>
+        </div>
+        <button class="btn amber" id="btn-combat-attack" style="width:100%;margin-top:6px;">⚔ Risolvi Attacco</button>
+        <button class="btn" id="btn-combat-attack-area" style="width:100%;margin-top:6px;display:none;">🌪 Risolvi come Area (colpisce tutti nella zona del bersaglio)</button>
+        <div id="combat-attack-result" style="margin-top:8px;"></div>
       </div>
-      <button class="btn amber" id="btn-combat-attack" style="width:100%;margin-top:6px;">⚔ Risolvi Attacco</button>
-      <button class="btn" id="btn-combat-attack-area" style="width:100%;margin-top:6px;display:none;">🌪 Risolvi come Area (colpisce tutti nella zona del bersaglio)</button>
-      <div id="combat-attack-result" style="margin-top:8px;"></div>
       <div class="divider"></div>
       <div class="section-title" style="font-size:11px;">🤼 Clash (usa Attaccante/Bersaglio sopra)</div>
       <div class="row">
@@ -5112,13 +5200,17 @@
       <div id="combat-clash-result" style="margin-top:8px;"></div>
       <div id="combat-clash-actions" style="margin-top:8px;"></div>
       <div class="divider"></div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-mute);margin-bottom:6px;">
+        <input type="checkbox" id="combat-jogress-unlock" ${combat.jogressUnlocked?'checked':''} /> 🔓 Sblocca Jogress per questo combattimento
+      </label>
+      ${combat.jogressUnlocked ? `
       <div class="section-title" style="font-size:11px;">🤝 Jogress (usa Attaccante/Bersaglio sopra, entrambi giocatori)</div>
       <div class="row">
         <button class="btn small" id="btn-jogress-attempt" style="flex:1;">🤝 Tenta Jogress (2 Az. ciascuno, TN 15)</button>
         <button class="btn ghost small" id="btn-jogress-end" style="flex:1;">↩️ Termina Jogress</button>
       </div>
       <div id="jogress-result" style="margin-top:8px;"></div>
-      <div class="divider"></div>
+      <div class="divider"></div>` : ''}
       <div class="row">
         <select id="combat-add-player" style="flex:2;">
           <option value="">Aggiungi giocatore...</option>
@@ -5130,6 +5222,10 @@
         <select id="combat-enemy-fromscene" style="flex:2;">
           <option value="">Digimon presenti in scena...</option>
           ${(cachedScene.encounters||[]).filter(e=>!combat.participants.some(p=>p.sourceEncounterId===e.id)).map(e=>`<option value="${e.id}">${escapeHTML(e.name)}${e.isBoss?' 👑':''}</option>`).join('')}
+        </select>
+        <select id="combat-fromscene-side" style="flex:1;">
+          <option value="enemy">Nemico</option>
+          <option value="ally">Alleato</option>
         </select>
         <button class="btn small" id="btn-combat-add-fromscene" style="flex:1;">+ Aggiungi</button>
       </div>
@@ -5161,10 +5257,7 @@
       <div class="divider"></div>
       <button class="btn" id="btn-combat-roll-all" style="width:100%;margin-bottom:8px;">🎲 Tira Iniziativa per Tutti</button>
       <button class="btn solid" id="btn-combat-calc-order" style="width:100%;margin-bottom:8px;">Calcola Ordine</button>
-      <div class="row">
-        <button class="btn amber" id="btn-combat-next-turn" style="flex:1;">Turno Successivo</button>
-        <button class="btn ghost" id="btn-combat-end" style="flex:1;">Termina</button>
-      </div>
+      <div class="muted" style="margin-bottom:6px;">I tasti "Turno Successivo" / "Termina" si trovano nella scheda "Combattimento" qui sopra.</div>
       <div class="muted" id="combat-mgr-status" style="margin-top:6px;"></div>
     `;
 
@@ -5180,6 +5273,13 @@
       startZoneLiveSel.onchange = async ()=>{
         combat.startZone = startZoneLiveSel.value;
         await saveCombat(code, combat);
+      };
+    }
+    const jogressUnlockCb = document.getElementById('combat-jogress-unlock');
+    if(jogressUnlockCb){
+      jogressUnlockCb.onchange = async ()=>{
+        combat.jogressUnlocked = jogressUnlockCb.checked;
+        await persistAndRefresh();
       };
     }
 
@@ -5641,6 +5741,20 @@
         await persistAndRefresh();
       };
     });
+    cardEl.querySelectorAll('[data-part-toggle]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const id = btn.getAttribute('data-part-toggle');
+        if(combatExpandedIds.has(id)) combatExpandedIds.delete(id); else combatExpandedIds.add(id);
+        renderCombatManager(code, players);
+      };
+    });
+    const attackToggleBtn = document.getElementById('btn-combat-attack-toggle');
+    if(attackToggleBtn){
+      attackToggleBtn.onclick = ()=>{
+        combatAttackPanelOpen = !combatAttackPanelOpen;
+        renderCombatManager(code, players);
+      };
+    }
     cardEl.querySelectorAll('[data-action-use]').forEach(btn=>{
       btn.onclick = async ()=>{
         const id = btn.getAttribute('data-action-use');
@@ -5654,6 +5768,10 @@
           return;
         }
         await pushLog(code, { who: p.name, role:'gm', text: `${p.name} usa ${result.def.label} (${result.def.cost} Azione/i) — restano ${p.actions}/2 Azioni.` });
+        if(sel.value==='attack'){
+          combatAttackPanelOpen = true;
+          combatPresetAttackerId = p.id;
+        }
         await persistAndRefresh();
         refreshLiveParts();
       };
@@ -5834,12 +5952,14 @@
         const enc = (cachedScene.encounters||[]).find(e=>String(e.id)===String(encId));
         if(!enc) return;
         if(cachedCombat.participants.some(p=>p.sourceEncounterId===enc.id)) return;
+        const sideSel = document.getElementById('combat-fromscene-side');
+        const side = (sideSel && sideSel.value==='ally') ? 'ally' : 'enemy';
         const bs = enc.baseStats || {};
         const dodge = Number(bs.baseDodge)||0;
         const maxWounds = Number(bs.baseHealth)||1;
         const attribute = (enc.categories && enc.categories[0]) || 'Free';
         cachedCombat.participants.push({
-          id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:enc.name, side:'enemy',
+          id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:enc.name, side,
           ram: Math.max(0, Math.floor(dodge/3)), initiative:0, actions:2, attackedThisRound:false, effects:[],
           zone: cachedCombat.startZone||'Medio', clashPinned:false, clashComebackBonus:0, isPC:false,
           accuracy: Number(bs.baseAccuracy)||0, damage: Number(bs.baseDamage)||0, dodge,
@@ -5902,61 +6022,6 @@
       const statusEl = document.getElementById('combat-mgr-status');
       const orderNames = (combat.order||[]).map(id=>{ const p = combat.participants.find(x=>x.id===id); return p ? p.name : '?'; });
       if(statusEl) statusEl.innerHTML = orderNames.length ? `✅ Ordine dei turni calcolato: ${orderNames.map(escapeHTML).join(' → ')}<br><span class="muted">Vedi la scheda "Combattimento — Ordine dei Turni" qui sopra.</span>` : '<span class="err">Nessun ordine calcolabile.</span>';
-    };
-    document.getElementById('btn-combat-next-turn').onclick = async ()=>{
-      if(!combat.order || combat.order.length===0) return;
-      const finishing = combat.participants.find(p=>p.id===combat.order[combat.currentIndex]);
-      if(finishing){
-        const fMemberEarly = finishing.isPC ? cachedRoster.find(m=>m.username===finishing.username) : null;
-        finishing.actions = (fMemberEarly && fMemberEarly.digimon.hybridMode) ? 3 : 2;
-        finishing.attackedThisRound = false;
-        if(finishing.isPC){
-          const fMember = cachedRoster.find(m=>m.username===finishing.username);
-          if(fMember){
-            if(!fMember.digimon.usedSigMoveThisTurn){
-              fMember.digimon.battery = Math.min(batteryCap(fMember.digimon.stage), Number(fMember.digimon.battery||0)+1);
-            }
-            fMember.digimon.usedSigMoveThisTurn = false;
-            await saveMember(code, fMember);
-          }
-        }
-      }
-      combat.currentIndex++;
-      if(combat.currentIndex >= combat.order.length){
-        combat.currentIndex = 0;
-        combat.round++;
-      }
-      const starting = combat.participants.find(p=>p.id===combat.order[combat.currentIndex]);
-      if(starting){
-        const tickLogs = await tickEffectsForParticipant(code, combat, starting);
-        for(const line of tickLogs){
-          await pushLog(code, { who:'Sistema', role:'gm', text: line });
-        }
-        if(starting.isPC){
-          const member = cachedRoster.find(m=>m.username===starting.username);
-          if(member){
-            if(member.digimon.forcedEvoRoundsLeft > 0){
-              member.digimon.forcedEvoRoundsLeft -= 1;
-              if(member.digimon.forcedEvoRoundsLeft <= 0){
-                const revertIdx = Math.max(0, stageIndex(member.digimon.defaultStage)-1);
-                const revertStage = STAGES[revertIdx];
-                applyStageChange(member.digimon, member.digimon.stage, revertStage);
-                await pushLog(code, { who:'Sistema', role:'gm', text: `${member.digimon.name||member.username} torna a ${member.digimon.stage} (fine Evoluzione Forzata) — Stat aggiornate.` });
-              }
-            }
-            await saveMember(code, member);
-          }
-        }
-      }
-      await persistAndRefresh();
-    };
-    document.getElementById('btn-combat-end').onclick = async ()=>{
-      if(!window.confirm('Terminare il combattimento e azzerare i partecipanti?')) return;
-      cachedCombat = defaultCombat();
-      await saveCombat(code, cachedCombat);
-      renderCombatManager(code, players);
-      const combatLive = document.getElementById('combat-live');
-      if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
     };
   }
 
