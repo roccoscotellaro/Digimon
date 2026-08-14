@@ -395,6 +395,7 @@
   async function advanceCombatTurn(code, players){
     const combat = cachedCombat;
     if(!combat || !combat.order || combat.order.length===0) return;
+    combatPresetAttackerId = null;
     const finishing = combat.participants.find(p=>p.id===combat.order[combat.currentIndex]);
     if(finishing){
       const fMemberEarly = finishing.isPC ? cachedRoster.find(m=>m.username===finishing.username) : null;
@@ -3989,7 +3990,9 @@
             </div>
             <div id="mchat-private-slot" style="display:none;"></div>
           </div>
+        </div>
 
+        <div>
           <div class="hud-frame card">
             <div class="section-title">Combattimento</div>
             <div id="combat-live">${combatDisplayHTML(cachedCombat)}</div>
@@ -4001,9 +4004,7 @@
           <div class="hud-frame card" id="combat-mgr-card"></div>
 
           <div class="hud-frame card" id="encounter-balance-card"></div>
-        </div>
 
-        <div>
           <div class="hud-frame card">
             <div class="section-title">Roster Campagna</div>
             <div id="roster-live">${players.length===0 ? '<div class="muted">Nessun giocatore ha ancora effettuato l\'accesso a questa campagna.</div>' : players.map((p,i)=>rosterItemHTML(p,i)).join('')}</div>
@@ -5117,6 +5118,12 @@
     if(!cardEl) return;
     if(!cachedCombat) cachedCombat = defaultCombat();
     const combat = cachedCombat;
+    // Preseleziona di default l'Attaccante = Digimon di cui è il turno (se non è già stato scelto
+    // esplicitamente qualcun altro), per velocizzare la risoluzione del suo attacco.
+    if(!combatPresetAttackerId){
+      const curr = currentTurnParticipant(combat);
+      if(curr) combatPresetAttackerId = curr.id;
+    }
 
     if(!combat.active){
       cardEl.innerHTML = `
@@ -5546,18 +5553,24 @@
           if(resEl) resEl.innerHTML = `<div class="err">${spend.msg}</div>`;
           return;
         }
-        if(resEl) resEl.innerHTML = '<div class="muted" style="font-size:11px;">Tiro in corso...</div>';
-        const { logText, dealt, accRoll, dodgeRoll, atkLabel } = await performAttackRoll(code, combat, attacker, target, atk);
+        if(resEl) resEl.innerHTML = '<div class="muted" style="font-size:11px;">Tiro...</div>';
+        const { logText, dealt, accRoll, dodgeRoll } = await performAttackRoll(code, combat, attacker, target, atk);
         const hit = accRoll.successes > dodgeRoll.successes;
-        const narrLine = await narrateAttack(attacker, atk, hit, dealt);
         const detailHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">vs</span>${diceRowHTML(dodgeRoll.dice)}<div class="muted" style="margin-top:4px;font-size:10.5px;">${escapeHTML(logText)}</div>`;
-        const compactHTML = attackResultCompactHTML(narrLine, hit, dealt, detailHTML);
+        const fallbackCompact = attackResultCompactHTML(null, hit, dealt, detailHTML);
         await pushLog(code, { who:'Master', role:'roll', text: logText, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
         await persistAndRefresh();
         // persistAndRefresh ricostruisce l'intera card (quindi anche #combat-attack-result vuoto):
-        // riapplico il risultato sul nuovo elemento dopo il render.
+        // riapplico subito il risultato (dadi/danno) — non aspetta l'AI, così il tiro non resta mai bloccato.
         const resEl2 = document.getElementById('combat-attack-result');
-        if(resEl2) resEl2.innerHTML = compactHTML;
+        if(resEl2) resEl2.innerHTML = fallbackCompact;
+        // Narrazione AI: gareggia con un timeout di 6s e va in CHAT come messaggio a parte (non blocca il tiro sopra).
+        const narrTimeout = new Promise(resolve=>setTimeout(()=>resolve(null), 6000));
+        Promise.race([narrateAttack(attacker, atk, hit, dealt), narrTimeout]).then(async (narrLine)=>{
+          if(!narrLine) return;
+          await pushLog(code, { who: attacker.name, role:'gm', text: `${narrLine}${hit?` (${dealt})`:''}` });
+          refreshLiveParts();
+        });
       };
     }
 
