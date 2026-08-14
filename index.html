@@ -1253,7 +1253,17 @@
     cachedScene = await getScene(session.code);
     cachedLog = await getLog(session.code);
     cachedDex = await getDex(session.code);
-    cachedCombat = await getCombat(session.code);
+    const freshCombat = await getCombat(session.code);
+    if(freshCombat && cachedCombat && typeof cachedCombat==='object'){
+      // Muta l'oggetto esistente invece di sostituirlo: il Combat Manager del Master
+      // tiene riferimenti a cachedCombat dentro le closure dei bottoni (+ Aggiungi, ecc.);
+      // se qui lo rimpiazzassimo con un nuovo oggetto, quei bottoni scriverebbero
+      // su una copia "orfana" e le modifiche andrebbero perse al salvataggio.
+      Object.keys(cachedCombat).forEach(k=>{ delete cachedCombat[k]; });
+      Object.assign(cachedCombat, freshCombat);
+    } else {
+      cachedCombat = freshCombat;
+    }
     cachedProgression = await getProgression(session.code);
 
     const sceneLive = document.getElementById('scene-live');
@@ -4156,6 +4166,16 @@
     return { cpu: Math.max(0, Math.floor(Number(p.armor||0)/3)), ram: Number(p.ram||0), clashBonus:0 };
   }
 
+  // Attacchi disponibili per un partecipante al combattimento, sia esso un Digimon
+  // giocante (dalla sua scheda) o un nemico (importati dal Digidex o dalla Scena).
+  function getParticipantAttacks(p){
+    if(!p) return [];
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      return (member && member.digimon.attacks) || [];
+    }
+    return p.attacks || [];
+  }
   function getParticipantWounds(p){
     if(p.isPC){
       const member = cachedRoster.find(m=>m.username===p.username);
@@ -5108,8 +5128,15 @@
         <button class="btn small" id="btn-combat-add-player" style="flex:1;">+ Aggiungi</button>
       </div>
       <div class="row" style="margin-top:8px;">
+        <select id="combat-enemy-fromscene" style="flex:2;">
+          <option value="">Digimon presenti in scena...</option>
+          ${(cachedScene.encounters||[]).filter(e=>!combat.participants.some(p=>p.sourceEncounterId===e.id)).map(e=>`<option value="${e.id}">${escapeHTML(e.name)}${e.isBoss?' 👑':''}</option>`).join('')}
+        </select>
+        <button class="btn small" id="btn-combat-add-fromscene" style="flex:1;">+ Aggiungi</button>
+      </div>
+      <div class="row" style="margin-top:8px;">
         <select id="combat-enemy-fromdex" style="flex:1;">
-          <option value="">Da Dex (opzionale)...</option>
+          <option value="">Da Dex (opzionale, compila il form sotto)...</option>
           ${cachedDex.map(e=>`<option value="${e.id}">${escapeHTML(e.name)}</option>`).join('')}
         </select>
       </div>
@@ -5162,11 +5189,7 @@
       const attacker = combat.participants.find(p=>p.id===attackerId);
       const sel = document.getElementById('combat-attack-choice');
       if(!sel) return;
-      let atks = [];
-      if(attacker && attacker.isPC){
-        const member = cachedRoster.find(m=>m.username===attacker.username);
-        if(member) atks = member.digimon.attacks || [];
-      }
+      const atks = getParticipantAttacks(attacker);
       sel.innerHTML = '<option value="">(attacco generico)</option>' + atks.map((a,i)=>`<option value="${i}">${a.signature?'⭐ ':''}${escapeHTML(a.name)} — ${a.shape}/${a.type}</option>`).join('');
       updateAreaButtonVisibility();
     }
@@ -5177,9 +5200,8 @@
       const areaBtn = document.getElementById('btn-combat-attack-area');
       if(!sel || !areaBtn) return;
       let atk = null;
-      if(attacker && attacker.isPC && sel.value !== ''){
-        const member = cachedRoster.find(m=>m.username===attacker.username);
-        if(member) atk = (member.digimon.attacks||[])[Number(sel.value)];
+      if(attacker && sel.value !== ''){
+        atk = getParticipantAttacks(attacker)[Number(sel.value)];
       }
       areaBtn.style.display = (atk && atk.areaAttack) ? 'block' : 'none';
     }
@@ -5371,9 +5393,8 @@
         const resEl = document.getElementById('combat-attack-result');
         let atk = null;
         const atkChoiceEl = document.getElementById('combat-attack-choice');
-        if(attacker && attacker.isPC && atkChoiceEl && atkChoiceEl.value !== ''){
-          const member = cachedRoster.find(m=>m.username===attacker.username);
-          if(member) atk = (member.digimon.attacks||[])[Number(atkChoiceEl.value)];
+        if(attacker && atkChoiceEl && atkChoiceEl.value !== ''){
+          atk = getParticipantAttacks(attacker)[Number(atkChoiceEl.value)];
         }
         const validation = validateAttackTargeting(attacker, target, atk);
         if(!validation.ok){
@@ -5403,9 +5424,8 @@
         }
         const atkChoiceEl = document.getElementById('combat-attack-choice');
         let atk = null;
-        if(attacker.isPC && atkChoiceEl && atkChoiceEl.value !== ''){
-          const member = cachedRoster.find(m=>m.username===attacker.username);
-          if(member) atk = (member.digimon.attacks||[])[Number(atkChoiceEl.value)];
+        if(atkChoiceEl && atkChoiceEl.value !== ''){
+          atk = getParticipantAttacks(attacker)[Number(atkChoiceEl.value)];
         }
         if(!atk || !atk.areaAttack){
           if(resEl) resEl.innerHTML = '<div class="err">L\'attacco selezionato non è un Area Attack.</div>';
@@ -5805,11 +5825,36 @@
       combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:username, side:'ally', ram, initiative:0, actions:startActions, attackedThisRound:false, effects:[], zone: combat.startZone||'Medio', clashPinned:false, clashComebackBonus:0, isPC:true, username });
       await persistAndRefresh();
     };
+    const addFromSceneBtn = document.getElementById('btn-combat-add-fromscene');
+    if(addFromSceneBtn){
+      addFromSceneBtn.onclick = async ()=>{
+        const sel = document.getElementById('combat-enemy-fromscene');
+        const encId = sel.value;
+        if(!encId) return;
+        const enc = (cachedScene.encounters||[]).find(e=>String(e.id)===String(encId));
+        if(!enc) return;
+        if(cachedCombat.participants.some(p=>p.sourceEncounterId===enc.id)) return;
+        const bs = enc.baseStats || {};
+        const dodge = Number(bs.baseDodge)||0;
+        const maxWounds = Number(bs.baseHealth)||1;
+        const attribute = (enc.categories && enc.categories[0]) || 'Free';
+        cachedCombat.participants.push({
+          id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:enc.name, side:'enemy',
+          ram: Math.max(0, Math.floor(dodge/3)), initiative:0, actions:2, attackedThisRound:false, effects:[],
+          zone: cachedCombat.startZone||'Medio', clashPinned:false, clashComebackBonus:0, isPC:false,
+          accuracy: Number(bs.baseAccuracy)||0, damage: Number(bs.baseDamage)||0, dodge,
+          armor: Number(bs.baseArmor)||0, maxWounds, currentWounds: maxWounds, attribute,
+          sourceEncounterId: enc.id, isBoss: !!enc.isBoss, attacks: enc.attacks || []
+        });
+        await persistAndRefresh();
+      };
+    }
     const dexFillSelect = document.getElementById('combat-enemy-fromdex');
+    let pendingDexEnemyAttacks = [];
     if(dexFillSelect){
       dexFillSelect.onchange = ()=>{
         const entry = cachedDex.find(e=>String(e.id)===String(dexFillSelect.value));
-        if(!entry) return;
+        if(!entry){ pendingDexEnemyAttacks = []; return; }
         const bs = entry.base_stats || {};
         document.getElementById('combat-enemy-name').value = entry.name;
         document.getElementById('combat-enemy-acc').value = bs.baseAccuracy||0;
@@ -5818,6 +5863,7 @@
         document.getElementById('combat-enemy-arm').value = bs.baseArmor||0;
         document.getElementById('combat-enemy-hp').value = bs.baseHealth||1;
         document.getElementById('combat-enemy-ram').value = Math.max(0, Math.floor(Number(bs.baseDodge||0)/3));
+        pendingDexEnemyAttacks = buildAttacksFromDexEntry(entry);
       };
     }
     document.getElementById('btn-combat-add-enemy').onclick = async ()=>{
@@ -5832,8 +5878,10 @@
       const attribute = document.getElementById('combat-enemy-attribute').value;
       combat.participants.push({
         id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name, side:'enemy', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], zone: combat.startZone||'Medio', clashPinned:false, clashComebackBonus:0, isPC:false,
-        accuracy, damage, dodge, armor, maxWounds, currentWounds: maxWounds, attribute
+        accuracy, damage, dodge, armor, maxWounds, currentWounds: maxWounds, attribute, attacks: pendingDexEnemyAttacks.slice()
       });
+      pendingDexEnemyAttacks = [];
+      if(dexFillSelect) dexFillSelect.value = '';
       await persistAndRefresh();
     };
     document.getElementById('btn-combat-roll-all').onclick = async ()=>{
