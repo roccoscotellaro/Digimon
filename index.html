@@ -150,7 +150,7 @@
   .role-pick .btn{flex:1;}
   .role-pick .btn.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
   #tab-scheda.active, #tab-inventario.active, #tab-dex.active, #tab-bug.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
-  #chatmode-public.active, #chatmode-private.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
+  #chatmode-public.active, #chatmode-private.active, #mchatmode-general.active, #mchatmode-private.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
 
   .roster-item{padding:10px;border-bottom:1px solid var(--line);font-size:12px;}
   .roster-item:last-child{border-bottom:none;}
@@ -912,6 +912,7 @@
   async function pushLog(code, entry){ return apiPost('/api/log', { code, ...entry, sceneId: entry.sceneId || (cachedScene && cachedScene.id) || null }); }
   async function editLogEntry(code, id, text){ return apiPut('/api/log', { code, id, text }); }
   async function deleteLogEntry(code, id){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
+  async function clearLog(code){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&clearAll=1'); }
   async function heartbeat(code, username){ return apiPost('/api/roster', { resource:'heartbeat', code, username }); }
   async function getPrivateLog(code, thread){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code) + '&thread=' + encodeURIComponent(thread)); return d ? (d.log||[]) : []; }
   async function pushPrivateLog(code, thread, entry){ return apiPost('/api/log', { code, thread, ...entry }); }
@@ -1193,6 +1194,28 @@
     }, 4000);
   }
 
+  function checkPlayerPrivateUnread(){
+    if(!session) return;
+    (async ()=>{
+      const plog = await getPrivateLog(session.code, session.username);
+      const unread = plog.length>0 && plog[plog.length-1].who!==session.username && isPrivateThreadUnread(session.code, session.username, plog);
+      updatePlayerPrivateBadge(unread);
+    })();
+  }
+  function updatePlayerPrivateBadge(forceUnread){
+    const btn = document.getElementById('chatmode-private');
+    if(!btn) return;
+    let badge = btn.querySelector('.unread-dot');
+    const show = forceUnread===true;
+    if(show && !badge){
+      badge = document.createElement('span');
+      badge.className = 'unread-dot';
+      badge.style.cssText = 'display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--danger);margin-left:5px;';
+      btn.appendChild(badge);
+    } else if(!show && badge){
+      badge.remove();
+    }
+  }
   function updateChatModeButtons(){
     const pubBtn = document.getElementById('chatmode-public');
     const privBtn = document.getElementById('chatmode-private');
@@ -1209,6 +1232,8 @@
     if(playerChatMode==='private'){
       const plog = await getPrivateLog(code, session.username);
       logLive.innerHTML = logHTML(plog, false);
+      markPrivateThreadRead(code, session.username, plog);
+      updatePlayerPrivateBadge(false);
     } else {
       logLive.innerHTML = logHTML(sceneLog(), false);
     }
@@ -1249,10 +1274,27 @@
         const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
         logLive.innerHTML = logHTML(plog, false);
         if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
+        markPrivateThreadRead(session.code, session.username, plog);
+        updatePlayerPrivateBadge();
+      } else if(session.role==='player'){
+        const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
+        logLive.innerHTML = logHTML(sceneLog(), false);
+        if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
+        checkPlayerPrivateUnread();
       } else {
         const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
         logLive.innerHTML = logHTML(sceneLog(), session && session.role==='master');
         if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
+      }
+    }
+    if(session.role==='master' && masterChatMode==='private' && masterPrivateThread){
+      const privLogLive = document.getElementById('private-log-live-master');
+      if(privLogLive){
+        const plog = await getPrivateLog(session.code, masterPrivateThread);
+        const wasAtBottom = privLogLive.scrollHeight - privLogLive.scrollTop <= privLogLive.clientHeight + 40;
+        privLogLive.innerHTML = logHTML(plog, false);
+        if(wasAtBottom) privLogLive.scrollTop = privLogLive.scrollHeight;
+        markPrivateThreadRead(session.code, masterPrivateThread, plog);
       }
     }
     const rosterLive = document.getElementById('roster-live');
@@ -1263,6 +1305,7 @@
         : players.map((p,i)=>rosterItemHTML(p,i)).join('');
       bindRosterSuggestButtons(players);
       bindRosterManageButtons(players);
+      if(document.getElementById('mchat-unread-badge')) checkMasterPrivateUnread(session.code, players);
     }
     const dexLive = document.getElementById('dex-live');
     if(dexLive && dexEditOpenId===null){ dexLive.innerHTML = dexListHTML(cachedDex, session.role==='master'); if(session.role==='master') bindDexEditButtons(session.code); }
@@ -3792,6 +3835,15 @@
           <div class="hud-frame card" id="sector-map-card"></div>
 
           <div class="hud-frame card">
+            <div class="flex-between" style="margin-bottom:8px;">
+              <div class="section-title" style="margin-bottom:0;">Chat</div>
+              <button class="btn ghost small" id="btn-clear-chat" title="Cancella per sempre tutta la chat generale (non tocca le chat private)">🗑️ Pulisci Chat Generale</button>
+            </div>
+            <div class="row" style="margin-bottom:10px;">
+              <button class="btn small" id="mchatmode-general">📣 Generale</button>
+              <button class="btn small" id="mchatmode-private">✉️ Privata <span id="mchat-unread-badge"></span></button>
+            </div>
+            <div id="mchat-general-block">
             <div class="section-title">Registro Narrativo</div>
             <div class="log" id="log-live">${logHTML(sceneLog(), session.role==='master')}</div>
             <div class="field" style="margin-top:10px;"><label>Parla come</label>
@@ -3823,6 +3875,8 @@
               </div>
             </details>
             <button class="btn amber" id="btn-gm-post" style="width:100%;margin-top:8px;">Pubblica</button>
+            </div>
+            <div id="mchat-private-slot" style="display:none;"></div>
           </div>
 
           <div class="hud-frame card">
@@ -3853,7 +3907,6 @@
             <button class="btn amber" id="btn-request-roll" style="width:100%;">Richiedi Tiro</button>
           </div>
           <div class="hud-frame card" id="combat-mgr-card"></div>
-          <div class="hud-frame card" id="private-chat-master-card"></div>
           <div class="hud-frame card" id="notice-mgr-card"></div>
           <div class="hud-frame card" id="bugreports-card"></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
@@ -3890,6 +3943,7 @@
     bindSceneCurrentSectorLuoghi(code);
     renderCombatManager(code, players);
     renderPrivateChatMaster(code, players);
+    bindMasterChatMode(code, players);
     renderNoticeManager(code, players);
     renderBugReportsMaster(code);
     renderProgressionMaster(code);
@@ -4449,6 +4503,8 @@
   }
 
   let masterPrivateThread = null;
+  let masterChatMode = 'general';
+  let masterPrivateUnread = {}; // { username: true } — thread ha messaggi non ancora visti dal Master
 
   async function grantMilestoneRewards(code){
     const players = cachedRoster.filter(m=>m.role==='player');
@@ -4813,24 +4869,79 @@
     });
   }
 
+  function privateReadKey(code, thread){ return `dvos_privread_${code}_${thread}`; }
+  function markPrivateThreadRead(code, thread, log){
+    if(!log || !log.length) return;
+    try{ localStorage.setItem(privateReadKey(code, thread), String(log[log.length-1].id)); }catch(e){}
+    delete masterPrivateUnread[thread];
+  }
+  function isPrivateThreadUnread(code, thread, log){
+    if(!log || !log.length) return false;
+    const last = log[log.length-1];
+    let lastRead = null;
+    try{ lastRead = localStorage.getItem(privateReadKey(code, thread)); }catch(e){}
+    return String(last.id) !== String(lastRead);
+  }
+  // Controlla in background (durante il polling) se ci sono messaggi privati non letti in QUALSIASI
+  // thread, non solo in quello aperto — serve per il pallino rosso sul bottone "Privata".
+  async function checkMasterPrivateUnread(code, players){
+    for(const p of players){
+      const log = await getPrivateLog(code, p.username);
+      const lastFromPlayer = log.length>0 && log[log.length-1].who !== 'Master';
+      if(lastFromPlayer && isPrivateThreadUnread(code, p.username, log)) masterPrivateUnread[p.username] = true;
+      else delete masterPrivateUnread[p.username];
+    }
+    const badge = document.getElementById('mchat-unread-badge');
+    const count = Object.keys(masterPrivateUnread).length;
+    if(badge) badge.innerHTML = count>0 ? `<span style="background:var(--danger);color:#fff;border-radius:8px;padding:1px 6px;font-size:10px;">${count}</span>` : '';
+  }
+  function updateMasterChatModeUI(){
+    const genBlock = document.getElementById('mchat-general-block');
+    const privSlot = document.getElementById('mchat-private-slot');
+    const genBtn = document.getElementById('mchatmode-general');
+    const privBtn = document.getElementById('mchatmode-private');
+    if(genBlock) genBlock.style.display = masterChatMode==='general' ? '' : 'none';
+    if(privSlot) privSlot.style.display = masterChatMode==='private' ? '' : 'none';
+    if(genBtn) genBtn.classList.toggle('active', masterChatMode==='general');
+    if(privBtn) privBtn.classList.toggle('active', masterChatMode==='private');
+  }
+  function bindMasterChatMode(code, players){
+    const genBtn = document.getElementById('mchatmode-general');
+    const privBtn = document.getElementById('mchatmode-private');
+    if(genBtn) genBtn.onclick = ()=>{ masterChatMode='general'; updateMasterChatModeUI(); };
+    if(privBtn) privBtn.onclick = async ()=>{ masterChatMode='private'; updateMasterChatModeUI(); await renderPrivateChatMaster(code, players); };
+    const clearBtn = document.getElementById('btn-clear-chat');
+    if(clearBtn) clearBtn.onclick = async ()=>{
+      if(!window.confirm('Cancellare TUTTA la chat generale? Non si può annullare. Le chat private non vengono toccate.')) return;
+      clearBtn.disabled = true;
+      await clearLog(code);
+      cachedLog = await getLog(code);
+      const logLive = document.getElementById('log-live');
+      if(logLive) logLive.innerHTML = logHTML(sceneLog(), true);
+      clearBtn.disabled = false;
+    };
+    updateMasterChatModeUI();
+    checkMasterPrivateUnread(code, players);
+  }
   async function renderPrivateChatMaster(code, players){
-    const cardEl = document.getElementById('private-chat-master-card');
+    const cardEl = document.getElementById('mchat-private-slot');
     if(!cardEl) return;
     if(!masterPrivateThread && players.length>0) masterPrivateThread = players[0].username;
     if(players.length===0){
-      cardEl.innerHTML = `<div class="section-title">Chat Privata</div><div class="muted">Nessun giocatore ancora collegato.</div>`;
+      cardEl.innerHTML = `<div class="muted">Nessun giocatore ancora collegato.</div>`;
       return;
     }
     const log = masterPrivateThread ? await getPrivateLog(code, masterPrivateThread) : [];
     cardEl.innerHTML = `
-      <div class="section-title">Chat Privata</div>
       <div class="field"><label>Con chi</label>
-        <select id="private-thread-select">${players.map(p=>`<option value="${escapeAttr(p.username)}" ${p.username===masterPrivateThread?'selected':''}>${escapeHTML(p.username)}</option>`).join('')}</select>
+        <select id="private-thread-select">${players.map(p=>`<option value="${escapeAttr(p.username)}" ${p.username===masterPrivateThread?'selected':''}>${masterPrivateUnread[p.username]?'🔴 ':''}${escapeHTML(p.username)}</option>`).join('')}</select>
       </div>
       <div class="log" id="private-log-live-master" style="height:220px;">${logHTML(log, false)}</div>
       <textarea id="private-text-master" rows="2" placeholder="Scrivi in privato..." style="margin-top:8px;"></textarea>
       <button class="btn amber" id="btn-private-send-master" style="width:100%;margin-top:6px;">Invia</button>
     `;
+    if(masterChatMode==='private') markPrivateThreadRead(code, masterPrivateThread, log);
+    document.getElementById('mchat-unread-badge') && checkMasterPrivateUnread(code, players);
     document.getElementById('private-thread-select').onchange = (e)=>{
       masterPrivateThread = e.target.value;
       renderPrivateChatMaster(code, players);

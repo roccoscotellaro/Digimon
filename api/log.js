@@ -91,7 +91,17 @@ module.exports = async (req, res) => {
     if (req.method === 'DELETE') {
       const code = cleanCode(req.query.code);
       const id = req.query.id;
-      if (!code || !id) return res.status(400).json({ error: 'missing code or id' });
+      const clearAll = req.query.clearAll === '1' || req.query.clearAll === 'true';
+      if (!code) return res.status(400).json({ error: 'missing code' });
+      if (clearAll) {
+        const { error } = await supabase
+          .from('logs')
+          .delete()
+          .eq('campaign_code', code);
+        if (error) return res.status(500).json({ error: error.message });
+        return res.status(200).json({ ok: true, clearedAll: true });
+      }
+      if (!id) return res.status(400).json({ error: 'missing id (or pass clearAll=1)' });
       const { error } = await supabase
         .from('logs')
         .delete()
