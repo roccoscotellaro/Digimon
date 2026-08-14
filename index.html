@@ -452,6 +452,38 @@
     if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
   }
 
+  // Chiede una frase narrativa variabile all'AI per il risultato di un attacco (endpoint già esistente,
+  // mode:'narrazione-attacco'), usata per il risultato compatto nel Combat Manager. In caso di errore
+  // di rete o API non configurata, ritorna null e il chiamante mostra una frase di fallback.
+  async function narrateAttack(attacker, atk, hit, dealt){
+    try{
+      const atkName = atk ? atk.name : 'Attacco generico';
+      const tags = atk ? attackTagsPlain(atk) : '';
+      const desc = (atk && atk.desc) ? atk.desc : '';
+      const esito = hit ? `Colpisce il bersaglio, infliggendo ${dealt} danni.` : 'Manca completamente il bersaglio.';
+      let personality = 'Nemico feroce e imprevedibile.';
+      if(attacker.isPC){
+        const member = cachedRoster.find(m=>m.username===attacker.username);
+        if(member && member.tamer && member.tamer.personality) personality = member.tamer.personality;
+      }
+      const context = `Attacco usato: ${atkName} ${tags}${desc?`\nDescrizione di riferimento: ${desc}`:''}\nEsito: ${esito}`;
+      const d = await apiPost('/api/ai', { mode:'narrazione-attacco', digimonName: attacker.name, personality, context });
+      return (d && Array.isArray(d.lines) && d.lines[0]) ? d.lines[0] : null;
+    }catch(e){ return null; }
+  }
+
+  function attackResultCompactHTML(narrLine, hit, dealt, detailHTML){
+    const fallback = hit ? 'Colpito!' : 'Mancato.';
+    const dmgTag = hit ? ` <b style="color:var(--cyan);">(${dealt})</b>` : '';
+    return `
+      <div>${escapeHTML(narrLine || fallback)}${dmgTag}</div>
+      <details style="margin-top:4px;">
+        <summary class="muted" style="font-size:10px;cursor:pointer;">▸ dettagli tiro</summary>
+        <div style="margin-top:4px;">${detailHTML}</div>
+      </details>
+    `;
+  }
+
   function recalcCombatOrder(combat){
     combat.order = buildInitiativeOrder(combat.participants);
     combat.currentIndex = 0;
@@ -5500,12 +5532,24 @@
           if(resEl) resEl.innerHTML = `<div class="err">${validation.error}</div>`;
           return;
         }
-        const { logText, dealt, accRoll, dodgeRoll } = await performAttackRoll(code, combat, attacker, target, atk);
-        if(resEl){
-          resEl.innerHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">vs</span>${diceRowHTML(dodgeRoll.dice)}${dealt>0?`<span class="roll-total">${dealt} danno</span>`:''}`;
+        // Applica il limite di 1 Attacco a round (eccetto Ammo Rank, già gestito da trySpendAction).
+        const spend = trySpendAction(attacker, 'attack');
+        if(!spend.ok){
+          if(resEl) resEl.innerHTML = `<div class="err">${spend.msg}</div>`;
+          return;
         }
+        if(resEl) resEl.innerHTML = '<div class="muted" style="font-size:11px;">Tiro in corso...</div>';
+        const { logText, dealt, accRoll, dodgeRoll, atkLabel } = await performAttackRoll(code, combat, attacker, target, atk);
+        const hit = accRoll.successes > dodgeRoll.successes;
+        const narrLine = await narrateAttack(attacker, atk, hit, dealt);
+        const detailHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">vs</span>${diceRowHTML(dodgeRoll.dice)}<div class="muted" style="margin-top:4px;font-size:10.5px;">${escapeHTML(logText)}</div>`;
+        const compactHTML = attackResultCompactHTML(narrLine, hit, dealt, detailHTML);
         await pushLog(code, { who:'Master', role:'roll', text: logText, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
         await persistAndRefresh();
+        // persistAndRefresh ricostruisce l'intera card (quindi anche #combat-attack-result vuoto):
+        // riapplico il risultato sul nuovo elemento dopo il render.
+        const resEl2 = document.getElementById('combat-attack-result');
+        if(resEl2) resEl2.innerHTML = compactHTML;
       };
     }
 
@@ -5528,6 +5572,11 @@
         }
         if(!atk || !atk.areaAttack){
           if(resEl) resEl.innerHTML = '<div class="err">L\'attacco selezionato non è un Area Attack.</div>';
+          return;
+        }
+        const spend = trySpendAction(attacker, 'attack');
+        if(!spend.ok){
+          if(resEl) resEl.innerHTML = `<div class="err">${spend.msg}</div>`;
           return;
         }
         const zone = centerTarget.zone || 'Medio';
@@ -5585,9 +5634,17 @@
             await saveMember(code, aMember);
           }
         }
-        if(resEl) resEl.innerHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">colpisce ${victims.length} bersagli in zona ${zone}</span>`;
+        if(resEl) resEl.innerHTML = '<div class="muted" style="font-size:11px;">Tiro in corso...</div>';
+        const hitCount = victims.length - lines.filter(l=>l.includes('MANCATO')).length;
+        const compactHTML = attackResultCompactHTML(
+          `🌪 ${atk.name} come Area su ${zone}: ${hitCount}/${victims.length} colpiti.`,
+          hitCount>0, combatMonsterGain,
+          `${diceRowHTML(accRoll.dice)}<div class="muted" style="margin-top:4px;font-size:10.5px;">${lines.map(escapeHTML).join('<br>')}</div>`
+        );
         await pushLog(code, { who:'Master', role:'roll', text: lines.join(' | '), meta:{ dice: accRoll.dice } });
         await persistAndRefresh();
+        const resEl2 = document.getElementById('combat-attack-result');
+        if(resEl2) resEl2.innerHTML = compactHTML;
       };
     }
 
@@ -5761,6 +5818,14 @@
         const p = combat.participants.find(x=>x.id===id);
         const sel = cardEl.querySelector(`[data-action-select="${id}"]`);
         if(!p || !sel) return;
+        if(sel.value==='attack'){
+          // L'Azione "Attacca" viene spesa al momento della risoluzione effettiva nel pannello
+          // "⚔ Risolvi Attacco" (che applica lì il limite di 1 Attacco a round) — qui apro solo il pannello.
+          combatAttackPanelOpen = true;
+          combatPresetAttackerId = p.id;
+          renderCombatManager(code, players);
+          return;
+        }
         const result = trySpendAction(p, sel.value);
         const statusEl = document.getElementById('combat-mgr-status');
         if(!result.ok){
@@ -5768,10 +5833,6 @@
           return;
         }
         await pushLog(code, { who: p.name, role:'gm', text: `${p.name} usa ${result.def.label} (${result.def.cost} Azione/i) — restano ${p.actions}/2 Azioni.` });
-        if(sel.value==='attack'){
-          combatAttackPanelOpen = true;
-          combatPresetAttackerId = p.id;
-        }
         await persistAndRefresh();
         refreshLiveParts();
       };
