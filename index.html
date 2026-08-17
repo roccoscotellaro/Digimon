@@ -499,6 +499,19 @@
     }catch(e){ return null; }
   }
 
+  // Frase descrittiva di base (nessuna chiamata AI, istantanea) usata come testo principale finché
+  // (o se) la narrazione AI non arriva — così il messaggio in chat è sempre leggibile subito.
+  function basicAttackNarration(attacker, target, atk, hit, dealt, defeatInfo){
+    const atkName = atk ? atk.name : 'un attacco';
+    if(!hit) return `${attacker.name} tenta ${atkName} su ${target.name}, ma schiva.`;
+    if(defeatInfo){
+      return defeatInfo.digitama
+        ? `${attacker.name} colpisce ${target.name} con ${atkName} (${dealt}): è ridotto/a allo stremo.`
+        : `${attacker.name} colpisce ${target.name} con ${atkName} (${dealt}) e lo/la sconfigge!`;
+    }
+    return `${attacker.name} colpisce ${target.name} con ${atkName} (${dealt}).`;
+  }
+
   function attackResultCompactHTML(narrLine, hit, dealt, detailHTML){
     const fallback = hit ? 'Colpito!' : 'Mancato.';
     const dmgTag = hit ? ` <b style="color:var(--cyan);">(${dealt})</b>` : '';
@@ -4296,6 +4309,17 @@
 
   // Attacchi disponibili per un partecipante al combattimento, sia esso un Digimon
   // giocante (dalla sua scheda) o un nemico (importati dal Digidex o dalla Scena).
+  function participantSideColor(p){
+    return p.side==='ally' ? 'var(--cyan)' : (p.side==='enemy' ? 'var(--danger)' : 'var(--text-mute)');
+  }
+  function participantChipHTML(p, role, selected){
+    const color = participantSideColor(p);
+    const defeated = isParticipantDefeated(p);
+    return `<button type="button" data-chip-role="${role}" data-chip-id="${p.id}" title="${escapeAttr(p.name)} — ${p.side==='ally'?'Alleato':'Nemico'}" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:3px;width:52px;border-radius:8px;border:2px solid ${selected?color:'transparent'};background:${selected?'rgba(255,255,255,0.05)':'transparent'};cursor:pointer;opacity:${defeated?'0.45':'1'};">
+      <div style="width:32px;height:32px;border-radius:6px;overflow:hidden;border:1px solid ${color};">${portraitHTML(p.imageUrl, p.name, 'sm')}</div>
+      <span style="font-size:9px;max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${color};">${escapeHTML(p.name)}</span>
+    </button>`;
+  }
   function getParticipantAttacks(p){
     if(!p) return [];
     if(p.isPC){
@@ -4705,6 +4729,7 @@
   const combatExpandedIds = new Set();
   let combatAttackPanelOpen = false;
   let combatPresetAttackerId = null;
+  let combatPresetTargetId = null;
   let masterPrivateUnread = {}; // { username: true } — thread ha messaggi non ancora visti dal Master
 
   async function grantMilestoneRewards(code){
@@ -5280,11 +5305,17 @@
         `;}).join('')}
       </div>
       <div class="divider"></div>
-      <div class="row">
-        <select id="combat-attacker" style="flex:1;">${combat.participants.map(p=>`<option value="${p.id}" ${combatPresetAttackerId===p.id?'selected':''}>${escapeHTML(p.name)}</option>`).join('')}</select>
-        <select id="combat-target" style="flex:1;">${combat.participants.map(p=>`<option value="${p.id}">${escapeHTML(p.name)}</option>`).join('')}</select>
+      <div class="muted" style="font-size:10px;margin-bottom:2px;">Attaccante:</div>
+      <div id="combat-attacker-picker" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+        ${combat.participants.map(p=>participantChipHTML(p,'attacker', combatPresetAttackerId===p.id)).join('') || '<span class="muted" style="font-size:11px;">Nessun partecipante.</span>'}
       </div>
-      <div class="muted" style="font-size:10px;margin:4px 0;">Attaccante / Bersaglio — usati da Attacco, Clash e Jogress qui sotto.</div>
+      <div class="muted" style="font-size:10px;margin-bottom:2px;">Bersaglio:</div>
+      <div id="combat-target-picker" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+        ${combat.participants.map(p=>participantChipHTML(p,'target', combatPresetTargetId===p.id)).join('') || '<span class="muted" style="font-size:11px;">Nessun partecipante.</span>'}
+      </div>
+      <select id="combat-attacker" style="display:none;">${combat.participants.map(p=>`<option value="${p.id}" ${combatPresetAttackerId===p.id?'selected':''}>${escapeHTML(p.name)}</option>`).join('')}</select>
+      <select id="combat-target" style="display:none;">${combat.participants.map(p=>`<option value="${p.id}" ${combatPresetTargetId===p.id?'selected':''}>${escapeHTML(p.name)}</option>`).join('')}</select>
+      <div class="muted" style="font-size:10px;margin:4px 0;">Tocca un ritratto per scegliere Attaccante/Bersaglio — bordo colorato = Alleato (ciano) o Nemico (rosso). Usati da Attacco, Clash e Jogress qui sotto.</div>
       <button class="btn amber" id="btn-combat-attack-toggle" style="width:100%;margin-top:4px;">⚔ ${combatAttackPanelOpen?'Chiudi':'Attacca...'}</button>
       <div id="combat-attack-panel" style="display:${combatAttackPanelOpen?'block':'none'};margin-top:6px;">
         <div class="section-title" style="font-size:11px;">⚔ Risolvi Attacco</div>
@@ -5325,7 +5356,10 @@
       <div class="row" style="margin-top:8px;">
         <select id="combat-enemy-fromscene" style="flex:2;">
           <option value="">Digimon presenti in scena...</option>
-          ${(cachedScene.encounters||[]).filter(e=>!combat.participants.some(p=>p.sourceEncounterId===e.id)).map(e=>`<option value="${e.id}">${escapeHTML(e.name)}${e.isBoss?' 👑':''}</option>`).join('')}
+          ${(cachedScene.encounters||[]).filter(e=>!combat.participants.some(p=>p.sourceEncounterId===e.id)).map(e=>{
+            const disp = ENCOUNTER_DISPOSITIONS[e.disposition] || ENCOUNTER_DISPOSITIONS.enemy;
+            return `<option value="${e.id}">${disp.icon} ${escapeHTML(e.name)} (${disp.label})${e.isBoss?' 👑':''}</option>`;
+          }).join('')}
         </select>
         <select id="combat-fromscene-side" style="flex:1;">
           <option value="enemy">Nemico</option>
@@ -5623,7 +5657,11 @@
         const hit = accRoll.successes > dodgeRoll.successes;
         const detailHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">vs</span>${diceRowHTML(dodgeRoll.dice)}<div class="muted" style="margin-top:4px;font-size:10.5px;">${escapeHTML(logText)}</div>`;
         const fallbackCompact = attackResultCompactHTML(null, hit, dealt, detailHTML);
-        await pushLog(code, { who:'Master', role:'roll', text: logText, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
+        // Testo principale in chat = narrazione (di base, subito; sostituita dall'AI se arriva in tempo).
+        // I dettagli tecnici (Accuracy/Dodge, tiri) restano dietro il marcatore ::TECH::, visibili solo espandendo.
+        const baseNarr = basicAttackNarration(attacker, target, atk, hit, dealt, defeatInfo);
+        const pushed = await pushLog(code, { who: attacker.name, role:'roll', text: `${baseNarr}::TECH::${logText}`, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
+        const rollEntryId = pushed && pushed.entry && pushed.entry.id;
         if(defeatInfo){
           const noticeText = defeatInfo.digitama
             ? `🥚 ${defeatInfo.name} è Sconfitto ed è già al Default Stage minimo — da regolamento diventerebbe Digitama, gestiscilo a mano.`
@@ -5635,12 +5673,12 @@
         // riapplico subito il risultato (dadi/danno) — non aspetta l'AI, così il tiro non resta mai bloccato.
         const resEl2 = document.getElementById('combat-attack-result');
         if(resEl2) resEl2.innerHTML = fallbackCompact;
-        // Narrazione AI: gareggia con un timeout di 6s e va in CHAT come messaggio a parte, a nome
-        // del Digimon attaccante (non del Master) — non blocca il tiro sopra, già concluso.
+        // Narrazione AI: gareggia con un timeout di 6s. Se arriva in tempo, sostituisce la frase di base
+        // come testo principale dello STESSO messaggio (i dettagli tecnici restano invariati dietro l'espandi).
         const narrTimeout = new Promise(resolve=>setTimeout(()=>resolve(null), 6000));
         Promise.race([narrateAttack(attacker, target, atk, hit, dealt, defeatInfo), narrTimeout]).then(async (narrLine)=>{
-          if(!narrLine) return;
-          await pushLog(code, { who: attacker.name, role:'gm', text: `${narrLine}${hit?` (${dealt})`:''}` });
+          if(!narrLine || !rollEntryId) return;
+          await editLogEntry(code, rollEntryId, `${narrLine}::TECH::${logText}`);
           refreshLiveParts();
         });
       };
@@ -5916,6 +5954,16 @@
         await persistAndRefresh();
       };
     });
+    cardEl.querySelectorAll('[data-chip-role]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const role = btn.getAttribute('data-chip-role');
+        const id = btn.getAttribute('data-chip-id');
+        const sel = document.getElementById(role==='attacker' ? 'combat-attacker' : 'combat-target');
+        if(sel) sel.value = id;
+        if(role==='attacker') combatPresetAttackerId = id; else combatPresetTargetId = id;
+        renderCombatManager(code, players);
+      };
+    });
     const attackToggleBtn = document.getElementById('btn-combat-attack-toggle');
     if(attackToggleBtn){
       attackToggleBtn.onclick = ()=>{
@@ -6112,10 +6160,22 @@
       const ram = member ? computeDerivedStats(member.digimon).ram : 0;
       const startActions = (member && member.digimon.hybridMode) ? 3 : 2;
       const fighterName = (member && member.digimon.name) ? member.digimon.name : username;
-      combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:fighterName, side:'ally', ram, initiative:0, actions:startActions, attackedThisRound:false, effects:[], zone: combat.startZone||'Medio', clashPinned:false, clashComebackBonus:0, isPC:true, username });
+      combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:fighterName, side:'ally', ram, initiative:0, actions:startActions, attackedThisRound:false, effects:[], zone: combat.startZone||'Medio', clashPinned:false, clashComebackBonus:0, isPC:true, username, imageUrl: (member && member.digimon.imageUrl) || '' });
       await persistAndRefresh();
     };
     const addFromSceneBtn = document.getElementById('btn-combat-add-fromscene');
+    const fromSceneSelect = document.getElementById('combat-enemy-fromscene');
+    if(fromSceneSelect){
+      fromSceneSelect.onchange = ()=>{
+        const enc = (cachedScene.encounters||[]).find(e=>String(e.id)===String(fromSceneSelect.value));
+        const sideSel = document.getElementById('combat-fromscene-side');
+        if(enc && sideSel){
+          // Neutrale non ha un lato di Combat Manager dedicato: di default lo trattiamo come Nemico,
+          // ma il Master può comunque cambiarlo a mano prima di premere "+ Aggiungi".
+          sideSel.value = enc.disposition==='ally' ? 'ally' : 'enemy';
+        }
+      };
+    }
     if(addFromSceneBtn){
       addFromSceneBtn.onclick = async ()=>{
         const sel = document.getElementById('combat-enemy-fromscene');
@@ -6136,17 +6196,18 @@
           zone: cachedCombat.startZone||'Medio', clashPinned:false, clashComebackBonus:0, isPC:false,
           accuracy: Number(bs.baseAccuracy)||0, damage: Number(bs.baseDamage)||0, dodge,
           armor: Number(bs.baseArmor)||0, maxWounds, currentWounds: maxWounds, attribute,
-          sourceEncounterId: enc.id, isBoss: !!enc.isBoss, attacks: enc.attacks || []
+          sourceEncounterId: enc.id, isBoss: !!enc.isBoss, attacks: enc.attacks || [], imageUrl: enc.image || ''
         });
         await persistAndRefresh();
       };
     }
     const dexFillSelect = document.getElementById('combat-enemy-fromdex');
     let pendingDexEnemyAttacks = [];
+    let pendingDexEnemyImage = '';
     if(dexFillSelect){
       dexFillSelect.onchange = ()=>{
         const entry = cachedDex.find(e=>String(e.id)===String(dexFillSelect.value));
-        if(!entry){ pendingDexEnemyAttacks = []; return; }
+        if(!entry){ pendingDexEnemyAttacks = []; pendingDexEnemyImage=''; return; }
         const bs = entry.base_stats || {};
         document.getElementById('combat-enemy-name').value = entry.name;
         document.getElementById('combat-enemy-acc').value = bs.baseAccuracy||0;
@@ -6156,6 +6217,7 @@
         document.getElementById('combat-enemy-hp').value = bs.baseHealth||1;
         document.getElementById('combat-enemy-ram').value = Math.max(0, Math.floor(Number(bs.baseDodge||0)/3));
         pendingDexEnemyAttacks = buildAttacksFromDexEntry(entry);
+        pendingDexEnemyImage = entry.image_url || '';
       };
     }
     document.getElementById('btn-combat-add-enemy').onclick = async ()=>{
@@ -6170,9 +6232,10 @@
       const attribute = document.getElementById('combat-enemy-attribute').value;
       combat.participants.push({
         id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name, side:'enemy', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], zone: combat.startZone||'Medio', clashPinned:false, clashComebackBonus:0, isPC:false,
-        accuracy, damage, dodge, armor, maxWounds, currentWounds: maxWounds, attribute, attacks: pendingDexEnemyAttacks.slice()
+        accuracy, damage, dodge, armor, maxWounds, currentWounds: maxWounds, attribute, attacks: pendingDexEnemyAttacks.slice(), imageUrl: pendingDexEnemyImage
       });
       pendingDexEnemyAttacks = [];
+      pendingDexEnemyImage = '';
       if(dexFillSelect) dexFillSelect.value = '';
       await persistAndRefresh();
     };
@@ -6741,11 +6804,12 @@
       const visible = e.revealed!==false;
       const maxW = encounterMaxWounds(e);
       const curW = encounterCurrentWounds(e);
+      const disp = ENCOUNTER_DISPOSITIONS[e.disposition] || ENCOUNTER_DISPOSITIONS.enemy;
       return `
-        <div class="roster-item" style="padding:6px 8px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;${e.isBoss?'border-color:var(--danger);':''}">
+        <div class="roster-item" style="padding:6px 8px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;${e.isBoss?'border-color:var(--danger);':''}border-left:3px solid ${disp.color};">
           ${e.image ? `<img src="${escapeAttr(e.image)}" onerror="this.style.display='none'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0;" />` : ''}
           <div style="flex:1;min-width:140px;">
-            <div><b>${escapeHTML(e.name)}</b> ${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}${e.isBoss?`<span class="tag" style="color:var(--danger);border-color:var(--danger);">👑 Boss</span>`:''}${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>
+            <div><b>${escapeHTML(e.name)}</b> ${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}<button class="tag" data-cycle-disposition="${i}" style="cursor:pointer;color:${disp.color};border-color:${disp.color};background:none;" title="Clicca per cambiare (Nemico/Alleato/Neutrale) — si riflette nell'aggiunta al combattimento">${disp.icon} ${disp.label}</button>${e.isBoss?`<span class="tag" style="color:var(--danger);border-color:var(--danger);">👑 Boss</span>`:''}${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>
             <div class="muted" style="font-size:11px;">${visible ? '👁️ Visibile ai giocatori' : '🙈 Nascosto — solo il Master lo vede'}</div>
             <div style="display:flex;align-items:center;gap:6px;max-width:220px;">
               ${miniHpBarHTML(curW, maxW)}
@@ -6925,6 +6989,20 @@
         refreshLiveParts();
       };
     });
+    live.querySelectorAll('[data-cycle-disposition]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const idx = Number(btn.getAttribute('data-cycle-disposition'));
+        const e = cachedScene.encounters[idx];
+        if(!e) return;
+        const order = ['enemy','ally','neutral'];
+        const cur = order.indexOf(e.disposition||'enemy');
+        e.disposition = order[(cur+1) % order.length];
+        await saveScene(code, cachedScene);
+        live.innerHTML = encountersEditableHTML(cachedScene.encounters);
+        bindEncountersInnerActions(code, username);
+        refreshLiveParts();
+      };
+    });
     live.querySelectorAll('[data-dupe-enc]').forEach(btn=>{
       btn.onclick = async ()=>{
         const idx = Number(btn.getAttribute('data-dupe-enc'));
@@ -6994,6 +7072,18 @@
     return log.map(l=>{
       let displayText = l.text;
       let fulfillBtn = '';
+      let techDetailHTML = '';
+      let hideDiceInline = false;
+      if(l.text && l.text.includes('::TECH::')){
+        const [shown, techLine] = l.text.split('::TECH::');
+        displayText = shown;
+        hideDiceInline = true;
+        let diceInner = '';
+        if(l.meta && Array.isArray(l.meta.dice)){
+          diceInner = `<div style="margin:4px 0;">${l.meta.dice.map(d=>`<span style="display:inline-block;font-size:20px;color:var(--cyan);margin-right:2px;">${DIE_FACES[d]||d}</span>`).join('')}</div>`;
+        }
+        techDetailHTML = `<details style="margin-top:4px;"><summary class="muted" style="font-size:10px;cursor:pointer;">▸ dettagli attacco/difesa e dadi</summary><div style="margin-top:4px;">${diceInner}<div class="muted" style="font-size:10.5px;">${escapeHTML((techLine||'').trim())}</div></div></details>`;
+      }
       if(l.role==='request' && l.text.includes('::REQ::')){
         const [shown, payload] = l.text.split('::REQ::');
         displayText = shown;
@@ -7004,7 +7094,7 @@
         }
       }
       let diceHTML = '';
-      if(l.meta && Array.isArray(l.meta.dice)){
+      if(!hideDiceInline && l.meta && Array.isArray(l.meta.dice)){
         const alreadyAnimated = animatedLogIds.has(l.id);
         diceHTML = `<div style="margin:4px 0;">${l.meta.dice.map((d,i)=>alreadyAnimated
           ? `<span style="display:inline-block;font-size:22px;color:var(--cyan);margin-right:2px;">${DIE_FACES[d]||d}</span>`
@@ -7022,6 +7112,7 @@
         ${l.meta && l.meta.digimoji ? `<div class="muted" style="font-size:10px;margin-top:2px;">(scritto in Digimoji — passa il mouse per leggere in chiaro)</div>` : ''}
         ${l.meta && l.meta.image ? `<img src="${escapeAttr(l.meta.image)}" class="log-image" onerror="this.style.display='none'" onclick="window.open('${escapeAttr(l.meta.image)}','_blank')" />` : ''}
         ${diceHTML}
+        ${techDetailHTML}
         ${fulfillBtn}
       </div>
     `;
@@ -7135,10 +7226,11 @@
   // ---------- SCENE ENCOUNTERS: name-only strings (legacy) vs full Dex-linked objects ----------
   function normalizeEncounter(e){
     if(typeof e === 'string'){
-      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null };
+      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null, disposition:'enemy' };
     }
-    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null }, e);
+    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null, disposition:'enemy' }, e);
   }
+  const ENCOUNTER_DISPOSITIONS = { enemy:{label:'Nemico', color:'var(--danger)', icon:'⚔️'}, ally:{label:'Alleato', color:'var(--cyan)', icon:'🤝'}, neutral:{label:'Neutrale', color:'var(--text-mute)', icon:'❔'} };
 
   // Caselle Ferita di un Incontro nella Scena, stessa formula usata per i Digimon dei giocatori (Stage + Health×2)
   function encounterMaxWounds(e){
