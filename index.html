@@ -5340,9 +5340,15 @@
               <button class="btn ghost small" data-action-reset="${p.id}" style="flex:1;">↺ 2</button>
             </div>
             <div class="row" style="margin-top:6px;">
-              <select data-zone-select="${p.id}" style="flex:2;">${ZONES.map(z=>`<option ${p.zone===z?'selected':''}>${z}</option>`).join('')}</select>
-              <button class="btn small" data-zone-move="${p.id}" style="flex:1;">🏃 Muovi (1 Az.)</button>
+              <select data-zone-ref="${p.id}" style="flex:2;">${combat.participants.filter(o=>o.id!==p.id).map(o=>`<option value="${o.id}">${escapeHTML(o.name)}</option>`).join('') || '<option value="">(nessun altro partecipante)</option>'}</select>
+              <button class="btn small" data-zone-closer="${p.id}" style="flex:1;">➡️ Avvicina</button>
+              <button class="btn ghost small" data-zone-away="${p.id}" style="flex:1;">⬅️ Allontana</button>
             </div>
+            <div class="row" style="margin-top:4px;">
+              <select data-zone-select="${p.id}" style="flex:2;">${ZONES.map(z=>`<option ${p.zone===z?'selected':''}>${z}</option>`).join('')}</select>
+              <button class="btn ghost small" data-zone-move="${p.id}" style="flex:1;">Imposta zona (1 Az.)</button>
+            </div>
+            <div class="muted" style="font-size:9px;margin-top:2px;">"Avvicina/Allontana" si muove di 1 zona rispetto al Digimon scelto sopra e lo dice in chat. "Imposta zona" sposta senza riferimento (posizionamento diretto, es. all'ingresso in combattimento).</div>
             ${(()=>{
               if(!p.isPC) return '';
               const pMember = cachedRoster.find(m=>m.username===p.username);
@@ -6122,6 +6128,44 @@
         await persistAndRefresh();
       };
     });
+    cardEl.querySelectorAll('[data-zone-closer]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-zone-closer');
+        const p = combat.participants.find(x=>x.id===id);
+        const refSel = cardEl.querySelector(`[data-zone-ref="${id}"]`);
+        const statusEl = document.getElementById('combat-mgr-status');
+        if(!p || !refSel || !refSel.value){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Scegli un Digimon di riferimento.'; } return; }
+        const ref = combat.participants.find(x=>x.id===refSel.value);
+        if(!ref) return;
+        const newZone = zoneStepToward(p.zone||'Medio', ref.zone||'Medio');
+        if(!newZone){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `${p.name} è già alla stessa zona di ${ref.name}.`; } return; }
+        const result = trySpendAction(p, 'move');
+        if(!result.ok){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; } return; }
+        const from = p.zone||'Medio';
+        p.zone = newZone;
+        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si avvicina a ${ref.name}: ${from} → ${newZone} (1 Azione) — restano ${p.actions}/2 Azioni.` });
+        await persistAndRefresh();
+      };
+    });
+    cardEl.querySelectorAll('[data-zone-away]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-zone-away');
+        const p = combat.participants.find(x=>x.id===id);
+        const refSel = cardEl.querySelector(`[data-zone-ref="${id}"]`);
+        const statusEl = document.getElementById('combat-mgr-status');
+        if(!p || !refSel || !refSel.value){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Scegli un Digimon di riferimento.'; } return; }
+        const ref = combat.participants.find(x=>x.id===refSel.value);
+        if(!ref) return;
+        const newZone = zoneStepAway(p.zone||'Medio', ref.zone||'Medio');
+        if(!newZone){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `${p.name} non può allontanarsi oltre da ${ref.name}.`; } return; }
+        const result = trySpendAction(p, 'move');
+        if(!result.ok){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; } return; }
+        const from = p.zone||'Medio';
+        p.zone = newZone;
+        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si allontana da ${ref.name}: ${from} → ${newZone} (1 Azione) — restano ${p.actions}/2 Azioni.` });
+        await persistAndRefresh();
+      };
+    });
     cardEl.querySelectorAll('[data-zone-move]').forEach(btn=>{
       btn.onclick = async ()=>{
         const id = btn.getAttribute('data-zone-move');
@@ -6138,7 +6182,7 @@
         }
         const from = p.zone||'Medio';
         p.zone = target;
-        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si sposta da ${from} a ${target} raggio (1 Azione) — restano ${p.actions}/2 Azioni.` });
+        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} viene posizionato a ${target} raggio (${from} → ${target}, 1 Azione, senza riferimento a un bersaglio specifico) — restano ${p.actions}/2 Azioni.` });
         await persistAndRefresh();
       };
     });
