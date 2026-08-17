@@ -680,7 +680,7 @@
       const from = p.zone||'Medio';
       p.zone = newZone;
       await saveCombat(code, cachedCombat);
-      await pushLog(code, { who: p.name, role:'player', text: `${p.name} si ${closer?'avvicina a':'allontana da'} ${ref.name}: ${from} → ${newZone} (1 Azione) — restano ${p.actions}/2 Azioni.` });
+      await pushLog(code, { who: p.name, role:'player', text: `${p.name} si ${closer?'avvicina a':'allontana da'} ${ref.name}: ${from} → ${newZone} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(cachedCombat.participants, p.id, ref.id, from, newZone)}` });
       refreshLiveParts();
     }
     if(moveCloserBtn) moveCloserBtn.onclick = ()=>doMove(true);
@@ -5264,7 +5264,20 @@
     if(ni<0 || ni>ZONES.length-1) return null; // già al limite (non si può allontanare oltre)
     return ZONES[ni];
   }
-
+  // Le zone sono un unico asse condiviso (Corto-Medio-Lungo), non una distanza per ogni coppia:
+  // avvicinarsi a uno può avvicinare o allontanare da tutti gli altri, a seconda di dove si trovano
+  // sullo stesso asse. Segnala l'effetto collaterale su chiunque non sia il riferimento scelto.
+  function zoneSideEffectsNote(participants, movingId, refId, beforeZone, afterZone){
+    const notes = [];
+    participants.forEach(o=>{
+      if(o.id===movingId || o.id===refId) return;
+      const before = zoneDistance(beforeZone, o.zone||'Medio');
+      const after = zoneDistance(afterZone, o.zone||'Medio');
+      if(after<before) notes.push(`si avvicina anche a ${o.name}`);
+      else if(after>before) notes.push(`si allontana da ${o.name}`);
+    });
+    return notes.length ? ` — ${notes.join(', ')}` : '';
+  }
   function renderCombatManager(code, players){
     const cardEl = document.getElementById('combat-mgr-card');
     if(!cardEl) return;
@@ -6143,7 +6156,7 @@
         if(!result.ok){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; } return; }
         const from = p.zone||'Medio';
         p.zone = newZone;
-        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si avvicina a ${ref.name}: ${from} → ${newZone} (1 Azione) — restano ${p.actions}/2 Azioni.` });
+        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si avvicina a ${ref.name}: ${from} → ${newZone} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}` });
         await persistAndRefresh();
       };
     });
@@ -6162,7 +6175,7 @@
         if(!result.ok){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; } return; }
         const from = p.zone||'Medio';
         p.zone = newZone;
-        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si allontana da ${ref.name}: ${from} → ${newZone} (1 Azione) — restano ${p.actions}/2 Azioni.` });
+        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si allontana da ${ref.name}: ${from} → ${newZone} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}` });
         await persistAndRefresh();
       };
     });
