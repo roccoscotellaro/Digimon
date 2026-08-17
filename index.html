@@ -5318,7 +5318,7 @@
           const expanded = isCurrentTurn || combatExpandedIds.has(p.id);
           const header = `
             <div class="flex-between">
-              <span>${isCurrentTurn?'▶ ':''}${escapeHTML(p.name)} <span class="tag" style="margin-left:4px;">${p.side==='ally'?'Alleato':'Nemico'}</span> ${defeated?'<span class="tag" style="margin-left:4px;color:var(--danger);border-color:rgba(255,93,93,0.4);">🏳️ Sconfitto</span>':''} <span class="muted" style="margin-left:4px;font-size:10px;">${w.current}/${w.max} Ferite · Az. ${acts}/2</span></span>
+              <span>${isCurrentTurn?'▶ ':''}${escapeHTML(p.name)} <button class="tag" data-toggle-side="${p.id}" style="cursor:pointer;background:none;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};" title="Clicca per cambiare Alleato/Nemico">${p.side==='ally'?'Alleato':'Nemico'}</button> ${defeated?'<span class="tag" style="margin-left:4px;color:var(--danger);border-color:rgba(255,93,93,0.4);">🏳️ Sconfitto</span>':''} <span class="muted" style="margin-left:4px;font-size:10px;">${w.current}/${w.max} Ferite · Az. ${acts}/2</span></span>
               <span style="display:flex;align-items:center;gap:6px;">
                 <input type="number" data-part-init="${p.id}" value="${p.initiative}" style="width:60px;padding:4px;" />
                 ${defeated ? `<button class="btn ghost small" data-part-reenter="${p.id}" title="Rientra a proprio rischio (a discrezione del Master)">↩️</button>` : ''}
@@ -5495,18 +5495,32 @@
       } else {
         sel.innerHTML = '<option value="">— scegli un Attacco —</option>' + atks.map((a,i)=>`<option value="${i}">${a.signature?'⭐ ':''}${escapeHTML(a.name)} — ${a.shape}/${a.type}</option>`).join('');
         if(btnWrap){
+          const applyHighlight = ()=>{
+            btnWrap.querySelectorAll('[data-atk-btn]').forEach(b=>{
+              const i = Number(b.getAttribute('data-atk-btn'));
+              const a = atks[i];
+              const typeColor = a.type==='Support' ? 'var(--cyan)' : 'var(--danger)';
+              const isSel = sel.value === String(i);
+              b.style.border = `2px solid ${isSel?typeColor:'var(--line)'}`;
+              b.style.background = isSel?'rgba(255,255,255,0.06)':'var(--panel-2)';
+            });
+          };
           btnWrap.innerHTML = atks.map((a,i)=>{
-            const isSel = sel.value === String(i);
             const typeColor = a.type==='Support' ? 'var(--cyan)' : 'var(--danger)';
-            return `<button type="button" data-atk-btn="${i}" style="text-align:left;padding:8px;border-radius:8px;border:2px solid ${isSel?typeColor:'var(--line)'};background:${isSel?'rgba(255,255,255,0.06)':'var(--panel-2)'};cursor:pointer;">
+            return `<button type="button" data-atk-btn="${i}" style="text-align:left;padding:8px;border-radius:8px;border:2px solid var(--line);background:var(--panel-2);cursor:pointer;">
               <div style="font-size:12px;font-weight:bold;color:${typeColor};">${a.signature?'⭐ ':''}${escapeHTML(a.name)}</div>
               <div class="muted" style="font-size:9px;">${a.shape} · ${a.type}${a.areaAttack?' · Area':''}</div>
             </button>`;
           }).join('');
+          applyHighlight();
           btnWrap.querySelectorAll('[data-atk-btn]').forEach(b=>{
             b.onclick = ()=>{
+              // Non ricostruire mai sel.innerHTML qui: farlo azzera sempre .value alla prima opzione
+              // vuota (comportamento standard dei <select> quando i figli vengono rimpiazzati), che era
+              // esattamente il bug — sembrava di aver scelto l'attacco ma al "Risolvi" risultava vuoto.
               sel.value = b.getAttribute('data-atk-btn');
-              populateAttackChoice();
+              applyHighlight();
+              updateAreaButtonVisibility();
             };
           });
         }
@@ -6015,6 +6029,15 @@
         const id = btn.getAttribute('data-part-toggle');
         if(combatExpandedIds.has(id)) combatExpandedIds.delete(id); else combatExpandedIds.add(id);
         renderCombatManager(code, players);
+      };
+    });
+    cardEl.querySelectorAll('[data-toggle-side]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-toggle-side');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p) return;
+        p.side = p.side==='ally' ? 'enemy' : 'ally';
+        await persistAndRefresh();
       };
     });
     cardEl.querySelectorAll('[data-part-reenter]').forEach(btn=>{
