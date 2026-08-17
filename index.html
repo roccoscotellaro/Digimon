@@ -405,6 +405,7 @@
     const combat = cachedCombat;
     if(!combat || !combat.order || combat.order.length===0) return;
     combatPresetAttackerId = null;
+    combatSelectedAttackIndex = null;
     const finishing = combat.participants.find(p=>p.id===combat.order[combat.currentIndex]);
     if(finishing){
       const fMemberEarly = finishing.isPC ? cachedRoster.find(m=>m.username===finishing.username) : null;
@@ -4792,6 +4793,7 @@
   let combatAttackPanelOpen = false;
   let combatPresetAttackerId = null;
   let combatPresetTargetId = null;
+  let combatSelectedAttackIndex = null;
   let masterPrivateUnread = {}; // { username: true } — thread ha messaggi non ancora visti dal Master
 
   async function grantMilestoneRewards(code){
@@ -5489,18 +5491,24 @@
       const btnWrap = document.getElementById('combat-attack-buttons');
       if(!sel) return;
       const atks = getParticipantAttacks(attacker);
+      // combatSelectedAttackIndex è la fonte di verità persistente (sopravvive a qualunque re-render
+      // del pannello); se non è più valida per l'attaccante corrente (indice fuori range), si azzera.
+      if(combatSelectedAttackIndex!==null && (combatSelectedAttackIndex<0 || combatSelectedAttackIndex>=atks.length)){
+        combatSelectedAttackIndex = null;
+      }
       if(atks.length===0){
         sel.innerHTML = '<option value="">⚠️ Nessun Attacco — importa da Dex</option>';
         if(btnWrap) btnWrap.innerHTML = '<div class="muted" style="font-size:11px;grid-column:1/-1;">⚠️ Nessun Attacco — importa da Dex.</div>';
       } else {
-        sel.innerHTML = '<option value="">— scegli un Attacco —</option>' + atks.map((a,i)=>`<option value="${i}">${a.signature?'⭐ ':''}${escapeHTML(a.name)} — ${a.shape}/${a.type}</option>`).join('');
+        sel.innerHTML = '<option value="">— scegli un Attacco —</option>' + atks.map((a,i)=>`<option value="${i}" ${combatSelectedAttackIndex===i?'selected':''}>${a.signature?'⭐ ':''}${escapeHTML(a.name)} — ${a.shape}/${a.type}</option>`).join('');
+        sel.value = combatSelectedAttackIndex===null ? '' : String(combatSelectedAttackIndex);
         if(btnWrap){
           const applyHighlight = ()=>{
             btnWrap.querySelectorAll('[data-atk-btn]').forEach(b=>{
               const i = Number(b.getAttribute('data-atk-btn'));
               const a = atks[i];
               const typeColor = a.type==='Support' ? 'var(--cyan)' : 'var(--danger)';
-              const isSel = sel.value === String(i);
+              const isSel = combatSelectedAttackIndex === i;
               b.style.border = `2px solid ${isSel?typeColor:'var(--line)'}`;
               b.style.background = isSel?'rgba(255,255,255,0.06)':'var(--panel-2)';
             });
@@ -5515,9 +5523,11 @@
           applyHighlight();
           btnWrap.querySelectorAll('[data-atk-btn]').forEach(b=>{
             b.onclick = ()=>{
-              // Non ricostruire mai sel.innerHTML qui: farlo azzera sempre .value alla prima opzione
-              // vuota (comportamento standard dei <select> quando i figli vengono rimpiazzati), che era
-              // esattamente il bug — sembrava di aver scelto l'attacco ma al "Risolvi" risultava vuoto.
+              // Scritto sia sulla variabile persistente (sopravvive a QUALSIASI re-render, es. aprire
+              // i dettagli di un altro partecipante) sia sulla select nascosta, che resta la fonte
+              // letta da "Risolvi Attacco". Prima la scelta viveva solo nella select e spariva al
+              // primo re-render causato da un click qualsiasi altrove nel pannello.
+              combatSelectedAttackIndex = Number(b.getAttribute('data-atk-btn'));
               sel.value = b.getAttribute('data-atk-btn');
               applyHighlight();
               updateAreaButtonVisibility();
@@ -6062,7 +6072,8 @@
         const id = btn.getAttribute('data-chip-id');
         const sel = document.getElementById(role==='attacker' ? 'combat-attacker' : 'combat-target');
         if(sel) sel.value = id;
-        if(role==='attacker') combatPresetAttackerId = id; else combatPresetTargetId = id;
+        if(role==='attacker'){ combatPresetAttackerId = id; combatSelectedAttackIndex = null; }
+        else combatPresetTargetId = id;
         renderCombatManager(code, players);
       };
     });
@@ -6084,6 +6095,7 @@
           // "⚔ Risolvi Attacco" (che applica lì il limite di 1 Attacco a round) — qui apro solo il pannello.
           combatAttackPanelOpen = true;
           combatPresetAttackerId = p.id;
+          combatSelectedAttackIndex = null;
           renderCombatManager(code, players);
           return;
         }
