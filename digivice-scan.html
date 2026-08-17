@@ -318,6 +318,9 @@ const DIGIMON = {
   Gomamon:       { icon:'🦭', stage:'Rookie · Vaccine · Deep Savers', tags:'AABAAAABAB', attribute:'Vaccine', stats:{baseAccuracy:3, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:5}, qualities:[{name:'Naturewalk: Acqua', stat:'baseHealth'}], babyName:'Bukamon', freshName:'Pichimon', signatureMove:'Marching Fishes', attackDesc:'Nuota rapido intorno al bersaglio prima di colpirlo con un balzo scomposto ma potente.',
     traits:['Giocherellone','Umoristico','Leale in silenzio','Ottimista'],
     why:'Usi il gioco e la leggerezza per tenere unito il gruppo nei momenti difficili. Gomamon sdrammatizza sempre, ma la sua lealtà verso gli amici è più solida di quanto la sua leggerezza lasci intendere.' },
+  Liollmon:      { icon:'🦁', stage:'Rookie · Vaccine · Nature Spirits', tags:'AABAABAAAA', attribute:'Vaccine', stats:{baseAccuracy:4, baseDamage:5, baseDodge:5, baseArmor:4, baseHealth:4}, qualities:[{name:'Instinct', stat:'baseDodge'}], babyName:'Frimon', signatureMove:'Lio Claw', attackDesc:'Colpisce con i propri artigli affilati, cercando di ferire il bersaglio con precisione.',
+    traits:['Territoriale','Raro e schivo','Fermo nei propri confini','Diretto quando serve'],
+    why:'Non ammetti facilmente nessuno nel tuo spazio, e chi lo invade — anche un simile — non trova pietà. Liollmon è talmente raro che la sua stessa esistenza è stata confermata solo di recente: la sua territorialità non è cattiveria, è autodifesa.' },
   Elecmon:       { icon:'⚡', stage:'Rookie · Data · Nature Spirits', tags:'ABABBABABB', attribute:'Data', stats:{baseAccuracy:4, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:4}, qualities:[{name:'Naturewalk: Fulmine', stat:'baseHealth'}], babyName:'Tsunomon', freshName:'Punimon', signatureMove:'Thunder Ball', attackDesc:'Scaglia una sfera elettrica dalla propria coda, calibrata per intimidire più che per ferire.',
     traits:['Protettivo','Severo quando serve','Custode','Responsabile'],
     why:'Ti prendi cura dei più deboli o dei più giovani anche quando nessuno te lo chiede. Elecmon è il custode del Villaggio dei Nuovi Inizi — gentile per natura, severo quando la situazione lo richiede.' },
@@ -333,6 +336,9 @@ const DIGIMON = {
   BlackAgumon:   { icon:'🖤', stage:'Rookie · Virus · Dragon\'s Roar', tags:'AAAAABBAAB', attribute:'Virus', stats:{baseAccuracy:4, baseDamage:6, baseDodge:3, baseArmor:4, baseHealth:3}, qualities:[{name:'Naturewalk: Fuoco', stat:'baseDamage'}], babyName:'Koromon', freshName:'Botamon', signatureMove:'Dark Pepper Breath', attackDesc:'Sputa una fiammata scura e corrosiva, più aggressiva di quella del suo omologo chiaro.',
     traits:['Feroce','Diffidente','Presagio di potenza','Determinato a dimostrarsi'],
     why:'Sei diffidente e feroce, e preferisci dimostrare il tuo valore a modo tuo, senza scorciatoie. BlackAgumon è la versione in ombra di Agumon — la stessa lealtà di fondo, ma filtrata attraverso più cicatrici.' },
+  Lalamon:       { icon:'🌱', stage:'Rookie · Data · Nature Spirits', tags:'BAAAAABABB', attribute:'Data', stats:{baseAccuracy:4, baseDamage:3, baseDodge:6, baseArmor:3, baseHealth:5}, qualities:[{name:'Naturewalk: Legno', stat:'baseDodge'}], babyName:'Budmon', freshName:'Nyokimon', signatureMove:'Nuts Shoot', attackDesc:'Spara semi induriti dalla propria bocca con una precisione sorprendente per le sue dimensioni.',
+    traits:['Premurosa','Bisognosa di sentirsi utile','Empatica','Un po\' insicura'],
+    why:'Ti prendi cura degli altri prima ancora che te lo chiedano, perché essere utile è il modo in cui senti di valere qualcosa. Lalamon fiorisce quando può proteggere chi ama, ma nasconde una fragilità silenziosa quando teme di non bastare.' },
   Floramon:      { icon:'🌸', stage:'Rookie · Data · Nature Spirits', tags:'AABABABABA', attribute:'Data', stats:{baseAccuracy:4, baseDamage:4, baseDodge:4, baseArmor:4, baseHealth:4}, qualities:[{name:'Naturewalk: Legno', stat:'baseDodge'}], babyName:'Tanemon', freshName:'Yuramon', signatureMove:'Rain of Pollen', attackDesc:'Rilascia una pioggia di polline urticante dai propri petali.',
     traits:['Gelosa','Competitiva','Insicura','Determinata'],
     why:'La gelosia ti spinge più che paralizzarti. Floramon, rivale di Palmon nel canone, trasforma l\'insicurezza in carburante per migliorarsi — anche se a volte fa più male del necessario.' },
@@ -405,6 +411,9 @@ const DIGIMON = {
   Herissmon:     { icon:'🦔', stage:'Rookie · Data · Unknown', tags:'BABAAAABBB', attribute:'Data', stats:{baseAccuracy:4, baseDamage:5, baseDodge:3, baseArmor:4, baseHealth:4}, qualities:[{name:'Naturewalk: Fulmine', stat:'baseDamage'}], babyName:'Bowmon', freshName:'Fusamon', signatureMove:'Lightning Quills', attackDesc:'Si acciambella e rotola a gran velocità, pungendo chiunque tocchi i propri aculei.',
     traits:['Curioso','Timido','Si affeziona rapidamente','Si difende invece di attaccare'],
     why:'Sei timido all\'inizio, ma ti affezioni rapidamente a chi ti tratta con gentilezza. Herissmon si acciambella per difendersi molto più spesso di quanto attacchi direttamente — preferisce proteggersi piuttosto che colpire per primo.' },
+  Blucomon:      { icon:'🧊', stage:'Rookie · Data · Unknown', tags:'BBAABBBAAB', attribute:'Data', stats:{baseAccuracy:4, baseDamage:5, baseDodge:3, baseArmor:6, baseHealth:5}, qualities:[{name:'Naturewalk: Ghiaccio', stat:'baseArmor'}], babyName:'Hiyarimon', signatureMove:'Baby Hail', attackDesc:'Esala aria gelida dalla bocca, scagliando innumerevoli schegge di ghiaccio.',
+    traits:['Riservato','Legame profondo con pochi','Resistente','Vulnerabile al calore'],
+    why:'Sei cresciuto in un ambiente isolato, e questo ti ha reso capace di legami fortissimi con le poche persone che incontri davvero — anche se diverse da te. Blucomon forma amicizie solide proprio perché rare, ma il suo corpo di ghiaccio si indebolisce quando le cose si scaldano troppo, in ogni senso.' },
   Vorvomon:      { icon:'🔥', stage:'Rookie · Data · Unknown', tags:'ABABABAAAB', attribute:'Data', stats:{baseAccuracy:3, baseDamage:5, baseDodge:4, baseArmor:4, baseHealth:4}, qualities:[{name:'Naturewalk: Fuoco', stat:'baseDamage'}], babyName:'DemiMeramon', freshName:'Mokumon', signatureMove:'Molten Bind', attackDesc:'Avvolge il bersaglio con gli artigli roventi, stringendo finché il calore non si fa insopportabile.',
     traits:['Emotivo','Instabile','Mostra le emozioni apertamente','Si scalda quando si agita'],
     why:'Le tue emozioni si vedono subito, letteralmente: più ti emozioni, più "ti scaldi" e diventi intenso. Vorvomon è fatto di un minerale incandescente che si accende con l\'emozione — e può volare solo per pochi secondi prima di stancarsi, proprio come la sua intensità non dura mai troppo a lungo.' },
@@ -413,7 +422,22 @@ const DIGIMON = {
     why:'Senti dentro di te un potenziale molto più grande di quello che il tuo aspetto attuale lascia intendere, quasi premesse per uscire. Loogamon è un Digimon Prototipo che cela nel proprio DigiCore i dati di un leggendario warg — capace di attacchi ben oltre la portata di un tipico Rookie.' },
   SnowAgumon:    { icon:'❄️', stage:'Rookie · Vaccine · Dragon\'s Roar', tags:'AAAAAABABB', attribute:'Vaccine', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:3, baseHealth:3}, qualities:[{name:'Naturewalk: Ghiaccio', stat:'baseDamage'}], babyName:'Koromon', freshName:'Botamon', signatureMove:'Little Blizzard', attackDesc:'Spara un piccolo turbine di neve gelata dalla propria bocca, sbucando all\'improvviso dal manto bianco.',
     traits:['Giocherellone come Agumon','Ama nascondersi per sorprendere','Sfrutta il mimetismo','Basso profilo fino all\'attacco'],
-    why:'Condividi la stessa monelleria giocosa di Agumon, ma preferisci nasconderti e colpire di sorpresa piuttosto che agire allo scoperto. SnowAgumon si mimetizza perfettamente con la neve, sbucando all\'improvviso quando meno te lo aspetti.' }
+    why:'Condividi la stessa monelleria giocosa di Agumon, ma preferisci nasconderti e colpire di sorpresa piuttosto che agire allo scoperto. SnowAgumon si mimetizza perfettamente con la neve, sbucando all\'improvviso quando meno te lo aspetti.' },
+  Labramon:      { icon:'🐕‍🦺', stage:'Rookie · Vaccine · Unknown', tags:'AAAAABBAAB', attribute:'Vaccine', stats:{baseAccuracy:4, baseDamage:4, baseDodge:5, baseArmor:4, baseHealth:5}, qualities:[{name:'Instinct', stat:'baseDodge'}], signatureMove:'Cure Liqueur', attackDesc:'Rilascia un liquido curativo capace di rigenerare le ferite di chi considera un alleato.',
+    traits:['Leale fino in fondo','Protettiva per dovere','Diretta nel parlare','Di supporto agli altri'],
+    why:'Consideri la protezione di chi ami un dovere non negoziabile, e vai dritto al punto invece di girarci intorno. Labramon non conosce mezze misure nella lealtà: cura le ferite altrui prima ancora di pensare alle proprie.' },
+  Zubamon:       { icon:'⚔️', stage:'Rookie · Vaccine · Metal Empire', tags:'AAABBBAABB', attribute:'Vaccine', stats:{baseAccuracy:5, baseDamage:5, baseDodge:4, baseArmor:4, baseHealth:3}, qualities:[{name:'Certain Strike'}], babyName:'Sakuttomon', freshName:'Sakumon', signatureMove:'Twenty Dive', attackDesc:'Carica a testa bassa contro l\'avversario, sfruttando tutta la propria rigidità come un\'arma.',
+    traits:['Diretto','Detesta la disonestà','Cerca sempre lo stile giusto','Orgoglioso a modo suo'],
+    why:'Detesti tutto ciò che è storto o disonesto, e cerchi sempre il modo più "di classe" per affrontare le cose — anche se non sempre sai spiegare perché. Zubamon si vanta di essere "il Ventesimo" senza saperne il vero significato: la sua vera forza si rivela solo quando smette di parlare e agisce.' },
+  Ludomon:       { icon:'🛡️', stage:'Rookie · Data · Metal Empire', tags:'BABBBAABAA', attribute:'Data', stats:{baseAccuracy:3, baseDamage:4, baseDodge:4, baseArmor:6, baseHealth:5}, qualities:[{name:'Instinct', stat:'baseDodge'}], babyName:'Kakkinmon', freshName:'Cotsucomon', signatureMove:'Wall Rake', attackDesc:'Attacca e si difende contemporaneamente usando gli scudi che porta su entrambe le braccia.',
+    traits:['Protettivo senza vantarsene','Costante','Mette sempre gli altri al sicuro prima di sé','Poco interessato allo stile'],
+    why:'Non ti importa apparire elegante o vincere con stile: ti importa solo che chi proteggi resti al sicuro. Ludomon porta scudi su ogni lato del corpo non per vanità ma per dovere, ed è pronto a incassare qualsiasi colpo al posto di un alleato senza mai chiedere applausi.' },
+  Pteromon:      { icon:'🦅', stage:'Rookie · Data · Wind Guardians', tags:'AAABBABAAB', attribute:'Data', stats:{baseAccuracy:5, baseDamage:5, baseDodge:6, baseArmor:2, baseHealth:3}, qualities:[{name:'Naturewalk: Vento', stat:'baseDamage'}], babyName:'Fluffymon', freshName:'Yolkmon', signatureMove:'Wind Slicer', attackDesc:'Batte le ali anteriori scagliando una raffica di vento tagliente verso il bersaglio.',
+    traits:['Curioso di tutto','Libero','Empatico verso gli sconosciuti','Percettivo'],
+    why:'Sei incuriosito da chiunque sia diverso da te, e cerchi sempre un modo per entrare in contatto invece che restarne a distanza. Pteromon vola libero sui boschi e legge i venti prima ancora che cambino — percepisce le persone allo stesso modo, prima ancora che si spieghino.' },
+  Hagurumon:     { icon:'⚙️', stage:'Rookie · Vaccine · Metal Empire', tags:'BABBAABBBA', attribute:'Vaccine', stats:{baseAccuracy:4, baseDamage:4, baseDodge:3, baseArmor:6, baseHealth:5}, qualities:[{name:'Naturewalk: Acciaio', stat:'baseArmor'}], babyName:'Motimon', freshName:'Pabumon', signatureMove:'Cog Crusher', attackDesc:'Seppellisce un ingranaggio nero nel corpo del bersaglio, capace di comprometterne il controllo.',
+    traits:['Privo di secondi fini','Meccanico e costante','Facilmente strumentalizzato','Senza vero ego'],
+    why:'Fai quello che va fatto senza calcolare secondi fini — gli ingranaggi dentro di te girano sempre nella stessa direzione, che tu ci creda o no. Hagurumon non possiede un vero senso di sé: la sua lealtà meccanica lo rende prezioso, ma anche vulnerabile a chi vuole usarlo per fini che non gli appartengono.' },
 };
 
 // ---------- LE 10 DOMANDE (una per asse psicologico) ----------
@@ -483,13 +507,56 @@ const TIEBREAK_QUESTIONS = [
     options:[
       {letter:'A', text:'Rido e scherzo, la mia energia contagia chiunque mi stia vicino.', forName:'Coronamon'},
       {letter:'B', text:'Resto in silenzio, con gli occhi persi tra le stelle.', forName:'Lunamon'}
+    ]},
+  { group:['Palmon','Floramon','Lalamon'],
+    text:'Qualcuno che ami sembra preferire un\'altra persona a te.',
+    options:[
+      {letter:'A', text:'Mi ferisco, ma non lo dimentico facilmente: la mia lealtà si guadagna, non si dà per scontata.', forName:'Palmon'},
+      {letter:'B', text:'La gelosia mi divora, e mi spinge a dimostrare quanto valgo — anche a costo di soffrire.', forName:'Floramon'},
+      {letter:'C', text:'Mi faccio piccola/o e continuo a prendermi cura degli altri comunque, sperando che basti.', forName:'Lalamon'}
+    ]},
+  { group:['Tentomon','KoKabuterimon'],
+    text:'Un problema complicato ti si presenta davanti.',
+    options:[
+      {letter:'A', text:'Calcolo con calma l\'angolo perfetto prima di agire — la precisione paga sempre.', forName:'Tentomon'},
+      {letter:'B', text:'Reagisco con più energia e slancio del previsto, fidandomi dell\'istinto oltre che del calcolo.', forName:'KoKabuterimon'}
+    ]},
+  { group:['Impmon','Dracomon'],
+    text:'Qualcuno ti offre aiuto in un momento difficile.',
+    options:[
+      {letter:'A', text:'Lo rifiuto per orgoglio, anche se mi servirebbe — devo farcela a modo mio.', forName:'Impmon'},
+      {letter:'B', text:'Lo accetto di getto, ma poi mi lancio comunque in uno scatto impulsivo per dimostrare qualcosa.', forName:'Dracomon'}
+    ]},
+  { group:['Vorvomon','Blucomon'],
+    text:'Ti trovi in un ambiente ostile, lontano da tutti.',
+    options:[
+      {letter:'A', text:'Il calore della mia rabbia mi tiene in piedi — stringo forte e non lascio andare.', forName:'Vorvomon'},
+      {letter:'B', text:'Mi chiudo e mi adatto in silenzio, ma con le poche persone che incontro creo legami fortissimi.', forName:'Blucomon'}
+    ]},
+  { group:['Elecmon','Liollmon'],
+    text:'Qualcuno entra senza permesso nel tuo spazio.',
+    options:[
+      {letter:'A', text:'Sono severo se serve, ma resto un custode gentile per chi ha davvero bisogno di me.', forName:'Elecmon'},
+      {letter:'B', text:'Non lo tollero, punto — la mia territorialità non ammette eccezioni, nemmeno per i miei simili.', forName:'Liollmon'}
+    ]},
+  { group:['Loogamon','Labramon'],
+    text:'Chi ami è in pericolo, in questo momento.',
+    options:[
+      {letter:'A', text:'Ruggisco e attacco per primo, senza pensarci due volte — la difesa è aggressione.', forName:'Loogamon'},
+      {letter:'B', text:'Mi metto tra il pericolo e chi amo, pronta a curare le ferite di entrambi dopo.', forName:'Labramon'}
+    ]},
+  { group:['Zubamon','Ludomon'],
+    text:'Hai vinto uno scontro, ma in un modo poco elegante.',
+    options:[
+      {letter:'A', text:'Non conta come vittoria se non è stata fatta con stile — mi importa apparire, non solo vincere.', forName:'Zubamon'},
+      {letter:'B', text:'Non mi interessa lo stile: l\'importante è che chi dovevo proteggere sia salvo.', forName:'Ludomon'}
     ]}
 ];
 
 // PRIMARY_NAMES: i Digimon raggiungibili direttamente dal flusso principale a 10 domande.
 // Alcuni membri di un gruppo (le "controparti") sono reperibili SOLO tramite la domanda di
 // spareggio sopra, non vengono mai scelti come risultato diretto della scansione normale.
-const SECONDARY_ONLY = ['BlackAgumon','Lopmon','BlackGabumon','Psychemon','Tsukaimon','BlackGuilmon','SnowAgumon','Lunamon'];
+const SECONDARY_ONLY = ['BlackAgumon','Lopmon','BlackGabumon','Psychemon','Tsukaimon','BlackGuilmon','SnowAgumon','Lunamon','KoKabuterimon','Dracomon','Floramon','Lalamon','Blucomon','Liollmon','Labramon','Ludomon'];
 const ALL_NAMES = Object.keys(DIGIMON);
 
 // ---------- Immagini reali dal Digidex ----------
