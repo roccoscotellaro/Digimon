@@ -479,8 +479,17 @@
       const tags = atk ? attackTagsPlain(atk) : '';
       const desc = (atk && atk.desc) ? atk.desc : '';
       let esito;
+      const isSupport = atk && atk.type==='Support';
+      const supportEffDef = (isSupport && atk.effectKey) ? EFFECT_DEFS.find(d=>d.key===atk.effectKey) : null;
+      const isHelpfulSupport = supportEffDef && supportEffDef.type==='positive';
       if(!hit){
-        esito = `${target?target.name:'Il bersaglio'} schiva completamente l'attacco.`;
+        esito = isHelpfulSupport
+          ? `Il tentativo di supportare ${target?target.name:'il bersaglio'} non riesce.`
+          : `${target?target.name:'Il bersaglio'} schiva completamente l'attacco.`;
+      } else if(isHelpfulSupport){
+        esito = `Supporta e aiuta ${target?target.name:'il bersaglio'} con un Effetto positivo (non è un'azione ostile, niente danno).`;
+      } else if(isSupport){
+        esito = `Colpisce ${target?target.name:'il bersaglio'} e gli applica un Effetto di stato (non è un attacco a danno diretto — niente numeri di danno).`;
       } else if(defeatInfo){
         esito = defeatInfo.digitama
           ? `Colpisce ${target?target.name:'il bersaglio'} per ${dealt} danni, riducendolo/a in fin di vita: crolla al suolo, sull'orlo di regredire a Digitama.`
@@ -503,7 +512,15 @@
   // (o se) la narrazione AI non arriva — così il messaggio in chat è sempre leggibile subito.
   function basicAttackNarration(attacker, target, atk, hit, dealt, defeatInfo){
     const atkName = atk ? atk.name : 'un attacco';
-    if(!hit) return `${attacker.name} tenta ${atkName} su ${target.name}, ma schiva.`;
+    const isSupport = atk && atk.type==='Support';
+    const effDef = (isSupport && atk.effectKey) ? EFFECT_DEFS.find(d=>d.key===atk.effectKey) : null;
+    const isHelpful = effDef && effDef.type==='positive';
+    if(!hit) return isHelpful
+      ? `${attacker.name} tenta di supportare ${target.name} con ${atkName}, ma non riesce.`
+      : `${attacker.name} tenta ${atkName} su ${target.name}, ma schiva.`;
+    if(isSupport) return isHelpful
+      ? `${attacker.name} supporta ${target.name} con ${atkName}.`
+      : `${attacker.name} colpisce ${target.name} con ${atkName}, applicando il suo Effetto.`;
     if(defeatInfo){
       return defeatInfo.digitama
         ? `${attacker.name} colpisce ${target.name} con ${atkName} (${dealt}): è ridotto/a allo stremo.`
@@ -514,7 +531,7 @@
 
   function attackResultCompactHTML(narrLine, hit, dealt, detailHTML){
     const fallback = hit ? 'Colpito!' : 'Mancato.';
-    const dmgTag = hit ? ` <b style="color:var(--cyan);">(${dealt})</b>` : '';
+    const dmgTag = (hit && dealt>0) ? ` <b style="color:var(--cyan);">(${dealt})</b>` : '';
     return `
       <div>${escapeHTML(narrLine || fallback)}${dmgTag}</div>
       <details style="margin-top:4px;">
@@ -3964,7 +3981,10 @@
             <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin-top:10px;">Luoghi nel Settore attuale</div>
             <div id="scene-luoghi-live" style="margin-top:6px;">${sceneCurrentSectorLuoghiHTML()}</div>
             <div class="divider"></div>
-            <label style="font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;">Digimon in questa Scena</label>
+            <div class="flex-between" style="align-items:center;">
+              <label style="font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;">Digimon in questa Scena</label>
+              <button class="btn ghost small" id="btn-refresh-all-atk" style="padding:3px 8px;font-size:10px;" title="Ricarica gli Attacchi dal Digidex per tutti i Digimon di questa scena in una volta sola">🔄 Ricarica tutti gli Attacchi</button>
+            </div>
             <div id="encounters-live" style="margin:8px 0;">${encountersEditableHTML(cachedScene.encounters||[])}</div>
             <datalist id="dex-name-datalist">${cachedDex.map(e=>`<option value="${escapeAttr(e.name)}"></option>`).join('')}</datalist>
             <div class="row">
@@ -4312,11 +4332,24 @@
   function participantSideColor(p){
     return p.side==='ally' ? 'var(--cyan)' : (p.side==='enemy' ? 'var(--danger)' : 'var(--text-mute)');
   }
+  // Va cercata "dal vivo" invece di fidarsi solo del campo imageUrl salvato sul partecipante:
+  // i partecipanti aggiunti prima di questa funzionalità (o quando il Digimon aggiorna l'immagine)
+  // non avrebbero altrimenti mai un ritratto nel selettore Attaccante/Bersaglio.
+  function resolveParticipantImage(p){
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      if(member && member.digimon.imageUrl) return member.digimon.imageUrl;
+    } else if(p.sourceEncounterId){
+      const enc = (cachedScene.encounters||[]).find(e=>e.id===p.sourceEncounterId);
+      if(enc && enc.image) return enc.image;
+    }
+    return p.imageUrl || '';
+  }
   function participantChipHTML(p, role, selected){
     const color = participantSideColor(p);
     const defeated = isParticipantDefeated(p);
     return `<button type="button" data-chip-role="${role}" data-chip-id="${p.id}" title="${escapeAttr(p.name)} — ${p.side==='ally'?'Alleato':'Nemico'}" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:3px;width:52px;border-radius:8px;border:2px solid ${selected?color:'transparent'};background:${selected?'rgba(255,255,255,0.05)':'transparent'};cursor:pointer;opacity:${defeated?'0.45':'1'};">
-      <div style="width:32px;height:32px;border-radius:6px;overflow:hidden;border:1px solid ${color};">${portraitHTML(p.imageUrl, p.name, 'sm')}</div>
+      <div style="width:32px;height:32px;border-radius:6px;overflow:hidden;border:1px solid ${color};">${portraitHTML(resolveParticipantImage(p), p.name, 'sm')}</div>
       <span style="font-size:9px;max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${color};">${escapeHTML(p.name)}</span>
     </button>`;
   }
@@ -4335,6 +4368,25 @@
     }
     return { current: p.currentWounds||0, max: p.maxWounds||1, temp: Number(p.tempWounds||0) };
   }
+
+  const EFFECT_ICONS = { fear:'😨', slow:'🐌', frail:'🛡️💔', dull:'⚔️💔', confuse:'💫', distract:'👀', keen:'🎯', swift:'💨', sturdy:'🛡️', sharpen:'⚔️✨', nimble:'🤸', burn:'🔥', poison:'☠️', exploit:'🔓', fury:'😡', pacify:'🕊️', debilitate:'⬇️', bastion:'🏰', daring:'🗡️', taunt:'😤', root:'🌱', pull:'⬅️', push:'➡️', cleanse:'✨', shield:'🛡', lag:'⏪', lead:'⏩', tailwind:'🌬️', vague:'❓', heavy:'⚓', freeze:'❄️', paralyze:'🚫', rattled:'😰', shaken:'😵', weak:'📉', strength:'💪', vigil:'👁️', vigor:'⚡', steady:'⚖️', regen:'💚', ruin:'🔻', doom:'💀', blind:'🙈', dot:'🔮', stun:'💥', immune:'🔰', deny:'🚫', haste:'🏃' };
+  function effectIcon(key){ return EFFECT_ICONS[key] || '❔'; }
+  // Spiegazione in linguaggio semplice generata dai dati meccanici già codificati per l'Effetto
+  // (mods/blocksMove/tick/instant) — mostrata cliccando sull'icona di stato, invece di dover
+  // ricordare a memoria cosa fa ogni singolo Tag.
+  function effectExplanationText(def){
+    if(!def) return 'Effetto sconosciuto.';
+    const modLabels = { accuracy:'Accuracy', dodge:'Dodge', damage:'Damage', armor:'Armor' };
+    const parts = Object.entries(def.mods||{}).map(([k,v])=>`${v>0?'+':''}${v} ${modLabels[k]||k}`);
+    if(def.blocksMove) parts.push('blocca il Movimento');
+    if(def.tick) parts.push('infligge il proprio effetto a inizio round (tick — gestito a mano)');
+    if(def.instant) parts.push('si risolve subito quando applicato (istantaneo)');
+    const mech = parts.length ? parts.join(', ') : 'nessun modificatore automatico alle Stat — effetto narrativo/da gestire a mano';
+    return `${def.type==='positive'?'Effetto Positivo':'Effetto Negativo'}: ${mech}. I numeri tra parentesi sono Potenza e Durata (round rimasti).`;
+  }
+
+  // Varianti di testo già presenti nel Digidex che non coincidono esattamente con l'etichetta interna.
+  const EFFECT_TAG_ALIASES = { 'CONFUSION': 'confuse' };
 
   const EFFECT_DEFS = [
     { key:'fear', label:'Fear', type:'negative', mods:{ accuracy:-1 } },
@@ -4384,7 +4436,7 @@
     { key:'stun', label:'Stun', type:'negative', mods:{} },
     { key:'immune', label:'Immune', type:'positive', mods:{} },
     { key:'deny', label:'Deny', type:'positive', mods:{} },
-    { key:'haste', label:'Haste', type:'positive', mods:{} }
+    { key:'haste', label:'Haste', type:'positive', mods:{}, instant:'' }
   ];
 
   const EFFECT_QUALITY_MAP = {
@@ -4479,7 +4531,12 @@
     if(!p.effects || p.effects.length===0) return '';
     return p.effects.map(e=>{
       const def = EFFECT_DEFS.find(d=>d.key===e.key);
-      return `<span class="tag" style="margin-left:4px;color:${def&&def.type==='positive'?'var(--cyan)':'var(--danger)'};border-color:${def&&def.type==='positive'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};">${def?def.label:e.key} ${e.potency}(${e.duration})</span>`;
+      const color = def&&def.type==='positive'?'var(--cyan)':'var(--danger)';
+      const borderColor = def&&def.type==='positive'?'var(--cyan-dim)':'rgba(255,93,93,0.4)';
+      return `<details style="display:inline-block;margin:2px 4px 2px 0;vertical-align:top;">
+        <summary class="tag" style="cursor:pointer;color:${color};border-color:${borderColor};">${effectIcon(e.key)} ${def?def.label:e.key} ${e.potency}(${e.duration})</summary>
+        <div class="muted" style="font-size:10px;margin-top:2px;max-width:200px;">${escapeHTML(effectExplanationText(def))}</div>
+      </details>`;
     }).join('');
   }
 
@@ -4668,24 +4725,29 @@
     let logText, dealt = 0;
 
     if(atk && atk.type==='Support'){
+      const effDef = atk.effectKey ? EFFECT_DEFS.find(d=>d.key===atk.effectKey) : null;
+      const isHelpful = effDef && effDef.type==='positive';
+      const verb = isHelpful ? 'supporta' : 'colpisce';
+      const resultTag = isHelpful ? 'RIUSCITO' : 'COLPITO';
       if(accRoll.successes <= dodgeRoll.successes){
-        logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO, nessun Effetto applicato.`;
+        logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → ${isHelpful?'NON RIUSCITO':'MANCATO'}, nessun Effetto applicato.`;
       } else if(atk.effectKey){
-        const def = EFFECT_DEFS.find(d=>d.key===atk.effectKey);
-        const potencyStr = window.prompt(`Potenza di ${def?def.label:atk.effectKey} da applicare a ${target.name}:`, '1');
-        const potency = Math.max(1, Number(potencyStr)||1);
+        const def = effDef;
+        // Potenza 1 / Durata 3 di default (stessi valori dello strumento manuale "+Effetto" sulla riga
+        // partecipante) — niente popup nativi del browser, che stonavano col resto dell'interfaccia.
+        // Il Master può correggerli in un secondo momento rimuovendo e riapplicando l'Effetto a mano.
+        const potency = 1;
         if(def && def.instant){
           const msg = await applyInstantEffect(code, target, atk.effectKey, potency);
-          logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! ${msg}`;
+          logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → ${resultTag}! ${msg}`;
         } else {
-          const durationStr = window.prompt('Durata (round, max 3):', '3');
-          const duration = Math.min(3, Math.max(1, Number(durationStr)||3));
+          const duration = 3;
           if(!target.effects) target.effects = [];
           target.effects.push({ key: atk.effectKey, potency, duration });
-          logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! Applica ${def?def.label:atk.effectKey} (Potenza ${potency}, Durata ${duration}).`;
+          logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → ${resultTag}! ${isHelpful?'Supporta':'Applica'} ${def?def.label:atk.effectKey} (Potenza ${potency}, Durata ${duration} — valori di default, correggibili a mano sulla riga di ${target.name}).`;
         }
       } else {
-        logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: colpisce, ma non ha un Effetto collegato da applicare.`;
+        logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: ${verb}, ma non ha un Effetto collegato da applicare.`;
       }
     } else {
       if(accRoll.successes <= dodgeRoll.successes){
@@ -5296,7 +5358,7 @@
             })()}
             <div style="margin-top:6px;">${effectTagsHTML(p)}${(p.effects||[]).map((e,ei)=>`<button class="btn ghost small" data-effect-remove="${p.id}|${ei}" style="padding:1px 6px;margin-left:2px;">✕</button>`).join('')}</div>
             <div class="row" style="margin-top:4px;">
-              <select data-effect-select="${p.id}" style="flex:2;">${EFFECT_DEFS.map(e=>`<option value="${e.key}">${escapeHTML(e.label)}</option>`).join('')}</select>
+              <select data-effect-select="${p.id}" style="flex:2;">${EFFECT_DEFS.map(e=>`<option value="${e.key}">${effectIcon(e.key)} ${escapeHTML(e.label)}</option>`).join('')}</select>
               <input type="number" data-effect-potency="${p.id}" value="1" min="1" placeholder="Pot." style="flex:1;" />
               <input type="number" data-effect-duration="${p.id}" value="3" min="1" max="3" placeholder="Dur." style="flex:1;" />
               <button class="btn small" data-effect-apply="${p.id}" style="flex:1;">+Effetto</button>
@@ -5319,9 +5381,8 @@
       <button class="btn amber" id="btn-combat-attack-toggle" style="width:100%;margin-top:4px;">⚔ ${combatAttackPanelOpen?'Chiudi':'Attacca...'}</button>
       <div id="combat-attack-panel" style="display:${combatAttackPanelOpen?'block':'none'};margin-top:6px;">
         <div class="section-title" style="font-size:11px;">⚔ Risolvi Attacco</div>
-        <div class="row">
-          <select id="combat-attack-choice" style="flex:1;"><option value="">— scegli un Attacco —</option></select>
-        </div>
+        <select id="combat-attack-choice" style="display:none;"><option value="">— scegli un Attacco —</option></select>
+        <div id="combat-attack-buttons" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;"></div>
         <button class="btn amber" id="btn-combat-attack" style="width:100%;margin-top:6px;">⚔ Risolvi Attacco</button>
         <button class="btn" id="btn-combat-attack-area" style="width:100%;margin-top:6px;display:none;">🌪 Risolvi come Area (colpisce tutti nella zona del bersaglio)</button>
         <div id="combat-attack-result" style="margin-top:8px;"></div>
@@ -5425,12 +5486,30 @@
       const attackerId = document.getElementById('combat-attacker').value;
       const attacker = combat.participants.find(p=>p.id===attackerId);
       const sel = document.getElementById('combat-attack-choice');
+      const btnWrap = document.getElementById('combat-attack-buttons');
       if(!sel) return;
       const atks = getParticipantAttacks(attacker);
       if(atks.length===0){
         sel.innerHTML = '<option value="">⚠️ Nessun Attacco — importa da Dex</option>';
+        if(btnWrap) btnWrap.innerHTML = '<div class="muted" style="font-size:11px;grid-column:1/-1;">⚠️ Nessun Attacco — importa da Dex.</div>';
       } else {
         sel.innerHTML = '<option value="">— scegli un Attacco —</option>' + atks.map((a,i)=>`<option value="${i}">${a.signature?'⭐ ':''}${escapeHTML(a.name)} — ${a.shape}/${a.type}</option>`).join('');
+        if(btnWrap){
+          btnWrap.innerHTML = atks.map((a,i)=>{
+            const isSel = sel.value === String(i);
+            const typeColor = a.type==='Support' ? 'var(--cyan)' : 'var(--danger)';
+            return `<button type="button" data-atk-btn="${i}" style="text-align:left;padding:8px;border-radius:8px;border:2px solid ${isSel?typeColor:'var(--line)'};background:${isSel?'rgba(255,255,255,0.06)':'var(--panel-2)'};cursor:pointer;">
+              <div style="font-size:12px;font-weight:bold;color:${typeColor};">${a.signature?'⭐ ':''}${escapeHTML(a.name)}</div>
+              <div class="muted" style="font-size:9px;">${a.shape} · ${a.type}${a.areaAttack?' · Area':''}</div>
+            </button>`;
+          }).join('');
+          btnWrap.querySelectorAll('[data-atk-btn]').forEach(b=>{
+            b.onclick = ()=>{
+              sel.value = b.getAttribute('data-atk-btn');
+              populateAttackChoice();
+            };
+          });
+        }
       }
       updateAreaButtonVisibility();
     }
@@ -6834,6 +6913,7 @@
           <button class="btn ${e.isBoss?'':'ghost'} small" data-toggle-boss="${i}" style="padding:4px 8px;font-size:10px;">${e.isBoss?'👑 Rimuovi Boss':'👑 Segna Boss'}</button>
           <button class="btn ${visible?'ghost':''} small" data-toggle-reveal="${i}" style="padding:4px 8px;font-size:10px;">${visible?'🙈 Nascondi':'👁️ Mostra ai giocatori'}</button>
           <button class="btn ghost small" data-dupe-enc="${i}" style="padding:4px 8px;font-size:10px;" title="Aggiunge una copia identica">+1 copia</button>
+          ${already ? `<button class="btn ghost small" data-refresh-atk="${i}" style="padding:4px 8px;font-size:10px;" title="Ricarica gli Attacchi dal Digidex — utile se sono stati aggiornati o se erano stati importati prima di una correzione">🔄 Attacchi</button>` : ''}
           ${already ? '' : `<button class="btn small" data-quickdex="${i}" style="padding:4px 8px;font-size:10px;">+Dex</button>`}
           <button class="btn ghost small" data-rmenc="${i}" style="padding:4px 8px;font-size:10px;">×</button>
         </div>
@@ -6948,6 +7028,22 @@
         bindEncounterDraftCard(code, username);
       };
     }
+    const refreshAllBtn = document.getElementById('btn-refresh-all-atk');
+    if(refreshAllBtn){
+      refreshAllBtn.onclick = async ()=>{
+        let updated = 0, skipped = 0;
+        (cachedScene.encounters||[]).forEach(e=>{
+          const dexMatch = (e.dexId && cachedDex.find(d=>d.id===e.dexId)) || cachedDex.find(d=>String(d.name).trim().toLowerCase()===String(e.name).trim().toLowerCase());
+          if(dexMatch){ e.attacks = buildAttacksFromDexEntry(dexMatch); updated++; }
+          else skipped++;
+        });
+        await saveScene(code, cachedScene);
+        document.getElementById('encounters-live').innerHTML = encountersEditableHTML(cachedScene.encounters);
+        bindEncountersInnerActions(code, username);
+        refreshLiveParts();
+        alert(`Attacchi ricaricati per ${updated} Digimon.${skipped>0?` ${skipped} non trovati nel Digidex (nomi non corrispondenti).`:''}`);
+      };
+    }
     bindEncountersInnerActions(code, username);
   }
 
@@ -6997,6 +7093,23 @@
         const order = ['enemy','ally','neutral'];
         const cur = order.indexOf(e.disposition||'enemy');
         e.disposition = order[(cur+1) % order.length];
+        await saveScene(code, cachedScene);
+        live.innerHTML = encountersEditableHTML(cachedScene.encounters);
+        bindEncountersInnerActions(code, username);
+        refreshLiveParts();
+      };
+    });
+    live.querySelectorAll('[data-refresh-atk]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const idx = Number(btn.getAttribute('data-refresh-atk'));
+        const e = cachedScene.encounters[idx];
+        if(!e) return;
+        const dexMatch = (e.dexId && cachedDex.find(d=>d.id===e.dexId)) || cachedDex.find(d=>String(d.name).trim().toLowerCase()===String(e.name).trim().toLowerCase());
+        if(!dexMatch){
+          alert(`Nessuna voce del Digidex corrisponde a "${e.name}" — impossibile ricaricare gli Attacchi.`);
+          return;
+        }
+        e.attacks = buildAttacksFromDexEntry(dexMatch);
         await saveScene(code, cachedScene);
         live.innerHTML = encountersEditableHTML(cachedScene.encounters);
         bindEncountersInnerActions(code, username);
@@ -7206,16 +7319,35 @@
     const shape = tags.some(t=>/^MELEE$/i.test(t)) ? 'Melee' : 'Range';
     const hasDamage = tags.some(t=>/^DAMAGE/i.test(t));
     const type = hasDamage ? 'Damage' : 'Support';
+    // BUG STORICO: un Tag come [FEAR] o [SLOW] nel testo veniva mostrato come semplice etichetta
+    // ma non era mai collegato a un vero effectKey — quindi ogni Attacco [SUPPORT] importato dal
+    // Digidex non applicava MAI il suo Effetto in combattimento, nonostante il testo lo dichiarasse.
+    // Ora riconosciamo automaticamente il primo Tag che corrisponde a un'etichetta di EFFECT_DEFS
+    // (es. "[FEAR]", anche con numero dietro tipo "[FEAR 2]") e lo agganciamo.
+    // EFFECT_TAG_ALIASES copre varianti di testo già presenti nel Digidex che non coincidono
+    // esattamente con l'etichetta interna (es. "[CONFUSION]" nel testo vs chiave 'confuse').
+    let effectKey = '';
+    for(const t of tags){
+      const word = t.split(/\s+/)[0].toUpperCase();
+      const aliasKey = EFFECT_TAG_ALIASES[word];
+      if(aliasKey){ effectKey = aliasKey; break; }
+      const match = EFFECT_DEFS.find(d=>d.label.toUpperCase()===word);
+      if(match){ effectKey = match.key; break; }
+    }
     const extraTags = tags.filter(t=>!/^MELEE$/i.test(t) && !/^RANGE$/i.test(t)).join(' · ');
-    return { name, shape, type, extraTags };
+    return { name, shape, type, extraTags, effectKey };
   }
+  // Rilegge TUTTO il Digidex con la stessa logica di parseDexAttackString usata in combattimento
+  // (quindi cattura automaticamente anche gli alias tipo CONFUSION→confuse) e segnala ogni mossa
+  // [SUPPORT] il cui Tag di Effetto non corrisponde a nessuno dei 45 Effetti ufficiali — che sia
+  // per un refuso nel testo, un tag inventato, o perché manca del tutto.
   function buildAttacksFromDexEntry(dexEntry){
     if(!dexEntry) return [];
     const list = [];
     const addMove = (raw, desc, signature) => {
       const parsed = parseDexAttackString(raw);
       if(!parsed) return;
-      list.push({ name: parsed.name, shape: parsed.shape, type: parsed.type, effectKey:'', extraTags: parsed.extraTags, desc: desc||'', signature: !!signature, reach: parsed.shape==='Range'?1:0, areaAttack:false });
+      list.push({ name: parsed.name, shape: parsed.shape, type: parsed.type, effectKey: parsed.effectKey || '', extraTags: parsed.extraTags, desc: desc||'', signature: !!signature, reach: parsed.shape==='Range'?1:0, areaAttack:false });
     };
     if(dexEntry.signature_move) addMove(dexEntry.signature_move, dexEntry.attack_desc, true);
     (dexEntry.extra_attacks||[]).forEach(ea=>{ if(ea && ea.move) addMove(ea.move, ea.desc, false); });

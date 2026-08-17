@@ -122,6 +122,37 @@
   const FAMILIES = ['Dark Empire','Deep Savers',"Dragon's Roar",'Jungle Troopers','Metal Empire','Nature Spirits','Nightmare Soldiers','Unknown','Virus Busters','Wind Guardians'];
   let editEntry = null; // entry being edited/added in modal
 
+  // Elenco ufficiale dei 45 Effect Tag da regolamento (Player's Companion, 4.08 e glossario Tag).
+  // Usato solo per il controllo "Attacchi Support" qui sotto — NON esiste [HEAL] da regolamento
+  // (il tag corretto per curare è [REGEN]).
+  const EFFECT_TAG_LABELS = ['FEAR','SLOW','FRAIL','DULL','CONFUSE','DISTRACT','KEEN','SWIFT','STURDY','SHARPEN','NIMBLE','BURN','POISON','EXPLOIT','FURY','PACIFY','DEBILITATE','BASTION','DARING','TAUNT','ROOT','PULL','PUSH','CLEANSE','SHIELD','LAG','LEAD','TAILWIND','VAGUE','HEAVY','FREEZE','PARALYZE','RATTLED','SHAKEN','WEAK','STRENGTH','VIGIL','VIGOR','STEADY','REGEN','RUIN','DOOM','BLIND','DOT','STUN','IMMUNE','DENY','HASTE'];
+  // Varianti di testo già presenti nel Digidex che non coincidono esattamente con l'etichetta ufficiale.
+  const EFFECT_TAG_ALIASES = { 'CONFUSION': 'CONFUSE' };
+  // Legge i Tag tra parentesi quadre di una mossa [SUPPORT] e ritorna la lista di problemi trovati
+  // (nessuno = mossa a posto). Copre sia "Effetto non riconosciuto" sia "[SUPPORT]+[DAMAGE] senza
+  // [MELEE]/[RANGE]", lo schema anomalo trovato in diverse Extra Attack del Digidex.
+  function auditSupportAttackString(raw){
+    if(!raw) return null;
+    const dashSplit = raw.split(/\s+—\s+/);
+    const tagBlock = dashSplit.slice(1).join(' — ');
+    const tags = Array.from(tagBlock.matchAll(/\[([^\]]+)\]/g)).map(m=>m[1].trim());
+    const hasSupport = tags.some(t=>/^SUPPORT$/i.test(t));
+    if(!hasSupport) return null;
+    const hasDamage = tags.some(t=>/^DAMAGE/i.test(t));
+    const hasMelee = tags.some(t=>/^MELEE$/i.test(t));
+    const hasRange = tags.some(t=>/^RANGE/i.test(t));
+    let matchedEffect = false;
+    for(const t of tags){
+      const word = t.split(/\s+/)[0].toUpperCase();
+      if(EFFECT_TAG_ALIASES[word] || EFFECT_TAG_LABELS.includes(word)){ matchedEffect = true; break; }
+    }
+    const issues = [];
+    if(!hasMelee && !hasRange) issues.push('Manca [MELEE] o [RANGE] — ogni Attacco deve averne uno (regola 3.03).');
+    if(hasDamage) issues.push('[SUPPORT] insieme a [DAMAGE] senza un Effetto valido: in gioco viene eseguito come Attacco a Danno normale, il [SUPPORT] resta ignorato.');
+    else if(!matchedEffect) issues.push('Nessuno dei Tag corrisponde a un Effetto ufficiale da regolamento.');
+    return issues.length ? issues : null;
+  }
+
   function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
 
   async function apiGet(path){
@@ -702,7 +733,7 @@
       <div class="hud-frame card">
         <div class="flex-between" style="margin-bottom:10px;">
           <div class="section-title" style="margin:0;border:none;padding:0;">Digimon Registrati (${cachedDex.length})</div>
-          ${isMaster ? `<span><button class="btn ghost small" id="btn-import-seed2" style="margin-right:6px;color:var(--cyan);">🎴 Importa/Correggi Famosi</button><button class="btn ghost small" id="btn-force-sync" style="margin-right:6px;color:var(--amber);">⚠️ Forza Sync Attr/Famiglia/Mossa</button><button class="btn ghost small" id="btn-sync-spirit-slides" style="margin-right:6px;color:var(--cyan);">✨ Sincronizza Slide Spirit</button><button class="btn ghost small" id="btn-bulk-images" style="margin-right:6px;">🖼️ Incolla Immagini</button><button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button></span>` : ''}
+          ${isMaster ? `<span><button class="btn ghost small" id="btn-import-seed2" style="margin-right:6px;color:var(--cyan);">🎴 Importa/Correggi Famosi</button><button class="btn ghost small" id="btn-force-sync" style="margin-right:6px;color:var(--amber);">⚠️ Forza Sync Attr/Famiglia/Mossa</button><button class="btn ghost small" id="btn-sync-spirit-slides" style="margin-right:6px;color:var(--cyan);">✨ Sincronizza Slide Spirit</button><button class="btn ghost small" id="btn-audit-support" style="margin-right:6px;color:var(--danger);">🔍 Controlla Attacchi Support</button><button class="btn ghost small" id="btn-bulk-images" style="margin-right:6px;">🖼️ Incolla Immagini</button><button class="btn solid" id="btn-new-entry">+ Nuovo Digimon</button></span>` : ''}
         </div>
         <input type="text" id="dex-search" placeholder="🔍 Cerca per nome..." style="margin-bottom:14px;" />
         <div id="filter-bar" class="filter-bar"></div>
@@ -718,6 +749,8 @@
     if(forceSyncBtn) forceSyncBtn.onclick = ()=> runForceSync();
     const syncSpiritBtn = document.getElementById('btn-sync-spirit-slides');
     if(syncSpiritBtn) syncSpiritBtn.onclick = ()=> runSpiritSlideSync();
+    const auditSupportBtn = document.getElementById('btn-audit-support');
+    if(auditSupportBtn) auditSupportBtn.onclick = ()=> runSupportAttackAudit();
     const bulkImagesBtn = document.getElementById('btn-bulk-images');
     if(bulkImagesBtn) bulkImagesBtn.onclick = ()=> openBulkImageModal();
     const searchInput = document.getElementById('dex-search');
@@ -1304,6 +1337,63 @@ Devimon: https://..."></textarea>
       });
     });
     return ref;
+  }
+
+  function runSupportAttackAudit(){
+    const problems = [];
+    let totalSupport = 0;
+    cachedDex.forEach(entry=>{
+      const moves = [
+        { raw: entry.signature_move, label: 'Signature Move' },
+        { raw: entry.signature_move_2, label: 'Signature Move 2' },
+        ...(Array.isArray(entry.extra_attacks) ? entry.extra_attacks.map(ea=>({ raw: ea && ea.move, label: 'Extra Attack' })) : [])
+      ];
+      moves.forEach(m=>{
+        if(!m.raw || !/\[SUPPORT\]/i.test(m.raw)) return;
+        totalSupport++;
+        const issues = auditSupportAttackString(m.raw);
+        if(issues) problems.push({ entry, label: m.label, raw: m.raw, issues });
+      });
+    });
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="hud-frame modal-box card" style="max-width:640px;">
+        <div class="flex-between" style="margin-bottom:10px;">
+          <h3 style="margin:0;color:var(--danger);">🔍 Controllo Attacchi [SUPPORT]</h3>
+          <button class="btn ghost small" id="asa-close">✕</button>
+        </div>
+        ${problems.length===0 ? `
+          <div class="muted">✅ Tutti i ${totalSupport} Attacchi [SUPPORT] trovati nel Digidex sono a posto: hanno un Tag di posizione ([MELEE]/[RANGE]) e un Effetto ufficiale riconosciuto.</div>
+        ` : `
+          <div class="muted" style="margin-bottom:10px;">⚠️ ${problems.length} Attacco/hi su ${totalSupport} [SUPPORT] trovati hanno un problema. Tocca una voce per aprirla e correggerla.</div>
+          <div style="max-height:60vh;overflow-y:auto;">
+            ${problems.map((p,i)=>`
+              <div class="hud-frame" data-asa-open="${i}" style="padding:8px 10px;margin-bottom:8px;border-color:var(--danger);cursor:pointer;">
+                <div class="flex-between">
+                  <b style="font-size:13px;color:var(--cyan);">${escapeHTML(p.entry.name)}</b>
+                  <span class="tag">${escapeHTML(p.entry.stage||'')}</span>
+                </div>
+                <div class="muted" style="font-size:11px;margin:2px 0;">${escapeHTML(p.label)}: <span class="mono">${escapeHTML(p.raw)}</span></div>
+                ${p.issues.map(iss=>`<div style="font-size:11px;color:var(--danger);">• ${escapeHTML(iss)}</div>`).join('')}
+              </div>
+            `).join('')}
+          </div>
+        `}
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = ()=> overlay.remove();
+    document.getElementById('asa-close').onclick = close;
+    overlay.querySelectorAll('[data-asa-open]').forEach(row=>{
+      row.onclick = ()=>{
+        const idx = Number(row.getAttribute('data-asa-open'));
+        const p = problems[idx];
+        close();
+        openEditModal(p.entry);
+      };
+    });
   }
 
   function runForceSync(){
