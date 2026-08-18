@@ -897,12 +897,28 @@
   // futuro: qui la struttura è già pronta, basterebbe sostituire l'URL statico con quello della GIF.
   function zoneLineHTML(combat){
     if(!combat.participants || combat.participants.length===0) return '';
+    // Le zone sono relative: "Molto Corto"/"Lungo" ecc. non dicono nulla da sole. Quando è il turno
+    // di qualcuno, mostriamo sotto ogni posizione la distanza reale da LUI (0 = stessa posizione/Melee
+    // ok, 1 zona = dentro Reach 1, 2 zone = serve Reach 2) — così si vede a colpo d'occhio chi è a tiro.
+    const byId = {}; combat.participants.forEach(p=>byId[p.id]=p);
+    const activeId = (combat.order && combat.order.length) ? combat.order[combat.currentIndex] : null;
+    const active = activeId ? byId[activeId] : null;
+    const activeIdx = active ? zoneIndex(active.zone||'Medio') : null;
     return `
       <div style="margin:4px 0 12px 0;padding:10px 6px 4px 6px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;">
+        ${active ? `<div class="muted" style="font-size:9px;margin-bottom:6px;">Distanza da <b style="color:var(--cyan);">${escapeHTML(active.name)}</b> (di turno):</div>` : ''}
         <div style="position:relative;display:flex;justify-content:space-between;align-items:flex-end;">
           <div style="position:absolute;top:14px;left:5%;right:5%;height:2px;background:var(--line);z-index:0;"></div>
-          ${ZONES.map(z=>{
+          ${ZONES.map((z,zi)=>{
             const here = combat.participants.filter(p=>(p.zone||'Medio')===z);
+            let label = '';
+            if(active!==null){
+              if(zi===activeIdx) label = `<span style="color:var(--cyan);">★ Qui</span>`;
+              else {
+                const oldEq = zoneOldEquivalent(Math.abs(zi-activeIdx));
+                label = oldEq<=1 ? `<span style="color:var(--cyan-dim,var(--cyan));">${oldEq} zona</span>` : `<span style="color:var(--amber);">${oldEq} zone</span>`;
+              }
+            }
             return `
             <div style="display:flex;flex-direction:column;align-items:center;flex:1;z-index:1;min-width:0;">
               <div style="display:flex;gap:2px;flex-wrap:wrap;justify-content:center;min-height:30px;align-items:flex-end;margin-bottom:2px;">
@@ -911,14 +927,25 @@
                   return `<div title="${escapeAttr(p.name)}" style="width:26px;height:26px;border-radius:6px;overflow:hidden;border:2px solid ${color};box-shadow:0 0 4px rgba(0,0,0,0.4);">${portraitHTML(resolveParticipantImage(p), p.name, 'sm')}</div>`;
                 }).join('')}
               </div>
-              <div style="width:10px;height:10px;border-radius:50%;background:${here.length?'var(--cyan)':'var(--panel)'};border:2px solid var(--line);"></div>
-              <div class="muted" style="font-size:8px;margin-top:2px;text-align:center;white-space:nowrap;">${z}</div>
+              <div style="width:10px;height:10px;border-radius:50%;background:${zi===activeIdx?'var(--cyan)':(here.length?'var(--amber)':'var(--panel)')};border:2px solid var(--line);"></div>
+              <div style="font-size:9px;margin-top:2px;text-align:center;white-space:nowrap;">${label}</div>
             </div>
           `;}).join('')}
         </div>
+        ${here_multi_note(combat)}
       </div>
     `;
   }
+  function here_multi_note(combat){
+    // Se più partecipanti condividono una posizione, lo segnaliamo esplicitamente: un Attacco ad Area
+    // (o T:BLAST/T:CONE) su quel punto della linea colpisce tutti loro insieme.
+    const counts = {};
+    combat.participants.forEach(p=>{ const z=p.zone||'Medio'; counts[z]=(counts[z]||0)+1; });
+    const shared = Object.entries(counts).filter(([z,n])=>n>1);
+    if(shared.length===0) return '';
+    return `<div class="muted" style="font-size:9px;margin-top:6px;">🌪 ${shared.map(([z,n])=>`${n} Digimon in ${z}`).join(' · ')} — un Attacco ad Area lì li colpirebbe tutti insieme.</div>`;
+  }
+
 
   function combatDisplayHTML(combat){
     if(!combat || !combat.active) return '<div class="muted">Nessun combattimento in corso.</div>';
@@ -5384,7 +5411,7 @@
           const expanded = isCurrentTurn || combatExpandedIds.has(p.id);
           const header = `
             <div class="flex-between">
-              <span>${isCurrentTurn?'▶ ':''}${escapeHTML(p.name)} <button class="tag" data-toggle-side="${p.id}" style="cursor:pointer;background:none;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};" title="Clicca per cambiare Alleato/Nemico">${p.side==='ally'?'Alleato':'Nemico'}</button> ${defeated?'<span class="tag" style="margin-left:4px;color:var(--danger);border-color:rgba(255,93,93,0.4);">🏳️ Sconfitto</span>':''} <span class="muted" style="margin-left:4px;font-size:10px;">${w.current}/${w.max} Ferite · Az. ${acts}/2</span></span>
+              <span>${isCurrentTurn?'▶ ':''}${escapeHTML(p.name)} <button class="tag" data-toggle-side="${p.id}" style="cursor:pointer;background:none;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};" title="Clicca per cambiare Alleato/Nemico">${p.side==='ally'?'Alleato':'Nemico'}</button> ${defeated?'<span class="tag" style="margin-left:4px;color:var(--danger);border-color:rgba(255,93,93,0.4);">🏳️ Sconfitto</span>':''} <span class="muted" style="margin-left:4px;font-size:10px;">${w.current}/${w.max} Ferite</span> <span style="margin-left:6px;font-size:12px;" title="Azioni rimaste: ${acts}/2">Az. ${Array.from({length:2}).map((_,i)=>i<acts?'<span style="color:var(--cyan);">●</span>':'<span style="color:var(--line);">○</span>').join('')}</span></span>
               <span style="display:flex;align-items:center;gap:6px;">
                 <input type="number" data-part-init="${p.id}" value="${p.initiative}" style="width:60px;padding:4px;" />
                 ${defeated ? `<button class="btn ghost small" data-part-reenter="${p.id}" title="Rientra a proprio rischio (a discrezione del Master)">↩️</button>` : ''}
@@ -5412,7 +5439,7 @@
               <select data-zone-select="${p.id}" style="flex:2;">${ZONES.map(z=>`<option ${p.zone===z?'selected':''}>${z}</option>`).join('')}</select>
               <button class="btn ghost small" data-zone-move="${p.id}" style="flex:1;">Imposta zona (1 Az.)</button>
             </div>
-            <div class="muted" style="font-size:9px;margin-top:2px;">"Avvicina/Allontana" si muove di 1 zona rispetto al Digimon scelto sopra e lo dice in chat. "Imposta zona" sposta senza riferimento (posizionamento diretto, es. all'ingresso in combattimento).</div>
+            <div id="zone-move-status-${p.id}" style="font-size:10px;margin-top:2px;min-height:12px;"></div>
             ${(()=>{
               if(!p.isPC) return '';
               const pMember = cachedRoster.find(m=>m.username===p.username);
@@ -6204,14 +6231,15 @@
         const id = btn.getAttribute('data-zone-closer');
         const p = combat.participants.find(x=>x.id===id);
         const refSel = cardEl.querySelector(`[data-zone-ref="${id}"]`);
-        const statusEl = document.getElementById('combat-mgr-status');
-        if(!p || !refSel || !refSel.value){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Scegli un Digimon di riferimento.'; } return; }
+        const localStatus = document.getElementById(`zone-move-status-${id}`);
+        const showLocal = (msg, ok)=>{ if(localStatus){ localStatus.style.color = ok?'var(--cyan)':'var(--danger)'; localStatus.textContent = msg; } };
+        if(!p || !refSel || !refSel.value){ showLocal('Scegli un Digimon di riferimento.', false); return; }
         const ref = combat.participants.find(x=>x.id===refSel.value);
         if(!ref) return;
         const newZone = zoneStepToward(p.zone||'Medio', ref.zone||'Medio');
-        if(!newZone){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `${p.name} è già alla stessa zona di ${ref.name}.`; } return; }
+        if(!newZone){ showLocal(`${p.name} è già alla stessa posizione di ${ref.name}.`, false); return; }
         const result = trySpendAction(p, 'move');
-        if(!result.ok){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; } return; }
+        if(!result.ok){ showLocal(result.msg, false); return; }
         const from = p.zone||'Medio';
         p.zone = newZone;
         await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si avvicina a ${ref.name}: ${from} → ${newZone} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}` });
@@ -6223,14 +6251,15 @@
         const id = btn.getAttribute('data-zone-away');
         const p = combat.participants.find(x=>x.id===id);
         const refSel = cardEl.querySelector(`[data-zone-ref="${id}"]`);
-        const statusEl = document.getElementById('combat-mgr-status');
-        if(!p || !refSel || !refSel.value){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Scegli un Digimon di riferimento.'; } return; }
+        const localStatus = document.getElementById(`zone-move-status-${id}`);
+        const showLocal = (msg, ok)=>{ if(localStatus){ localStatus.style.color = ok?'var(--cyan)':'var(--danger)'; localStatus.textContent = msg; } };
+        if(!p || !refSel || !refSel.value){ showLocal('Scegli un Digimon di riferimento.', false); return; }
         const ref = combat.participants.find(x=>x.id===refSel.value);
         if(!ref) return;
         const newZone = zoneStepAway(p.zone||'Medio', ref.zone||'Medio');
-        if(!newZone){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `${p.name} non può allontanarsi oltre da ${ref.name}.`; } return; }
+        if(!newZone){ showLocal(`${p.name} non può allontanarsi oltre da ${ref.name}.`, false); return; }
         const result = trySpendAction(p, 'move');
-        if(!result.ok){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; } return; }
+        if(!result.ok){ showLocal(result.msg, false); return; }
         const from = p.zone||'Medio';
         p.zone = newZone;
         await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si allontana da ${ref.name}: ${from} → ${newZone} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}` });
@@ -6244,11 +6273,11 @@
         const sel = cardEl.querySelector(`[data-zone-select="${id}"]`);
         if(!p || !sel) return;
         const target = sel.value;
+        const localStatus = document.getElementById(`zone-move-status-${id}`);
         if(target === (p.zone||'Medio')){ return; }
         const result = trySpendAction(p, 'move');
-        const statusEl = document.getElementById('combat-mgr-status');
         if(!result.ok){
-          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; }
+          if(localStatus){ localStatus.style.color='var(--danger)'; localStatus.textContent = result.msg; }
           return;
         }
         const from = p.zone||'Medio';
