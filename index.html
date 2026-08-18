@@ -459,7 +459,8 @@
     await saveCombat(code, combat);
     renderCombatManager(code, players);
     const combatLive = document.getElementById('combat-live');
-    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
+    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, true);
+    bindZoneLineArrows(code, players);
   }
   async function endCombatNow(code, players){
     if(!window.confirm('Terminare il combattimento e azzerare i partecipanti?')) return;
@@ -467,7 +468,8 @@
     await saveCombat(code, cachedCombat);
     renderCombatManager(code, players);
     const combatLive = document.getElementById('combat-live');
-    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
+    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, true);
+    bindZoneLineArrows(code, players);
   }
 
   // Chiede una frase narrativa variabile all'AI per il risultato di un attacco (endpoint già esistente,
@@ -620,7 +622,7 @@
     const canAct = myTurn && !!p;
     return `
       ${turnBannerHTML(combat, username)}
-      ${p ? `<div class="muted" style="margin-bottom:8px;">Zona attuale: <b style="color:var(--amber);">${escapeHTML(p.zone||'Medio')}</b> · Azioni: <span class="mono">${actsLeft}/2</span></div>` : ''}
+      ${p ? `<div class="muted" style="margin-bottom:8px;">Zona attuale: <b style="color:var(--amber);">${zoneLabel(p.zone||'Medio')}</b> · Azioni: <span class="mono">${actsLeft}/2</span></div>` : ''}
       <div class="field"><label>Bersaglio / riferimento</label>
         <select id="self-target-select" ${canAct?'':'disabled'}>${targetOptions || '<option value="">(nessun altro partecipante)</option>'}</select>
       </div>
@@ -680,7 +682,7 @@
       const from = p.zone||'Medio';
       p.zone = newZone;
       await saveCombat(code, cachedCombat);
-      await pushLog(code, { who: p.name, role:'player', text: `${p.name} si ${closer?'avvicina a':'allontana da'} ${ref.name}: ${from} → ${newZone} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(cachedCombat.participants, p.id, ref.id, from, newZone)}` });
+      await pushLog(code, { who: p.name, role:'player', text: `${p.name} si ${closer?'avvicina a':'allontana da'} ${ref.name}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(cachedCombat.participants, p.id, ref.id, from, newZone)}` });
       refreshLiveParts();
     }
     if(moveCloserBtn) moveCloserBtn.onclick = ()=>doMove(true);
@@ -895,11 +897,11 @@
   // dove si trovano davvero — usa le stesse immagini già mostrate altrove (resolveParticipantImage),
   // niente di nuovo da caricare. Le GIF animate (vedi Wikimon Story Sprites) sono un possibile upgrade
   // futuro: qui la struttura è già pronta, basterebbe sostituire l'URL statico con quello della GIF.
-  function zoneLineHTML(combat){
+  function zoneLineHTML(combat, isMaster){
     if(!combat.participants || combat.participants.length===0) return '';
     // Le zone sono relative: "Molto Corto"/"Lungo" ecc. non dicono nulla da sole. Quando è il turno
     // di qualcuno, mostriamo sotto ogni posizione la distanza reale da LUI (0 = stessa posizione/Melee
-    // ok, 1 zona = dentro Reach 1, 2 zone = serve Reach 2) — così si vede a colpo d'occhio chi è a tiro.
+    // ok, 1-2 = dentro Reach corrispondente) — così si vede a colpo d'occhio chi è a tiro.
     const byId = {}; combat.participants.forEach(p=>byId[p.id]=p);
     const activeId = (combat.order && combat.order.length) ? combat.order[combat.currentIndex] : null;
     const active = activeId ? byId[activeId] : null;
@@ -915,8 +917,8 @@
             if(active!==null){
               if(zi===activeIdx) label = `<span style="color:var(--cyan);">★ Qui</span>`;
               else {
-                const oldEq = zoneOldEquivalent(Math.abs(zi-activeIdx));
-                label = oldEq<=1 ? `<span style="color:var(--cyan-dim,var(--cyan));">${oldEq} zona</span>` : `<span style="color:var(--amber);">${oldEq} zone</span>`;
+                const d = Math.abs(zi-activeIdx);
+                label = d<=1 ? `<span style="color:var(--cyan-dim,var(--cyan));">${d} zona</span>` : `<span style="color:var(--amber);">${d} zone</span>`;
               }
             }
             return `
@@ -932,9 +934,41 @@
             </div>
           `;}).join('')}
         </div>
+        ${(isMaster && active) ? `
+          <div class="row" style="margin-top:8px;">
+            <button class="btn ghost small" data-zoneline-move="-1" style="flex:1;" ${activeIdx<=0?'disabled':''}>◀ Muovi ${escapeHTML(active.name)} (1 Az.)</button>
+            <button class="btn ghost small" data-zoneline-move="1" style="flex:1;" ${activeIdx>=ZONES.length-1?'disabled':''}>Muovi ${escapeHTML(active.name)} (1 Az.) ▶</button>
+          </div>
+          <div id="zoneline-move-status" class="muted" style="font-size:10px;margin-top:2px;min-height:12px;"></div>
+        ` : ''}
         ${here_multi_note(combat)}
       </div>
     `;
+  }
+  // Lega le frecce sotto la linea al Digimon di cui è il turno — sposta di 1 pallino nella direzione
+  // scelta, spendendo 1 Azione. Va richiamata ogni volta che #combat-live viene ridisegnato per il Master.
+  function bindZoneLineArrows(code, players){
+    document.querySelectorAll('[data-zoneline-move]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        if(!cachedCombat || !cachedCombat.active || !cachedCombat.order || !cachedCombat.order.length) return;
+        const p = cachedCombat.participants.find(x=>x.id===cachedCombat.order[cachedCombat.currentIndex]);
+        const statusEl = document.getElementById('zoneline-move-status');
+        if(!p) return;
+        const dir = Number(btn.getAttribute('data-zoneline-move'));
+        const newZone = zoneStepDirection(p.zone||'Medio', dir);
+        if(!newZone){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `${p.name} è già al limite della linea.`; } return; }
+        const result = trySpendAction(p, 'move');
+        if(!result.ok){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; } return; }
+        const from = p.zone||'Medio';
+        p.zone = newZone;
+        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si sposta: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.` });
+        await saveCombat(code, cachedCombat);
+        const combatLive = document.getElementById('combat-live');
+        if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, true);
+        bindZoneLineArrows(code, players);
+        if(typeof renderCombatManager==='function' && document.getElementById('combat-mgr-card')) renderCombatManager(code, players);
+      };
+    });
   }
   function here_multi_note(combat){
     // Se più partecipanti condividono una posizione, lo segnaliamo esplicitamente: un Attacco ad Area
@@ -943,11 +977,11 @@
     combat.participants.forEach(p=>{ const z=p.zone||'Medio'; counts[z]=(counts[z]||0)+1; });
     const shared = Object.entries(counts).filter(([z,n])=>n>1);
     if(shared.length===0) return '';
-    return `<div class="muted" style="font-size:9px;margin-top:6px;">🌪 ${shared.map(([z,n])=>`${n} Digimon in ${z}`).join(' · ')} — un Attacco ad Area lì li colpirebbe tutti insieme.</div>`;
+    return `<div class="muted" style="font-size:9px;margin-top:6px;">🌪 ${shared.map(([z,n])=>`${n} Digimon in ${zoneLabel(z)}`).join(' · ')} — un Attacco ad Area lì li colpirebbe tutti insieme.</div>`;
   }
 
 
-  function combatDisplayHTML(combat){
+  function combatDisplayHTML(combat, isMaster){
     if(!combat || !combat.active) return '<div class="muted">Nessun combattimento in corso.</div>';
     const byId = {};
     combat.participants.forEach(p=>byId[p.id]=p);
@@ -956,7 +990,7 @@
       <div class="flex-between" style="margin-bottom:8px;">
         <span class="mono" style="color:var(--cyan);">ROUND ${combat.round}</span>
       </div>
-      ${zoneLineHTML(combat)}
+      ${zoneLineHTML(combat, !!isMaster)}
       ${orderList.length===0 ? '<div class="muted">Ordine non ancora calcolato.</div>' : orderList.map((p,i)=>{
         const wounds = getParticipantWounds(p);
         const battery = getParticipantBattery(p);
@@ -964,7 +998,7 @@
         <div style="padding:6px 8px;margin-bottom:4px;border-radius:4px;${i===combat.currentIndex?'background:rgba(53,232,201,0.15);border:1px solid var(--cyan);':'background:var(--panel-2);border:1px solid var(--line);'}${p.side==='enemy'?'border-left:3px solid var(--danger);':''}">
           <div class="flex-between">
             <span>${i===combat.currentIndex?'▶ ':''}<b>${escapeHTML(p.name)}</b> <span class="tag" style="margin-left:4px;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};">${p.side==='ally'?'Alleato':'Nemico'}</span></span>
-            <span class="mono">Iniz. ${p.initiative} · Az. ${p.actions===undefined?2:p.actions}/2 · <span style="color:var(--amber);">${escapeHTML(p.zone||'Medio')}</span></span>
+            <span class="mono">Iniz. ${p.initiative} · Az. ${p.actions===undefined?2:p.actions}/2 · <span style="color:var(--amber);">${zoneLabel(p.zone||'Medio')}</span></span>
           </div>
           ${miniHpBarHTML(wounds.current, wounds.max, wounds.temp, 'HP')}
           ${battery ? `<div style="display:flex;align-items:center;gap:6px;margin-top:4px;"><span class="hp-mini-label">⚡</span>${batteryCellsHTML(battery.current, battery.max, true)}<span class="hp-mini-val">${battery.current}/${battery.max}</span></div>` : ''}
@@ -1529,7 +1563,9 @@
     const dexLive = document.getElementById('dex-live');
     if(dexLive && dexEditOpenId===null){ dexLive.innerHTML = dexListHTML(cachedDex, session.role==='master'); if(session.role==='master') bindDexEditButtons(session.code); }
     const combatLive = document.getElementById('combat-live');
-    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
+    const isMasterRole = session && session.role==='master';
+    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, isMasterRole);
+    if(isMasterRole) bindZoneLineArrows(session.code, (cachedRoster||[]).filter(m=>m.role==='player'));
     const attacksCard = document.getElementById('attacks-card');
     if(attacksCard) attacksCard.style.display = (cachedCombat && cachedCombat.active) ? '' : 'none';
     if(session.role==='player'){
@@ -2014,7 +2050,7 @@
 
           <div class="hud-frame card">
             <div class="section-title">Combattimento</div>
-            <div id="combat-live">${combatDisplayHTML(cachedCombat)}</div>
+            <div id="combat-live">${combatDisplayHTML(cachedCombat, false)}</div>
             <div id="combat-self-actions">${combatSelfActionHTML(cachedCombat, session.username)}</div>
           </div>
         </div>
@@ -4112,7 +4148,7 @@
         <div>
           <div class="hud-frame card">
             <div class="section-title">Combattimento</div>
-            <div id="combat-live">${combatDisplayHTML(cachedCombat)}</div>
+            <div id="combat-live">${combatDisplayHTML(cachedCombat, true)}</div>
             <div class="row" style="margin-top:8px;" id="combat-live-turn-controls">
               <button class="btn amber" id="btn-combat-next-turn-top" style="flex:1;">Turno Successivo</button>
               <button class="btn ghost" id="btn-combat-end-top" style="flex:1;">Termina</button>
@@ -4173,6 +4209,7 @@
 
     document.getElementById('btn-combat-next-turn-top').onclick = ()=> advanceCombatTurn(code, players);
     document.getElementById('btn-combat-end-top').onclick = ()=> endCombatNow(code, players);
+    bindZoneLineArrows(code, players);
 
     bindRosterSuggestButtons(players);
     bindRosterManageButtons(players);
@@ -4535,17 +4572,17 @@
     if(!def || !def.instant) return null;
     if(def.instant==='pull'){
       const from = target.zone||'Medio';
-      const steps = Math.max(2, potency*2); // 1 vecchia "zona" = 2 pallini sulla linea a 5 posizioni
+      const steps = Math.max(1, potency);
       const zi = Math.max(0, zoneIndex(from)-steps);
       target.zone = ZONES[zi];
-      return `${target.name} viene attirato da ${from} a ${target.zone}.`;
+      return `${target.name} viene attirato da ${zoneLabel(from)} a ${zoneLabel(target.zone)}.`;
     }
     if(def.instant==='push'){
       const from = target.zone||'Medio';
-      const steps = Math.max(2, potency*2);
+      const steps = Math.max(1, potency);
       const zi = Math.min(ZONES.length-1, zoneIndex(from)+steps);
       target.zone = ZONES[zi];
-      return `${target.name} viene respinto da ${from} a ${target.zone}.`;
+      return `${target.name} viene respinto da ${zoneLabel(from)} a ${zoneLabel(target.zone)}.`;
     }
     if(def.instant==='cleanse'){
       let removedCount = 0;
@@ -4744,10 +4781,10 @@
     }
     const zDist = zoneDistance(attacker.zone||'Medio', target.zone||'Medio');
     if(atk && atk.shape==='Melee' && zDist>0){
-      return { ok:false, error:`${atk.name} è [MELEE]: serve la stessa posizione di ${target.name} (ora: ${attacker.zone||'Medio'}→${target.zone||'Medio'}). Avvicinati prima di attaccare.` };
+      return { ok:false, error:`${atk.name} è [MELEE]: serve la stessa posizione di ${target.name} (ora: ${zoneLabel(attacker.zone||'Medio')}→${zoneLabel(target.zone||'Medio')}). Avvicinati prima di attaccare.` };
     }
-    if(atk && atk.shape==='Range' && zDist > (atk.reach||1)*2){
-      return { ok:false, error:`${atk.name} è [RANGE ${atk.reach||1}]: ${target.name} è troppo lontano (distanza ${zoneOldEquivalent(zDist)} zone, ${attacker.zone||'Medio'}→${target.zone||'Medio'}).` };
+    if(atk && atk.shape==='Range' && zDist > (atk.reach||1)){
+      return { ok:false, error:`${atk.name} è [RANGE ${atk.reach||1}]: ${target.name} è troppo lontano (distanza ${zDist}, ${zoneLabel(attacker.zone||'Medio')}→${zoneLabel(target.zone||'Medio')}).` };
     }
     return { ok:true };
   }
@@ -4779,7 +4816,7 @@
     }
     const dodgeRoll = rollPool(tStats.dodge);
     if(tStats.absoluteEvasion>0) dodgeRoll.successes += tStats.absoluteEvasion;
-    const zoneNote = (zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza: ${attacker.zone||'Medio'}→${target.zone||'Medio'})` : '') + (overpowerUsed ? ' [Overpower: 4 conta come Successo]' : '');
+    const zoneNote = (zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza: ${zoneLabel(attacker.zone||'Medio')}→${zoneLabel(target.zone||'Medio')})` : '') + (overpowerUsed ? ' [Overpower: 4 conta come Successo]' : '');
     const certainNote = (aStats.certainStrike>0 ? ` +${aStats.certainStrike} [CERTAIN]` : '') + attrAdvNote;
     const atkLabel = atk ? `${atk.name} ${attackTagsPlain(atk)}` : 'Attacco generico';
     let logText, dealt = 0;
@@ -5306,18 +5343,17 @@
     if(logLive) logLive.scrollTop = logLive.scrollHeight;
   }
 
-  // Le zone sono un'unica linea condivisa con 5 posizioni (o——o——o——o——o) invece delle 3 di prima:
-  // stesso regolamento (Melee = stessa posizione, Reach 1/2, penalità -2/-4), ma il movimento è il
-  // doppio più granulare — un "Muovi" sposta di un solo pallino, non di un'intera zona.
-  // "Medio" resta il centro esatto (indice 2 su 5, come prima era indice 1 su 3), quindi tutti i
-  // fallback "||'Medio'" sparsi nel codice restano validi senza bisogno di toccarli.
+  // Le zone sono un'unica linea condivisa con 5 posizioni (o——o——o——o——o): ogni pallino È una zona
+  // per il regolamento — niente conversioni, Melee = stessa posizione, Reach 1/2 = distanza in pallini,
+  // penalità -2/-4 dirette sulla distanza. Un "Muovi" sposta di 1 pallino = 1 zona.
+  // "Medio" resta il centro esatto (indice 2 su 5), quindi i fallback "||'Medio'" restano validi.
   const ZONES = ['Molto Corto','Corto','Medio','Lungo','Molto Lungo'];
   function zoneIndex(z){ const i = ZONES.indexOf(z); return i<0?2:i; }
   function zoneDistance(a,b){ return Math.abs(zoneIndex(a)-zoneIndex(b)); }
-  // La distanza "fine" (0-4 pallini) viene tradotta nella distanza "a zone" del regolamento (0-2)
-  // arrotondando per eccesso ogni 2 pallini, così le soglie di Accuracy/Reach restano identiche.
-  function zoneOldEquivalent(distance){ return Math.ceil(distance/2); }
-  function zonePenalty(distance){ const d = zoneOldEquivalent(distance); if(d<=0) return 0; if(d===1) return -2; return -4; }
+  function zonePenalty(distance){ if(distance<=0) return 0; if(distance===1) return -2; return -4; }
+  // Etichetta numerica per la UI ("Range 3") invece del nome assoluto ("Medio") — i nomi sono relativi
+  // e da soli non dicono nulla; il numero di posizione è più chiaro e coerente con "distanza in zone".
+  function zoneLabel(z){ return 'Range ' + (zoneIndex(z)+1); }
   // Muovi di un solo pallino lungo la linea, in riferimento a un altro partecipante.
   function zoneStepToward(fromZone, refZone){
     const fi = zoneIndex(fromZone), ri = zoneIndex(refZone);
@@ -5329,6 +5365,13 @@
     const dir = (ri>=fi) ? -1 : 1; // se pari, per default ci si allontana verso "Molto Corto"
     const ni = fi + dir;
     if(ni<0 || ni>ZONES.length-1) return null; // già al limite (non si può allontanare oltre)
+    return ZONES[ni];
+  }
+  // Muovi di N pallini in una direzione fissa (usato dalle frecce sotto la linea) — clampato ai limiti.
+  function zoneStepDirection(fromZone, dir){
+    const fi = zoneIndex(fromZone);
+    const ni = fi + (dir>0?1:-1);
+    if(ni<0 || ni>ZONES.length-1) return null;
     return ZONES[ni];
   }
 
@@ -5363,10 +5406,10 @@
         <div class="section-title">Gestione Combattimento</div>
         <div class="muted" style="margin-bottom:10px;">Nessun combattimento attivo.</div>
         <div class="field"><label>Zona di partenza Alleati</label>
-          <select id="combat-start-zone-ally">${ZONES.map(z=>`<option ${z==='Molto Corto'?'selected':''}>${z}</option>`).join('')}</select>
+          <select id="combat-start-zone-ally">${ZONES.map(z=>`<option value="${z}" ${z==='Molto Corto'?'selected':''}>${zoneLabel(z)}</option>`).join('')}</select>
         </div>
         <div class="field"><label>Zona di partenza Nemici</label>
-          <select id="combat-start-zone-enemy">${ZONES.map(z=>`<option ${z==='Molto Lungo'?'selected':''}>${z}</option>`).join('')}</select>
+          <select id="combat-start-zone-enemy">${ZONES.map(z=>`<option value="${z}" ${z==='Molto Lungo'?'selected':''}>${zoneLabel(z)}</option>`).join('')}</select>
         </div>
         <div class="muted" style="font-size:10px;margin-bottom:6px;">Default: Alleati e Nemici partono agli estremi opposti della linea — modificabile qui se la scena richiede altro.</div>
         <button class="btn solid" id="btn-combat-start" style="width:100%;margin-top:6px;">Inizia Combattimento</button>
@@ -5387,7 +5430,8 @@
         }
         renderCombatManager(code, players);
         const combatLive = document.getElementById('combat-live');
-        if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
+        if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, true);
+        bindZoneLineArrows(code, players);
       };
       return;
     }
@@ -5396,11 +5440,11 @@
       <div class="section-title">Gestione Combattimento</div>
       <div class="row" style="margin-bottom:4px;align-items:center;">
         <span class="muted" style="flex:1;">Zona di partenza Alleati</span>
-        <select id="combat-startzone-ally-live" style="flex:1;">${ZONES.map(z=>`<option ${(combat.startZoneAlly||'Molto Corto')===z?'selected':''}>${z}</option>`).join('')}</select>
+        <select id="combat-startzone-ally-live" style="flex:1;">${ZONES.map(z=>`<option value="${z}" ${(combat.startZoneAlly||'Molto Corto')===z?'selected':''}>${zoneLabel(z)}</option>`).join('')}</select>
       </div>
       <div class="row" style="margin-bottom:8px;align-items:center;">
         <span class="muted" style="flex:1;">Zona di partenza Nemici</span>
-        <select id="combat-startzone-enemy-live" style="flex:1;">${ZONES.map(z=>`<option ${(combat.startZoneEnemy||'Molto Lungo')===z?'selected':''}>${z}</option>`).join('')}</select>
+        <select id="combat-startzone-enemy-live" style="flex:1;">${ZONES.map(z=>`<option value="${z}" ${(combat.startZoneEnemy||'Molto Lungo')===z?'selected':''}>${zoneLabel(z)}</option>`).join('')}</select>
       </div>
       <div id="combat-participants-list">
         ${combat.participants.length===0 ? '<div class="muted" style="margin-bottom:8px;">Nessun partecipante ancora aggiunto.</div>' : combat.participants.map((p,i)=>{
@@ -5430,13 +5474,17 @@
               <button class="btn small" data-action-use="${p.id}" style="flex:1;">Usa</button>
               <button class="btn ghost small" data-action-reset="${p.id}" style="flex:1;">↺ 2</button>
             </div>
+            <div class="row" style="margin-top:4px;">
+              <button class="btn ghost small" data-action-refund="${p.id}" style="flex:1;" title="Es. Successo Critico su Reload/Battle Cry/Horde Duelist: 'riottieni l'Azione spesa'">+1 Azione</button>
+              <button class="btn ghost small" data-action-refund-attack="${p.id}" style="flex:1;" ${!p.attackedThisRound?'disabled':''} title="Es. Reload riuscito: 'riottieni l'uso dell'Attacco [AMMO]', ignora il limite di 1 Attacco a round">🔄 Restituisci Attacco</button>
+            </div>
             <div class="row" style="margin-top:6px;">
               <select data-zone-ref="${p.id}" style="flex:2;">${combat.participants.filter(o=>o.id!==p.id).map(o=>`<option value="${o.id}">${escapeHTML(o.name)}</option>`).join('') || '<option value="">(nessun altro partecipante)</option>'}</select>
               <button class="btn small" data-zone-closer="${p.id}" style="flex:1;">➡️ Avvicina</button>
               <button class="btn ghost small" data-zone-away="${p.id}" style="flex:1;">⬅️ Allontana</button>
             </div>
             <div class="row" style="margin-top:4px;">
-              <select data-zone-select="${p.id}" style="flex:2;">${ZONES.map(z=>`<option ${p.zone===z?'selected':''}>${z}</option>`).join('')}</select>
+              <select data-zone-select="${p.id}" style="flex:2;">${ZONES.map(z=>`<option value="${z}" ${p.zone===z?'selected':''}>${zoneLabel(z)}</option>`).join('')}</select>
               <button class="btn ghost small" data-zone-move="${p.id}" style="flex:1;">Imposta zona (1 Az.)</button>
             </div>
             <div id="zone-move-status-${p.id}" style="font-size:10px;margin-top:2px;min-height:12px;"></div>
@@ -5563,7 +5611,8 @@
       await saveCombat(code, cachedCombat);
       renderCombatManager(code, players);
       const combatLive = document.getElementById('combat-live');
-      if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
+      if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, true);
+      bindZoneLineArrows(code, players);
     };
 
     const startZoneAllyLiveSel = document.getElementById('combat-startzone-ally-live');
@@ -5776,7 +5825,7 @@
         }
         const dealt = Math.max(0, cStats.damage - oStats.armor);
         await applyDamageToParticipant(code, combat, opponent, dealt);
-        const zi = Math.min(ZONES.length-1, zoneIndex(opponent.zone||'Medio')+2);
+        const zi = Math.min(ZONES.length-1, zoneIndex(opponent.zone||'Medio')+1);
         opponent.zone = ZONES[zi];
         controller.clashWith=null; controller.clashController=false; controller.clashPinned=false; controller.clashComebackBonus=0;
         opponent.clashWith=null; opponent.clashController=false; opponent.clashPinned=false; opponent.clashComebackBonus=0;
@@ -6226,6 +6275,28 @@
         await persistAndRefresh();
       };
     });
+    cardEl.querySelectorAll('[data-action-refund]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-action-refund');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p) return;
+        const max = (p.isPC && (cachedRoster.find(m=>m.username===p.username)||{}).digimon||{}).hybridMode ? 3 : 2;
+        const before = p.actions===undefined?2:p.actions;
+        p.actions = Math.min(max, before+1);
+        await pushLog(code, { who:'Sistema', role:'gm', text: `${p.name} riottiene 1 Azione (es. Reload/Battle Cry/Horde Duelist riuscito) — ora ${p.actions}/2.` });
+        await persistAndRefresh();
+      };
+    });
+    cardEl.querySelectorAll('[data-action-refund-attack]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-action-refund-attack');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p) return;
+        p.attackedThisRound = false;
+        await pushLog(code, { who:'Sistema', role:'gm', text: `${p.name} riottiene l'uso del proprio Attacco questo round (es. Reload riuscito).` });
+        await persistAndRefresh();
+      };
+    });
     cardEl.querySelectorAll('[data-zone-closer]').forEach(btn=>{
       btn.onclick = async ()=>{
         const id = btn.getAttribute('data-zone-closer');
@@ -6242,7 +6313,7 @@
         if(!result.ok){ showLocal(result.msg, false); return; }
         const from = p.zone||'Medio';
         p.zone = newZone;
-        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si avvicina a ${ref.name}: ${from} → ${newZone} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}` });
+        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si avvicina a ${ref.name}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}` });
         await persistAndRefresh();
       };
     });
@@ -6262,7 +6333,7 @@
         if(!result.ok){ showLocal(result.msg, false); return; }
         const from = p.zone||'Medio';
         p.zone = newZone;
-        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si allontana da ${ref.name}: ${from} → ${newZone} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}` });
+        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si allontana da ${ref.name}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}` });
         await persistAndRefresh();
       };
     });
@@ -6282,7 +6353,7 @@
         }
         const from = p.zone||'Medio';
         p.zone = target;
-        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} viene posizionato a ${target} raggio (${from} → ${target}, 1 Azione, senza riferimento a un bersaglio specifico) — restano ${p.actions}/2 Azioni.` });
+        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} viene posizionato in ${zoneLabel(target)} (${zoneLabel(from)} → ${zoneLabel(target)}, 1 Azione, senza riferimento a un bersaglio specifico) — restano ${p.actions}/2 Azioni.` });
         await persistAndRefresh();
       };
     });
