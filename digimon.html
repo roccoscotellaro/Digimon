@@ -2177,12 +2177,10 @@
 </div>
 <script>
 (function(){
-  // FIX_ME_BG_MUSIC_URL: sostituire con l'URL Supabase Storage restituito dal bottone
-  // "Carica Traccia" nel pannello Master di index.html (Scena), dopo aver caricato
-  // bg_music_compressed.mp3 li'. L'URL va incollato ANCHE qui.
-  const FIXED_BG_MUSIC_URL = 'FIX_ME_BG_MUSIC_URL';
+  // URL della traccia di sottofondo fissa, caricata su Supabase Storage (bucket campaign-audio).
+  const FIXED_BG_MUSIC_URL = 'https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787069260083_hho28k.mpeg';
   const musicEl = document.getElementById('dvos-bg-music');
-  if(musicEl && FIXED_BG_MUSIC_URL && FIXED_BG_MUSIC_URL !== 'FIX_ME_BG_MUSIC_URL') musicEl.src = FIXED_BG_MUSIC_URL;
+  if(musicEl && FIXED_BG_MUSIC_URL && FIXED_BG_MUSIC_URL !== 'https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787069260083_hho28k.mpeg') musicEl.src = FIXED_BG_MUSIC_URL;
   const PREFS_KEY = 'dvos_audio_prefs_v1';
   function loadPrefs(){
     try{ return Object.assign({musicVolume:0.5, musicMuted:false, clickMuted:false}, JSON.parse(localStorage.getItem(PREFS_KEY)||'{}')); }
