@@ -1274,10 +1274,39 @@
     </div>`;
   }
 
+  // Chiamata quando il nome del draft cambia (sia da input manuale sia da altri punti del wizard):
+  // se il nome combacia con una entry del Digidex e i campi sono ancora ai default (nessuna
+  // personalizzazione già fatta dal giocatore), applica Stat/Attributo/Qualities/Immagine da lì.
+  // Senza questo, startDigimonWizard() da solo copre SOLO il caso "si arriva dallo Scan" (nome già
+  // noto all'apertura) — la creazione manuale ("Crea personaggio" poi digitare il Nome a mano) non
+  // aveva alcun aggancio al Digidex finché il nome non veniva scritto, quindi restava sempre ai
+  // default piatti anche con una entry Digidex già trovata (mostrata nel banner "✅ Trovato").
+  function applyDexMatchIfNeeded(){
+    const draft = creationDraft;
+    if(!draft) return;
+    const nameTrim = (draft.name||'').trim().toLowerCase();
+    if(!nameTrim) return;
+    if(draft._dexAutofillFor === nameTrim) return; // già applicato per questo nome, non ripetere
+    const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===nameTrim);
+    if(!dexEntry) return;
+    draft._dexAutofillFor = nameTrim;
+    const cfg = STAGE_CREATION[draft.stage] || STAGE_CREATION.Rookie;
+    const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
+    const statsAreDefault = statKeys.every(k=>draft[k]===cfg.startStat);
+    if(statsAreDefault && dexEntry.base_stats){
+      statKeys.forEach(k=>{ if(dexEntry.base_stats[k]!=null) draft[k] = dexEntry.base_stats[k]; });
+    }
+    if((!draft.attribute || draft.attribute==='Free') && dexEntry.attribute) draft.attribute = dexEntry.attribute;
+    if((!draft.qualities || draft.qualities.length===0) && (!draft.suggestedQualities || draft.suggestedQualities.length===0) && Array.isArray(dexEntry.qualities)){
+      draft.suggestedQualities = dexEntry.qualities.map(buildQualityEntryFromDexHint).filter(Boolean);
+    }
+    if(!draft.imageUrl && dexEntry.image_url) draft.imageUrl = dexEntry.image_url;
+  }
+
   function bindDigimonWizard(target){
     const draft = creationDraft;
     const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
-    document.getElementById('wiz-d-name').onchange = (e)=>{ draft.name = e.target.value; renderPage(); };
+    document.getElementById('wiz-d-name').onchange = (e)=>{ draft.name = e.target.value; applyDexMatchIfNeeded(); renderPage(); };
     document.getElementById('wiz-d-personality').onchange = (e)=>{ draft.personality = e.target.value; };
     document.getElementById('wiz-d-img').onchange = (e)=>{ draft.imageUrl = e.target.value; };
     document.getElementById('wiz-d-attribute').onchange = (e)=>{ draft.attribute = e.target.value; };
