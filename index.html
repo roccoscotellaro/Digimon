@@ -466,10 +466,47 @@
     if(!window.confirm('Terminare il combattimento e azzerare i partecipanti?')) return;
     cachedCombat = defaultCombat();
     await saveCombat(code, cachedCombat);
+    __combatMusicSynced = false;
+    stopCombatMusic();
     renderCombatManager(code, players);
     const combatLive = document.getElementById('combat-live');
     if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, true);
     bindZoneLineArrows(code, players);
+  }
+
+  // Musica da Combattimento: se la Scena/Settore/Macroscena attuale ne ha una impostata
+  // (getEffectiveCombatMusic), interrompe quella normale e fa partire questa al posto suo,
+  // finché il combattimento non termina. Usa un <audio> SEPARATO da quello della musica normale
+  // (combat-audio-el, non scene-audio-el) apposta per non confondere la logica di
+  // "cambio traccia" di bindSceneAudio, che altrimenti scambierebbe questo cambio per un
+  // cambio di Scena/Settore. Scarica il file come Blob (fetch), stesso motivo della musica
+  // fissa di sottofondo nelle altre pagine: evita problemi con le richieste "Range" di alcuni host.
+  let __combatMusicWasScenePlaying = false;
+  let __combatMusicSynced = false;
+  async function startCombatMusic(scene){
+    const url = getEffectiveCombatMusic(scene);
+    if(!url) return; // nessuna musica da combattimento impostata: la normale continua a suonare
+    const sceneEl = document.getElementById('scene-audio-el');
+    const combatEl = document.getElementById('combat-audio-el');
+    if(!combatEl) return;
+    __combatMusicWasScenePlaying = !!(sceneEl && !sceneEl.paused);
+    if(sceneEl) sceneEl.pause();
+    try{
+      const r = await fetch(url);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const blob = await r.blob();
+      combatEl.src = URL.createObjectURL(blob);
+      await combatEl.play().catch(()=>{ /* bloccato dal browser senza gesto utente: riparte al primo click */ });
+    }catch(e){
+      console.warn('Musica da combattimento: impossibile caricarla (' + e.message + ')');
+    }
+  }
+  function stopCombatMusic(){
+    const combatEl = document.getElementById('combat-audio-el');
+    if(combatEl){ combatEl.pause(); combatEl.src=''; }
+    const sceneEl = document.getElementById('scene-audio-el');
+    if(sceneEl && __combatMusicWasScenePlaying) sceneEl.play().catch(()=>{});
+    __combatMusicWasScenePlaying = false;
   }
 
   // Chiede una frase narrativa variabile all'AI per il risultato di un attacco (endpoint già esistente,
@@ -1522,6 +1559,15 @@
       cachedCombat = freshCombat;
     }
     cachedProgression = await getProgression(session.code);
+
+    // Musica da Combattimento: rilevata qui (non solo nel click di "Inizia Combattimento") perché
+    // questa funzione gira per TUTTI i client via polling — così la musica parte anche sui browser
+    // dei Giocatori e non solo su quello del Master che ha premuto il bottone. __combatMusicSynced
+    // evita di far ripartire la traccia da capo ad ogni poll mentre il combattimento resta attivo.
+    if(!!(cachedCombat && cachedCombat.active) !== __combatMusicSynced){
+      __combatMusicSynced = !!(cachedCombat && cachedCombat.active);
+      if(__combatMusicSynced) startCombatMusic(cachedScene); else stopCombatMusic();
+    }
 
     const sceneLive = document.getElementById('scene-live');
     if(sceneLive){
@@ -4086,6 +4132,13 @@
               <button type="button" class="btn ghost small" id="scene-audio-upload-btn">🎵 Carica Traccia (mp3, max 3MB)</button>
               <span class="muted" id="scene-audio-upload-status" style="font-size:11px;"></span>
             </div>
+            <div class="field"><label>🗡️ URL Musica da Combattimento (opzionale)</label><input type="text" id="scene-combat-music" value="${escapeAttr(cachedScene.combatMusic||'')}" placeholder="https://.../boss-theme.mp3" /></div>
+            <div class="muted" style="margin-top:-6px;margin-bottom:8px;font-size:11px;">Se vuota, in combattimento continua a suonare la musica normale della Scena/Settore/Macroscena. Se compilata, appena il Master preme "Inizia Combattimento" questa traccia interrompe quella in corso — utile per dare un tema diverso ai boss fight. Torna alla musica normale a "Termina" combattimento. Stessa cascata di Settore/Macroscena vale anche qui (vedi pannello Mappa).</div>
+            <div class="row" style="align-items:center;gap:8px;margin-top:-4px;margin-bottom:12px;">
+              <input type="file" accept="audio/*" id="scene-combat-audio-file" style="display:none;" />
+              <button type="button" class="btn ghost small" id="scene-combat-audio-upload-btn">🗡️ Carica Traccia Combattimento (mp3, max 3MB)</button>
+              <span class="muted" id="scene-combat-audio-upload-status" style="font-size:11px;"></span>
+            </div>
             <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin-top:10px;">Luoghi nel Settore attuale</div>
             <div id="scene-luoghi-live" style="margin-top:6px;">${sceneCurrentSectorLuoghiHTML()}</div>
             <div class="divider"></div>
@@ -4245,6 +4298,7 @@
     attachLogModeration(document.getElementById('log-live'), code);
     bindSceneAudio(cachedScene);
     bindSceneAudioUpload(code);
+    bindSceneCombatAudioUpload(code);
     document.getElementById('btn-logout').onclick = logout;
     document.getElementById('btn-open-missions').onclick = openMissionsModal;
     document.getElementById('btn-save-scene').onclick = async ()=>{
@@ -4253,6 +4307,7 @@
         title: document.getElementById('scene-title').value,
         background: document.getElementById('scene-bg').value,
         music: document.getElementById('scene-music').value,
+        combatMusic: document.getElementById('scene-combat-music').value,
         encounters: cachedScene.encounters || [],
         macroScenes: cachedScene.macroScenes || [],
         currentMacroSceneId: cachedScene.currentMacroSceneId || null,
@@ -5436,6 +5491,8 @@
         cachedCombat.startZoneAlly = (startZoneAllySel && startZoneAllySel.value) || 'Molto Corto';
         cachedCombat.startZoneEnemy = (startZoneEnemySel && startZoneEnemySel.value) || 'Molto Lungo';
         await saveCombat(code, cachedCombat);
+        __combatMusicSynced = true;
+        startCombatMusic(cachedScene);
         for(const p of players){
           const orderKeys = TALENT_DEFS.filter(t=>t.once==='combat').map(t=>t.order);
           let changed = false;
@@ -6674,6 +6731,9 @@
         <div class="field" style="margin-bottom:8px;"><label>🎵 Musica Macroscena (mp3 diretto, opzionale)</label>
           <input type="text" id="macro-music" value="${escapeAttr(activeMacro.music||'')}" placeholder="https://.../traccia.mp3" style="width:100%;" />
         </div>
+        <div class="field" style="margin-bottom:8px;"><label>🗡️ Musica da Combattimento Macroscena (opzionale)</label>
+          <input type="text" id="macro-combat-music" value="${escapeAttr(activeMacro.combatMusic||'')}" placeholder="https://.../boss-theme.mp3" style="width:100%;" />
+        </div>
         <div class="row" style="margin-bottom:8px;">
           <button class="btn ghost small" id="btn-remove-macro" style="width:100%;">🗑️ Elimina Macroscena "${escapeHTML(activeMacro.name)}"</button>
         </div>
@@ -6696,6 +6756,7 @@
             ${selectedSector.description ? `<div class="sub" style="margin-top:2px;">${escapeHTML(selectedSector.description)}</div>` : ''}
             <div class="muted" style="margin-top:2px;font-size:11px;">Collegato a: ${(selectedSector.connections||[]).map(cid=>{ const c = sectors.find(x=>x.id===cid); return c?escapeHTML(c.name):''; }).filter(Boolean).join(', ') || 'nessuno'}</div>
             <input type="text" data-sector-music="${selectedSector.id}" value="${escapeAttr(selectedSector.music||'')}" placeholder="🎵 URL Musica Settore (opzionale, sovrascrive quella della Macroscena)" style="width:100%;margin-top:4px;font-size:11px;" />
+            <input type="text" data-sector-combat-music="${selectedSector.id}" value="${escapeAttr(selectedSector.combatMusic||'')}" placeholder="🗡️ URL Musica da Combattimento Settore (opzionale)" style="width:100%;margin-top:4px;font-size:11px;" />
             <div class="row" style="margin-top:4px;">
               <button class="btn small" data-sector-activate="${selectedSector.id}" style="flex:1;">📍 Rendi Attuale</button>
               <button class="btn ghost small" data-sector-image="${selectedSector.id}" style="flex:1;">🖼️ Immagine</button>
@@ -6789,6 +6850,15 @@
       renderSectorMap(code);
       refreshLiveParts();
     };
+    const macroCombatMusicEl = document.getElementById('macro-combat-music');
+    if(macroCombatMusicEl) macroCombatMusicEl.onchange = async ()=>{
+      const liveMacro = liveActiveMacro();
+      if(!liveMacro) return;
+      liveMacro.combatMusic = macroCombatMusicEl.value.trim();
+      await saveScene(code, cachedScene);
+      renderSectorMap(code);
+      refreshLiveParts();
+    };
     const removeMacroBtn = document.getElementById('btn-remove-macro');
     if(removeMacroBtn) removeMacroBtn.onclick = async ()=>{
       const liveMacro = liveActiveMacro();
@@ -6868,6 +6938,19 @@
         const s = (liveMacro.sectors||[]).find(x=>x.id===id);
         if(!s) return;
         s.music = inp.value.trim();
+        await saveScene(code, cachedScene);
+        renderSectorMap(code);
+        refreshLiveParts();
+      };
+    });
+    el.querySelectorAll('[data-sector-combat-music]').forEach(inp=>{
+      inp.onchange = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
+        const id = inp.getAttribute('data-sector-combat-music');
+        const s = (liveMacro.sectors||[]).find(x=>x.id===id);
+        if(!s) return;
+        s.combatMusic = inp.value.trim();
         await saveScene(code, cachedScene);
         renderSectorMap(code);
         refreshLiveParts();
@@ -6977,7 +7060,8 @@
     return `<div class="row" id="scene-audio-wrap" style="align-items:center;gap:8px;margin-top:8px;">
       <button class="btn small" id="scene-audio-toggle" disabled>🔇 Nessuna traccia</button>
       <span class="muted" id="scene-audio-status" style="font-size:11px;"></span>
-      <audio id="scene-audio-el" style="display:none;"></audio>
+      <audio id="scene-audio-el" loop style="display:none;"></audio>
+      <audio id="combat-audio-el" loop style="display:none;"></audio>
     </div>`;
   }
   function bindSceneAudioUpload(code){
@@ -7016,6 +7100,44 @@
     };
   }
 
+  // Gemella di bindSceneAudioUpload, ma carica nel campo "URL Musica da Combattimento" invece
+  // che in quello della musica normale — stesso endpoint/bucket, stesso limite di 3MB.
+  function bindSceneCombatAudioUpload(code){
+    const fileInput = document.getElementById('scene-combat-audio-file');
+    const btn = document.getElementById('scene-combat-audio-upload-btn');
+    const statusEl = document.getElementById('scene-combat-audio-upload-status');
+    if(!fileInput || !btn) return;
+    btn.onclick = ()=> fileInput.click();
+    fileInput.onchange = async ()=>{
+      const file = fileInput.files[0];
+      if(!file) return;
+      if(!file.type.startsWith('audio/')){ statusEl.textContent = '⚠ Seleziona un file audio.'; fileInput.value=''; return; }
+      if(file.size > 3*1024*1024){ statusEl.textContent = '⚠ File troppo grande (limite 3MB): abbassa il bitrate o accorcia la traccia.'; fileInput.value=''; return; }
+      statusEl.textContent = 'Caricamento in corso...';
+      btn.disabled = true;
+      try{
+        const dataUrl = await new Promise((resolve, reject)=>{
+          const reader = new FileReader();
+          reader.onload = ()=> resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const res = await apiPost('/api/upload', { resource:'audio', code, dataUrl });
+        if(res && res.ok && res.url){
+          const combatMusicInput = document.getElementById('scene-combat-music');
+          if(combatMusicInput) combatMusicInput.value = res.url;
+          statusEl.textContent = '✅ Caricata — premi "Aggiorna Scena" qui sotto per salvarla.';
+        } else {
+          statusEl.textContent = '⚠ Caricamento fallito: ' + (lastApiError || 'errore sconosciuto');
+        }
+      }catch(e){
+        statusEl.textContent = '⚠ Errore durante il caricamento: ' + e.message;
+      }
+      btn.disabled = false;
+      fileInput.value = '';
+    };
+  }
+
   // La musica può arrivare da tre livelli, in ordine di priorità: il campo manuale
   // "URL Musica" in Scena (sempre vince se compilato), la traccia del Settore attuale,
   // la traccia della Macroscena attuale. Così il Master può impostare una musica di
@@ -7029,6 +7151,22 @@
     const current = scene.currentSectorId ? sectors.find(s=>s.id===scene.currentSectorId) : null;
     if(current && current.music) return current.music;
     if(activeMacro && activeMacro.music) return activeMacro.music;
+    return '';
+  }
+
+  // Stessa identica cascata di getEffectiveMusic, ma per la Musica da Combattimento
+  // (scene.combatMusic → settore.combatMusic → macroscena.combatMusic). Se nessuno dei tre
+  // livelli ne ha una impostata, torna stringa vuota: in quel caso il combattimento NON
+  // interrompe la musica normale, che continua a suonare così com'è.
+  function getEffectiveCombatMusic(scene){
+    if(!scene) return '';
+    if(scene.combatMusic) return scene.combatMusic;
+    const macroScenes = Array.isArray(scene.macroScenes) ? scene.macroScenes : [];
+    const activeMacro = scene.currentMacroSceneId ? macroScenes.find(m=>m.id===scene.currentMacroSceneId) : null;
+    const sectors = activeMacro ? (activeMacro.sectors||[]) : [];
+    const current = scene.currentSectorId ? sectors.find(s=>s.id===scene.currentSectorId) : null;
+    if(current && current.combatMusic) return current.combatMusic;
+    if(activeMacro && activeMacro.combatMusic) return activeMacro.combatMusic;
     return '';
   }
 

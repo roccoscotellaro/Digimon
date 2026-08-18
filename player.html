@@ -1045,12 +1045,16 @@
   // I browser bloccano l'autoplay finché l'utente non interagisce almeno una volta con la pagina:
   // al primo click in assoluto proviamo a far partire la musica, se non mutata.
   let unlocked = false;
-  document.addEventListener('click', function unlock(){
+  function unlock(){
     if(unlocked) return;
     unlocked = true;
     window.__dvosUnlocked = true;
     if(!prefs.musicMuted && musicEl && musicEl.src) musicEl.play().catch(()=>{});
-  }, { once:true, capture:true });
+    ['click','keydown','touchend'].forEach(ev=>document.removeEventListener(ev, unlock, true));
+  }
+  // Qualsiasi gesto valido per la policy autoplay del browser (click, tasto, tocco) sblocca subito,
+  // non solo il click — così parte alla primissima interazione, qualunque essa sia.
+  ['click','keydown','touchend'].forEach(ev=>document.addEventListener(ev, unlock, { capture:true }));
 
   // Suono di click — stesso identico snippet già usato in index.html, riproposto qui
   // per coerenza su tutte le pagine (nessun file esterno, tutto incorporato).
