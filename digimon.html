@@ -1094,6 +1094,28 @@
     return entry;
   }
 
+  // Stessa idea di buildQualityEntryFromScanHint ma per le Qualities lette direttamente dal
+  // Digidex (dex_entries.qualities), che hanno un formato diverso: {name, cost, rank} già
+  // "risolto" invece di {name, stat} come nello Scan. cost/rank vengono presi così come sono
+  // dal Digidex invece di essere ricalcolati dal catalogo, per rispettare eventuali costi custom.
+  // ATTENZIONE: molte entry inserite finora via SQL non salvano il campo "stat" per Naturewalk
+  // (quale Stat Core riceve il +1) — in quel caso il suggerimento arriva senza statTarget e il
+  // giocatore dovrà scegliere lui la Stat, esattamente come se l'avesse aggiunta da zero.
+  function buildQualityEntryFromDexHint(hint){
+    if(!hint || !hint.name) return null;
+    const q = QUALITY_CATALOG.find(c=>c.name===hint.name);
+    if(!q) return null;
+    const rank = Number(hint.rank)||1;
+    const cost = hint.cost!=null ? Number(hint.cost) : q.dpPerRank*rank;
+    const statKeyToTarget = { baseAccuracy:'accuracy', baseDamage:'damage', baseDodge:'dodge', baseArmor:'armor', baseHealth:'health' };
+    const statTarget = q.mechanic==='naturewalk' ? (statKeyToTarget[hint.stat] || null) : (q.mechanic==='instinct' ? 'dodge' : null);
+    const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health' };
+    const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}${statTarget?` [+1 ${statLabels[statTarget]}]`:''}`;
+    const entry = { name, cost, category:q.category, description:q.desc, mechanic:q.mechanic, rank };
+    if(statTarget) entry.statTarget = statTarget;
+    return entry;
+  }
+
   function startDigimonWizard(prefill){
     // Se lo Scan non ha passato un'immagine ma il nome combacia con una voce già presente nel
     // Digidex, agganciala subito da lì invece di lasciare il campo vuoto.
@@ -1103,19 +1125,29 @@
     // sotto). NON le aggiungiamo direttamente al draft: restano un suggerimento (nome + testo
     // completo + costo) finché il giocatore non decide lui di accettarle — solo allora entrano
     // davvero in draft.qualities e il budget si aggiorna di conseguenza.
-    const suggestedQualities = (prefill && Array.isArray(prefill.qualities) ? prefill.qualities : [])
-      .map(buildQualityEntryFromScanHint).filter(Boolean);
+    // FIX: se non arriva nulla dallo Scan (creazione diretta digitando un nome già nel Digidex,
+    // non tramite Bio-Resonance Scan), le Qualities suggerite vengono lette dal Digidex stesso
+    // invece di restare sempre vuote.
+    const scanHints = (prefill && Array.isArray(prefill.qualities)) ? prefill.qualities : null;
+    const suggestedQualities = (scanHints ? scanHints.map(buildQualityEntryFromScanHint)
+      : (dexMatch && Array.isArray(dexMatch.qualities) ? dexMatch.qualities.map(buildQualityEntryFromDexHint) : []))
+      .filter(Boolean);
+    // FIX: stesso discorso per Stat base e Attributo — prima venivano letti SOLO da prefill (quindi
+    // solo se si arriva dallo Scan), altrimenti restavano sempre al default piatto anche quando il
+    // Digimon esiste già nel Digidex con dati propri. Ora, in assenza di prefill, si legge da
+    // dexMatch.base_stats / dexMatch.attribute.
+    const dexStats = dexMatch && dexMatch.base_stats ? dexMatch.base_stats : null;
     creationDraft = {
       stage:'Rookie', size:'Medium',
       name: (prefill && prefill.name) || '',
       imageUrl: (prefill && prefill.imageUrl) || (dexMatch && dexMatch.image_url) || '',
       personality: (prefill && prefill.personality) || '',
-      attribute: (prefill && prefill.attribute) || 'Free',
-      baseAccuracy: (prefill && prefill.baseAccuracy) || STAGE_CREATION.Rookie.startStat,
-      baseDamage: (prefill && prefill.baseDamage) || STAGE_CREATION.Rookie.startStat,
-      baseDodge: (prefill && prefill.baseDodge) || STAGE_CREATION.Rookie.startStat,
-      baseArmor: (prefill && prefill.baseArmor) || STAGE_CREATION.Rookie.startStat,
-      baseHealth: (prefill && prefill.baseHealth) || STAGE_CREATION.Rookie.startStat,
+      attribute: (prefill && prefill.attribute) || (dexMatch && dexMatch.attribute) || 'Free',
+      baseAccuracy: (prefill && prefill.baseAccuracy) || (dexStats && dexStats.baseAccuracy) || STAGE_CREATION.Rookie.startStat,
+      baseDamage: (prefill && prefill.baseDamage) || (dexStats && dexStats.baseDamage) || STAGE_CREATION.Rookie.startStat,
+      baseDodge: (prefill && prefill.baseDodge) || (dexStats && dexStats.baseDodge) || STAGE_CREATION.Rookie.startStat,
+      baseArmor: (prefill && prefill.baseArmor) || (dexStats && dexStats.baseArmor) || STAGE_CREATION.Rookie.startStat,
+      baseHealth: (prefill && prefill.baseHealth) || (dexStats && dexStats.baseHealth) || STAGE_CREATION.Rookie.startStat,
       signatureMove: (prefill && prefill.signatureMove) || '',
       attackDesc,
       qualities: [],
