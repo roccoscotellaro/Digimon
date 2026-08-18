@@ -893,6 +893,18 @@
     return { current: Number(member.digimon.battery||0), max: batteryCap(member.digimon.stage) };
   }
 
+  // Un Digimon ancora "nell'Uovo" (approved:false) non deve rivelare il nome agli altri Tamer nelle
+  // viste di combattimento condivise — solo il Master e il proprietario stesso lo vedono per esteso.
+  // p.username collega il partecipante alla sua scheda in cachedRoster; se manca (nemico/NPC) non
+  // c'è nulla da nascondere.
+  function combatDisplayName(p, isMaster){
+    if(!p || !p.username) return (p && p.name) || '';
+    if(isMaster || (session && session.username===p.username)) return p.name;
+    const member = cachedRoster.find(m=>m.username===p.username);
+    if(member && member.digimon && member.digimon.approved===false) return '🥚 (Uovo)';
+    return p.name;
+  }
+
   // Linea visiva delle 5 posizioni (Molto Corto—Molto Lungo) coi ritratti dei partecipanti piazzati
   // dove si trovano davvero — usa le stesse immagini già mostrate altrove (resolveParticipantImage),
   // niente di nuovo da caricare. Le GIF animate (vedi Wikimon Story Sprites) sono un possibile upgrade
@@ -908,7 +920,7 @@
     const activeIdx = active ? zoneIndex(active.zone||'Medio') : null;
     return `
       <div style="margin:4px 0 12px 0;padding:10px 6px 4px 6px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;">
-        ${active ? `<div class="muted" style="font-size:9px;margin-bottom:6px;">Distanza da <b style="color:var(--cyan);">${escapeHTML(active.name)}</b> (di turno):</div>` : ''}
+        ${active ? `<div class="muted" style="font-size:9px;margin-bottom:6px;">Distanza da <b style="color:var(--cyan);">${escapeHTML(combatDisplayName(active, isMaster))}</b> (di turno):</div>` : ''}
         <div style="position:relative;display:flex;justify-content:space-between;align-items:flex-end;">
           <div style="position:absolute;top:14px;left:5%;right:5%;height:2px;background:var(--line);z-index:0;"></div>
           ${ZONES.map((z,zi)=>{
@@ -926,7 +938,8 @@
               <div style="display:flex;gap:2px;flex-wrap:wrap;justify-content:center;min-height:30px;align-items:flex-end;margin-bottom:2px;">
                 ${here.map(p=>{
                   const color = p.side==='ally' ? 'var(--cyan)' : 'var(--danger)';
-                  return `<div title="${escapeAttr(p.name)}" style="width:26px;height:26px;border-radius:6px;overflow:hidden;border:2px solid ${color};box-shadow:0 0 4px rgba(0,0,0,0.4);">${portraitHTML(resolveParticipantImage(p), p.name, 'sm')}</div>`;
+                  const dispName = combatDisplayName(p, isMaster);
+                  return `<div title="${escapeAttr(dispName)}" style="width:26px;height:26px;border-radius:6px;overflow:hidden;border:2px solid ${color};box-shadow:0 0 4px rgba(0,0,0,0.4);">${portraitHTML(resolveParticipantImage(p), dispName, 'sm')}</div>`;
                 }).join('')}
               </div>
               <div style="width:10px;height:10px;border-radius:50%;background:${zi===activeIdx?'var(--cyan)':(here.length?'var(--amber)':'var(--panel)')};border:2px solid var(--line);"></div>
@@ -994,16 +1007,17 @@
       ${orderList.length===0 ? '<div class="muted">Ordine non ancora calcolato.</div>' : orderList.map((p,i)=>{
         const wounds = getParticipantWounds(p);
         const battery = getParticipantBattery(p);
+        const dispName = combatDisplayName(p, isMaster);
         return `
         <div style="padding:6px 8px;margin-bottom:4px;border-radius:4px;${i===combat.currentIndex?'background:rgba(53,232,201,0.15);border:1px solid var(--cyan);':'background:var(--panel-2);border:1px solid var(--line);'}${p.side==='enemy'?'border-left:3px solid var(--danger);':''}">
           <div class="flex-between">
-            <span>${i===combat.currentIndex?'▶ ':''}<b>${escapeHTML(p.name)}</b> <span class="tag" style="margin-left:4px;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};">${p.side==='ally'?'Alleato':'Nemico'}</span></span>
+            <span>${i===combat.currentIndex?'▶ ':''}<b>${escapeHTML(dispName)}</b> <span class="tag" style="margin-left:4px;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};">${p.side==='ally'?'Alleato':'Nemico'}</span></span>
             <span class="mono">Iniz. ${p.initiative} · Az. ${p.actions===undefined?2:p.actions}/2 · <span style="color:var(--amber);">${zoneLabel(p.zone||'Medio')}</span></span>
           </div>
           ${miniHpBarHTML(wounds.current, wounds.max, wounds.temp, 'HP')}
           ${battery ? `<div style="display:flex;align-items:center;gap:6px;margin-top:4px;"><span class="hp-mini-label">⚡</span>${batteryCellsHTML(battery.current, battery.max, true)}<span class="hp-mini-val">${battery.current}/${battery.max}</span></div>` : ''}
           ${p.effects && p.effects.length ? `<div style="margin-top:4px;">${effectTagsHTML(p)}</div>` : ''}
-          ${p.clashWith ? `<div class="muted" style="margin-top:4px;">🤼 In Clash con ${escapeHTML((byId[p.clashWith]||{}).name||'?')} — ${p.clashController?'<b style="color:var(--cyan);">controlla</b>':'sotto controllo'}</div>` : ''}
+          ${p.clashWith ? `<div class="muted" style="margin-top:4px;">🤼 In Clash con ${escapeHTML(combatDisplayName(byId[p.clashWith]||{}, isMaster))} — ${p.clashController?'<b style="color:var(--cyan);">controlla</b>':'sotto controllo'}</div>` : ''}
         </div>
       `;}).join('')}
     `;
