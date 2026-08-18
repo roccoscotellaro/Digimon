@@ -655,7 +655,11 @@
     const alreadyAttacked = !!(p && p.attackedThisRound);
     const actsLeft = p ? (p.actions===undefined?2:p.actions) : 0;
     const others = (combat.participants||[]).filter(x=>!p || x.id!==p.id);
-    const targetOptions = others.map(x=>`<option value="${x.id}">${escapeHTML(x.name)} ${x.side==='enemy'?'(Nemico)':'(Alleato)'} — ${escapeHTML(x.zone||'Medio')}</option>`).join('');
+    // combatDisplayName maschera il nome con "🥚 (Uovo)" per chi non è Master né il proprietario,
+    // se il Digimon in questione non è ancora stato approvato — stessa logica già usata nella
+    // lista partecipanti e nella linea delle zone, qui applicata anche al menu del bersaglio.
+    const isMasterView = !!(session && session.role==='master');
+    const targetOptions = others.map(x=>`<option value="${x.id}">${escapeHTML(combatDisplayName(x, isMasterView))} ${x.side==='enemy'?'(Nemico)':'(Alleato)'} — ${escapeHTML(zoneLabel(x.zone||'Medio'))}</option>`).join('');
     const canAct = myTurn && !!p;
     return `
       ${turnBannerHTML(combat, username)}
@@ -3409,6 +3413,7 @@
           await saveMember(session.code, me);
           await pushLog(session.code, { who: session.username, role:'player', text: `${me.digimon.name||'Il Digimon'} evolve a ${target}${cost>0?` (spesi ${cost} Evolution Points)`:''} — Stat aggiornate automaticamente. Ricorda di segnare 1 Azione spesa.` });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Evoluzione applicata, Stat aggiornate.';
+          try{ new Audio('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787073018875_mziu9s.mpeg').play().catch(()=>{}); }catch(e){}
           renderDigimonCard(me, containerId);
           refreshLiveParts();
         };
@@ -3439,6 +3444,9 @@
           await saveMember(session.code, me);
           await pushLog(session.code, { who: session.username, role:'roll', text: `⚡ Forza Evoluzione (TN ${tn}): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText}`, meta:{ dice } });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = outcomeText;
+          if(verdict.cls==='crit-success' || verdict.cls==='success'){
+            try{ new Audio('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787073018875_mziu9s.mpeg').play().catch(()=>{}); }catch(e){}
+          }
           renderDigimonCard(me, containerId);
           renderTamerCard(me, siblingCardId(containerId,'tamer'));
           refreshLiveParts();
@@ -5300,21 +5308,44 @@
     const log = await getScanLog(code);
     const rowsHTML = log.length === 0
       ? '<div class="muted">Nessuna scansione registrata finora per questa campagna.</div>'
-      : log.slice().reverse().map(l => `
+      : log.slice().reverse().map(l => {
+          // Il bottone "Applica" resta nascosto SOLO se quel Tamer ha già un nome DIVERSO impostato
+          // (per non rischiare di sovrascrivere una creazione in corso non collegata a questo scan).
+          // Se il nome è lo stesso di questa riga (o manca del tutto), il bottone c'è sempre: la
+          // Wizard/applyDexMatchIfNeeded riempiono solo i campi ancora vuoti/di default, senza
+          // toccare quelli che il giocatore ha già personalizzato — quindi è sicuro anche per
+          // "completare" una scheda a metà, non solo per crearne una da zero.
+          const member = cachedRoster.find(m=>m.username===l.username);
+          const currentName = member && member.digimon && member.digimon.name ? member.digimon.name.trim() : '';
+          const sameName = currentName && currentName.toLowerCase() === (l.digimon_name||'').trim().toLowerCase();
+          const blockedByDifferentSheet = currentName && !sameName;
+          const btnLabel = currentName ? '🔧 Completa Scheda (riempie i vuoti)' : '📤 Applica alla Scheda';
+          return `
           <div class="row" style="align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px;">
             <div>
               <b>${escapeHTML(l.username)}</b> <span class="muted">— tentativo ${l.attempt_number}/2</span><br/>
               <span class="mono">${escapeHTML(l.digimon_name)}</span>${l.crest_name ? ` <span class="muted">· Crest: ${escapeHTML(l.crest_name)}</span>` : ''}${l.digimental_name ? ` <span class="muted">· ${escapeHTML(l.digimental_name)}</span>` : ''}
               <div class="muted" style="font-size:10px;">${new Date(l.created_at).toLocaleString('it-IT')}</div>
             </div>
-            <button class="btn ghost small" data-scan-del="${escapeAttr(l.id)}" title="Cancella questa riga (libera il nome e restituisce il tentativo)">✕</button>
+            <div style="display:flex;gap:4px;">
+              ${blockedByDifferentSheet ? `<span class="tag" style="font-size:10px;" title="Questo Tamer ha già un Digimon diverso (${escapeAttr(currentName)}) sulla scheda: per non sovrascriverlo per sbaglio, il bottone Applica resta nascosto.">Scheda diversa già creata</span>` : `<button class="btn small" data-scan-push="${escapeAttr(l.username)}" data-scan-push-name="${escapeAttr(l.digimon_name)}" title="Apre la Creazione Guidata per questo Tamer, pre-compilata con questo Digimon — riempie solo Stat/Attributo/Qualities ancora vuoti, non tocca quello che il giocatore ha già personalizzato.">${btnLabel}</button>`}
+              <button class="btn ghost small" data-scan-del="${escapeAttr(l.id)}" title="Cancella questa riga (libera il nome e restituisce il tentativo)">✕</button>
+            </div>
           </div>
-        `).join('');
+        `;}).join('');
     cardEl.innerHTML = `
       <div class="section-title">Log Bio-Resonance Scan</div>
-      <div class="muted" style="margin-bottom:8px;">Ogni Digimon può uscire ad un solo Tamer per campagna; ogni Tamer ha 2 tentativi. Cancella una riga per correggere un errore, liberare un nome o restituire un tentativo.</div>
+      <div class="muted" style="margin-bottom:8px;">Ogni Digimon può uscire ad un solo Tamer per campagna; ogni Tamer ha 2 tentativi. Cancella una riga per correggere un errore, liberare un nome o restituire un tentativo. "📤 Applica alla Scheda" apre la Creazione Guidata già pre-compilata per quel Tamer, se non l'ha ancora fatto lui stesso.</div>
       <div id="scan-log-rows">${rowsHTML}</div>
     `;
+    cardEl.querySelectorAll('[data-scan-push]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const username = btn.getAttribute('data-scan-push');
+        const name = btn.getAttribute('data-scan-push-name');
+        const params = new URLSearchParams({ prefillName: name, prefillTargetUsername: username });
+        window.open('digimon.html?' + params.toString(), '_blank');
+      };
+    });
     cardEl.querySelectorAll('[data-scan-del]').forEach(btn=>{
       btn.onclick = async ()=>{
         if(!confirm('Cancellare questa riga del log? Il nome tornerà disponibile e il Tamer riavrà il tentativo.')) return;

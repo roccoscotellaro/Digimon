@@ -609,7 +609,7 @@
   function clearStarterPrefillFromURL(){
     try{
       const url = new URL(location.href);
-      ['prefillName','prefillAttribute','prefillPersonality','prefillAcc','prefillDmg','prefillDodge','prefillArmor','prefillHp','prefillSig','prefillAttackDesc','prefillImg','prefillQ','prefillBabyName','prefillFreshName'].forEach(k=>url.searchParams.delete(k));
+      ['prefillName','prefillAttribute','prefillPersonality','prefillAcc','prefillDmg','prefillDodge','prefillArmor','prefillHp','prefillSig','prefillAttackDesc','prefillImg','prefillQ','prefillBabyName','prefillFreshName','prefillTargetUsername'].forEach(k=>url.searchParams.delete(k));
       history.replaceState(null, '', url.toString());
     }catch(e){}
   }
@@ -811,6 +811,31 @@
           <span class="muted" id="d-img-status"></span>
         </div>` : ''}
       </div>
+    </div>`;
+  }
+
+  // Controllo Evoluzione, ben visibile e con etichetta chiara — usa GLI STESSI campi già esistenti
+  // nello schema (defaultStage/defaultRange) che governano stageSwitchBlockHTML qui sotto, solo
+  // presentati come UN SOLO controllo comprensibile invece di due campi tecnici sepolti nella
+  // griglia Stat avanzate. Assume defaultStage sempre 'Fresh' (così è impostato dalla Creazione
+  // Guidata per ogni nuovo Digimon) e lascia i campi tecnici originali nella griglia sotto per i
+  // casi limite in cui servisse un Default Stage diverso da Fresh.
+  function evolutionLockBlockHTML(m, isMaster){
+    const d = m.digimon;
+    if(!d.name || !isMaster) return '';
+    const defIdx = STAGES.indexOf(d.defaultStage||'Fresh');
+    const maxIdx = Math.min(STAGES.length-1, defIdx + Number(d.defaultRange||0));
+    const currentCeiling = STAGES[maxIdx] || 'Fresh';
+    return `
+    <div class="hud-frame card" style="border-color:var(--amber);">
+      <div class="section-title">🔒 Controllo Evoluzione (solo Master)</div>
+      <div class="muted" style="margin-bottom:8px;">Il giocatore può passare liberamente (senza spendere Evolution Points) solo tra gli Stage fino a quello scelto qui sotto. Per andare oltre serve costruire lo Stage successivo e spendere Evolution Points/Evoluzione a Tavolo — questo controllo NON li spende, serve solo a mostrare/nascondere gli Stage già "di base" per la narrazione.</div>
+      <div class="field"><label>Stage massimo sbloccato senza Evolution Points</label>
+        <select id="d-evo-ceiling">
+          ${STAGES.map(s=>`<option value="${s}" ${s===currentCeiling?'selected':''}>${s}${s==='Fresh'?' (bloccato — solo Fresh)':''}</option>`).join('')}
+        </select>
+      </div>
+      <div class="muted" style="font-size:11px;">Attuale: il giocatore vede ${currentCeiling==='Fresh' ? 'solo Fresh (nessun cambio Stage disponibile)' : `da Fresh a ${currentCeiling}`}.</div>
     </div>`;
   }
 
@@ -1281,6 +1306,40 @@
   // noto all'apertura) — la creazione manuale ("Crea personaggio" poi digitare il Nome a mano) non
   // aveva alcun aggancio al Digidex finché il nome non veniva scritto, quindi restava sempre ai
   // default piatti anche con una entry Digidex già trovata (mostrata nel banner "✅ Trovato").
+  // Gemella di applyDexMatchIfNeeded ma per una scheda GIÀ ESISTENTE (approvata o meno): riempie
+  // solo Stat/Attributo/Qualities dello Stage ATTUALE se sono ancora ai valori di default, senza
+  // toccare approved/stageStats/EvolutionPoints/altri Stage — a differenza di startDigimonWizard,
+  // che a ogni salvataggio ricostruisce l'intera scheda da zero (adatto solo alla primissima
+  // creazione, non per "completare i vuoti" di una scheda già sviluppata).
+  function fillLiveDigimonGapsFromDex(targetMember){
+    const d = targetMember.digimon;
+    const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===(d.name||'').trim().toLowerCase());
+    if(!dexEntry) return false;
+    const cfg = STAGE_CREATION[d.stage] || STAGE_CREATION.Rookie;
+    const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
+    let changed = false;
+    const statsAreDefault = statKeys.every(k=>d[k]===cfg.startStat);
+    if(statsAreDefault && dexEntry.base_stats){
+      statKeys.forEach(k=>{ if(dexEntry.base_stats[k]!=null){ d[k]=dexEntry.base_stats[k]; changed=true; } });
+    }
+    if((!d.attribute || d.attribute==='Free') && dexEntry.attribute){ d.attribute = dexEntry.attribute; changed = true; }
+    if((!d.qualities || d.qualities.length===0) && Array.isArray(dexEntry.qualities)){
+      const filled = dexEntry.qualities.map(buildQualityEntryFromDexHint).filter(Boolean);
+      if(filled.length){ d.qualities = filled; changed = true; }
+    }
+    if(!d.imageUrl && dexEntry.image_url){ d.imageUrl = dexEntry.image_url; changed = true; }
+    if(!d.signatureMove && dexEntry.signature_move){ d.signatureMove = dexEntry.signature_move; changed = true; }
+    if((!d.attackDesc) && dexEntry.attack_desc){ d.attackDesc = dexEntry.attack_desc; changed = true; }
+    // Tiene sincronizzato anche lo snapshot dello Stage attuale, se già esiste, così il quick-switch
+    // "Stage Attuale" non lo sovrascriva di nuovo con i vecchi valori vuoti al prossimo cambio.
+    if(changed && d.stageStats && d.stageStats[d.stage]){
+      statKeys.forEach(k=>{ d.stageStats[d.stage][k] = d[k]; });
+      d.stageStats[d.stage].attribute = d.attribute;
+      d.stageStats[d.stage].qualities = d.qualities;
+    }
+    return changed;
+  }
+
   function applyDexMatchIfNeeded(){
     const draft = creationDraft;
     if(!draft) return;
@@ -1611,7 +1670,10 @@
       <div style="display:flex;flex-wrap:wrap;gap:6px;">
         ${STAGES.map(s=>{
           const built = isStageBuilt(d, s);
-          if(built) return `<button class="btn small" disabled style="opacity:1;color:var(--dchroma);border-color:var(--dchroma);background:rgba(200,150,255,0.12);">✅ ${s}</button>`;
+          if(built) return `<span style="display:inline-flex;align-items:center;gap:2px;">
+            <button class="btn small" disabled style="opacity:1;color:var(--dchroma);border-color:var(--dchroma);background:rgba(200,150,255,0.12);">✅ ${s}</button>
+            ${isMaster ? `<button class="btn ghost small" data-sb-delete-stage="${s}" title="Cancella SOLO questo Stage (le Stat/Qualities/Attacchi costruiti per gli altri Stage restano intatti)" style="color:var(--danger);border-color:var(--danger);padding:2px 6px;">🗑️</button>` : ''}
+          </span>`;
           const unlocked = isStageUnlockedForBuilding(d, s, isMaster);
           if(!unlocked) return `<button class="btn ghost small" disabled style="opacity:0.4;" title="Il Master deve aumentare il Default Range per sbloccare questo Stage">🔒 ${s}</button>`;
           return `<button class="btn ghost small" data-sb-start="${s}">🛠️ ${s}</button>`;
@@ -1708,6 +1770,20 @@
           baseAccuracy: cfg.startStat, baseDamage: cfg.startStat, baseDodge: cfg.startStat,
           baseArmor: cfg.startStat, baseHealth: cfg.startStat
         };
+        renderPage();
+      };
+    });
+    root.querySelectorAll('[data-sb-delete-stage]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const stage = btn.getAttribute('data-sb-delete-stage');
+        if(!window.confirm(`Cancellare SOLO lo Stage ${stage} di ${target.digimon.name||'questo Digimon'}? Stat/Qualities/Attacchi costruiti per gli altri Stage restano intatti. Se il Digimon si trova attualmente su questo Stage, tornerà a Fresh.`)) return;
+        if(target.digimon.stageStats) delete target.digimon.stageStats[stage];
+        if(target.digimon.stage === stage){
+          applyStageChange(target.digimon, target.digimon.stage, 'Fresh');
+          target.digimon.currentWounds = target.digimon.maxWounds;
+        }
+        await saveMember(session.code, target);
+        cachedRoster = await getRoster(session.code);
         renderPage();
       };
     });
@@ -1865,6 +1941,7 @@
             ${STAT_DEFS.map(d=>statBoxHTML(target, d.key, d.label, editable)).join('')}
           </div>
         </div>
+        ${evolutionLockBlockHTML(target, isMaster)}
         ${stageSwitchBlockHTML(target, editable, isMaster)}
         ${statoBlockHTML(target, editable)}
         ${qualitiesBlockHTML(target, editable)}
@@ -1949,12 +2026,19 @@
     if(target){
       root.querySelectorAll('[data-stage-switch]').forEach(btn=>{
         btn.onclick = async ()=>{
-          applyStageChange(target.digimon, target.digimon.stage, btn.getAttribute('data-stage-switch'));
+          const newStage = btn.getAttribute('data-stage-switch');
+          const isRealEvolution = STAGES.indexOf(newStage) > STAGES.indexOf(target.digimon.stage);
+          applyStageChange(target.digimon, target.digimon.stage, newStage);
           // Regola 8.05: un Digimon che cambia Stage recupera tutte le Wound Box.
           target.digimon.currentWounds = target.digimon.maxWounds;
           await saveMember(session.code, target);
           cachedRoster = await getRoster(session.code);
           renderPage();
+          // Suono di Evoluzione solo quando si sale di Stage (non per tornare indietro a uno già
+          // visitato in precedenza) — così il Tamer lo sente proprio quando il suo Digimon evolve.
+          if(isRealEvolution){
+            try{ new Audio('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787073018875_mziu9s.mpeg').play().catch(()=>{}); }catch(e){}
+          }
         };
       });
       const approveBtn = document.getElementById('d-approve');
@@ -1969,6 +2053,22 @@
           // Default Range da qui, o dalla Scheda Digimon) anche Baby e Rookie, per simulare le prime
           // evoluzioni quando narrativamente hanno senso — non tutte e tre insieme fin da subito.
           target.digimon.defaultRange = 0;
+          await saveMember(session.code, target);
+          cachedRoster = await getRoster(session.code);
+          renderPage();
+        };
+      }
+      const evoCeilingSel = document.getElementById('d-evo-ceiling');
+      if(evoCeilingSel){
+        evoCeilingSel.onchange = async ()=>{
+          target.digimon.defaultStage = 'Fresh';
+          target.digimon.defaultRange = Math.max(0, STAGES.indexOf(evoCeilingSel.value) - STAGES.indexOf('Fresh'));
+          // Tiene sincronizzati anche i campi tecnici grezzi nella griglia Stat avanzate, così se il
+          // Master preme poi il bottone "Salva" generale non li sovrascrive con valori vecchi.
+          const rawStageSel = document.getElementById('d-defaultStage');
+          const rawRangeInp = document.getElementById('d-defaultRange');
+          if(rawStageSel) rawStageSel.value = 'Fresh';
+          if(rawRangeInp) rawRangeInp.value = target.digimon.defaultRange;
           await saveMember(session.code, target);
           cachedRoster = await getRoster(session.code);
           renderPage();
@@ -2157,10 +2257,43 @@
     // Se arriviamo dallo Scan (?prefillName=...), apri subito la Wizard del Digimon pre-compilata —
     // solo se il Digimon non è già stato creato, per non azzerare per sbaglio una scheda esistente.
     const prefill = getStarterPrefillFromURL();
+    const prefillTargetUsername = new URLSearchParams(location.search).get('prefillTargetUsername');
     if(prefill && session && session.role==='player'){
       const me = cachedRoster.find(m=>m.username===session.username);
       if(!me || !me.digimon.name){
         startDigimonWizard(prefill);
+      }
+      clearStarterPrefillFromURL();
+    } else if(prefill && session && session.role==='master' && prefillTargetUsername){
+      // Lanciato dal Master dal Log Bio-Resonance Scan ("📤 Applica alla Scheda") per un Tamer che
+      // ha finito lo Scan ma non ha ancora cliccato lui stesso per creare la scheda. Qui passiamo
+      // SOLO il nome (non l'intero "prefill" con i default numerici di getStarterPrefillFromURL,
+      // che varrebbero comunque "2" anche se il parametro non è in URL, bypassando così il
+      // fallback al Digidex): Stat/Attributo/Qualities arrivano da applyDexMatchIfNeeded() non
+      // appena il nome è impostato, esattamente come per la creazione manuale.
+      // Come per il bottone in index.html: si blocca SOLO se il Tamer ha già un nome DIVERSO da
+      // quello di questo scan.
+      // - Nome assente: primissima creazione, si apre la Wizard completa (nulla da perdere).
+      // - Nome uguale già presente: la scheda esiste già (magari approvata, con Stage costruiti) —
+      //   qui NON si riapre la Wizard (il suo salvataggio ricostruisce tutto da zero e resetterebbe
+      //   approved/stageStats/EvolutionPoints), si chiama invece fillLiveDigimonGapsFromDex che
+      //   tocca solo i campi ancora vuoti/di default sullo Stage attuale e salva subito.
+      const targetMember = cachedRoster.find(m=>m.username===prefillTargetUsername && m.role==='player');
+      const targetCurrentName = targetMember && targetMember.digimon && targetMember.digimon.name ? targetMember.digimon.name.trim() : '';
+      const targetSameName = targetCurrentName && prefill.name && targetCurrentName.toLowerCase()===prefill.name.trim().toLowerCase();
+      if(targetMember && !targetCurrentName){
+        window.__digimonSelected = prefillTargetUsername;
+        startDigimonWizard({ name: prefill.name });
+      } else if(targetMember && targetSameName){
+        (async ()=>{
+          const changed = fillLiveDigimonGapsFromDex(targetMember);
+          if(changed){
+            await saveMember(session.code, targetMember);
+            cachedRoster = await getRoster(session.code);
+          }
+          window.__digimonSelected = prefillTargetUsername;
+          render();
+        })();
       }
       clearStarterPrefillFromURL();
     }

@@ -471,6 +471,14 @@
             <div class="err" id="edit-macro-music-status"></div>
             <div class="muted" style="margin-top:2px;font-size:11px;">Parte in automatico quando un Settore di questa Macroscena viene reso attuale (a meno che il Settore non abbia una sua traccia, o non ci sia una musica manuale impostata in Scena).</div>
           </div>
+          <div class="field"><label>🗡️ Musica da Combattimento Macroscena (opzionale)</label>
+            <div class="row" style="align-items:flex-start;">
+              <input type="text" id="edit-macro-combat-music" value="${escapeAttr(activeMacro.combatMusic||'')}" placeholder="https://.../boss-theme.mp3 (opzionale)" style="flex:2;" />
+              <div style="flex:1;display:flex;align-items:center;">${audioUploadRowHTML('edit-macro-combat-music')}</div>
+            </div>
+            <div class="err" id="edit-macro-combat-music-status"></div>
+            <div class="muted" style="margin-top:2px;font-size:11px;">Se impostata, interrompe la musica normale non appena il Master preme "Inizia Combattimento" (Tavolo) — utile per dare un tema diverso ai boss fight di questa Macroscena.</div>
+          </div>
           <div class="field"><label>Dimensione griglia</label>
             <select id="edit-macro-gridsize">
               ${[1,2,3,4,5,6].map(n=>`<option value="${n}" ${getGridSize(activeMacro)===n?'selected':''}>${n} × ${n} (${n*n} caselle)</option>`).join('')}
@@ -518,6 +526,13 @@
       renderMap();
     };
     bindAudioUpload('edit-macro-music', 'edit-macro-music-status');
+    const combatMusicEl = document.getElementById('edit-macro-combat-music');
+    if(combatMusicEl) combatMusicEl.onchange = async ()=>{
+      if(activeMacro) activeMacro.combatMusic = combatMusicEl.value.trim();
+      await persist();
+      renderMap();
+    };
+    bindAudioUpload('edit-macro-combat-music', 'edit-macro-combat-music-status');
     const gridSizeEl = document.getElementById('edit-macro-gridsize');
     if(gridSizeEl) gridSizeEl.onchange = async ()=>{
       if(!activeMacro) return;
@@ -574,6 +589,13 @@
           </div>
           <div class="err" id="new-sector-music-status"></div>
         </div>
+        <div class="field"><label>🗡️ Musica da Combattimento Settore (opzionale)</label>
+          <div class="row" style="align-items:flex-start;">
+            <input type="text" id="new-sector-combat-music" placeholder="https://.../boss-theme.mp3 (opzionale)" style="flex:2;" />
+            <div style="flex:1;display:flex;align-items:center;">${audioUploadRowHTML('new-sector-combat-music')}</div>
+          </div>
+          <div class="err" id="new-sector-combat-music-status"></div>
+        </div>
         <div class="row" style="margin-top:6px;">
           <button class="btn solid small" id="btn-confirm-add-sector" style="flex:1;">Crea Settore</button>
           <button class="btn ghost small" id="btn-cancel-add-sector" style="flex:1;">Annulla</button>
@@ -586,6 +608,7 @@
   function bindNewSectorForm(activeMacro){
     bindImageUpload('new-sector-image', 'new-sector-status');
     bindAudioUpload('new-sector-music', 'new-sector-music-status');
+    bindAudioUpload('new-sector-combat-music', 'new-sector-combat-music-status');
     const confirmBtn = document.getElementById('btn-confirm-add-sector');
     if(confirmBtn) confirmBtn.onclick = async ()=>{
       const name = document.getElementById('new-sector-name').value.trim();
@@ -595,9 +618,10 @@
       const description = document.getElementById('new-sector-desc').value.trim();
       const image = document.getElementById('new-sector-image').value.trim();
       const music = document.getElementById('new-sector-music').value.trim();
+      const combatMusic = document.getElementById('new-sector-combat-music').value.trim();
       const id = 's'+Date.now()+Math.random().toString(36).slice(2,6);
       if(!activeMacro.sectors) activeMacro.sectors = [];
-      activeMacro.sectors.push({ id, name, description, terrain, connections:[], luoghi:[], image, music, gridPos: addingSectorPos, revealed:false });
+      activeMacro.sectors.push({ id, name, description, terrain, connections:[], luoghi:[], image, music, combatMusic, gridPos: addingSectorPos, revealed:false });
       addingSectorPos = null;
       const ok = await persist();
       if(!ok){ statusEl.textContent = 'Errore di salvataggio, riprova.'; }
@@ -646,6 +670,13 @@
             <div style="flex:1;display:flex;align-items:center;">${audioUploadRowHTML('edit-sector-music')}</div>
           </div>
           <div class="err" id="edit-sector-music-status"></div>
+        </div>
+        <div class="field"><label>🗡️ Musica da Combattimento Settore (opzionale)</label>
+          <div class="row" style="align-items:flex-start;">
+            <input type="text" id="edit-sector-combat-music" value="${escapeAttr(s.combatMusic||'')}" placeholder="https://.../boss-theme.mp3 (opzionale)" style="flex:2;" />
+            <div style="flex:1;display:flex;align-items:center;">${audioUploadRowHTML('edit-sector-combat-music')}</div>
+          </div>
+          <div class="err" id="edit-sector-combat-music-status"></div>
         </div>
         <div class="field"><label>Posizione in griglia</label>
           <select id="edit-sector-gridpos">
@@ -835,6 +866,7 @@
       if(master){
         bindImageUpload('edit-sector-image', 'edit-sector-image-status');
         bindAudioUpload('edit-sector-music', 'edit-sector-music-status');
+        bindAudioUpload('edit-sector-combat-music', 'edit-sector-combat-music-status');
         const nameEl = document.getElementById('edit-sector-name');
         if(nameEl) nameEl.onchange = async ()=>{ s.name = nameEl.value.trim() || s.name; await persist(); renderMapBody(activeMacro); };
         const terrainEl = document.getElementById('edit-sector-terrain');
@@ -845,6 +877,8 @@
         if(imageEl) imageEl.onchange = async ()=>{ s.image = imageEl.value.trim(); await persist(); renderMapBody(activeMacro); };
         const musicEl = document.getElementById('edit-sector-music');
         if(musicEl) musicEl.onchange = async ()=>{ s.music = musicEl.value.trim(); await persist(); renderMapBody(activeMacro); };
+        const combatMusicEl = document.getElementById('edit-sector-combat-music');
+        if(combatMusicEl) combatMusicEl.onchange = async ()=>{ s.combatMusic = combatMusicEl.value.trim(); await persist(); renderMapBody(activeMacro); };
         const gridEl = document.getElementById('edit-sector-gridpos');
         if(gridEl) gridEl.onchange = async ()=>{ s.gridPos = Number(gridEl.value); await persist(); renderMapBody(activeMacro); };
         const revealBtn = document.getElementById('btn-toggle-sector-reveal');
