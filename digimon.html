@@ -2167,5 +2167,92 @@
   })();
 })();
 </script>
+
+<!-- ===== Widget Audio Persistente: musica di sottofondo (fissa) + suoni click ===== -->
+<audio id="dvos-bg-music" loop preload="none" style="display:none;"></audio>
+<div id="dvos-audio-widget" style="position:fixed;bottom:10px;right:10px;z-index:9999;background:var(--panel,#0f1115);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:6px 10px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text,#cfd6e4);box-shadow:0 2px 10px rgba(0,0,0,0.5);">
+  <button id="dvos-music-toggle" title="Musica di sottofondo: on/off" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;">🔊</button>
+  <input type="range" id="dvos-music-volume" min="0" max="100" value="50" style="width:64px;" title="Volume musica" />
+  <button id="dvos-click-toggle" title="Suoni click: on/off" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;">🖱️</button>
+</div>
+<script>
+(function(){
+  // FIX_ME_BG_MUSIC_URL: sostituire con l'URL Supabase Storage restituito dal bottone
+  // "Carica Traccia" nel pannello Master di index.html (Scena), dopo aver caricato
+  // bg_music_compressed.mp3 li'. L'URL va incollato ANCHE qui.
+  const FIXED_BG_MUSIC_URL = 'FIX_ME_BG_MUSIC_URL';
+  const musicEl = document.getElementById('dvos-bg-music');
+  if(musicEl && FIXED_BG_MUSIC_URL && FIXED_BG_MUSIC_URL !== 'FIX_ME_BG_MUSIC_URL') musicEl.src = FIXED_BG_MUSIC_URL;
+  const PREFS_KEY = 'dvos_audio_prefs_v1';
+  function loadPrefs(){
+    try{ return Object.assign({musicVolume:0.5, musicMuted:false, clickMuted:false}, JSON.parse(localStorage.getItem(PREFS_KEY)||'{}')); }
+    catch(e){ return {musicVolume:0.5, musicMuted:false, clickMuted:false}; }
+  }
+  function savePrefs(p){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(p)); }catch(e){} }
+  const prefs = loadPrefs();
+
+  const musicToggleBtn = document.getElementById('dvos-music-toggle');
+  const musicVolumeInp = document.getElementById('dvos-music-volume');
+  const clickToggleBtn = document.getElementById('dvos-click-toggle');
+
+  function applyMusicVolume(){
+    if(!musicEl) return;
+    musicEl.volume = prefs.musicMuted ? 0 : prefs.musicVolume;
+    if(prefs.musicMuted && !musicEl.paused) musicEl.pause();
+  }
+  function refreshUI(){
+    if(musicToggleBtn) musicToggleBtn.textContent = prefs.musicMuted ? '🔇' : '🔊';
+    if(musicVolumeInp) musicVolumeInp.value = Math.round(prefs.musicVolume*100);
+    if(clickToggleBtn) clickToggleBtn.style.opacity = prefs.clickMuted ? '0.4' : '1';
+    applyMusicVolume();
+  }
+  refreshUI();
+
+  if(musicToggleBtn) musicToggleBtn.onclick = ()=>{
+    prefs.musicMuted = !prefs.musicMuted;
+    savePrefs(prefs);
+    refreshUI();
+    if(!prefs.musicMuted && musicEl && musicEl.paused && musicEl.src) musicEl.play().catch(()=>{});
+  };
+  if(musicVolumeInp) musicVolumeInp.oninput = ()=>{
+    prefs.musicVolume = Number(musicVolumeInp.value)/100;
+    if(prefs.musicVolume>0) prefs.musicMuted = false;
+    savePrefs(prefs);
+    refreshUI();
+  };
+  if(clickToggleBtn) clickToggleBtn.onclick = ()=>{
+    prefs.clickMuted = !prefs.clickMuted;
+    savePrefs(prefs);
+    refreshUI();
+  };
+
+  // I browser bloccano l'autoplay finché l'utente non interagisce almeno una volta con la pagina:
+  // al primo click in assoluto proviamo a far partire la musica, se non mutata.
+  let unlocked = false;
+  document.addEventListener('click', function unlock(){
+    if(unlocked) return;
+    unlocked = true;
+    if(!prefs.musicMuted && musicEl && musicEl.src) musicEl.play().catch(()=>{});
+  }, { once:true, capture:true });
+
+  // Suono di click — stesso identico snippet già usato in index.html, riproposto qui
+  // per coerenza su tutte le pagine (nessun file esterno, tutto incorporato).
+  const CLICK_SFX_DATA_URI = "data:audio/mpeg;base64,SUQzAwAAAAAAKFRTU0UAAAAUAAADTEFNRTMuMTAxIChiZXRhIDIpAAAAAAAAAAAAAAD/+7BkAAAE/ze0DWcgAgAADSCgAAEddTMOGf6AAAAANIMAAABAy7hchHxRsyWTnzPnk84SYoy0zPBYcWwSsW2YZZormyqcDRsLGgUAiEUGIP5elbkO5LMNYUlJzDD869PT28//DDDDDDCnzzzzzzzz5rDDDDDDDPPPPPPPPPDDDDDDDDDPPPPPPPPPDDDDn/rCnp835h4AAAAABh4eHh4AAAAABh4eHh4AAAAABh4eHh4AAAAABh4eHh4AAAAABh4eHh4Au+XAEBkMADBWTKgyA8wqA2WUEMAdABzB6wPUwp0EHNYUQMj7g4n+D7xgagGsYBCAkmSYkGxj8wZlLaciEYwqCA1MuQ1ogvmHExTCQADAMETutuTEhOzHlYO8wwQPMGQDUUfk4OU4yhQQ0oIIxNF3P//01Ibkbvx4ykCsyRIsMIMwFBUxJGn/z7z4owSUwOy+YMaQ1MQR1DCzMNgqAxLBgmf////LIxQ25fL6QwfBUwwAJ3XaCwDAIFHZ33D////BkEhq5f//CH3YIRA33+f////////yvbl/f////TvSjeq9v//+6p/////1vqUCAAAACAAAwhQNHMGQAATAkgMwwFcArMN2DADBDgY8wBO3iPGxKBDCdMtY4xcWkMEX1sjTiRVYw7EIBMD6CKjCJgRUwBgC5MJCAzzAZwC8yHQjR5GMohw1AhTORlLLGLIKcJTBgtBhwKMbpUSTZEYAAGBIfmUgwYyTppcaiIZGvxMZxExhwhiwuMNHEEhEwYITHRpMLI8zwhQESDLRNMvjcxcRTDI6L9DSvM5FowiJjCQHS4ConLrGEgaY3DhicVhA2P/7smRhAAoQTMU2f4AAAAANIMAAAB7BDRAd/QAAAAA0g4AABHgupWYGFJgADCMFmFxUYLEwKGxg8JGJwmMhAQgFWElCBhMTDgOCgCBQbC4ADgcpSBgcQgsweEggGMRY084cCaycCXkGPq5kO2CQBuVjrn/Yy/H9f/5///r//rRV6Q7z//f/7dFOKHv/+//2jL/hrtfdU/ksj1uq16v/X+6v19/rMAiAhjA8wUQwTsFKMIxCsDCXQi4wrsMAMRBGIjISRvoxwe1EPhqPFDBbAo0wO0B+ME4BdTA8AFEwMQATMBvAAjAAwAYBATJlEJhlR6JAS6Drw+LFlxjx4EammQGXCDE5GA24cWtFowN5NABNIxGnBQ3NULFVAlCGh5ljJjEgFIEBsFQHDXcFBRlQBihrBhZRHgcPMqXEhowbHiwWIEpEDTE7GbFyx4AEOEMUPnzBgSbMGJJh5eguytgLgBoEMgXLeoum2d/WHtKWu40NqNr3f11ICfXHOH7////MQ/3////X///////+WUSXJAgMhP+3/Jf//b/pM0ORCQGzlpq1EaOqnKSRgR4IqYTEEnGOzl9B8MwH4YfIBdmCVgGBrqp/xptixtdgtxIBpg1IqoNkAc4kViAqZwMYQ0YMya8KKijAigiGKEzXiB7GgLMQRNNCRzAJlI19xEGSLM8SIgwJSlnhoOLFpoRmggUBiIOdiIMNEhkAUDiEEWmMCSVeVDwCAwxOrFSpaIgGXGNDQuHWi5awqtstvx+DWjNZehhzcog727Ekae/MPxPdaY+7D3///8clH//////////////+plB1n//t/2mAzAJYOA2jAf/7smRsj+aFQ0UDf9EgAAANIAAAASKJewwV/QAAo4ASBoAgAEgEocAgDAFgAAwaoA6MIFCqzDRQvUx3VwzPy8dSTDgRXQwnAG8MFKBADAUANMwOMBxMBLApSoA3GAwAAhgIZmgRnNRgGIC7G2SmBmGbfA6Qct2YIibrAUZjhEjq9TZFS1SOJk2ZQMIHiUBpIRsCRi3JrWJvTwHKmlAA1AaMeENA6sluY0aBpYslAyQGlUrAgaYs2FhRggZhAsrBzsQFDWDi8JEQBQJMgwaCDi9amAsTFQqFQ8MFiCBNhjK3cYCx5tFoteZ+p0sOzNzX2bixJ3d1aXH//9RKM8/////v///////uG1K1D331bmKmH////////////////////////////////3f///9X+pwf///2L9pdQYLnw+IDgPr////////nBO8QFJ9TjheQEg0HyhwMCd4IKTAYAE0wGwA+AwZQYGCCumCsAThghIS+YSDR5n0eFeZhZ02ybncO0mKkNtJjvQguYqqFpGDWAcph94RcYHMAOmEpgNhglgBubAkJjkjGySAZKCRloemJ0IaPQBmwAg6QmZ0CY8D5hkPmsEALeAy6mTMRPGn8Ig8ZzQRnQ+mMCOYUOwsQjDxSEInMkAcxGBzAhOMWgswiMgsWDDoKMijQKjMwEFigHmCgyCh4YPBwQDgSBm6rOGBGYxAQGKwGEo8WRoomCwCZOEKNghEgKAytoOHKxQETCISBcCvgtJ5mkyq3SqMQJLM3U5xDNBAAggPAAv+oAtPn//77/2PzsRB1FL6CcaBXukIIMNBpJcxAJnZ7bJAyGDQvbO/////7smSNAArBb8EGf4AAqmemYsBYABsNMT9ZnoABsp4kQwGgAP5tJYawz////yUBmEQqYHAJhEHy69/////6///7vP////1///7/////9f//+////+////////f//uf/1f/1AAACFFf//+YTozgXOJGJPkmiA8C4GCsC4BABgMA4LwMNYdQMXQwAMNbAwOZ6cQMbq2wM0oiCfK6GoAoP4GKEQIGGsL4GEMCIX4AwJAcAyMHKA7mSeAzEN1A6Zp7A0ygiA0XJEQNH8CQHAMJwHBfi5BYCbUBlgDGBwkLQBlhNOBjRA+BjeCEBgxByFi3/N1fwwWQ4ZAT4Rc5/7b96P8bLaVl8ujZ////+zfn9QBEAIMh0NVqZGAASmNNmU6EEGFGvoxKVlF6ktGYGAQhMX4FCQ4wvSKkp1mDgoGA4FCwigAGkTTDAADO4pDFQIjE11TI4vwEKpgNKpsaLJWBYCEBZBgEAiNBhAAKSzpNdCAVoUq0EJeNAWiWypTQOAFfNST1HlXRLIZg5sw8CChgVAEtyrUnG/LuyqxP5QJDT8R+u/ia7X30tQBJqROZUUFy95os8MAy7DVmajffyX0JBBKe/Cu/QqoJvvzlT4/+6dRGp/Lsy60u5////ZpUcHX5////9xCm7/////////////////89u77J2AoRHFbTGUTIlwaLrCoo1y4OnqYrTEiEUUwCA6EsLARQyQGjUIS6wCKL2BQAFIQQhBoVmam6rMsH451MWB2/TDgVxKREVCpmruMBbvW7z////4MjuX///8qVF1VEChmlqBjhlw4hkgpQPjChMDpZiCJA8NscMkcMCvN61Dv/7smQQjvZdREuHa8AAXoaI8OBgABaA8yotexIRMxphwADiwDwCCGByAA+5QAYHAFAQBEwJARzB8BXMEoMcwsBmDYRPEMVsLgwkQfDAvAFMBoA4IARUNFAGAYASFwEESQoAYkmuKA0GE+hoAowEwBAsACX5BIA6fLRS0irEgiy6scUcSWJBK3MwUqkD/qqUDNmDw+n2pZHmcPAxh5H5fKZhmBXqdG/G4b1YygSN2J3ffn73e9/////8Mar+pAo1P9SynfP/////7DpMun4rj///////////////6x/P98dMZIXJNuDD0FsNR2ZisgHozBQWAiwqR2kwRGIieoQW3NUQ6q2wckzkkrR18IBmTSOfhtIp2mtq9a9bcmMstjN15X2i8OOtDzgwQ/85IIsRQA0iUM2hc4isY0EXKRCMyrM+6CwQ0ZQxRc2lEHZAgOMLkhwu5QkO+SKCUAx5d5nBRhak1HF0VQYjgOJgfgjGBIAucWm5IjyX+ARkERbkCwPegeEiAkYGFTqWWDpiS0JYNcm6NGbDOIaukuRN4WEyZU8VdVEx+pesK1ksqxucQmStYBVRLqIMpeylfOlfyHa9dqcShhk1aM0UN0n18Z+zL7H/////XxsUwrhtt93S986DRYj8T95Pr1WamEgejy10v8ZhsMZsFFQ2zYHQd9E5y2gsGZSlg/z4rFaUXWRytQ1D1+IrtaqyVrMgeNtY1nEXKlc7TVaV9X5iV54VixWlsjLQ8gQTZhkxMXAz6vo1EzNSPSIAMUFzF3s48pMRUDJAEYGDKl0wsRNBEgaAMYHgFpgcAhmAMA2YJIJpgtAamH6H+Yb4av/7smQigAevPMgFb8AAUqWXg6BkABsw+ysZroABL7TUCwJwAZixpQmGDFKY44iJh9hJmAWBqYAwAQkFKYIgGRgEAHGAQAkDQC2ikwAZgOAEjQHpgkAHGAOASYFgAaHhgIgCAkAQwAwH18GAmCKtwwAwBiIGswHAB06VziwGJgQgDGACAAYCACCGTWHcMAUBR1igC14U7GHCAAlrLXkBKhjFoo5SQsuLyrdZ4s2HFOkiIFd+BcrbFWLtaUBZU1NlUq5OyGx////zHG8ucWAODgHKTkOXOgAAAcf////////////////ljV1BQFQN+Q3zE5y7LXXCLhLPStMWw9UDQ3OgFhyixkkJ1mEeaRaoGnSmph3H/3Ud5fKxnKl0ScpczTroYf////6QMFAAAAAgAz6cEQZccluQKRUwYNSc4SYgOZMocQsIxZGOAphbhhyZp0JbgwJCIwBD0AgEEBGYXD8YwBAZ7cef1l0NCUYcG6d+o4DhtMMBCPK4BMiwmCwGgYK1okgShwbFo1tpbGMAEGBABGCQFJigUAmWlgEHgIAHEgiL2LyVmWsSAaiU4bHzAgAgYDJEBYOA1bzKFERwAU51YIHdlyoovhoCghWAboIWJ0s5pHKkcjfyQSW/3cMO4xB9IccOWV5b/9ggoCGV9+m79CVQAEYA2Mvx/8YLJgilHAAAEAIPz+v//+qL/81P/PHi5pxL/8dOVjn//4jCUIojC4RUOX//9DlEYmWYRhOc////mjzmioHQQhEGghYeKx7////9R4uOoNh2nlVUIAAAAABqIAAtMbSZmCm4WkcC7QSAPUOwLBhUExpQx4UVNAUDDP/7smQTAAbaPcxOZ8ACAAANIMAAACI88RgdvwAAAAA0g4AABImAIAwJwAjBnAgCgAxfwEADmAwAYYOyFRhxCfGBMCaYIaLxoJBCGB0A6YWpexqJAHAYAQwFgGygDxDZEEaAHHAAEhC/TSzAIAEMAcAlhpKAmiMIQCmJo+oZgIAMGgCJqlAATphgC6JSZq+RgAWBl0saaJEVgFms/fmCodcppzd5A8EhW6z2CaV1oCk7Q1NmaP27VK/zeoAJfDbcIIpobv/QJSogZ4/Sf/ZgoAFr9+f59CgUmWLFpw7MTOxDhDPgLyOSPjrx8HNJz4kYabAhUAw+bKXGXJBrzec4ilEYCgYwVQQwgGQwOgAzBbCZBAJhgJAomFmKQYPIVJiDUBmEN5Waphk5kdBymAiC4YMYHhgRgPJ5CgGpEJGYUYLpgvgWGCOBcIAXTAXBaZ6YE4HBg0AUmBgA8YWQDYJA9MDQEEwQgTR4AkoA5MF0CcwRgVwEBSYCQB5gMgMGAWAiYDIE5gegYjQChgWAPmAwAYYLAIZgCAAIHlzzADAFLABKdAFARHgNJqLlkk4RQAJfJAAO4yjiWpgGgJpvAIAPFNhLcvO+D/mAGAEqimapsosJAFpDK8buqZh7uf///40uPHiWgMA3LQVNDNqIqgDOlu0wugTIJfM2W009cjKpkDrObbTRlMZmWB4aSPyAIx5PTjJMN/ioyenzZECMpEw9UFTZkMNxPI28nDBzINnm8z1PTd6OMm8AUDs41DIw4sI7MDCAczBFwGUQRAyiPzKodNfn0BFU1aVDBqFMRi8wecjPymNOCkygjTWJvACrNIpE16YzR//7smRDjvkXPMMLn+SAAAANIAAAASRo8wgO/5IAAAA0gAAABAEMToYgAhnMimOhAaKBIyXjGxqNbAU42yDCpaMmHQzSOTI4zMBqIziTjEASMqCExmLBI7iQPL9GRgGY2EiohQHhB2AoWGBkVB0YNERUGxg0MmIgSWB2PBcvyBAmYnChgQOGFhYChOSAowKKEH2Vr7GQAqsWAQNA2NWYdZLIcv//ys1o+vscBJmMEGYAlHltrwbtb/X/q/1f6f//3GBApGkARGVBMmZgbmJZImVZPmgZKmGIPGawfGSwqGMwcmGIWmaozmd8VmKQ8GZIPGOzYGXiAGThJmMpLmqyUmzpkGGQrmFaSnBhrntMAGCqoEhysAR2YREFUmCoAUY0EAGihOaVQ5n4nG0kua7eZiExGwVYGY4xSFjTDCNVwoqt0w2oTWivEn0Z4VJrRNmYlGAiwaGNAOpplMVGgDkVEOYAAhmg+mujSZWMgFLZh0lApJmXw4YCDphcymVgeCTSICSYaJBgADgweAoRmLh+NA8xYOxkrGHBoioYxFSYooFzBQQVRMKjBKcuIDAEnamIYACataEDbgYJDgCEgWIwFVRvlrcmt///vWs7Dd16jgLBj/EAVb1W5YZrU7//1///////99UAAADgAKzo6TP0zJizMzQqYNUcMQUMY4NTnGrB0i4VogjgYTgdtCblyGpzShTYDDRlTU0zCzA1MNIMYwzRfTC+CCMntO85XGvjOyBzFQDTBmDLMPMHIwoAWjAZAbMFQEowMgQiUEY6IFvG5UdCgw82wZ0JIGKMa0wa4ebY8+tgCkg8tbit0BmkMVBzPNAK6P/7smRHj/bSPMcbXswgAAANIAAAARsk8xwN+1IAAAA0gAAABG7x0g0sIiAcoJEg4tHlMcvOmWYAj7qnL5twctt1mI+OG57PGtsPZO3acgCBdvDSwQ6blTFH8xSfhSc///93IkREkQ965M1+f/+7+s28RIQQ19aNBoQwzM3dAh4DjsaCDEVYysdNVDzCRI0A/MHMDTFcwO7Glc0FmM3HjBQYIOAEqmIVRzIobuPmHy7WaAsbph7ApAIKMwcQBjK7zSETGqzCjTSkTYJDrDTzIQo6LMnyQGdKi10BTxY0BUBWiAz4x58yJoyBU5LgRISqDCBI8QMUgCw4IFGIBmRBGLCI4F6TBCgNJLeFQVUARsCo14l+i+ZepCUFwqcErZk12aW+w5UblM5lbcVgVDGzvpPQesPCaSGY1S/O2r3///+LMhx5HIft43eqTEFNRTMuMTAxIChiZXRhIDIpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqoAAAGAgksy2EDBHKbyJtEKHHCqtcITOQEHWhzxE+RlCXUKET6Z4AIDigwEQAAEmCAAoYHYWpipBim9mWcYYYA4QDIYD4GQpCCviIZt0mBEIrssAMhMhECBl/SoU7jcU9gIQY4T3S5Uqsr9CMhuyrE2gEssYLgJOMYEg3tZky+JMOjSAhJd9Ebm4xSGGGsNetSyIVblO/sBx/nK0vf/5+/R0ufKSc///////OUJBKE2q9TQOtCJAYAqMxygEwWEg6cLgkIBaAaQQQIaiMAyRjPGByyUQhYR/AUxoGk2QVSPvEwZi7DTqCoMGYD0AgiGAkBGXDR6LMy8CuJBkTGxS8WKm4v/7smSBB/WPPEkrPswQAAANIAAAARPo8SYM+xIAAAA0gAAABHSXZRPi8ga0mMDjJvJfNIZUxR22QI5YQw2SEwM3ROdSUgbRsz0Nja7BCNt6C8H45Ntaop3De9blu4etXqtjv7x/Ozc/////94VyoeZ7lW1VTEFNRTMuMTAxIChiZXRhIDIpVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUx6VIoAz9WC4qVmBkbsayXHTqwQbGUOpnSyNHAwJmYChnMEbGlD18BgQ2RbMKJDgQpUhkqNhjQDZgmZ51UgJ53Oxzh4ph2IAGtwxvDAxGGswoBMBCuYohAYbB6MiydVpewVyN1kHQmOUJhGC6HDm2gPTlyDKPMJkqkBZAHZByKqgEnMICGi6RtSmYCskK3H2EgsFEyYELlAEoEhmAOFQFY0paEyAxJEyQC3wCaSuZck6rhbKeKcstRVibkqMUtimzpbOMplvMv//5luU2TCFEtCKYoT9sbk8A8yw7MiSTWFMxwLXcZG4HFrhjTicA9moowEYzdFUzw3BRiZi0HBuBWZqFmYrxq5YXqNW4TDqBnMB4J0wMBLjKTIOMnxQEygw9zI8MnMjIMQxjRjDkZ49HyPbQDfH88inEiYzlFNoSRlINXGDCwkEigGBzKjcFJRiBGZQTmLC5iZ4YaTmPAo4aGQg4OGzRzIeQjIi8DCoCIX+UPRFMNKDIRgAjhi4cFwFE1Rv/7smTBDva8PMKDfcwgAAANIAAAAR9Q8vJN+3BQAAA0gAAABJCoCBrLwuBJrFphGDGGgwYJCINMmKygGcUKBJhwGwQChBh4MwdnLOlgVey6l1v//////W7cthp60JJVKjEZYytQEhNk5b2ltBX//V//8r/rTEFNRTMuMTAxIChiZXRhIDIpVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUyDVQ1IHgwNEcw9KUx6CkweAlhhdYwDAhHF6gSBBgiBxQASRKSxgOASEowEBcwUAFaJgwGZg8AwkK5jYVJjUSRreOBxa551lfZ1EvJkcERiqNhj6MhhiCRg2FhhWB5jSVBkmITJzAEEDBEAhgEzCAFUsEqi4K4WnmZGTWGu0ZqR3+D5wGOAjZtAoCi7xlsGycBhgKACAQEKh4Z6hojKijLgvkjaW9WUisASDLCXt3n////Wgs4YhChAMCBUDHCZNEAMHgIBgNG5wpjkBZOBAEAHBcOXLhuqgx3HjaMbOyIM2M9wU1S+EXlsXjEYjEYllJewp7FBLJStgLgMIDgk2zFFQPNH02LDjMJrBgPIgNE9d7O3HdyksbryuNv/D7+P4/j+P4/kYjEsp8/wqUkojEYjcbjcbjcbl9PT2Obzp6enjcvjEYjEYjEspKSxb7rCkpIxGIxD8bjcbjcbjcbtyymiMqfowciNJUjTyoWIkNSIEUoUERULuFyAgEMadDhvAysJL5rHXeu9f/7smTEC/a1QTcDua4iAAANIAAAASAVotaubNXIAAA0gAAABN7E2vs4chyHIfx/IxGKRPWggQIECADAYWTJkyZO4/u7JkyZAgQIEEIiN/iIiECZO7u7vf3u7u7QgAABH4AAAAB4eH/8cPDw8AADP4AAAAIVTEFNRTMuMTAxIChiZXRhIDIpVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVTDAKjKGGUTc3QZc7TvRmW2efrLv5VpdEnGbkn0gBANBRBzUaTJ5gZSiKJINRCEoGwlCUJROMjJa72WXLlxkcmJiYmJ6tWrbfNarVq05XLly5cuXLnq9lrLly46WrTE9WrVq1bb9qtWnJiYmRKEoShKEoSicZLYsok7y0kwgqgePgKYN1//7smRCD/aeVDYDDM1iAAANIAAAAQAAAaQAAAAgAAA0gAAABAzwC8SYTEmvP9D1LZ1WpqaNRqNSmMxmM0tLS0uOXfxxxxpaWtTU1NTZBQT8IKCgUFBQU3wUFBQoKChv+FBQUCgoL/9BQUFCgo7/hBQUFAopTEFNRTMuMTAxIChiZXRhIDIpVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVQ==";
+  function __playClickSfx(){
+    if(prefs.clickMuted) return;
+    try{
+      const a = new Audio(CLICK_SFX_DATA_URI);
+      a.volume = 0.5;
+      a.play().catch(()=>{});
+    }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    if(e.target.closest('input, textarea, select')) return;
+    __playClickSfx();
+  }, true);
+})();
+</script>
+<!-- ===== fine Widget Audio Persistente ===== -->
+
 </body>
 </html>
