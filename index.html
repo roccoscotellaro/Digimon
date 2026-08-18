@@ -376,7 +376,7 @@
   }
 
   function defaultCombat(){
-    return { active:false, round:1, currentIndex:0, participants:[], order:[], startZone:'Medio' };
+    return { active:false, round:1, currentIndex:0, participants:[], order:[], startZoneAlly:'Molto Corto', startZoneEnemy:'Molto Lungo' };
   }
 
   // ---------- turn gating helpers (self-service player actions) ----------
@@ -891,6 +891,35 @@
     return { current: Number(member.digimon.battery||0), max: batteryCap(member.digimon.stage) };
   }
 
+  // Linea visiva delle 5 posizioni (Molto Corto—Molto Lungo) coi ritratti dei partecipanti piazzati
+  // dove si trovano davvero — usa le stesse immagini già mostrate altrove (resolveParticipantImage),
+  // niente di nuovo da caricare. Le GIF animate (vedi Wikimon Story Sprites) sono un possibile upgrade
+  // futuro: qui la struttura è già pronta, basterebbe sostituire l'URL statico con quello della GIF.
+  function zoneLineHTML(combat){
+    if(!combat.participants || combat.participants.length===0) return '';
+    return `
+      <div style="margin:4px 0 12px 0;padding:10px 6px 4px 6px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;">
+        <div style="position:relative;display:flex;justify-content:space-between;align-items:flex-end;">
+          <div style="position:absolute;top:14px;left:5%;right:5%;height:2px;background:var(--line);z-index:0;"></div>
+          ${ZONES.map(z=>{
+            const here = combat.participants.filter(p=>(p.zone||'Medio')===z);
+            return `
+            <div style="display:flex;flex-direction:column;align-items:center;flex:1;z-index:1;min-width:0;">
+              <div style="display:flex;gap:2px;flex-wrap:wrap;justify-content:center;min-height:30px;align-items:flex-end;margin-bottom:2px;">
+                ${here.map(p=>{
+                  const color = p.side==='ally' ? 'var(--cyan)' : 'var(--danger)';
+                  return `<div title="${escapeAttr(p.name)}" style="width:26px;height:26px;border-radius:6px;overflow:hidden;border:2px solid ${color};box-shadow:0 0 4px rgba(0,0,0,0.4);">${portraitHTML(resolveParticipantImage(p), p.name, 'sm')}</div>`;
+                }).join('')}
+              </div>
+              <div style="width:10px;height:10px;border-radius:50%;background:${here.length?'var(--cyan)':'var(--panel)'};border:2px solid var(--line);"></div>
+              <div class="muted" style="font-size:8px;margin-top:2px;text-align:center;white-space:nowrap;">${z}</div>
+            </div>
+          `;}).join('')}
+        </div>
+      </div>
+    `;
+  }
+
   function combatDisplayHTML(combat){
     if(!combat || !combat.active) return '<div class="muted">Nessun combattimento in corso.</div>';
     const byId = {};
@@ -900,6 +929,7 @@
       <div class="flex-between" style="margin-bottom:8px;">
         <span class="mono" style="color:var(--cyan);">ROUND ${combat.round}</span>
       </div>
+      ${zoneLineHTML(combat)}
       ${orderList.length===0 ? '<div class="muted">Ordine non ancora calcolato.</div>' : orderList.map((p,i)=>{
         const wounds = getParticipantWounds(p);
         const battery = getParticipantBattery(p);
@@ -4478,13 +4508,15 @@
     if(!def || !def.instant) return null;
     if(def.instant==='pull'){
       const from = target.zone||'Medio';
-      const zi = Math.max(0, zoneIndex(from)-Math.max(1,potency));
+      const steps = Math.max(2, potency*2); // 1 vecchia "zona" = 2 pallini sulla linea a 5 posizioni
+      const zi = Math.max(0, zoneIndex(from)-steps);
       target.zone = ZONES[zi];
       return `${target.name} viene attirato da ${from} a ${target.zone}.`;
     }
     if(def.instant==='push'){
       const from = target.zone||'Medio';
-      const zi = Math.min(2, zoneIndex(from)+Math.max(1,potency));
+      const steps = Math.max(2, potency*2);
+      const zi = Math.min(ZONES.length-1, zoneIndex(from)+steps);
       target.zone = ZONES[zi];
       return `${target.name} viene respinto da ${from} a ${target.zone}.`;
     }
@@ -4685,10 +4717,10 @@
     }
     const zDist = zoneDistance(attacker.zone||'Medio', target.zone||'Medio');
     if(atk && atk.shape==='Melee' && zDist>0){
-      return { ok:false, error:`${atk.name} è [MELEE]: serve la stessa zona di ${target.name} (ora: ${attacker.zone||'Medio'}→${target.zone||'Medio'}). Avvicinati prima di attaccare.` };
+      return { ok:false, error:`${atk.name} è [MELEE]: serve la stessa posizione di ${target.name} (ora: ${attacker.zone||'Medio'}→${target.zone||'Medio'}). Avvicinati prima di attaccare.` };
     }
-    if(atk && atk.shape==='Range' && zDist > (atk.reach||1)){
-      return { ok:false, error:`${atk.name} è [RANGE ${atk.reach||1}]: ${target.name} è troppo lontano (distanza ${zDist} zone, ${attacker.zone||'Medio'}→${target.zone||'Medio'}).` };
+    if(atk && atk.shape==='Range' && zDist > (atk.reach||1)*2){
+      return { ok:false, error:`${atk.name} è [RANGE ${atk.reach||1}]: ${target.name} è troppo lontano (distanza ${zoneOldEquivalent(zDist)} zone, ${attacker.zone||'Medio'}→${target.zone||'Medio'}).` };
     }
     return { ok:true };
   }
@@ -5247,23 +5279,32 @@
     if(logLive) logLive.scrollTop = logLive.scrollHeight;
   }
 
-  const ZONES = ['Corto','Medio','Lungo'];
-  function zoneIndex(z){ const i = ZONES.indexOf(z); return i<0?1:i; }
+  // Le zone sono un'unica linea condivisa con 5 posizioni (o——o——o——o——o) invece delle 3 di prima:
+  // stesso regolamento (Melee = stessa posizione, Reach 1/2, penalità -2/-4), ma il movimento è il
+  // doppio più granulare — un "Muovi" sposta di un solo pallino, non di un'intera zona.
+  // "Medio" resta il centro esatto (indice 2 su 5, come prima era indice 1 su 3), quindi tutti i
+  // fallback "||'Medio'" sparsi nel codice restano validi senza bisogno di toccarli.
+  const ZONES = ['Molto Corto','Corto','Medio','Lungo','Molto Lungo'];
+  function zoneIndex(z){ const i = ZONES.indexOf(z); return i<0?2:i; }
   function zoneDistance(a,b){ return Math.abs(zoneIndex(a)-zoneIndex(b)); }
-  function zonePenalty(distance){ if(distance<=0) return 0; if(distance===1) return -2; return -4; }
-  // Muovi di un solo passo lungo l'asse Corto/Medio/Lungo, in riferimento a un altro partecipante.
+  // La distanza "fine" (0-4 pallini) viene tradotta nella distanza "a zone" del regolamento (0-2)
+  // arrotondando per eccesso ogni 2 pallini, così le soglie di Accuracy/Reach restano identiche.
+  function zoneOldEquivalent(distance){ return Math.ceil(distance/2); }
+  function zonePenalty(distance){ const d = zoneOldEquivalent(distance); if(d<=0) return 0; if(d===1) return -2; return -4; }
+  // Muovi di un solo pallino lungo la linea, in riferimento a un altro partecipante.
   function zoneStepToward(fromZone, refZone){
     const fi = zoneIndex(fromZone), ri = zoneIndex(refZone);
-    if(fi===ri) return null; // già alla stessa distanza, "avvicinati" non ha effetto
+    if(fi===ri) return null; // già alla stessa posizione, "avvicinati" non ha effetto
     return ZONES[fi + (ri>fi?1:-1)];
   }
   function zoneStepAway(fromZone, refZone){
     const fi = zoneIndex(fromZone), ri = zoneIndex(refZone);
-    const dir = (ri>=fi) ? -1 : 1; // se pari, per default ci si allontana verso "Corto"
+    const dir = (ri>=fi) ? -1 : 1; // se pari, per default ci si allontana verso "Molto Corto"
     const ni = fi + dir;
     if(ni<0 || ni>ZONES.length-1) return null; // già al limite (non si può allontanare oltre)
     return ZONES[ni];
   }
+
   // Le zone sono un unico asse condiviso (Corto-Medio-Lungo), non una distanza per ogni coppia:
   // avvicinarsi a uno può avvicinare o allontanare da tutti gli altri, a seconda di dove si trovano
   // sullo stesso asse. Segnala l'effetto collaterale su chiunque non sia il riferimento scelto.
@@ -5294,16 +5335,22 @@
       cardEl.innerHTML = `
         <div class="section-title">Gestione Combattimento</div>
         <div class="muted" style="margin-bottom:10px;">Nessun combattimento attivo.</div>
-        <div class="field"><label>Zona di partenza (default per tutti i partecipanti)</label>
-          <select id="combat-start-zone">${ZONES.map(z=>`<option ${z==='Medio'?'selected':''}>${z}</option>`).join('')}</select>
+        <div class="field"><label>Zona di partenza Alleati</label>
+          <select id="combat-start-zone-ally">${ZONES.map(z=>`<option ${z==='Molto Corto'?'selected':''}>${z}</option>`).join('')}</select>
         </div>
+        <div class="field"><label>Zona di partenza Nemici</label>
+          <select id="combat-start-zone-enemy">${ZONES.map(z=>`<option ${z==='Molto Lungo'?'selected':''}>${z}</option>`).join('')}</select>
+        </div>
+        <div class="muted" style="font-size:10px;margin-bottom:6px;">Default: Alleati e Nemici partono agli estremi opposti della linea — modificabile qui se la scena richiede altro.</div>
         <button class="btn solid" id="btn-combat-start" style="width:100%;margin-top:6px;">Inizia Combattimento</button>
       `;
       document.getElementById('btn-combat-start').onclick = async ()=>{
-        const startZoneSel = document.getElementById('combat-start-zone');
+        const startZoneAllySel = document.getElementById('combat-start-zone-ally');
+        const startZoneEnemySel = document.getElementById('combat-start-zone-enemy');
         cachedCombat = defaultCombat();
         cachedCombat.active = true;
-        cachedCombat.startZone = (startZoneSel && startZoneSel.value) || 'Medio';
+        cachedCombat.startZoneAlly = (startZoneAllySel && startZoneAllySel.value) || 'Molto Corto';
+        cachedCombat.startZoneEnemy = (startZoneEnemySel && startZoneEnemySel.value) || 'Molto Lungo';
         await saveCombat(code, cachedCombat);
         for(const p of players){
           const orderKeys = TALENT_DEFS.filter(t=>t.once==='combat').map(t=>t.order);
@@ -5320,9 +5367,13 @@
 
     cardEl.innerHTML = `
       <div class="section-title">Gestione Combattimento</div>
+      <div class="row" style="margin-bottom:4px;align-items:center;">
+        <span class="muted" style="flex:1;">Zona di partenza Alleati</span>
+        <select id="combat-startzone-ally-live" style="flex:1;">${ZONES.map(z=>`<option ${(combat.startZoneAlly||'Molto Corto')===z?'selected':''}>${z}</option>`).join('')}</select>
+      </div>
       <div class="row" style="margin-bottom:8px;align-items:center;">
-        <span class="muted" style="flex:1;">Zona di partenza per i nuovi arrivati</span>
-        <select id="combat-startzone-live" style="flex:1;">${ZONES.map(z=>`<option ${(combat.startZone||'Medio')===z?'selected':''}>${z}</option>`).join('')}</select>
+        <span class="muted" style="flex:1;">Zona di partenza Nemici</span>
+        <select id="combat-startzone-enemy-live" style="flex:1;">${ZONES.map(z=>`<option ${(combat.startZoneEnemy||'Molto Lungo')===z?'selected':''}>${z}</option>`).join('')}</select>
       </div>
       <div id="combat-participants-list">
         ${combat.participants.length===0 ? '<div class="muted" style="margin-bottom:8px;">Nessun partecipante ancora aggiunto.</div>' : combat.participants.map((p,i)=>{
@@ -5488,10 +5539,17 @@
       if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat);
     };
 
-    const startZoneLiveSel = document.getElementById('combat-startzone-live');
-    if(startZoneLiveSel){
-      startZoneLiveSel.onchange = async ()=>{
-        combat.startZone = startZoneLiveSel.value;
+    const startZoneAllyLiveSel = document.getElementById('combat-startzone-ally-live');
+    if(startZoneAllyLiveSel){
+      startZoneAllyLiveSel.onchange = async ()=>{
+        combat.startZoneAlly = startZoneAllyLiveSel.value;
+        await saveCombat(code, combat);
+      };
+    }
+    const startZoneEnemyLiveSel = document.getElementById('combat-startzone-enemy-live');
+    if(startZoneEnemyLiveSel){
+      startZoneEnemyLiveSel.onchange = async ()=>{
+        combat.startZoneEnemy = startZoneEnemyLiveSel.value;
         await saveCombat(code, combat);
       };
     }
@@ -5691,7 +5749,7 @@
         }
         const dealt = Math.max(0, cStats.damage - oStats.armor);
         await applyDamageToParticipant(code, combat, opponent, dealt);
-        const zi = Math.min(2, zoneIndex(opponent.zone||'Medio')+1);
+        const zi = Math.min(ZONES.length-1, zoneIndex(opponent.zone||'Medio')+2);
         opponent.zone = ZONES[zi];
         controller.clashWith=null; controller.clashController=false; controller.clashPinned=false; controller.clashComebackBonus=0;
         opponent.clashWith=null; opponent.clashController=false; opponent.clashPinned=false; opponent.clashComebackBonus=0;
@@ -6331,7 +6389,7 @@
       const ram = member ? computeDerivedStats(member.digimon).ram : 0;
       const startActions = (member && member.digimon.hybridMode) ? 3 : 2;
       const fighterName = (member && member.digimon.name) ? member.digimon.name : username;
-      combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:fighterName, side:'ally', ram, initiative:0, actions:startActions, attackedThisRound:false, effects:[], zone: combat.startZone||'Medio', clashPinned:false, clashComebackBonus:0, isPC:true, username, imageUrl: (member && member.digimon.imageUrl) || '' });
+      combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:fighterName, side:'ally', ram, initiative:0, actions:startActions, attackedThisRound:false, effects:[], zone: combat.startZoneAlly||'Molto Corto', clashPinned:false, clashComebackBonus:0, isPC:true, username, imageUrl: (member && member.digimon.imageUrl) || '' });
       await persistAndRefresh();
     };
     const addFromSceneBtn = document.getElementById('btn-combat-add-fromscene');
@@ -6364,7 +6422,7 @@
         cachedCombat.participants.push({
           id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:enc.name, side,
           ram: Math.max(0, Math.floor(dodge/3)), initiative:0, actions:2, attackedThisRound:false, effects:[],
-          zone: cachedCombat.startZone||'Medio', clashPinned:false, clashComebackBonus:0, isPC:false,
+          zone: (side==='ally' ? cachedCombat.startZoneAlly : cachedCombat.startZoneEnemy) || (side==='ally'?'Molto Corto':'Molto Lungo'), clashPinned:false, clashComebackBonus:0, isPC:false,
           accuracy: Number(bs.baseAccuracy)||0, damage: Number(bs.baseDamage)||0, dodge,
           armor: Number(bs.baseArmor)||0, maxWounds, currentWounds: maxWounds, attribute,
           sourceEncounterId: enc.id, isBoss: !!enc.isBoss, attacks: enc.attacks || [], imageUrl: enc.image || ''
@@ -6402,7 +6460,7 @@
       const maxWounds = Number(document.getElementById('combat-enemy-hp').value)||1;
       const attribute = document.getElementById('combat-enemy-attribute').value;
       combat.participants.push({
-        id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name, side:'enemy', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], zone: combat.startZone||'Medio', clashPinned:false, clashComebackBonus:0, isPC:false,
+        id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name, side:'enemy', ram, initiative:0, actions:2, attackedThisRound:false, effects:[], zone: combat.startZoneEnemy||'Molto Lungo', clashPinned:false, clashComebackBonus:0, isPC:false,
         accuracy, damage, dodge, armor, maxWounds, currentWounds: maxWounds, attribute, attacks: pendingDexEnemyAttacks.slice(), imageUrl: pendingDexEnemyImage
       });
       pendingDexEnemyAttacks = [];
