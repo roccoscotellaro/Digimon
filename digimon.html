@@ -1819,7 +1819,7 @@
             <div class="muted" style="margin-top:10px;">Hai già fatto lo Scan ma la Creazione Guidata non si è aperta o non l'hai finita? Chiedi al Master di aprirtela da qui.</div>
           `}
         </div>`;
-    } else if(!target.digimon.approved){
+    } else if(!target.digimon.approved && !isMaster){
       bodyHTML = `
         <div class="hud-frame card">
           <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 0;gap:14px;">
@@ -1842,6 +1842,13 @@
         ${topbar()}
         ${selectorHTML}
         ${bodyHTML !== null ? bodyHTML : `
+        ${(isMaster && !target.digimon.approved) ? `
+        <div class="hud-frame card" style="border-color:var(--amber);">
+          <div class="flex-between">
+            <span>🥚 Non ancora approvato — il giocatore vede solo l'Uovo, ma tu (Master) puoi comunque leggere/modificare la scheda qui sotto.</span>
+            <button class="btn small" id="d-approve" style="color:var(--cyan);border-color:var(--cyan-dim);white-space:nowrap;">✅ Approva</button>
+          </div>
+        </div>` : ''}
         <div class="hud-frame card">
           ${portraitBlockHTML(target, editable, isMaster)}
         </div>
@@ -1867,6 +1874,7 @@
           <button class="btn solid" id="d-save" style="width:100%;padding:12px;">💾 Salva Scheda</button>
           <div id="d-save-msg" style="margin-top:8px;"></div>
           ${isMaster ? `<button class="btn ghost" id="d-reset" style="width:100%;padding:10px;margin-top:8px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera Digimon (permette una nuova Creazione Guidata)</button>` : ''}
+          ${isMaster ? `<button class="btn ghost" id="d-close-egg" style="width:100%;padding:10px;margin-top:8px;">🥚 Richiudi nell'Uovo (blocca la scheda finché non la riapprovi)</button>` : ''}
         </div>` : ''}
         `}
         <div class="hud-frame card">
@@ -2023,6 +2031,16 @@
           if(!window.confirm(`Azzerare il Digimon di ${target.username} (${target.digimon.name||'senza nome'})? Nome, Stage, Qualities, Attacchi e tutti i punteggi torneranno ai valori iniziali e potrà rifare la Creazione Guidata. L'azione non è reversibile.`)) return;
           if(!window.confirm(`Sei sicuro? Questa è l'ultima conferma prima di azzerare definitivamente il Digimon di ${target.username}.`)) return;
           target.digimon = defaultDigimon();
+          const ok = await saveMember(session.code, target);
+          if(ok) cachedRoster = await getRoster(session.code);
+          renderPage();
+        };
+      }
+      const closeEggBtn = document.getElementById('d-close-egg');
+      if(closeEggBtn){
+        closeEggBtn.onclick = async ()=>{
+          if(!window.confirm(`Richiudere nell'Uovo il Digimon di ${target.username} (${target.digimon.name||'senza nome'})? Il giocatore lo vedrà come Uovo finché non lo riapprovi — Stat/Qualities/Attacchi restano quelli attuali, nulla viene azzerato.`)) return;
+          target.digimon.approved = false;
           const ok = await saveMember(session.code, target);
           if(ok) cachedRoster = await getRoster(session.code);
           renderPage();
