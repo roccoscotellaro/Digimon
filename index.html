@@ -199,8 +199,8 @@
     div[style*="display:grid;grid-template-columns:1fr 1fr;gap:14px"]{grid-template-columns:1fr;}
   }
 
-  .portrait{width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--cyan-dim);background:#05070a;flex-shrink:0;}
-  .portrait-sm{width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid var(--cyan-dim);background:#05070a;flex-shrink:0;}
+  .portrait{width:56px;height:56px;border-radius:8px;object-fit:cover;border:2px solid var(--cyan-dim);background:#05070a;flex-shrink:0;}
+  .portrait-sm{width:36px;height:36px;border-radius:6px;object-fit:cover;border:1px solid var(--cyan-dim);background:#05070a;flex-shrink:0;}
   .sheet-head{display:flex;gap:12px;align-items:center;margin-bottom:14px;}
   .sheet-head .info{flex:1;}
   .sheet-head .nm{font-family:'Share Tech Mono',monospace;color:var(--cyan);font-size:15px;}
@@ -2918,6 +2918,30 @@
     };
   }
 
+  // Piccola transizione visiva di evoluzione: dissolvenza incrociata tra il ritratto vecchio e quello
+  // nuovo (preferendo la GIF se il Digidex ne ha una), con un bagliore di sottofondo. "Un minimo" di
+  // spettacolarità come richiesto — nessun video, solo CSS, sparisce da sola dopo pochi secondi o al tocco.
+  function showEvolutionTransition(oldImg, newImg, newName){
+    const div = document.createElement('div');
+    div.style.cssText = 'position:fixed;inset:0;background:rgba(5,7,10,0.92);z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;';
+    div.innerHTML = `
+      <style>
+        @keyframes evo-fade-out{0%{opacity:1;}60%{opacity:0.3;}100%{opacity:0;}}
+        @keyframes evo-fade-in{0%{opacity:0;transform:scale(0.85);}60%{opacity:0;}100%{opacity:1;transform:scale(1);}}
+        @keyframes evo-flash{0%{opacity:0;}50%{opacity:1;}100%{opacity:0.4;}}
+      </style>
+      <div style="position:relative;width:200px;height:200px;">
+        <div style="position:absolute;inset:-30px;border-radius:50%;background:radial-gradient(circle, rgba(53,232,201,0.55), transparent 70%);animation:evo-flash 1.8s ease-out forwards;pointer-events:none;"></div>
+        ${oldImg ? `<img src="${escapeAttr(oldImg)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;animation:evo-fade-out 1.8s ease-in forwards;" />` : ''}
+        ${newImg ? `<img src="${escapeAttr(newImg)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;animation:evo-fade-in 1.8s ease-out forwards;" />` : ''}
+      </div>
+      <div class="mono" style="color:var(--cyan);margin-top:18px;font-size:16px;letter-spacing:0.05em;text-shadow:0 0 10px rgba(53,232,201,0.6);">✨ DIGIVOLVE IN ${escapeHTML((newName||'?').toUpperCase())} ✨</div>
+      <div class="muted" style="margin-top:10px;font-size:11px;">(tocca per chiudere)</div>
+    `;
+    document.body.appendChild(div);
+    div.onclick = ()=>{ if(div.parentNode) div.remove(); };
+    setTimeout(()=>{ if(div.parentNode) div.remove(); }, 3200);
+  }
   function applyStageChange(d, oldStage, newStage){
     if(oldStage === newStage) return;
     snapshotCurrentStatsToStage(d, oldStage);
@@ -3472,13 +3496,15 @@
             return;
           }
           me.digimon.evolutionPoints = Number(me.digimon.evolutionPoints||0) - cost;
+          const __oldImg = bestDigimonImage(null, me.digimon.name, me.digimon.imageUrl);
           applyStageChange(me.digimon, me.digimon.stage, target);
           // Regola 8.05: un Digimon che evolve recupera tutte le Wound Box.
           me.digimon.currentWounds = me.digimon.maxWounds;
           await saveMember(session.code, me);
-          await pushLog(session.code, { who: session.username, role:'player', text: `${me.digimon.name||'Il Digimon'} evolve a ${target}${cost>0?` (spesi ${cost} Evolution Points)`:''} — Stat aggiornate automaticamente. Ricorda di segnare 1 Azione spesa.` });
+          await pushLog(session.code, { who: session.username, role:'player', text: `✨ ${me.digimon.name||'Il Digimon'} è avvolto da un bagliore di dati... e digivolve in ${target}!${cost>0?` (spesi ${cost} Evolution Points)`:''} — Stat aggiornate automaticamente. Ricorda di segnare 1 Azione spesa.` });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Evoluzione applicata, Stat aggiornate.';
-          try{ new Audio('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787073018875_mziu9s.mpeg').play().catch(()=>{}); }catch(e){}
+          try{ __playEvolutionSfx('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787073018875_mziu9s.mpeg'); }catch(e){}
+          showEvolutionTransition(__oldImg, bestDigimonImage(null, me.digimon.name, me.digimon.imageUrl), me.digimon.name);
           renderDigimonCard(me, containerId);
           refreshLiveParts();
         };
@@ -3494,15 +3520,16 @@
           const { dice, total } = rollSkillCheck(willVal, 0);
           const verdict = evaluateVsTN(total, tn, dice);
           let outcomeText;
+          const __oldImg = bestDigimonImage(null, me.digimon.name, me.digimon.imageUrl);
           if(verdict.cls==='crit-success'){
             applyStageChange(me.digimon, me.digimon.stage, me.digimon.defaultStage);
             me.digimon.currentWounds = me.digimon.maxWounds;
-            outcomeText = `Successo Critico! Evolve e torna subito al Default Stage (${me.digimon.defaultStage}) — Stat aggiornate.`;
+            outcomeText = `✨ Successo Critico! ${me.digimon.name||'Il Digimon'} è scosso da un'ondata di energia incontrollabile e digivolve, tornando subito al Default Stage (${me.digimon.defaultStage}) — Stat aggiornate.`;
           } else if(verdict.cls==='success'){
             applyStageChange(me.digimon, me.digimon.stage, target);
             me.digimon.currentWounds = me.digimon.maxWounds;
             me.digimon.forcedEvoRoundsLeft = 3;
-            outcomeText = `Successo! Evolve a ${target} per 3 round (Stat aggiornate), poi tornerà sotto il Default Stage.`;
+            outcomeText = `✨ Successo! ${me.digimon.name||'Il Digimon'} è avvolto da un bagliore instabile e digivolve in ${target} per 3 round (Stat aggiornate), poi tornerà sotto il Default Stage.`;
           } else {
             outcomeText = `${verdict.label}. Nessuna evoluzione forzata — possibili conseguenze pericolose a discrezione del Master.`;
           }
@@ -3510,7 +3537,8 @@
           await pushLog(session.code, { who: session.username, role:'roll', text: `⚡ Forza Evoluzione (TN ${tn}): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText}`, meta:{ dice } });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = outcomeText;
           if(verdict.cls==='crit-success' || verdict.cls==='success'){
-            try{ new Audio('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787073018875_mziu9s.mpeg').play().catch(()=>{}); }catch(e){}
+            try{ __playEvolutionSfx('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787073018875_mziu9s.mpeg'); }catch(e){}
+            showEvolutionTransition(__oldImg, bestDigimonImage(null, me.digimon.name, me.digimon.imageUrl), me.digimon.name);
           }
           renderDigimonCard(me, containerId);
           renderTamerCard(me, siblingCardId(containerId,'tamer'));
@@ -3522,7 +3550,7 @@
         toggleEvolveBtn.onclick = async ()=>{
           me.digimon.evolveUnlocked = !me.digimon.evolveUnlocked;
           await saveMember(session.code, me);
-          await pushLog(session.code, { who:'Master', role:'gm', text: `Il Master ha ${me.digimon.evolveUnlocked?'sbloccato':'bloccato'} l'Evoluzione per ${me.username} (${me.digimon.name||'il proprio Digimon'}).` });
+          await pushLog(session.code, { who:'Master', role:'gm', text: me.digimon.evolveUnlocked ? `${me.digimon.name||'Il Digimon'} di ${me.username} sente una strana energia provenire dall'interno...` : `${me.digimon.name||'Il Digimon'} di ${me.username} non sente più quella strana energia (Evoluzione ribloccata dal Master).` });
           renderDigimonCard(me, containerId);
           refreshLiveParts();
         };
@@ -6772,16 +6800,17 @@
 
   function rosterItemHTML(p, i){
     const online = p.last_seen && (Date.now() - new Date(p.last_seen).getTime()) < ONLINE_WINDOW_MS;
+    const onlineColor = online ? 'var(--cyan)' : 'var(--text-mute)';
+    const isEgg = !p.digimon.approved;
     return `
       <div class="roster-item">
         <div class="flex-between">
           <div style="display:flex;align-items:center;gap:8px;">
-            ${digimonPortraitHTML(p.digimon, 'sm')}
+            <div style="border-radius:8px;padding:2px;border:2px solid ${onlineColor};box-shadow:${online?`0 0 6px ${onlineColor}`:'none'};display:inline-flex;">${digimonPortraitHTML(p.digimon, 'sm')}</div>
             <div>
-              <span class="brand-dot" style="width:7px;height:7px;display:inline-block;margin-right:4px;background:${online?'var(--cyan)':'var(--text-mute)'};box-shadow:${online?'0 0 6px var(--cyan)':'none'};animation:${online?'pulse 2s infinite':'none'};"></span>
               <span class="name">${escapeHTML(p.username)}</span>
-              <span class="tag" style="margin-left:6px;">${escapeHTML(p.digimon.stage)}</span>
-              <span class="tag" style="margin-left:6px;color:${online?'var(--cyan)':'var(--text-mute)'};border-color:${online?'var(--cyan-dim)':'var(--line)'};">${online?'online':'offline'}</span>
+              ${isEgg ? '' : `<span class="tag" style="margin-left:6px;">${escapeHTML(p.digimon.stage)}</span>`}
+              <span class="tag" style="margin-left:6px;color:${onlineColor};border-color:${online?'var(--cyan-dim)':'var(--line)'};">${online?'online':'offline'}</span>
             </div>
           </div>
           <div style="display:flex;gap:6px;">
@@ -6790,7 +6819,7 @@
             <button class="btn ghost small" id="btn-delete-${i}" style="color:var(--danger);border-color:rgba(255,93,93,0.4);">🗑</button>
           </div>
         </div>
-        <div class="sub" style="margin-top:6px;">Digimon: ${escapeHTML(p.digimon.name || '(senza nome)')} — Ferite: ${p.digimon.currentWounds}/${p.digimon.maxWounds}${p.digimon.tempWounds>0?` (+${p.digimon.tempWounds} Shield)`:''} — MP: ${p.digimon.currentMp}/${p.digimon.maxMp}</div>
+        <div class="sub" style="margin-top:6px;">${isEgg ? '🥚 Digimon ancora nell\'Uovo — in attesa di approvazione' : `Digimon: ${escapeHTML(p.digimon.name || '(senza nome)')} — Ferite: ${p.digimon.currentWounds}/${p.digimon.maxWounds}${p.digimon.tempWounds>0?` (+${p.digimon.tempWounds} Shield)`:''} — MP: ${p.digimon.currentMp}/${p.digimon.maxMp}`}</div>
         <div class="sub">AGI ${p.tamer.agility} · BODY ${p.tamer.body} · CAR ${p.tamer.charisma} · INT ${p.tamer.intelligence} · WILL ${p.tamer.willpower}</div>
         <div id="suggest-box-${i}" class="suggest-box" style="${(rosterSuggestLines[p.username]||[]).length ? 'display:block;' : 'display:none;'}">${(rosterSuggestLines[p.username]||[]).map(l=>`<div class="suggest-line" data-line="${escapeAttr(l)}">${escapeHTML(l)}</div>`).join('')}</div>
         <div id="manage-panel-${i}" style="display:none;margin-top:10px;"></div>
@@ -8517,6 +8546,14 @@
       const a = new Audio(CLICK_SFX_URL);
       a.volume = 0.5;
       a.play().catch(()=>{ /* browser blocca l'audio finché non c'è un gesto utente: fallisce silenziosamente */ });
+    }catch(e){}
+  }
+  // Stesso mute degli altri SFX (clickMuted): il suono di evoluzione è un effetto puntuale come il
+  // click, non musica di sottofondo, quindi rispetta lo stesso interruttore invece di uno separato.
+  function __playEvolutionSfx(url){
+    try{
+      if(window.__dvosAudioPrefs && window.__dvosAudioPrefs.clickMuted) return;
+      new Audio(url).play().catch(()=>{});
     }catch(e){}
   }
   document.addEventListener('click', function(e){
