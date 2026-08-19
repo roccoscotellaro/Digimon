@@ -505,6 +505,26 @@
       return s;
     }, 0);
   }
+  // Quanti DP delle Stat sono "spesi" per lo Stage ATTUALE del Digimon (Stat attuale meno lo
+  // startStat di quello Stage, sommato su tutte e 5 le Stat, al netto del bonus gratuito di
+  // Naturewalk/Instinct). Sempre ricalcolato dal vivo — mai un numero salvato che può restare
+  // indietro rispetto allo Stage/Stat correnti (vedi qualityDpBudget sotto).
+  function statDpSpentForStage(d){
+    const cfg = STAGE_CREATION[d.stage] || STAGE_CREATION.Rookie;
+    const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
+    return Math.max(0, statKeys.reduce((s,k)=>s+((Number(d[k])||0)-cfg.startStat),0) - naturewalkBonusFromQualities(d.qualities));
+  }
+  // Budget disponibile per le Qualities: i DP totali dello Stage attuale (10 per Rookie, 20 per
+  // Champion, ecc.) meno quanto già speso in Stat per QUESTO Stage, più eventuali DP Bonus
+  // permanenti da Milestone (10.03) spostati nel budget Qualities. Ricalcolato ad ogni render,
+  // così resta corretto anche dopo un'Evoluzione o una modifica manuale delle Stat — non è più un
+  // valore congelato al momento della Creazione Guidata (era il bug: restava sempre legato ai DP
+  // dello Stage con cui il Digimon era stato creato, es. sempre "2" residui da Rookie anche dopo
+  // essere passato a Champion con 20 DP disponibili).
+  function qualityDpBudget(d){
+    const cfg = STAGE_CREATION[d.stage] || STAGE_CREATION.Rookie;
+    return Math.max(0, cfg.dp - statDpSpentForStage(d)) + Number(d.dpTotal||0);
+  }
   // Risale la catena evolutiva nel Digidex: trova la voce che elenca `name` fra le proprie
   // evoluzioni (es. da "Gekkomon" risale a "Otamamon", la sua pre-evoluzione registrata).
   function findPreEvolutionEntry(name){
@@ -820,8 +840,10 @@
 
   function statBoxHTML(m, key, label, editable){
     const val = Number(m.digimon[key])||0;
+    const cfg = STAGE_CREATION[m.digimon.stage] || STAGE_CREATION.Rookie;
+    const min = cfg.startStat, max = statHardCap(m.digimon.stage);
     return editable
-      ? `<div class="stat-box"><input type="number" min="0" max="10" id="d-stat-${key}" value="${val}" /><div class="l">${label}</div></div>`
+      ? `<div class="stat-box"><input type="number" min="${min}" max="${max}" id="d-stat-${key}" value="${val}" /><div class="l">${label}</div></div>`
       : `<div class="stat-box"><div class="v mono" style="font-size:20px;color:var(--dchroma);">${val}</div><div class="l">${label}</div></div>`;
   }
 
@@ -921,7 +943,7 @@
           <div class="field"><label>Resolve</label><div class="mono">${d.resolveCurrent ?? '—'} / ${d.resolveMax ?? '—'}</div></div>
           <div class="field"><label>Taglia</label><div>${escapeHTML(d.size||'—')}</div></div>
           <div class="field"><label>Stance</label><div>${escapeHTML(d.stance||'—')}</div></div>
-          <div class="field"><label>DP Totali</label><div class="mono">${d.dpTotal||0}</div></div>
+          <div class="field"><label>Budget Qualities</label><div class="mono">${qualityDpBudget(d)} DP</div></div>
         </div>
       </div>`;
     }
@@ -943,7 +965,7 @@
         </div>
         <div class="field"><label>Stance</label><input type="text" id="d-stance" value="${escapeAttr(d.stance||'')}" /></div>
         <div class="field"><label>Colore Chat</label><input type="color" id="d-chatColor" value="${escapeAttr(d.chatColor||'#c896ff')}" /></div>
-        <div class="field"><label>DP Totali</label><input type="number" id="d-dpTotal" value="${d.dpTotal||0}" /></div>
+        <div class="field"><label>DP Bonus permanenti (Milestone)</label><input type="number" id="d-dpTotal" value="${d.dpTotal||0}" /><div class="muted" style="font-size:10.5px;margin-top:3px;">Solo i DP extra da Milestone spostati nel budget Qualities (regola 10.03) — NON i DP Stat, quelli si calcolano da soli in base allo Stage attuale. Budget Qualities effettivo: <b>${qualityDpBudget(d)} DP</b>.</div></div>
         <div class="field"><label>Default Range</label><input type="number" id="d-defaultRange" value="${d.defaultRange ?? 0}" min="0" max="5" /><div class="muted" style="font-size:10.5px;margin-top:3px;">Quanti Stage oltre Default Stage sono già "sbloccati" da mostrare (0 = solo Fresh appena schiuso; 1 = anche Baby; 2 = anche Rookie...). Aumentalo quando narrativamente il giocatore raggiunge le prime evoluzioni.</div></div>
         <div class="field"><label>Evolution Points</label><input type="number" id="d-evolutionPoints" value="${d.evolutionPoints||0}" /></div>
         <div class="field"><label>Forced Evo Rounds</label><input type="number" id="d-forcedEvoRoundsLeft" value="${d.forcedEvoRoundsLeft||0}" /></div>
@@ -1070,7 +1092,7 @@
     const d = m.digimon;
     const items = d.qualities || [];
     const dpSpent = items.reduce((s,q)=>s+(Number(q.cost)||0),0);
-    const dpBudget = Number(d.dpTotal||0);
+    const dpBudget = qualityDpBudget(d);
     return `
     <div class="hud-frame card">
       <div class="section-title"><span>Qualities</span></div>
@@ -1496,10 +1518,6 @@
           if(st0){ st0.style.color='var(--danger)'; st0.textContent = 'Il Digimon deve avere un nome prima di poter salvare.'; }
           return;
         }
-        const cfg = STAGE_CREATION[draft.stage];
-        const dpSpent = Math.max(0, statKeys.reduce((s,k)=>s+(draft[k]-cfg.startStat),0) - naturewalkBonusFromQualities(draft.qualities));
-        const dpRemaining = cfg.dp - dpSpent;
-
         target.digimon.name = draft.name;
         target.digimon.stage = draft.stage;
         // Riposo di default fisso a Fresh (non allo Stage costruito in Wizard): con Default Range 2
@@ -1512,7 +1530,10 @@
         statKeys.forEach(k=>{ target.digimon[k] = draft[k]; });
         target.digimon.maxWounds = stageIndex(draft.stage) + Number(draft.baseHealth)*2;
         target.digimon.currentWounds = target.digimon.maxWounds;
-        target.digimon.dpTotal = Math.max(0, dpRemaining);
+        // dpTotal ora rappresenta SOLO i DP Bonus permanenti da Milestone (10.03), non più i DP
+        // Stat avanzati: un Digimon appena creato parte a 0 (il budget Qualities per lo Stage si
+        // ricalcola da solo — vedi qualityDpBudget — da Stat attuali e Qualities già scelte qui).
+        target.digimon.dpTotal = 0;
         target.digimon.qualities = draft.qualities || [];
         target.digimon.evolutionPoints = 0;
         target.digimon.defaultRange = 0;
@@ -2098,18 +2119,16 @@
       root.querySelectorAll('[data-stage-switch]').forEach(btn=>{
         btn.onclick = async ()=>{
           const newStage = btn.getAttribute('data-stage-switch');
-          const isRealEvolution = STAGES.indexOf(newStage) > STAGES.indexOf(target.digimon.stage);
           applyStageChange(target.digimon, target.digimon.stage, newStage);
           // Regola 8.05: un Digimon che cambia Stage recupera tutte le Wound Box.
           target.digimon.currentWounds = target.digimon.maxWounds;
           await saveMember(session.code, target);
           cachedRoster = await getRoster(session.code);
           renderPage();
-          // Suono di Evoluzione solo quando si sale di Stage (non per tornare indietro a uno già
-          // visitato in precedenza) — così il Tamer lo sente proprio quando il suo Digimon evolve.
-          if(isRealEvolution){
-            try{ new Audio('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787073018875_mziu9s.mpeg').play().catch(()=>{}); }catch(e){}
-          }
+          // NIENTE suono qui: questo controllo serve solo a cambiare rapidamente quale Stage già
+          // costruito è visualizzato/attivo sulla scheda (vedi commento in stageSwitchBlockHTML),
+          // non rappresenta una vera Digievoluzione narrativa — quella resta gestita solo dai
+          // pulsanti Evolvi/Forza Evoluzione sul Tavolo (index.html), gli unici a far suonare l'SFX.
         };
       });
       const approveBtn = document.getElementById('d-approve');
@@ -2151,14 +2170,19 @@
       bindImageUpload(target);
       bindListEditors(target);
       document.getElementById('d-save').onclick = async ()=>{
+        // Lo Stage va letto PRIMA di clampare le Stat: il tetto minimo/massimo dipende dallo Stage
+        // (es. Rookie min 2, Champion min 3...) e potrebbe essere appena stato cambiato dal menu qui sotto.
+        const newStage = document.getElementById('d-stage').value;
+        const stageCfg = STAGE_CREATION[newStage] || STAGE_CREATION.Rookie;
+        const statMin = stageCfg.startStat, statMax = statHardCap(newStage);
         STAT_DEFS.forEach(d=>{
           const el = document.getElementById('d-stat-'+d.key);
-          if(el) target.digimon[d.key] = Math.max(0, Number(el.value)||0);
+          if(el) target.digimon[d.key] = Math.max(statMin, Math.min(statMax, Number(el.value)||statMin));
         });
         const imgEl = document.getElementById('d-imageUrl');
         if(imgEl) target.digimon.imageUrl = imgEl.value.trim();
         target.digimon.name = document.getElementById('d-name').value.trim();
-        target.digimon.stage = document.getElementById('d-stage').value;
+        target.digimon.stage = newStage;
         target.digimon.personality = document.getElementById('d-personality').value.trim();
         target.digimon.currentWounds = Math.max(0, Number(document.getElementById('d-currentWounds').value)||0);
         // Ferite Massime NON si legge più dalla casella: si ricalcola sempre da Stage + Health×2,

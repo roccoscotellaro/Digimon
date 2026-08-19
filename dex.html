@@ -104,7 +104,8 @@
       max-width: 90%;
       max-height: 90%;
       object-fit: contain;
-      image-rendering: auto;
+      image-rendering: pixelated;
+      image-rendering: -webkit-optimize-contrast;
   }
   .gif-label {
       position: absolute;
@@ -952,8 +953,8 @@ Devimon: https://..."></textarea>
         </div>`;
       }
       return `<div class="hud-frame dex-card" data-id="${e.id}">
-        <div class="thumb">${(e.gif_url||e.image_url) ? `<img src="${escapeAttr(e.gif_url||e.image_url)}" onerror="this.parentNode.innerHTML='<span class=&quot;placeholder&quot;>${escapeHTML((e.name||'?').charAt(0))}</span>'" />` : `<span class="placeholder">${escapeHTML((e.name||'?').charAt(0))}</span>`}
-          ${e.gif_url ? `<span style="position:absolute;bottom:4px;right:4px;font-size:11px;" title="Ha una GIF animata (visibile nella scheda)">🎬</span>` : ''}
+        <div class="thumb">${e.image_url ? `<img src="${escapeAttr(e.image_url)}" onerror="this.parentNode.innerHTML='<span class=&quot;placeholder&quot;>${escapeHTML((e.name||'?').charAt(0))}</span>'" />` : `<span class="placeholder">${escapeHTML((e.name||'?').charAt(0))}</span>`}
+          ${e.gif_url ? `<span style="position:absolute;bottom:4px;right:4px;font-size:11px;" title="Ha una GIF animata (visibile aprendo la scheda)">🎬</span>` : ''}
           ${e.origin_type==='armor' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Armor">🛡️</span>` : ''}
           ${e.origin_type==='jogress' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Jogress/Fusione">🤝</span>` : ''}
           ${e.origin_type==='spirit' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Spirito (Digimon Frontier)">✨</span>` : ''}
