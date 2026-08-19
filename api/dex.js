@@ -15,7 +15,7 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'POST') {
-      const { code, name, stage, description, imageUrl, addedBy, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered, attribute, family, originType, signatureMove, signatureMove2, slideEvolution, digimental, attackDesc, attackDesc2, extraAttacks, slideTargets } = req.body || {};
+      const { code, name, stage, description, imageUrl, gifUrl, addedBy, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered, attribute, family, originType, signatureMove, signatureMove2, slideEvolution, digimental, attackDesc, attackDesc2, extraAttacks, slideTargets } = req.body || {};
       const campaignCode = cleanCode(code);
       if (!campaignCode || !name) return res.status(400).json({ error: 'missing code or name' });
       await supabase.from('campaigns').upsert({ code: campaignCode }, { onConflict: 'code' });
@@ -25,6 +25,9 @@ module.exports = async (req, res) => {
         stage: stage || 'Rookie',
         description: String(description || '').slice(0, 1000),
         image_url: imageUrl || '',
+        // URL di una GIF animata (opzionale): se presente, l'app la mostra al posto dell'immagine
+        // statica ovunque tranne che nel ritratto grande della scheda dettaglio del Digidex.
+        gif_url: gifUrl || '',
         added_by: addedBy || '',
         base_stats: baseStats || {},
         evolutions: Array.isArray(evolutions) ? evolutions : [],
@@ -57,7 +60,7 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'PUT') {
-      const { code, id, name, stage, description, imageUrl, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered, attribute, family, originType, signatureMove, signatureMove2, slideEvolution, digimental, attackDesc, attackDesc2, extraAttacks, slideTargets } = req.body || {};
+      const { code, id, name, stage, description, imageUrl, gifUrl, baseStats, evolutions, evolvesFrom, categories, qualities, dpTotal, discovered, attribute, family, originType, signatureMove, signatureMove2, slideEvolution, digimental, attackDesc, attackDesc2, extraAttacks, slideTargets } = req.body || {};
       const campaignCode = cleanCode(code);
       if (!campaignCode || !id) return res.status(400).json({ error: 'missing code or id' });
       const { error } = await supabase.from('dex_entries').update({
@@ -65,6 +68,7 @@ module.exports = async (req, res) => {
         stage: stage || 'Rookie',
         description: String(description || '').slice(0, 1000),
         image_url: imageUrl || '',
+        gif_url: gifUrl || '',
         base_stats: baseStats || {},
         evolutions: Array.isArray(evolutions) ? evolutions : [],
         evolves_from: Array.isArray(evolvesFrom) ? evolvesFrom : [],
