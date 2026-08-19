@@ -199,7 +199,7 @@
     div[style*="display:grid;grid-template-columns:1fr 1fr;gap:14px"]{grid-template-columns:1fr;}
   }
 
-  .portrait{width:56px;height:56px;border-radius:8px;object-fit:cover;border:2px solid var(--cyan-dim);background:#05070a;flex-shrink:0;}
+  .portrait{width:56px;height:56px;border-radius:8px;object-fit:cover;flex-shrink:0;}
   .portrait-sm{width:36px;height:36px;border-radius:6px;object-fit:cover;flex-shrink:0;}
   .sheet-head{display:flex;gap:12px;align-items:center;margin-bottom:14px;}
   .sheet-head .info{flex:1;}
@@ -8101,7 +8101,7 @@
   // l'altro nella stessa coda — un solo elemento riutilizzato, non un nuovo Audio() ogni volta.
   const NOTICE_SFX_URL = 'https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787175532931_vhiiev.mpeg';
   function __startNoticeSfx(){
-    if(window.__dvosAudioPrefs && window.__dvosAudioPrefs.clickMuted) return;
+    if(window.__dvosAudioPrefs && (window.__dvosAudioPrefs.clickMuted || window.__dvosAudioPrefs.musicMuted)) return;
     if(__noticeAudioEl && !__noticeAudioEl.paused) return;
     try{
       if(!__noticeAudioEl){ __noticeAudioEl = new Audio(NOTICE_SFX_URL); __noticeAudioEl.loop = true; __noticeAudioEl.volume = 0.5; }
@@ -8562,7 +8562,7 @@
   const CLICK_SFX_URL = "https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787070670792_1jktvp.mpeg";
   function __playClickSfx(){
     try{
-      if(window.__dvosAudioPrefs && window.__dvosAudioPrefs.clickMuted) return;
+      if(window.__dvosAudioPrefs && (window.__dvosAudioPrefs.clickMuted || window.__dvosAudioPrefs.musicMuted)) return;
       const a = new Audio(CLICK_SFX_URL);
       a.volume = 0.5;
       a.play().catch(()=>{ /* browser blocca l'audio finché non c'è un gesto utente: fallisce silenziosamente */ });
@@ -8572,7 +8572,7 @@
   // click, non musica di sottofondo, quindi rispetta lo stesso interruttore invece di uno separato.
   function __playEvolutionSfx(url){
     try{
-      if(window.__dvosAudioPrefs && window.__dvosAudioPrefs.clickMuted) return;
+      if(window.__dvosAudioPrefs && (window.__dvosAudioPrefs.clickMuted || window.__dvosAudioPrefs.musicMuted)) return;
       new Audio(url).play().catch(()=>{});
     }catch(e){}
   }

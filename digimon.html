@@ -116,6 +116,16 @@
   ];
   const STAGES = ['Fresh','Baby','Rookie','Champion','Ultimate','Mega'];
   const SIZES = ['Small','Medium','Large','Huge','Gigantic','Colossal'];
+  // Le 15 Skill del Tamer (stesso elenco di player.html/SKILL_DEFS) con la Stat Derivata che le
+  // governa (Companion 3.02a — CPU=Body, RAM=Agility, BIT=Intelligence/Charisma, DOS=Willpower),
+  // usata da Prodigious Skill per sapere quale Check viene potenziato.
+  const PRODIGIOUS_SKILL_LIST = [
+    { name:'Evade', derived:'RAM' }, { name:'Precision', derived:'RAM' }, { name:'Stealth', derived:'RAM' },
+    { name:'Athletics', derived:'CPU' }, { name:'Endurance', derived:'CPU' }, { name:'Feats of Strength', derived:'CPU' },
+    { name:'Manipulate', derived:'BIT' }, { name:'Perform', derived:'BIT' }, { name:'Persuasion', derived:'BIT' },
+    { name:'Decipher Intent', derived:'BIT' }, { name:'Survival', derived:'BIT' }, { name:'Knowledge', derived:'BIT' },
+    { name:'Fortitude', derived:'DOS' }, { name:'Bravery', derived:'DOS' }, { name:'Awareness', derived:'DOS' }
+  ];
   // Companion 3.02c — modificatori di Size ai 4 Derived Stat (BIT/DOS/RAM/CPU). Gigantic e Colossal
   // danno anche -1 Movement, non gestito qui (il Movement non è ancora calcolato in scheda).
   const SIZE_DERIVED_MOD = {
@@ -282,7 +292,7 @@
     { name:'Data Specialization: Code Wizard', category:'Static', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization: Effect Warrior. La Durata massima di tutti gli Effetti creati aumenta di 1. Può usare Called Shot (opzione Focused) illimitatamente a combattimento con penalità dimezzata. Ignora il requisito del Tag [DAMAGE] per alcuni Effetti (es. [BURN]).' },
     { name:'Data Specialization: Tactical Adaptation', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization: Variable. Guadagna una Stance Quality gratis, oppure 2 Ranks gratuiti di Mode Change. All\'inizio dell\'Iniziativa può fare Change Stance come Azione Libera; sul proprio turno può farlo come Azione Libera (o Mode Change se disponibile).' },
     { name:'Data Specialization: Supreme Code', category:'Static', dpPerRank:2, maxRank:1, mechanic:'supremeCode', desc:'STAGE 4+ — Richiede Data Optimization: Variable. +1 automatico ad Accuracy, Damage, Dodge e Armor. +1 anche a Health, da applicare manualmente a Ferite Massime.' },
-    { name:'Prodigious Skill', category:'Static', dpPerRank:1, maxRank:4, mechanic:'', desc:'Rank max = Stage (fino a 4). Scegli una Skill del Tamer (es. Feats of Strength, Stealth, Awareness): +1+2×Stat Derivata associata (CPU per Skill di Corpo, RAM per Agilità, BIT per Intelligenza/Carisma, DOS per Volontà) sui Check di quella Skill, invece della sola Stat Derivata.' },
+    { name:'Prodigious Skill', category:'Static', dpPerRank:1, maxRank:4, mechanic:'prodigiousSkill', desc:'Rank max = Stage (fino a 4). Scegli una Skill del Tamer (es. Feats of Strength, Stealth, Awareness): +1+2×Stat Derivata associata (CPU per Skill di Corpo, RAM per Agilità, BIT per Intelligenza/Carisma, DOS per Volontà) sui Check di quella Skill, invece della sola Stat Derivata.' },
     { name:'Mighty Blow', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 2+ — Applica [MIGHTY] a un Attacco [MELEE][DAMAGE]. Se infligge almeno 2 Danno dopo Armor (no Unalterable), Check CPU (Feats of Strength) TN 10+CPU bersaglio: Successo → [STUN] al bersaglio; Successo Critico → anche +2 Danno extra; Fallimento Critico → -1 Danno (min 1). La TN sale di 3 a ogni uso successivo (salvo Signature Move). Compatibile con altri Effetti tranne quelli di Danno.' },
     { name:'Precise Focus', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 2+ — Applica [FOCUS] a un Attacco [RANGE]: ogni punto di Danno toglie 2 Caselle Ferita Temporanee invece di 1. Se usato con 1 Azione extra (Bolster, Called Shot, ecc.), Check RAM (Precision) TN 12+RAM bersaglio: Successo +3 Accuracy, Successo Critico +5 Accuracy, Fallimento Critico nessun bonus. Nessun beneficio su Area Attack.' },
     { name:'Feint Attack', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Applica [T:FEINT] a un Attacco [MELEE]. Attivabile alla dichiarazione: l\'Attacco subisce una penalità a Danno pari al tuo Stage, poi Check BIT (Manipulate) TN 6+BIT bersaglio; su Successo dimezzi il Dodge (o l\'Armor) del bersaglio per quell\'Attacco. Incompatibile con Counterattack.' },
@@ -1028,6 +1038,11 @@
               <option value="CPU">CPU (da Armor)</option><option value="RAM">RAM (da Dodge)</option><option value="BIT">BIT (da Accuracy)</option><option value="DOS">DOS (da Damage)</option>
             </select>
           </div>
+          <div class="field" id="${prefix}-skilltarget-wrap" style="display:none;"><label>Skill (Prodigious Skill)</label>
+            <select id="${prefix}-skilltarget">
+              ${PRODIGIOUS_SKILL_LIST.map(s=>`<option value="${escapeAttr(s.name)}">${escapeHTML(s.name)} (${s.derived})</option>`).join('')}
+            </select>
+          </div>
         </div>
         <button class="btn solid small" id="${prefix}-add-catalog" style="width:100%;" disabled>+ Aggiungi Quality</button>
       </div>
@@ -1042,6 +1057,7 @@
     const previewEl = document.getElementById(prefix+'-preview');
     const statWrap = document.getElementById(prefix+'-stattarget-wrap');
     const derivedWrap = document.getElementById(prefix+'-derivedtarget-wrap');
+    const skillWrap = document.getElementById(prefix+'-skilltarget-wrap');
     const addBtn = document.getElementById(prefix+'-add-catalog');
     const rankInp = document.getElementById(prefix+'-rank');
 
@@ -1057,12 +1073,16 @@
       if(statWrap) statWrap.style.display = (q && q.mechanic==='naturewalk') ? 'block' : 'none';
       const isDerivedMechanic = q && (q.mechanic==='systemBoost' || q.mechanic==='systemError');
       if(derivedWrap) derivedWrap.style.display = isDerivedMechanic ? 'block' : 'none';
-      // System Boost/Error: ogni Rank sceglie una Stat Derivata DIVERSA dalle altre (regola Companion —
-      // "cannot choose the same Derived Stat twice"), quindi qui si può comprare 1 Rank alla volta, mai
-      // di più in un colpo solo, altrimenti un singolo click assegnerebbe più Rank alla stessa Stat.
+      const isProdigiousSkill = q && q.mechanic==='prodigiousSkill';
+      if(skillWrap) skillWrap.style.display = isProdigiousSkill ? 'block' : 'none';
+      // System Boost/Error e Prodigious Skill: ogni Rank sceglie una Stat Derivata/Skill diversa
+      // dalle altre volte precedenti ("Whenever you take this Quality, choose a specific Skill" —
+      // Companion), quindi si compra 1 Rank alla volta, mai di più in un colpo solo, altrimenti un
+      // singolo click assegnerebbe più Rank alla stessa Stat/Skill.
+      const forceSingleRank = isDerivedMechanic || isProdigiousSkill;
       if(rankInp && q){
-        rankInp.max = isDerivedMechanic ? 1 : q.maxRank;
-        if(isDerivedMechanic){ rankInp.value = 1; rankInp.disabled = true; }
+        rankInp.max = forceSingleRank ? 1 : q.maxRank;
+        if(forceSingleRank){ rankInp.value = 1; rankInp.disabled = true; }
         else rankInp.disabled = false;
       }
       if(previewEl){
@@ -1081,7 +1101,8 @@
         const rank = Math.max(1, Math.min(q.maxRank, Number(rankInp.value)||1));
         const statTarget = document.getElementById(prefix+'-stattarget') ? document.getElementById(prefix+'-stattarget').value : null;
         const derivedTarget = document.getElementById(prefix+'-derivedtarget') ? document.getElementById(prefix+'-derivedtarget').value : null;
-        onAdd(q, rank, statTarget, derivedTarget);
+        const skillTarget = document.getElementById(prefix+'-skilltarget') ? document.getElementById(prefix+'-skilltarget').value : null;
+        onAdd(q, rank, statTarget, derivedTarget, skillTarget);
         selects.forEach(sel=>{ sel.value=''; });
         refresh(null);
       };
@@ -1490,7 +1511,7 @@
         renderPage();
       };
     });
-    bindQualityPicker('wiz-q', (q, rank, statTarget, derivedTarget)=>{
+    bindQualityPicker('wiz-q', (q, rank, statTarget, derivedTarget, skillTarget)=>{
       const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health' };
       // Regola Companion: System Boost non può toccare due volte la stessa Stat Derivata.
       if(q.mechanic==='systemBoost' && (draft.qualities||[]).some(e=>e.mechanic==='systemBoost' && e.derivedTarget===derivedTarget)){
@@ -1500,11 +1521,13 @@
       const derivedSign = q.mechanic==='systemError' ? '-1' : '+1';
       const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}` +
         `${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}` +
-        `${(q.mechanic==='systemBoost'||q.mechanic==='systemError')?` [${derivedSign} ${derivedTarget}]`:''}`;
+        `${(q.mechanic==='systemBoost'||q.mechanic==='systemError')?` [${derivedSign} ${derivedTarget}]`:''}` +
+        `${q.mechanic==='prodigiousSkill'?` [${skillTarget}]`:''}`;
       const cost = q.dpPerRank * rank;
       const entry = { name, cost, category:q.category, description:q.desc, mechanic:q.mechanic, rank };
       if(q.mechanic==='naturewalk') entry.statTarget = statTarget;
       if(q.mechanic==='systemBoost'||q.mechanic==='systemError') entry.derivedTarget = derivedTarget;
+      if(q.mechanic==='prodigiousSkill') entry.skillTarget = skillTarget;
       draft.qualities.push(entry);
       applyQualityStatBonus(draft, entry, 1, statHardCap(draft.stage));
       renderPage();
@@ -2271,7 +2294,7 @@
       await saveMember(session.code, target);
       renderPage();
     };
-    bindQualityPicker('d-q', async (q, rank, statTarget, derivedTarget)=>{
+    bindQualityPicker('d-q', async (q, rank, statTarget, derivedTarget, skillTarget)=>{
       const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health' };
       // Regola Companion: System Boost non può toccare due volte la stessa Stat Derivata.
       if(q.mechanic==='systemBoost' && (target.digimon.qualities||[]).some(e=>e.mechanic==='systemBoost' && e.derivedTarget===derivedTarget)){
@@ -2281,11 +2304,13 @@
       const derivedSign = q.mechanic==='systemError' ? '-1' : '+1';
       const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}` +
         `${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}` +
-        `${(q.mechanic==='systemBoost'||q.mechanic==='systemError')?` [${derivedSign} ${derivedTarget}]`:''}`;
+        `${(q.mechanic==='systemBoost'||q.mechanic==='systemError')?` [${derivedSign} ${derivedTarget}]`:''}` +
+        `${q.mechanic==='prodigiousSkill'?` [${skillTarget}]`:''}`;
       const cost = q.dpPerRank * rank;
       const entry = { name, cost, category:q.category, description:q.desc, mechanic:q.mechanic, rank };
       if(q.mechanic==='naturewalk') entry.statTarget = statTarget;
       if(q.mechanic==='systemBoost'||q.mechanic==='systemError') entry.derivedTarget = derivedTarget;
+      if(q.mechanic==='prodigiousSkill') entry.skillTarget = skillTarget;
       target.digimon.qualities.push(entry);
       applyQualityStatBonus(target.digimon, entry, 1);
       recalcMaxWoundsIfHealthChanged(target.digimon, entry);
