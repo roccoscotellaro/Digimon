@@ -4217,7 +4217,7 @@
             <div class="divider"></div>
             <div class="flex-between" style="align-items:center;">
               <label style="font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;">Digimon in questa Scena</label>
-              <button class="btn ghost small" id="btn-refresh-all-atk" style="padding:3px 8px;font-size:10px;" title="Ricarica gli Attacchi dal Digidex per tutti i Digimon di questa scena in una volta sola">🔄 Ricarica tutti gli Attacchi</button>
+              <button class="btn ghost small" id="btn-refresh-all-atk" style="padding:3px 8px;font-size:10px;" title="Ricarica Attacchi + Immagine/GIF dal Digidex per tutti i Digimon di questa scena in una volta sola">🔄 Ricarica tutto dal Dex</button>
             </div>
             <div id="encounters-live" style="margin:8px 0;">${encountersEditableHTML(cachedScene.encounters||[])}</div>
             <datalist id="dex-name-datalist">${cachedDex.map(e=>`<option value="${escapeAttr(e.name)}"></option>`).join('')}</datalist>
@@ -7411,7 +7411,7 @@
           <button class="btn ${e.isBoss?'':'ghost'} small" data-toggle-boss="${i}" style="padding:4px 8px;font-size:10px;">${e.isBoss?'👑 Rimuovi Boss':'👑 Segna Boss'}</button>
           <button class="btn ${visible?'ghost':''} small" data-toggle-reveal="${i}" style="padding:4px 8px;font-size:10px;">${visible?'🙈 Nascondi':'👁️ Mostra ai giocatori'}</button>
           <button class="btn ghost small" data-dupe-enc="${i}" style="padding:4px 8px;font-size:10px;" title="Aggiunge una copia identica">+1 copia</button>
-          ${already ? `<button class="btn ghost small" data-refresh-atk="${i}" style="padding:4px 8px;font-size:10px;" title="Ricarica gli Attacchi dal Digidex — utile se sono stati aggiornati o se erano stati importati prima di una correzione">🔄 Attacchi</button>` : ''}
+          ${already ? `<button class="btn ghost small" data-refresh-atk="${i}" style="padding:4px 8px;font-size:10px;" title="Ricarica Attacchi + Immagine/GIF dal Digidex — utile se sono stati aggiornati o se erano stati importati prima di una correzione">🔄 Sincronizza da Dex</button>` : ''}
           ${already ? '' : `<button class="btn small" data-quickdex="${i}" style="padding:4px 8px;font-size:10px;">+Dex</button>`}
           <button class="btn ghost small" data-rmenc="${i}" style="padding:4px 8px;font-size:10px;">×</button>
         </div>
@@ -7532,14 +7532,21 @@
         let updated = 0, skipped = 0;
         (cachedScene.encounters||[]).forEach(e=>{
           const dexMatch = (e.dexId && cachedDex.find(d=>d.id===e.dexId)) || cachedDex.find(d=>String(d.name).trim().toLowerCase()===String(e.name).trim().toLowerCase());
-          if(dexMatch){ e.attacks = buildAttacksFromDexEntry(dexMatch); updated++; }
-          else skipped++;
+          if(dexMatch){
+            e.attacks = buildAttacksFromDexEntry(dexMatch);
+            // Risincronizza anche l'immagine/GIF: senza questo, un Incontro già in scena resta
+            // ancorato allo snapshot preso al momento dell'aggiunta, anche se nel frattempo il
+            // Digidex ha ricevuto una GIF (es. dopo il fix di dex.js).
+            e.image = dexMatch.image_url || '';
+            e.gif = dexMatch.gif_url || '';
+            updated++;
+          } else skipped++;
         });
         await saveScene(code, cachedScene);
         document.getElementById('encounters-live').innerHTML = encountersEditableHTML(cachedScene.encounters);
         bindEncountersInnerActions(code, username);
         refreshLiveParts();
-        alert(`Attacchi ricaricati per ${updated} Digimon.${skipped>0?` ${skipped} non trovati nel Digidex (nomi non corrispondenti).`:''}`);
+        alert(`Attacchi e immagini/GIF ricaricati per ${updated} Digimon.${skipped>0?` ${skipped} non trovati nel Digidex (nomi non corrispondenti).`:''}`);
       };
     }
     bindEncountersInnerActions(code, username);
@@ -7608,6 +7615,8 @@
           return;
         }
         e.attacks = buildAttacksFromDexEntry(dexMatch);
+        e.image = dexMatch.image_url || '';
+        e.gif = dexMatch.gif_url || '';
         await saveScene(code, cachedScene);
         live.innerHTML = encountersEditableHTML(cachedScene.encounters);
         bindEncountersInnerActions(code, username);

@@ -116,6 +116,50 @@
   ];
   const STAGES = ['Fresh','Baby','Rookie','Champion','Ultimate','Mega'];
   const SIZES = ['Small','Medium','Large','Huge','Gigantic','Colossal'];
+  // Companion 3.02c — modificatori di Size ai 4 Derived Stat (BIT/DOS/RAM/CPU). Gigantic e Colossal
+  // danno anche -1 Movement, non gestito qui (il Movement non è ancora calcolato in scheda).
+  const SIZE_DERIVED_MOD = {
+    Small:    { BIT:2, DOS:1, RAM:3, CPU:0 },
+    Medium:   { BIT:2, DOS:1, RAM:2, CPU:1 },
+    Large:    { BIT:2, DOS:1, RAM:1, CPU:2 },
+    Huge:     { BIT:1, DOS:2, RAM:1, CPU:2 },
+    Gigantic: { BIT:1, DOS:2, RAM:0, CPU:3 },
+    Colossal: { BIT:1, DOS:2, RAM:0, CPU:3 },
+  };
+  // Companion 3.02a: ogni Derived Stat = 1 + (Base Stat associata ÷ 3, arrotondato per difetto) +
+  // modificatore di Size + eventuale bonus/penalità da System Boost/System Error (mai sotto 0).
+  function qualityDerivedBonus(qualities){
+    const bonus = { BIT:0, DOS:0, RAM:0, CPU:0 };
+    (qualities||[]).forEach(q=>{
+      if(!q || !q.derivedTarget || !(q.mechanic==='systemBoost' || q.mechanic==='systemError')) return;
+      const amount = Number(q.rank)||1;
+      bonus[q.derivedTarget] = (bonus[q.derivedTarget]||0) + (q.mechanic==='systemError' ? -amount : amount);
+    });
+    return bonus;
+  }
+  function computeDerivedStats(baseStats, size, qualities){
+    const sizeMod = SIZE_DERIVED_MOD[size] || SIZE_DERIVED_MOD.Medium;
+    const qBonus = qualityDerivedBonus(qualities);
+    const fromBase = v => 1 + Math.floor((Number(v)||0)/3);
+    return {
+      BIT: Math.max(0, fromBase(baseStats.baseAccuracy) + sizeMod.BIT + qBonus.BIT),
+      DOS: Math.max(0, fromBase(baseStats.baseDamage) + sizeMod.DOS + qBonus.DOS),
+      RAM: Math.max(0, fromBase(baseStats.baseDodge) + sizeMod.RAM + qBonus.RAM),
+      CPU: Math.max(0, fromBase(baseStats.baseArmor) + sizeMod.CPU + qBonus.CPU),
+    };
+  }
+  function derivedStatsBlockHTML(baseStats, size, qualities){
+    const ds = computeDerivedStats(baseStats, size, qualities);
+    const row = (val,label)=>`<div class="stat-box"><div class="v mono" style="font-size:20px;color:var(--dchroma);">${val}</div><div class="l">${label}</div></div>`;
+    return `
+    <div class="hud-frame card">
+      <div class="section-title"><span>Derived Stats</span></div>
+      <div class="grid-stats">
+        ${row(ds.BIT,'BIT')}${row(ds.DOS,'DOS')}${row(ds.RAM,'RAM')}${row(ds.CPU,'CPU')}
+      </div>
+      <div class="muted" style="font-size:10.5px;margin-top:6px;">Companion 3.02a — 1 + (Stat Base ÷ 3, arrotondato per difetto) + modificatore Size + eventuali bonus/penalità da System Boost/System Error. Calcolati in automatico, non modificabili a mano.</div>
+    </div>`;
+  }
   function stageIndex(s){ const i = STAGES.indexOf(s); return i<0?0:i; }
   function maxSizeIndexForStage(stage){ return Math.min(SIZES.length-1, stageIndex(stage)+1); }
   function allowedSizes(stage){ return SIZES.slice(0, maxSizeIndexForStage(stage)+1); }
@@ -989,8 +1033,16 @@
       const q = currentQuality();
       if(addBtn) addBtn.disabled = !q;
       if(statWrap) statWrap.style.display = (q && q.mechanic==='naturewalk') ? 'block' : 'none';
-      if(derivedWrap) derivedWrap.style.display = (q && (q.mechanic==='systemBoost' || q.mechanic==='systemError')) ? 'block' : 'none';
-      if(rankInp && q) rankInp.max = q.maxRank;
+      const isDerivedMechanic = q && (q.mechanic==='systemBoost' || q.mechanic==='systemError');
+      if(derivedWrap) derivedWrap.style.display = isDerivedMechanic ? 'block' : 'none';
+      // System Boost/Error: ogni Rank sceglie una Stat Derivata DIVERSA dalle altre (regola Companion —
+      // "cannot choose the same Derived Stat twice"), quindi qui si può comprare 1 Rank alla volta, mai
+      // di più in un colpo solo, altrimenti un singolo click assegnerebbe più Rank alla stessa Stat.
+      if(rankInp && q){
+        rankInp.max = isDerivedMechanic ? 1 : q.maxRank;
+        if(isDerivedMechanic){ rankInp.value = 1; rankInp.disabled = true; }
+        else rankInp.disabled = false;
+      }
       if(previewEl){
         previewEl.innerHTML = q ? `
           <div style="font-weight:700;color:var(--dchroma);margin-bottom:4px;">${escapeHTML(q.name)}</div>
@@ -1255,6 +1307,7 @@
         `).join('')}
       </div>
       <div class="muted" style="margin-top:6px;">Stessi DP per Stat e Qualities: alza una Stat o aggiungi una Quality e il contatore sopra scende subito, di conseguenza.</div>
+      ${derivedStatsBlockHTML(draft, draft.size, draft.qualities)}
       <div style="border-top:1px dashed var(--line);margin:12px 0;"></div>
       ${(draft.suggestedQualities||[]).length ? `
       <div class="section-title" style="font-size:12px;"><span>📡 Qualities suggerite dallo Scan</span></div>
@@ -1417,6 +1470,11 @@
     });
     bindQualityPicker('wiz-q', (q, rank, statTarget, derivedTarget)=>{
       const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health' };
+      // Regola Companion: System Boost non può toccare due volte la stessa Stat Derivata.
+      if(q.mechanic==='systemBoost' && (draft.qualities||[]).some(e=>e.mechanic==='systemBoost' && e.derivedTarget===derivedTarget)){
+        alert(`Hai già un Rank di System Boost su ${derivedTarget}: scegline un'altra.`);
+        return;
+      }
       const derivedSign = q.mechanic==='systemError' ? '-1' : '+1';
       const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}` +
         `${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}` +
@@ -1953,6 +2011,7 @@
             ${STAT_DEFS.map(d=>statBoxHTML(target, d.key, d.label, editable)).join('')}
           </div>
         </div>
+        ${derivedStatsBlockHTML(target.digimon, target.digimon.size, target.digimon.qualities)}
         ${evolutionLockBlockHTML(target, isMaster)}
         ${stageSwitchBlockHTML(target, editable, isMaster)}
         ${statoBlockHTML(target, editable)}
@@ -2190,6 +2249,11 @@
     };
     bindQualityPicker('d-q', async (q, rank, statTarget, derivedTarget)=>{
       const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health' };
+      // Regola Companion: System Boost non può toccare due volte la stessa Stat Derivata.
+      if(q.mechanic==='systemBoost' && (target.digimon.qualities||[]).some(e=>e.mechanic==='systemBoost' && e.derivedTarget===derivedTarget)){
+        alert(`Hai già un Rank di System Boost su ${derivedTarget}: scegline un'altra.`);
+        return;
+      }
       const derivedSign = q.mechanic==='systemError' ? '-1' : '+1';
       const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}` +
         `${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}` +
