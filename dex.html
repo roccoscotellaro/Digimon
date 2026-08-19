@@ -83,8 +83,8 @@ label{font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spac
 
 /* --- NUOVO: Piccolo riquadro per la GIF animata --- */
 .gif-display-box {
-    width: 140px;
-    height: 140px;
+    width: 200px;          /* Aumentato da 140px a 200px */
+    height: 200px;         /* Aumentato da 140px a 200px */
     border: 3px solid var(--amber);
     border-radius: 12px;
     overflow: hidden;
@@ -92,11 +92,16 @@ label{font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spac
     position: relative;
     box-shadow: 0 0 15px rgba(255, 138, 61, 0.4), inset 0 0 10px rgba(0,0,0,0.8);
     margin: 12px auto;
+    display: flex;         /* Aggiunto per centrare l'immagine */
+    align-items: center;   /* Aggiunto per centrare verticalmente */
+    justify-content: center; /* Aggiunto per centrare orizzontalmente */
 }
+
 .gif-display-box img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+    max-width: 100%;       /* Cambiato da width: 100% */
+    max-height: 100%;      /* Cambiato da height: 100% */
+    object-fit: contain;   /* Cambiato da cover: mantiene le proporzioni */
+    image-rendering: auto; /* Evita lo sgranamento */
 }
 .gif-label {
     position: absolute;
