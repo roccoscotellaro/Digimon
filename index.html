@@ -1786,7 +1786,7 @@
       if(EGG_IMAGE_URL) return `<img class="${cls}" src="${escapeAttr(EGG_IMAGE_URL)}" />`;
       return `<div class="${cls}" style="display:flex;align-items:center;justify-content:center;font-size:${size==='sm'?'20px':'32px'};background:radial-gradient(circle at 35% 30%, #fff8e6, #f0d9a0 60%, #d9b976);border-radius:50%;">🥚</div>`;
     }
-    return portraitHTML(d.imageUrl, d.name, size);
+    return portraitHTML(bestDigimonImage(null, d.name, d.imageUrl), d.name, size);
   }
 
   function dexFilterBarHTML(entries){
@@ -4572,15 +4572,29 @@
   // Va cercata "dal vivo" invece di fidarsi solo del campo imageUrl salvato sul partecipante:
   // i partecipanti aggiunti prima di questa funzionalità (o quando il Digimon aggiorna l'immagine)
   // non avrebbero altrimenti mai un ritratto nel selettore Attaccante/Bersaglio.
+  // Fonte di verità unica per l'immagine "migliore" di un Digimon: cerca prima nel Digidex live
+  // (dove GIF/immagine possono essere state aggiornate in qualunque momento), e solo se non trova
+  // corrispondenza usa lo snapshot passato come fallback (preso al momento in cui quell'oggetto
+  // — Incontro di scena, partecipante di combattimento, scheda giocatore — è stato creato/salvato).
+  // Un solo punto da correggere invece di uno snapshot sparso in tre posti diversi.
+  function bestDigimonImage(dexId, name, fallbackImage){
+    let match = null;
+    if(dexId) match = cachedDex.find(d=>d.id===dexId);
+    if(!match && name) match = cachedDex.find(d=>String(d.name).trim().toLowerCase()===String(name).trim().toLowerCase());
+    if(match && (match.gif_url || match.image_url)) return match.gif_url || match.image_url;
+    return fallbackImage || '';
+  }
   function resolveParticipantImage(p){
     if(p.isPC){
       const member = cachedRoster.find(m=>m.username===p.username);
-      if(member && member.digimon.imageUrl) return member.digimon.imageUrl;
+      if(member && member.digimon){
+        return bestDigimonImage(null, member.digimon.name, member.digimon.imageUrl);
+      }
     } else if(p.sourceEncounterId){
       const enc = (cachedScene.encounters||[]).find(e=>e.id===p.sourceEncounterId);
-      if(enc && enc.image) return enc.image;
+      if(enc) return bestDigimonImage(enc.dexId, enc.name, enc.gif || enc.image);
     }
-    return p.imageUrl || '';
+    return bestDigimonImage(null, p.name, p.imageUrl);
   }
   function participantChipHTML(p, role, selected){
     const color = participantSideColor(p);
@@ -7384,7 +7398,7 @@
       const disp = ENCOUNTER_DISPOSITIONS[e.disposition] || ENCOUNTER_DISPOSITIONS.enemy;
       return `
         <div class="roster-item" style="padding:6px 8px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;${e.isBoss?'border-color:var(--danger);':''}border-left:3px solid ${disp.color};">
-          ${e.image ? `<img src="${escapeAttr(e.image)}" onerror="this.style.display='none'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0;" />` : ''}
+          ${(()=>{ const img = bestDigimonImage(e.dexId, e.name, e.gif || e.image); return img ? `<img src="${escapeAttr(img)}" onerror="this.style.display='none'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0;" />` : ''; })()}
           <div style="flex:1;min-width:140px;">
             <div><b>${escapeHTML(e.name)}</b> ${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}<button class="tag" data-cycle-disposition="${i}" style="cursor:pointer;color:${disp.color};border-color:${disp.color};background:none;" title="Clicca per cambiare (Nemico/Alleato/Neutrale) — si riflette nell'aggiunta al combattimento">${disp.icon} ${disp.label}</button>${e.isBoss?`<span class="tag" style="color:var(--danger);border-color:var(--danger);">👑 Boss</span>`:''}${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>
             <div class="muted" style="font-size:11px;">${visible ? '👁️ Visibile ai giocatori' : '🙈 Nascosto — solo il Master lo vede'}</div>
