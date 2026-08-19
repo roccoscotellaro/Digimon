@@ -800,7 +800,7 @@ Devimon: https://..."></textarea>
         const entry = byNameLower[name.toLowerCase()];
         if(!entry){ notFound.push(name); continue; }
         await updateDexEntry(session.code, entry.id, {
-          name: entry.name, stage: entry.stage, description: entry.description, imageUrl: url,
+          name: entry.name, stage: entry.stage, description: entry.description, imageUrl: url, gifUrl: entry.gif_url,
           baseStats: entry.base_stats, categories: entry.categories, qualities: entry.qualities,
           dpTotal: entry.dp_total, discovered: entry.discovered, evolutions: entry.evolutions,
           evolvesFrom: entry.evolvesFrom || entry.evolves_from, attribute: entry.attribute, family: entry.family
@@ -918,7 +918,8 @@ Devimon: https://..."></textarea>
         </div>`;
       }
       return `<div class="hud-frame dex-card" data-id="${e.id}">
-        <div class="thumb">${e.image_url ? `<img src="${escapeAttr(e.image_url)}" onerror="this.parentNode.innerHTML='<span class=&quot;placeholder&quot;>${escapeHTML((e.name||'?').charAt(0))}</span>'" />` : `<span class="placeholder">${escapeHTML((e.name||'?').charAt(0))}</span>`}
+        <div class="thumb">${(e.gif_url||e.image_url) ? `<img src="${escapeAttr(e.gif_url||e.image_url)}" onerror="this.parentNode.innerHTML='<span class=&quot;placeholder&quot;>${escapeHTML((e.name||'?').charAt(0))}</span>'" />` : `<span class="placeholder">${escapeHTML((e.name||'?').charAt(0))}</span>`}
+          ${e.gif_url ? `<span style="position:absolute;bottom:4px;right:4px;font-size:11px;" title="Ha una GIF animata">🎬</span>` : ''}
           ${e.origin_type==='armor' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Armor">🛡️</span>` : ''}
           ${e.origin_type==='jogress' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Jogress/Fusione">🤝</span>` : ''}
           ${e.origin_type==='spirit' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Spirito (Digimon Frontier)">✨</span>` : ''}
@@ -1299,7 +1300,7 @@ Devimon: https://..."></textarea>
           const evolvesFrom = mergeByName(current.evolves_from, seedEvolvesFrom);
           const evolutions = mergeByName(current.evolutions, seedEvolutions);
           await updateDexEntry(session.code, current.id, {
-            name: current.name, stage: current.stage, description: current.description, imageUrl: current.image_url,
+            name: current.name, stage: current.stage, description: current.description, imageUrl: current.image_url, gifUrl: current.gif_url,
             baseStats: current.base_stats, categories: (sp.categories || line.categories || current.categories), qualities: current.qualities,
             dpTotal: current.dp_total, discovered: current.discovered, evolutions, evolvesFrom,
             attribute: current.attribute || sp.attribute, family: current.family || sp.family, originType: current.origin_type || sp.originType || '',
@@ -1448,7 +1449,7 @@ Devimon: https://..."></textarea>
           await updateDexEntry(session.code, e.id, {
             name: e.name, stage: e.stage,
             description: includeDesc && r.desc ? r.desc : e.description,
-            imageUrl: e.image_url,
+            imageUrl: e.image_url, gifUrl: e.gif_url,
             baseStats: e.base_stats, categories: e.categories, qualities: e.qualities,
             dpTotal: e.dp_total, discovered: e.discovered, evolutions: e.evolutions, evolvesFrom: e.evolves_from,
             slideEvolution: r.slideEvolution,
@@ -1555,7 +1556,7 @@ Devimon: https://..."></textarea>
           statusEl.textContent += `Aggiorno ${entry.name}...\n`;
           try{
             const r = await updateDexEntry(session.code, entry.id, {
-              name: entry.name, stage: entry.stage, description: entry.description, imageUrl: entry.image_url,
+              name: entry.name, stage: entry.stage, description: entry.description, imageUrl: entry.image_url, gifUrl: entry.gif_url,
               baseStats: entry.base_stats, categories: entry.categories, qualities: entry.qualities,
               dpTotal: entry.dp_total, discovered: entry.discovered, evolutions: cleanedEvolutions, evolvesFrom: cleanedEvolvesFrom,
               attribute: entry.attribute, family: entry.family, signatureMove: entry.signature_move, originType: entry.origin_type,
@@ -1583,7 +1584,7 @@ Devimon: https://..."></textarea>
   function openEditModal(entry){
     const isNew = !entry;
     const draft = entry ? JSON.parse(JSON.stringify(entry)) : {
-      name:'', stage:'Rookie', description:'', signature_move:'', image_url:'', categories:[], base_stats:{}, evolutions:[], qualities:[], dp_total:0, discovered:false
+      name:'', stage:'Rookie', description:'', signature_move:'', image_url:'', gif_url:'', categories:[], base_stats:{}, evolutions:[], qualities:[], dp_total:0, discovered:false
     };
     if(!draft.evolutions) draft.evolutions = [];
     // BUGFIX: un entry letto dal DB ha il campo "evolves_from" (snake_case), non "evolvesFrom".
@@ -1611,6 +1612,7 @@ Devimon: https://..."></textarea>
           </div>
           <div class="field"><label>URL Immagine</label><input type="text" id="ed-img" value="${escapeAttr(draft.image_url)}" /></div>
         </div>
+        <div class="field"><label>URL GIF animata (opzionale — se presente, sostituisce l'immagine statica ovunque tranne quando la si ingrandisce)</label><input type="text" id="ed-gif" value="${escapeAttr(draft.gif_url||'')}" placeholder="https://... .gif" /></div>
         <div class="field"><label>Descrizione</label><textarea id="ed-desc" rows="2">${escapeHTML(draft.description)}</textarea></div>
         <div class="field"><label>⭐ Signature Move (nome + Tag meccanico, es. "Fire Rocket — [MELEE][DAMAGE 8-10]")</label><input type="text" id="ed-sigmove" value="${escapeAttr(draft.signature_move||'')}" placeholder="Nome — [TAG valore]" /></div>
         <div class="field"><label>💬 Descrizione narrativa dell'Attacco (mostrata quando l'attacco viene lanciato)</label><textarea id="ed-attackdesc" rows="2" placeholder="Es. Sputa una sfera di fuoco concentrato dalla bocca.">${escapeHTML(draft.attack_desc||'')}</textarea></div>
@@ -1821,6 +1823,7 @@ Devimon: https://..."></textarea>
         extraAttacks: draft.extraAttacks,
         digimental: document.getElementById('ed-digimental').value.trim(),
         imageUrl: document.getElementById('ed-img').value.trim(),
+        gifUrl: document.getElementById('ed-gif').value.trim(),
         categories: document.getElementById('ed-categories').value.split(',').map(s=>s.trim()).filter(Boolean),
         attribute: document.getElementById('ed-attribute').value,
         family: document.getElementById('ed-family').value,
@@ -1864,7 +1867,7 @@ Devimon: https://..."></textarea>
         function fullPayloadFor(targetEntry, field, updatedList){
           return {
             name: targetEntry.name, stage: targetEntry.stage, description: targetEntry.description,
-            imageUrl: targetEntry.image_url, baseStats: targetEntry.base_stats,
+            imageUrl: targetEntry.image_url, gifUrl: targetEntry.gif_url, baseStats: targetEntry.base_stats,
             evolutions: field==='evolutions' ? updatedList : (targetEntry.evolutions||[]),
             evolvesFrom: field==='evolves_from' ? updatedList : (targetEntry.evolves_from||[]),
             categories: targetEntry.categories, qualities: targetEntry.qualities,

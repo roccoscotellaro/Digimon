@@ -147,6 +147,99 @@
   }
   function skillMax(t, def){ return Math.max(...def.attrs.map(a=>Number(t[a])||0)); }
 
+  // ---------- Tamer Talents (soglia 3/5 Iniziali, 6/7 Avanzati — su Attributo o Skill) ----------
+  const TALENT_DEFS = [
+    { attr:'agility', threshold:3, name:'Quick Step', text:'Quando prendi l\'Azione Reposition, guadagni +1 Successo al risultato finale.' },
+    { attr:'agility', threshold:5, name:'Strike Fast', text:'Special Order "FULL SPEED AHEAD" (2 Azioni): il Digimon guadagna 1 Azione extra, da usare per Muovi o Movimento Difficile.' },
+    { attr:'body', threshold:3, name:'Bulk Up', text:'Quando prendi l\'Azione Reinforce, guadagni +1 Successo al risultato finale.' },
+    { attr:'body', threshold:5, name:'Energy Burst', text:'Special Order "DON\'T WORRY YOU\'LL HEAL" (1 Azione): il Digimon recupera 1 Casella Ferita (2 se ha Ferite Temporanee).' },
+    { attr:'body', threshold:7, name:'Overpower', text:'Special Order "I\'M WITH YOU" (1 Azione, una volta a riposo): dopo un tiro Accuracy del Digimon, i 4 contano come Successi.' },
+    { attr:'charisma', threshold:3, name:'Direct Team', text:'La penalità -2 per dirigere Digimon che non sono il tuo si riduce a -1.' },
+    { attr:'charisma', threshold:5, name:'Swagger', text:'Special Order "HEY YOU" (1 Azione): applica [TAUNT] a un Nemico per 3 round.' },
+    { attr:'charisma', threshold:6, name:'Peak Performance', text:'Special Order "I BELIEVE IN YOU" (2 Azioni, una volta a combattimento): un Digimon alleato guadagna [BASTION 2] fino al tuo prossimo turno.' },
+    { attr:'charisma', threshold:7, name:'Revitalize', text:'Special Order "WAKE UP, DON\'T QUIT NOW" (2 Azioni, una volta a riposo): rianima un Digimon sconfitto.' },
+    { attr:'intelligence', threshold:3, name:'Experienced', text:'Guadagni +1 Punto Skill extra da spendere (in creazione, può portare una Skill a 5 anche superando il limite di una sola Skill al massimo).' },
+    { attr:'intelligence', threshold:5, name:'Calculated', text:'Special Order: puoi trasformare Bolster in +1 Successo invece di +2 dadi.' },
+    { attr:'intelligence', threshold:6, name:'Signature Versatility', text:'Special Order "TIME FOR PLAN B" (Azione Libera, una volta a combattimento): il prossimo Attacco del Digimon conta come Signature Move.' },
+    { attr:'intelligence', threshold:7, name:'Enemy Scan', text:'Special Order "I\'VE FOUND AN EXPLOIT" (2 Azioni, una volta a riposo): infliggi [DEBILITATE] a un Nemico con Potenza pari al suo Stage.' },
+    { attr:'willpower', threshold:3, name:'Potential', text:'Guadagni 1 Punto Ispirazione Temporaneo all\'inizio di ogni sessione.' },
+    { attr:'willpower', threshold:5, name:'Purify Partner', text:'Special Order "TOUGH IT OUT" (1 Azione): cura il Digimon da un Effetto Negativo, come [CLEANSE].' },
+    { attr:'willpower', threshold:6, name:'Challenger', text:'Quando si tira l\'Iniziativa, il tuo Digimon guadagna Ferite Temporanee pari ai tuoi Successi Willpower + lo Stage più alto tra i nemici (max 5).' },
+    { attr:'willpower', threshold:7, name:'Miracle', text:'Spendendo 7 IP puoi aggiungere/sottrarre Willpower+5 a un Check, Dodge o Accuracy Pool.' },
+
+    { attr:'evade', skill:true, threshold:3, name:'Avoiding Consequences', text:'Un Fallimento Critico su Check/Torment Check diventa Fallimento normale se sommando i punti in Evade si raggiungerebbe quel risultato.' },
+    { attr:'evade', skill:true, threshold:5, name:'Tuck and Roll', text:'Una Evade fallita in combattimento può diventare un Successo, una volta a Rest.' },
+    { attr:'evade', skill:true, threshold:7, name:'Quickening', text:'Special Order "YOU\'RE ONE STEP BEHIND" (Interrupt, una volta a combattimento): il Digimon schiva automaticamente un Attacco in arrivo, senza tirare.' },
+
+    { attr:'precision', skill:true, threshold:3, name:'Busy Hands', text:'Crea senza tiro un oggetto utile durante un Rest, che dà un bonus a una Skill scelta pari ai punti in Precision sopra 2 (un solo uso, un oggetto per Rest).' },
+    { attr:'precision', skill:true, threshold:5, name:'Aim Assist', text:'Dirigendo il Digimon per migliorare l\'Accuracy con 2 Azioni (Highest Attribute), il bonus al Direct sale di +2.' },
+    { attr:'precision', skill:true, threshold:7, name:'Auto Hit', text:'Special Order "PUT 100% INTO THIS" (2 Azioni, una volta a combattimento): un Attacco (non Signature Move) colpisce automaticamente con successi pari all\'SV dell\'attaccante.' },
+
+    { attr:'stealth', skill:true, threshold:3, name:'Overlooked', text:'Si mimetizza senza tiro; in combattimento può muoversi/agire senza essere notato finché non colpisce un nemico. Individuabile con Awareness TN 9 + punti in Stealth.' },
+    { attr:'stealth', skill:true, threshold:5, name:'Silent Movement', text:'Tamer e Digimon non fanno rumore né lasciano impronte camminando.' },
+    { attr:'stealth', skill:true, threshold:7, name:'Vanish', text:'Special Order "NOW YOU SEE US" (1 Azione, una volta a combattimento): Tamer e Digimon spariscono dalla vista di un nemico scelto ([BLIND] fino al prossimo turno del Tamer).' },
+
+    { attr:'athletics', skill:true, threshold:3, name:'Natural Explorer', text:'Usa Athletics o Agility (il più alto) per il Movement; ottiene Climb/Swim/Jump pari al Movement e ignora il Terreno Difficile.' },
+    { attr:'athletics', skill:true, threshold:5, name:'Experienced Step', text:'Reposition da 2 Azioni: +1 Successo al risultato finale.' },
+    { attr:'athletics', skill:true, threshold:7, name:'Bullrush', text:'Special Order "THIS TRAIN WON\'T STOP" (1 Azione, una volta a combattimento): il Digimon ottiene Difficult Move come Azione Gratuita, e fino a fine turno lo stesso Difficult Move costa 1 Azione in meno (min. 1).' },
+
+    { attr:'endurance', skill:true, threshold:3, name:'No Pain, No Gain', text:'Un Check fallito (non Torment) può essere ritirato come Check di Endurance con l\'Attributo pertinente, un numero di volte pari ai punti in Endurance sopra 2 (si ricarica a ogni Rest).' },
+    { attr:'endurance', skill:true, threshold:5, name:'Grit', text:'Può schivare gli attacchi con Endurance invece di Evade (subisce comunque min. 1 danno anche se supera il Check); se ridotto a 0 Wound Box resta a 1. Una volta a Rest.' },
+    { attr:'endurance', skill:true, threshold:7, name:'Thick Skin', text:'Special Order "NO, YOU MOVE" (Interrupt, una volta a combattimento): il Digimon ignora uno spostamento forzato subito.' },
+
+    { attr:'featsOfStrength', skill:true, threshold:3, name:'Heavy Force', text:'Usa Feats of Strength al posto di Precision per attaccare in combattimento. Una volta a Rest, può aggiungere ai Check di Body/Agility un bonus pari ai punti in Feats of Strength.' },
+    { attr:'featsOfStrength', skill:true, threshold:5, name:'Joint Effort', text:'In un Check di squadra (Feats of Strength) col proprio Digimon, il Tamer aggiunge l\'SV del Digimon al tiro.' },
+    { attr:'featsOfStrength', skill:true, threshold:7, name:'Adrenaline Hit', text:'Special Order "HAVE SOME OF THIS" (2 Azioni, una volta a combattimento): il Tamer lancia un oggetto infliggendo Danno Unalterable pari al proprio SV e [STUN].' },
+
+    { attr:'manipulate', skill:true, threshold:3, name:'Planted Idea', text:'Se il Tamer supera un Check di Manipulate in Roleplay, può impiantare un\'idea minore e ragionevole in un PNG, per una durata in minuti pari ai propri punti in Manipulate. Una volta a Rest.' },
+    { attr:'manipulate', skill:true, threshold:5, name:'Fakeout', text:'Se il Tamer usa 2 Azioni per Dirigere il proprio Digimon migliorandone l\'Accuracy, e l\'Attacco con quel bonus manca, il bersaglio subisce -2 al Dodge invece di -1.' },
+    { attr:'manipulate', skill:true, threshold:7, name:'Hacking Pride', text:'Special Order "YOU\'VE ALREADY LOST" (1 Azione, una volta a combattimento): un Direct negativo contro un nemico, penalità al prossimo Pool di Accuracy o Dodge a scelta del Tamer.' },
+
+    { attr:'perform', skill:true, threshold:3, name:'Endless Dream', text:'Senza tirare nulla, un\'esibizione del Tamer dà IP Temporanei agli alleati, pari ai propri punti in Performance sopra 2. Una volta a Rest.' },
+    { attr:'perform', skill:true, threshold:5, name:'Personal Cheerleader', text:'Un Digimon che beneficia del Direct del Tamer, tirando un Accuracy o Dodge Pool, può ritirare fino a 2 dadi.' },
+    { attr:'perform', skill:true, threshold:7, name:'Distracting Gesture', text:'Special Order "HEY, OVER HERE" (Interrupt, una volta a combattimento): quando un nemico attacca un alleato, dimezza i dadi tirati dal nemico per l\'Attacco.' },
+
+    { attr:'persuasion', skill:true, threshold:3, name:'Charming Influence', text:'Se il Tamer supera un Check di Persuasion in Roleplay, può "usare il fascino": i PNG bersaglio diventano amichevoli per una durata in minuti pari ai propri punti in Persuasion. Una volta a Rest.' },
+    { attr:'persuasion', skill:true, threshold:5, name:'Be the Winners', text:'Con 1 Azione extra, il Tamer può dividere il bonus del Direct fra il proprio Digimon e un altro Digimon consenziente (il proprio Digimon deve sempre ricevere almeno +2).' },
+    { attr:'persuasion', skill:true, threshold:7, name:'Next Order', text:'Special Order "WE CAN DO THIS, TOGETHER" (1 Azione, una volta a combattimento): concede i benefici di un Direct a 2 alleati consenzienti (proprio Digimon incluso).' },
+
+    { attr:'decipherIntent', skill:true, threshold:3, name:'Cyber Sleuth', text:'Il giocatore può fare una domanda al GM su un\'azione immediatamente disponibile, e il GM deve rispondere se avrà esiti buoni, cattivi o entrambi. Usi pari ai punti in Decipher Intent sopra 2, recuperati a ogni Rest.' },
+    { attr:'decipherIntent', skill:true, threshold:5, name:'Best Laid Plans', text:'Usando Hold Action per sommare Intelligence all\'Accuracy/Dodge del Digimon, +1 Successo al risultato finale.' },
+    { attr:'decipherIntent', skill:true, threshold:7, name:'Predictable', text:'Special Order "I ALREADY KNOW YOUR NEXT MOVE" (2 Azioni, una volta a combattimento): dichiara un Hold Action con Trigger su qualsiasi Azione del nemico bersaglio.' },
+
+    { attr:'survival', skill:true, threshold:3, name:'Glorious World', text:'Senza tirare nulla, il Tamer cucina un pasto che dà Wound Box Temporanee a chi lo mangia, pari ai propri punti in Survival sopra 2, fino al prossimo Rest.' },
+    { attr:'survival', skill:true, threshold:5, name:'Trailblazer', text:'Il Tamer ha un innato senso dell\'orientamento: sa sempre dov\'è il nord e la strada esatta per tornare all\'ultimo insediamento civilizzato visitato.' },
+    { attr:'survival', skill:true, threshold:7, name:'Survival Instinct', text:'Special Order "FLOW WITH IT" (Interrupt, una volta a combattimento): il Danno di un Attacco subito viene dimezzato dopo l\'Armor e nessun Danno Unalterable viene applicato.' },
+
+    { attr:'knowledge', skill:true, threshold:3, name:'Academic Advice', text:'Aiutando in un Check di Teamwork, il Tamer può usare un Check di Knowledge al posto di quello richiesto. Su Successo, il bonus dato aumenta per ogni punto in Knowledge sopra 2.' },
+    { attr:'knowledge', skill:true, threshold:5, name:'Living Encyclopedia', text:'Se un Check di Knowledge per ricordare informazioni avrebbe TN 15 o meno, il Tamer può Riuscire Criticamente in automatico. Una volta a Rest.' },
+    { attr:'knowledge', skill:true, threshold:7, name:'Hacker\'s Memory', text:'Special Order "I KNOW ALL YOUR TRICKS" (2 Azioni, una volta a combattimento): contro un nemico già affrontato, +1 alla Potenza delle proprie Quality/Effetti basati su Stat Derivate contro di lui.' },
+
+    { attr:'fortitude', skill:true, threshold:3, name:'Calming Influence', text:'Se un altro Tamer fallisce un Torment Check, questo Tamer può fargli ritirare il Check con un bonus pari ai propri punti in Fortitude. Una volta a Rest.' },
+    { attr:'fortitude', skill:true, threshold:5, name:'Team Player', text:'Partecipando in Teamwork con alleati: se aiuta, l\'alleato può ritirare gli 1 del Check; se è chi inizia il Check, può ignorare il Fallimento Critico di un alleato.' },
+    { attr:'fortitude', skill:true, threshold:7, name:'Take the Lead', text:'Special Order "NOW FOCUS" (1 Azione, una volta a combattimento): +5 a un Check del proprio Digimon, anche dopo aver visto il risultato.' },
+
+    { attr:'bravery', skill:true, threshold:3, name:'Break the Chain', text:'Il Tamer ottiene un bonus ai Torment Check pari ai propri punti in Bravery.' },
+    { attr:'bravery', skill:true, threshold:5, name:'With the Will', text:'Se il Tamer dovrebbe fare un Torment Check, il proprio Digimon può usare un\'Interrupt Action per trasformarlo in un Teamwork Check di Bravery. Una volta a Rest.' },
+    { attr:'bravery', skill:true, threshold:7, name:'Heroic Exemplar', text:'Special Order "SHOW THEM WHAT YOU\'RE MADE OF" (2 Azioni, una volta a combattimento): dopo un Attacco andato a segno, Digimon e tutti gli alleati ottengono [BASTION 1] (Durata 3).' },
+
+    { attr:'awareness', skill:true, threshold:3, name:'Hyper Alert', text:'Senza tirare, il Tamer può usare un Check di Awareness al posto del Check normale per evitare pericoli a sorpresa. Bonus all\'Iniziativa per ogni punto in Awareness sopra 2.' },
+    { attr:'awareness', skill:true, threshold:5, name:'Danger Sense', text:'Quando il Digimon userebbe un\'Interrupt Action, il Tamer può spendere 1 Azione propria al posto del Digimon. Una volta a Rest.' },
+    { attr:'awareness', skill:true, threshold:7, name:'Realization', text:'Special Order "I\'VE FIGURED IT OUT" (2 Azioni, una volta a combattimento): infligge [EXPLOIT 3] a un nemico, bypassando immunità da Overwrite o Resistance.' }
+  ];
+  const SKILL_LABEL_BY_KEY = { evade:'EVADE', precision:'PREC', stealth:'STEALTH', athletics:'ATHL', endurance:'END', featsOfStrength:'FOS', manipulate:'MANIP', perform:'PERF', persuasion:'PERS', decipherIntent:'D.INTENT', survival:'SURV', knowledge:'KNOW', fortitude:'FORT', bravery:'BRAV', awareness:'AWARE' };
+  function talentAbbr(t){ return t.skill ? (SKILL_LABEL_BY_KEY[t.attr] || t.attr) : ATTR_ABBR[t.attr]; }
+  function computeUnlockedTalents(tamer){
+    const cfg = campaignConfig();
+    const stdIdx = { 3:0, 5:1, 6:2, 7:3 };
+    return TALENT_DEFS.filter(t => {
+      const idx = stdIdx[t.threshold];
+      const effectiveThreshold = idx!==undefined ? cfg.thresholds[idx] : t.threshold;
+      const value = t.skill ? Number((tamer.skills && tamer.skills[t.attr])||0) : Number(tamer[t.attr]||0);
+      return value >= effectiveThreshold;
+    });
+  }
+
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s){ return escapeHTML(s); }
 
@@ -615,20 +708,25 @@
     const attrs = ['agility','body','charisma','intelligence','willpower'];
     const apSpent = attrs.reduce((s,a)=>s+(draft[a]-1),0);
     const apRemaining = cfg.ap - apSpent;
+    // Talent "Experienced" (Intelligence 3+, o soglia equivalente per Campaign Level): +1 Punto Skill
+    // extra in creazione, e permette a una seconda Skill di arrivare al tetto.
+    const hasExperienced = Number(draft.intelligence||0) >= cfg.thresholds[0];
+    const spBudget = cfg.sp + (hasExperienced ? 1 : 0);
     const spSpent = SKILL_DEFS.reduce((s,def)=>s+Number(draft.skills[def.key]||0),0);
-    const spRemaining = cfg.sp - spSpent;
+    const spRemaining = spBudget - spSpent;
     const attrAtCap = attrs.filter(a=>draft[a]===cap).length;
     const skillsAtCap = SKILL_DEFS.filter(def=>Number(draft.skills[def.key]||0)===cap).length;
+    const skillCapAllowance = hasExperienced ? 2 : 1;
     const errors = [];
     if(apRemaining!==0) errors.push(`Punti Attributo da spendere: ${apRemaining} (devono arrivare esattamente a 0)`);
     if(spRemaining!==0) errors.push(`Punti Skill da spendere: ${spRemaining} (devono arrivare esattamente a 0)`);
     if(attrAtCap>1) errors.push(`Solo un Attributo può arrivare al tetto di ${cap} in creazione.`);
-    if(skillsAtCap>1) errors.push(`Solo una Skill può arrivare al tetto di ${cap} in creazione.`);
+    if(skillsAtCap>skillCapAllowance) errors.push(`Solo ${skillCapAllowance===2?'due Skill possono':'una Skill può'} arrivare al tetto di ${cap} in creazione${hasExperienced?' (Talent Experienced attivo: +1 Skill Point, una Skill extra può arrivare al tetto)':''}.`);
 
     return `
     <div class="hud-frame card">
       <div class="section-title"><span>🧙 Creazione Guidata — Tamer</span></div>
-      <div class="muted" style="margin-bottom:8px;">Campaign Level: <b>${(cachedProgression&&cachedProgression.campaignLevel)||'Standard'}</b> — ${cfg.ap} Punti Attributo (partono da 1) · ${cfg.sp} Punti Skill · solo un Attributo e una Skill possono arrivare al tetto di ${cap}.</div>
+      <div class="muted" style="margin-bottom:8px;">Campaign Level: <b>${(cachedProgression&&cachedProgression.campaignLevel)||'Standard'}</b> — ${cfg.ap} Punti Attributo (partono da 1) · ${spBudget} Punti Skill${hasExperienced?` <span style="color:var(--cyan);">(${cfg.sp}+1 da Talent Experienced)</span>`:''} · solo un Attributo e ${skillCapAllowance===2?'fino a due Skill possono':'una Skill può'} arrivare al tetto di ${cap}.</div>
       <div class="flex-between" style="margin-bottom:6px;"><span class="muted">Punti Attributo rimasti</span><span class="mono" style="color:${apRemaining===0?'var(--cyan)':'var(--amber)'};">${apRemaining}</span></div>
       <div class="grid-stats">
         ${attrs.map(a=>`
@@ -650,6 +748,13 @@
         }).join('')}
       </div>
       <div style="border-top:1px dashed var(--line);margin:12px 0;"></div>
+      ${(()=>{ const unlocked = computeUnlockedTalents(draft); return `
+      <div class="hud-frame" style="padding:10px;border-color:var(--cyan-dim);margin-bottom:12px;">
+        <div class="mono" style="color:var(--cyan);font-size:12px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">⭐ Tamer Talents sbloccati — ${unlocked.length}</div>
+        ${unlocked.length===0
+          ? '<div class="muted">Nessun Talent ancora sbloccato (servono almeno 3 punti in un Attributo o una Skill).</div>'
+          : unlocked.map(tal=>`<div class="list-item"><div class="top-row"><span class="name">${escapeHTML(tal.name)}</span><span class="muted mono">${talentAbbr(tal)} ${tal.threshold}+</span></div><div class="sub">${escapeHTML(tal.text)}</div></div>`).join('')}
+      </div>`; })()}
       <div class="field"><label>URL Immagine Digivice (opzionale)</label><input type="text" id="wiz-t-digivice-img" value="${escapeAttr(draft.digiviceImageUrl)}" placeholder="https://..." /></div>
       ${errors.length ? `<div class="err">${errors.map(e=>escapeHTML(e)).join('<br/>')}</div>` : '<div class="ok-msg">Tutto valido, puoi salvare.</div>'}
       <div class="row" style="margin-top:10px;">
@@ -974,106 +1079,5 @@
   })();
 })();
 </script>
-
-<!-- ===== Widget Audio Persistente: musica di sottofondo (fissa) + suoni click ===== -->
-<audio id="dvos-bg-music" loop preload="none" style="display:none;"></audio>
-<div id="dvos-audio-widget" style="position:fixed;bottom:10px;right:10px;z-index:9999;background:var(--panel,#0f1115);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:6px 10px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text,#cfd6e4);box-shadow:0 2px 10px rgba(0,0,0,0.5);">
-  <button id="dvos-music-toggle" title="Musica di sottofondo: on/off" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;">🔊</button>
-  <input type="range" id="dvos-music-volume" min="0" max="100" value="50" style="width:64px;" title="Volume musica" />
-  <button id="dvos-click-toggle" title="Suoni click: on/off" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;">🖱️</button>
-</div>
-<script>
-(function(){
-  // URL della traccia di sottofondo fissa, caricata su Supabase Storage (bucket campaign-audio).
-  const FIXED_BG_MUSIC_URL = 'https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787069260083_hho28k.mpeg';
-  const musicEl = document.getElementById('dvos-bg-music');
-  // Scarichiamo il file per intero con fetch() invece di lasciare che sia <audio> a farlo in
-  // streaming: alcuni host (Supabase Storage incluso, in certe configurazioni) non gestiscono bene
-  // le richieste "Range" che il tag audio usa di default, causando riproduzione bloccata a 0:00/0:00
-  // anche se il file si scarica benissimo con una richiesta normale. Un Blob locale evita il problema.
-  if(musicEl && FIXED_BG_MUSIC_URL){
-    fetch(FIXED_BG_MUSIC_URL).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.blob(); })
-      .then(blob=>{
-        musicEl.src = URL.createObjectURL(blob);
-        if(!prefs.musicMuted && window.__dvosUnlocked) musicEl.play().catch(()=>{});
-      })
-      .catch(e=>{ console.warn('Musica di sottofondo: impossibile caricarla (' + e.message + ')'); });
-  }
-  const PREFS_KEY = 'dvos_audio_prefs_v1';
-  function loadPrefs(){
-    try{ return Object.assign({musicVolume:0.5, musicMuted:false, clickMuted:false}, JSON.parse(localStorage.getItem(PREFS_KEY)||'{}')); }
-    catch(e){ return {musicVolume:0.5, musicMuted:false, clickMuted:false}; }
-  }
-  function savePrefs(p){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(p)); }catch(e){} }
-  const prefs = loadPrefs();
-
-  const musicToggleBtn = document.getElementById('dvos-music-toggle');
-  const musicVolumeInp = document.getElementById('dvos-music-volume');
-  const clickToggleBtn = document.getElementById('dvos-click-toggle');
-
-  function applyMusicVolume(){
-    if(!musicEl) return;
-    musicEl.volume = prefs.musicMuted ? 0 : prefs.musicVolume;
-    if(prefs.musicMuted && !musicEl.paused) musicEl.pause();
-  }
-  function refreshUI(){
-    if(musicToggleBtn) musicToggleBtn.textContent = prefs.musicMuted ? '🔇' : '🔊';
-    if(musicVolumeInp) musicVolumeInp.value = Math.round(prefs.musicVolume*100);
-    if(clickToggleBtn) clickToggleBtn.style.opacity = prefs.clickMuted ? '0.4' : '1';
-    applyMusicVolume();
-  }
-  refreshUI();
-
-  if(musicToggleBtn) musicToggleBtn.onclick = ()=>{
-    prefs.musicMuted = !prefs.musicMuted;
-    savePrefs(prefs);
-    refreshUI();
-    if(!prefs.musicMuted && musicEl && musicEl.paused && musicEl.src) musicEl.play().catch(()=>{});
-  };
-  if(musicVolumeInp) musicVolumeInp.oninput = ()=>{
-    prefs.musicVolume = Number(musicVolumeInp.value)/100;
-    if(prefs.musicVolume>0) prefs.musicMuted = false;
-    savePrefs(prefs);
-    refreshUI();
-  };
-  if(clickToggleBtn) clickToggleBtn.onclick = ()=>{
-    prefs.clickMuted = !prefs.clickMuted;
-    savePrefs(prefs);
-    refreshUI();
-  };
-
-  // I browser bloccano l'autoplay finché l'utente non interagisce almeno una volta con la pagina:
-  // al primo click in assoluto proviamo a far partire la musica, se non mutata.
-  let unlocked = false;
-  function unlock(){
-    if(unlocked) return;
-    unlocked = true;
-    window.__dvosUnlocked = true;
-    if(!prefs.musicMuted && musicEl && musicEl.src) musicEl.play().catch(()=>{});
-    ['click','keydown','touchend'].forEach(ev=>document.removeEventListener(ev, unlock, true));
-  }
-  // Qualsiasi gesto valido per la policy autoplay del browser (click, tasto, tocco) sblocca subito,
-  // non solo il click — così parte alla primissima interazione, qualunque essa sia.
-  ['click','keydown','touchend'].forEach(ev=>document.addEventListener(ev, unlock, { capture:true }));
-
-  // Suono di click — stesso identico snippet già usato in index.html, riproposto qui
-  // per coerenza su tutte le pagine (nessun file esterno, tutto incorporato).
-  const CLICK_SFX_URL = "https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787070670792_1jktvp.mpeg";
-  function __playClickSfx(){
-    if(prefs.clickMuted) return;
-    try{
-      const a = new Audio(CLICK_SFX_URL);
-      a.volume = 0.5;
-      a.play().catch(()=>{});
-    }catch(e){}
-  }
-  document.addEventListener('click', function(e){
-    if(e.target.closest('input, textarea, select')) return;
-    __playClickSfx();
-  }, true);
-})();
-</script>
-<!-- ===== fine Widget Audio Persistente ===== -->
-
 </body>
 </html>
