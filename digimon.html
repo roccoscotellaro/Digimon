@@ -174,7 +174,7 @@
     { name:'Second Wind', category:'Trigger', dpPerRank:2, maxRank:3, mechanic:'', desc:'Rank max = Stage (fino a 3). Quando si tira l\'Iniziativa, ottieni usi pari ai Ranks. Ogni uso: Recovery Check come 1 Azione (max 1 volta a turno, non puoi Attaccare lo stesso turno). Gli usi non spesi si perdono a fine Combattimento, ma ogni uso non speso dà Caselle Ferita extra al Recovery Check di fine Combattimento. Tracciare gli usi a mano.' },
     { name:'Pack Master', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'Se il Digimon è bersaglio di un Attacco, un Alleato adiacente può Intercedere come Azione Libera, una volta a round.' },
     { name:'Vital Energy', category:'Trigger', dpPerRank:1, maxRank:2, mechanic:'', desc:'Richiesta per Illness. Rank 1: una volta a round, ritira gli 1 usciti in un Check di Health. Rank 2: ritira anche i 2 sullo stesso tiro.' },
-    { name:'System Boost', category:'Static', dpPerRank:2, maxRank:4, mechanic:'', desc:'Rank max = Stage (fino a 4). Per Rank, scegli una Stat Derivata diversa (RAM/CPU/BIT/DOS): +1 a quella Stat. Sconto di 1 DP al primo acquisto.' },
+    { name:'System Boost', category:'Static', dpPerRank:2, maxRank:4, mechanic:'systemBoost', desc:'Rank max = Stage (fino a 4). Per Rank, scegli una Stat Derivata diversa (RAM/CPU/BIT/DOS): +1 a quella Stat. Sconto di 1 DP al primo acquisto.' },
     { name:'Teleport', category:'Static', dpPerRank:3, maxRank:1, mechanic:'', desc:'Richiesta per Transporter. Teletrasporto istantaneo pari a Stage+2 spazi (serve linea di vista; +Ranks di Instinct, +1 con Data Optimization: Speedster — non gestito dal sito). Una volta a combattimento, come Azione Interrupt, può far fallire un Attacco nemico teletrasportandosi via (non attiva Contrattacchi), oppure come Azione di Clash per fuggire automaticamente dal Clash.' },
     { name:'Glamor', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'Incompatibile con Illusionary Overlay. Come 2 Azioni, applica un\'illusione d\'aspetto a bersagli entro metà BIT spazi con un Check BIT (Performance), penalità pari al numero di bersagli oltre il primo. Chi dubita può opporre un Check BIT pari al risultato per smascherarla. Dura finché non ne crei una nuova, sei portato a 0 Ferite, o perdi la Quality.' },
     { name:'Illusionary Overlay', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'Come 2 Azioni entro range BIT, Check BIT (Manipulate) TN 8+Nemici in Combattimento, crea uno Shroud illusorio (con Naturewalk associato: chi non ce l\'ha è Accecato dentro, chi è fuori vede Oscurati i bersagli dentro) o Barriere illusorie (bloccano movimento/attacco finché non vengono scoperte). Un bersaglio può opporre un Check DOS (Awareness) TN pari ai Successi per smascherarla. TN sale di 3 a ogni uso successivo nello stesso Combattimento.' },
@@ -336,7 +336,7 @@
     { name:'Underwhelming', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Huge Power (max Ranks = quelli di Huge Power). Quando usi Huge Power, riduci i Successi finali di Accuracy di 1 per Rank qui. Huge Power non è più utilizzabile su un Attacco con [CERTAIN].' },
     { name:'Broadside', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Avoidance (max Ranks = quelli di Avoidance). Quando usi Avoidance, riduci i Successi finali di Dodge di 1 per Rank qui.' },
     { name:'Illness', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Vital Energy (max Ranks = quelli di Vital Energy). Quando usi Vital Energy, riduci i Successi finali di Health di 1 per Rank qui.' },
-    { name:'System Error', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di System Boost (max Ranks = quelli di System Boost). Per ogni Rank qui, riduci di 1 una Stat Derivata NON già toccata da System Boost.' },
+    { name:'System Error', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'systemError', desc:'NEGATIVA — Richiede 1+ Rank di System Boost (max Ranks = quelli di System Boost). Per ogni Rank qui, riduci di 1 una Stat Derivata NON già toccata da System Boost.' },
     { name:'Natural Weakness', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Naturewalk. Incompatibile con Elemental Myriad. Per ogni Rank, scegli 2 Elementi che NON hai da Naturewalk: subisci il doppio del bonus Danno di Elemental Force da quegli Elementi (max Ranks = quelli di Naturewalk).' },
     { name:'Exploitable Program', category:'Static', dpPerRank:-1, maxRank:1, mechanic:'', desc:'NEGATIVA — La TN di ogni Nemico che richiede una tua Stat Derivata (es. Mighty Blow, Substitute subiti) è ridotta di 3.' },
     { name:'Accuracy Converter [Nemico]', category:'Static', dpPerRank:0, maxRank:99, mechanic:'', desc:'CAP. 3.01 GM INDEX (solo Nemici, gratis, non conta nel limite Free) — Per Rank: -1 Accuracy, +1 BIT. Non puoi scendere sotto l\'Accuracy di partenza né superare il doppio del BIT senza questa Quality. Usare con moderazione: serve solo ad abbassare Stat totali "esagerate" mantenendo la Stat Derivata.' },
@@ -957,6 +957,11 @@
               <option value="accuracy">Accuracy</option><option value="damage">Damage</option><option value="dodge">Dodge</option><option value="armor">Armor</option><option value="health">Health</option>
             </select>
           </div>
+          <div class="field" id="${prefix}-derivedtarget-wrap" style="display:none;"><label>Stat Derivata (System Boost/Error)</label>
+            <select id="${prefix}-derivedtarget">
+              <option value="CPU">CPU (da Armor)</option><option value="RAM">RAM (da Dodge)</option><option value="BIT">BIT (da Accuracy)</option><option value="DOS">DOS (da Damage)</option>
+            </select>
+          </div>
         </div>
         <button class="btn solid small" id="${prefix}-add-catalog" style="width:100%;" disabled>+ Aggiungi Quality</button>
       </div>
@@ -970,6 +975,7 @@
     const selects = QUALITY_TIER_GROUPS.map(g=>document.getElementById(prefix+'-sel-'+QUALITY_TIER_SUFFIX[g])).filter(Boolean);
     const previewEl = document.getElementById(prefix+'-preview');
     const statWrap = document.getElementById(prefix+'-stattarget-wrap');
+    const derivedWrap = document.getElementById(prefix+'-derivedtarget-wrap');
     const addBtn = document.getElementById(prefix+'-add-catalog');
     const rankInp = document.getElementById(prefix+'-rank');
 
@@ -983,6 +989,7 @@
       const q = currentQuality();
       if(addBtn) addBtn.disabled = !q;
       if(statWrap) statWrap.style.display = (q && q.mechanic==='naturewalk') ? 'block' : 'none';
+      if(derivedWrap) derivedWrap.style.display = (q && (q.mechanic==='systemBoost' || q.mechanic==='systemError')) ? 'block' : 'none';
       if(rankInp && q) rankInp.max = q.maxRank;
       if(previewEl){
         previewEl.innerHTML = q ? `
@@ -999,7 +1006,8 @@
         if(!q) return;
         const rank = Math.max(1, Math.min(q.maxRank, Number(rankInp.value)||1));
         const statTarget = document.getElementById(prefix+'-stattarget') ? document.getElementById(prefix+'-stattarget').value : null;
-        onAdd(q, rank, statTarget);
+        const derivedTarget = document.getElementById(prefix+'-derivedtarget') ? document.getElementById(prefix+'-derivedtarget').value : null;
+        onAdd(q, rank, statTarget, derivedTarget);
         selects.forEach(sel=>{ sel.value=''; });
         refresh(null);
       };
@@ -1407,12 +1415,16 @@
         renderPage();
       };
     });
-    bindQualityPicker('wiz-q', (q, rank, statTarget)=>{
+    bindQualityPicker('wiz-q', (q, rank, statTarget, derivedTarget)=>{
       const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health' };
-      const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}`;
+      const derivedSign = q.mechanic==='systemError' ? '-1' : '+1';
+      const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}` +
+        `${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}` +
+        `${(q.mechanic==='systemBoost'||q.mechanic==='systemError')?` [${derivedSign} ${derivedTarget}]`:''}`;
       const cost = q.dpPerRank * rank;
       const entry = { name, cost, category:q.category, description:q.desc, mechanic:q.mechanic, rank };
       if(q.mechanic==='naturewalk') entry.statTarget = statTarget;
+      if(q.mechanic==='systemBoost'||q.mechanic==='systemError') entry.derivedTarget = derivedTarget;
       draft.qualities.push(entry);
       applyQualityStatBonus(draft, entry, 1, statHardCap(draft.stage));
       renderPage();
@@ -2176,12 +2188,16 @@
       await saveMember(session.code, target);
       renderPage();
     };
-    bindQualityPicker('d-q', async (q, rank, statTarget)=>{
+    bindQualityPicker('d-q', async (q, rank, statTarget, derivedTarget)=>{
       const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health' };
-      const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}`;
+      const derivedSign = q.mechanic==='systemError' ? '-1' : '+1';
+      const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}` +
+        `${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}` +
+        `${(q.mechanic==='systemBoost'||q.mechanic==='systemError')?` [${derivedSign} ${derivedTarget}]`:''}`;
       const cost = q.dpPerRank * rank;
       const entry = { name, cost, category:q.category, description:q.desc, mechanic:q.mechanic, rank };
       if(q.mechanic==='naturewalk') entry.statTarget = statTarget;
+      if(q.mechanic==='systemBoost'||q.mechanic==='systemError') entry.derivedTarget = derivedTarget;
       target.digimon.qualities.push(entry);
       applyQualityStatBonus(target.digimon, entry, 1);
       recalcMaxWoundsIfHealthChanged(target.digimon, entry);
