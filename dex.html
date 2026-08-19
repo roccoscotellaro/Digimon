@@ -79,44 +79,7 @@ label{font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spac
 .dex-card.unknown .name{color:var(--text-mute);}
 .modal-overlay{position:fixed;inset:0;background:rgba(5,7,10,0.85);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;overflow-y:auto;}
 .modal-box{max-width:560px;width:100%;max-height:90vh;overflow-y:auto;}
-.portrait-lg{width:100%;max-height:400px;object-fit:contain;background:var(--panel-2);border:1px solid var(--line);margin-bottom:12px;}
-
-/* --- NUOVO: Piccolo riquadro per la GIF animata --- */
-.gif-display-box {
-    width: 200px;          /* Aumentato da 140px a 200px */
-    height: 200px;         /* Aumentato da 140px a 200px */
-    border: 3px solid var(--amber);
-    border-radius: 12px;
-    overflow: hidden;
-    background: #000;
-    position: relative;
-    box-shadow: 0 0 15px rgba(255, 138, 61, 0.4), inset 0 0 10px rgba(0,0,0,0.8);
-    margin: 12px auto;
-    display: flex;         /* Aggiunto per centrare l'immagine */
-    align-items: center;   /* Aggiunto per centrare verticalmente */
-    justify-content: center; /* Aggiunto per centrare orizzontalmente */
-}
-
-.gif-display-box img {
-    max-width: 100%;       /* Cambiato da width: 100% */
-    max-height: 100%;      /* Cambiato da height: 100% */
-    object-fit: contain;   /* Cambiato da cover: mantiene le proporzioni */
-    image-rendering: auto; /* Evita lo sgranamento */
-}
-.gif-label {
-    position: absolute;
-    bottom: 0;
-    width: 100%;
-    background: rgba(255, 138, 61, 0.9);
-    color: #000;
-    font-weight: bold;
-    font-size: 10px;
-    text-align: center;
-    padding: 2px 0;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
+.portrait-lg{width:100%;max-width:320px;max-height:240px;object-fit:contain;background:#ffffff;border:1px solid var(--line);margin-bottom:12px;border-radius:var(--radius);display:block;margin-left:auto;margin-right:auto;}
 .stat-box{text-align:center;padding:8px 4px;background:var(--panel-2);border:1px solid var(--line);}
 .stat-box .v{font-family:'Share Tech Mono',monospace;font-size:18px;color:var(--cyan);}
 .stat-box .l{font-size:9px;color:var(--text-mute);text-transform:uppercase;margin-top:2px;}
@@ -151,16 +114,9 @@ let activeFamilyFilter = '';
 let activeStageFilter = '';
 const ATTRIBUTES = ['Vaccine','Data','Virus','Free','Variable'];
 const FAMILIES = ['Dark Empire','Deep Savers',"Dragon's Roar",'Jungle Troopers','Metal Empire','Nature Spirits','Nightmare Soldiers','Unknown','Virus Busters','Wind Guardians'];
-let editEntry = null; // entry being edited/added in modal
-// Elenco ufficiale dei 45 Effect Tag da regolamento (Player's Companion, 4.08 e glossario Tag).
-// Usato solo per il controllo "Attacchi Support" qui sotto — NON esiste [HEAL] da regolamento
-// (il tag corretto per curare è [REGEN]).
+let editEntry = null;
 const EFFECT_TAG_LABELS = ['FEAR','SLOW','FRAIL','DULL','CONFUSE','DISTRACT','KEEN','SWIFT','STURDY','SHARPEN','NIMBLE','BURN','POISON','EXPLOIT','FURY','PACIFY','DEBILITATE','BASTION','DARING','TAUNT','ROOT','PULL','PUSH','CLEANSE','SHIELD','LAG','LEAD','TAILWIND','VAGUE','HEAVY','FREEZE','PARALYZE','RATTLED','SHAKEN','WEAK','STRENGTH','VIGIL','VIGOR','STEADY','REGEN','RUIN','DOOM','BLIND','DOT','STUN','IMMUNE','DENY','HASTE'];
-// Varianti di testo già presenti nel Digidex che non coincidono esattamente con l'etichetta ufficiale.
 const EFFECT_TAG_ALIASES = { 'CONFUSION': 'CONFUSE' };
-// Legge i Tag tra parentesi quadre di una mossa [SUPPORT] e ritorna la lista di problemi trovati
-// (nessuno = mossa a posto). Copre sia "Effetto non riconosciuto" sia "[SUPPORT]+[DAMAGE] senza
-// [MELEE]/[RANGE]", lo schema anomalo trovato in diverse Extra Attack del Digidex.
 function auditSupportAttackString(raw){
 if(!raw) return null;
 const dashSplit = raw.split(/\s+—\s+/);
@@ -214,8 +170,6 @@ return `<div class="muted" style="margin:10px 0 4px;">${label||'Possibili Evoluz
 <div style="display:flex;flex-wrap:wrap;gap:8px;">
 ${evolutions.map(ev=>{
 const live = ev.id ? cachedDex.find(e=>String(e.id)===String(ev.id)) : null;
-// Come nell'albero completo: un Digimon non ancora scoperto compare comunque nell'elenco,
-// ma per un non-Master come "?" — nessuna immagine, nome o possibilità di aprirne la scheda.
 if(!isMaster && live && !live.discovered){
 return `
 <div style="display:flex;flex-direction:column;align-items:center;width:56px;opacity:0.55;">
@@ -234,9 +188,6 @@ ${img ? `<img src="${escapeAttr(img)}" style="width:40px;height:40px;border-radi
 </div>`;
 }
 const STAGE_COLORS = { 'Fresh':'#9a9a9a', 'Baby':'#e6564f', 'Rookie':'#e8c14a', 'Champion':'#57c76b', 'Ultimate':'#4fa9e8', 'Mega':'#b48ce8' };
-// Diramazioni dell'albero evolutivo aperte manualmente dall'utente (bottone "Espandi" su un nodo
-// "bloccato"). Si azzera quando si naviga verso un Digimon diverso, resta invariato quando si
-// ri-renderizza lo stesso (es. dopo aver cliccato "Espandi").
 let expandedEvoNodes = new Set();
 let lastDetailEntryId = null;
 function evolutionFamilyGraph(entry){
@@ -244,10 +195,6 @@ if(!entry || entry.id==null) return { nodes:[], edges:[], armorNodes:[], slideEd
 const byId = {};
 const byName = {};
 cachedDex.forEach(e=>{ byId[String(e.id)] = e; byName[String(e.name||'').trim().toLowerCase()] = e; });
-// Risolve un riferimento di evoluzione: prima per id, e se non risolve (id mancante o non più valido,
-// caso noto per vecchi collegamenti importati prima che il deploy fosse completo) prova per nome,
-// esattamente come faceva già la vecchia lista semplice. Senza questo fallback il grafo ignora in
-// silenzio collegamenti che in realtà esistono, mentre la vecchia lista li mostrava comunque.
 function resolveRef(ev){
 if(!ev) return null;
 if(ev.id!=null && byId[String(ev.id)]) return byId[String(ev.id)];
@@ -258,31 +205,15 @@ const nodes = new Map();
 const edges = [];
 const armorNodes = new Map();
 const isArmor = e => e && e.origin_type === 'armor';
-// Nodi "bloccati" alla prima evoluzione (con diramazioni ulteriori nascoste) e quante evoluzioni
-// nasconde ciascuno, per mostrare il pulsante "Espandi" con il relativo conteggio.
 const collapsedNodeIds = new Set();
 const hiddenChildCounts = new Map();
-// Discendenti: SOLO seguendo "evolutions" in avanti (mai a ritroso da un discendente).
-// Così non si "incrociano" mai altre linee che condividono un antenato comune.
-// Se un Digimon ha PIÙ evoluzioni, si segue per intero solo la prima diramazione: le altre restano
-// visibili (compare il Digimon) ma "bloccate" a quel livello, con un pulsante per aprirle su
-// richiesta — altrimenti un albero con molte diramazioni (es. Koromon) diventa illeggibile.
 function descend(e, seen){
 if(!e || e.id==null || seen.has(String(e.id))) return;
 seen.add(String(e.id));
 if(!isArmor(e)) nodes.set(String(e.id), e);
 const resolved = (e.evolutions||[]).map(ev=>resolveRef(ev)).filter(Boolean);
 const normalChildren = resolved.filter(t=>!isArmor(t));
-// Le Armor si vedono a parte, non nel grafo principale, e SOLO quando chi evolve è un Rookie:
-// è l'unico Stage che può davvero Armor Evolvere, quindi collegamenti Armor su altri Stage
-// (probabili errori di inserimento dati) non vanno mostrati come possibilità reale.
 resolved.filter(t=>isArmor(t)).forEach(t=>{ if(e.stage==='Rookie') armorNodes.set(String(t.id), t); });
-// Fisarmonica "locale", per gruppo di fratelli (stessi figli di uno stesso genitore): finché
-// nessuno di questi fratelli è stato aperto esplicitamente, il primo resta aperto di default
-// (la "linea principale"). Il default viene comunque registrato in expandedEvoNodes (seeding),
-// così quando l'utente apre un fratello diverso il click-handler può ritrovarlo e richiuderlo
-// — SENZA toccare l'espansione degli antenati, che deve restare intatta per poter arrivare fin
-// qui (prima veniva azzerata anche quella, e l'albero collassava fino all'antenato più vicino).
 const siblingIds = normalChildren.map(t=>String(t.id));
 const anyExplicit = siblingIds.some(sid=>expandedEvoNodes.has(sid));
 normalChildren.forEach((t, idx)=>{
@@ -300,8 +231,6 @@ if(hiddenCount>0){ collapsedNodeIds.add(tid); hiddenChildCounts.set(tid, hiddenC
 }
 });
 }
-// Antenati: SOLO seguendo "evolvesFrom" a ritroso (mai in avanti da un antenato,
-// quindi non si aprono i "fratelli"/altre linee che condividono lo stesso antenato).
 function ascend(e, seen){
 if(!e || e.id==null || seen.has(String(e.id))) return;
 seen.add(String(e.id));
@@ -318,10 +247,6 @@ descend(entry, new Set());
 ascend(entry, new Set());
 const edgeKeys = new Set();
 const uniqueEdges = edges.filter(ed=>{ const k=ed.from+'>'+ed.to; if(edgeKeys.has(k)) return false; edgeKeys.add(k); return true; });
-// Slide Evolution: collegamento A PARTE, mai mescolato con evolutions/evolvesFrom (quelle restano
-// vere Pre-Evoluzioni/Evoluzioni). Uno Slide Target aggiunge comunque il Digimon collegato all'albero
-// (così si vede, come richiesto), ma con una linea propria e senza contare come antenato/discendente
-// reale, quindi non interferisce mai con la logica dei salti di Stage (Mega+/++).
 const slideEdges = [];
 const slideEdgeKeys = new Set();
 function addSlideEdge(fromNode, toNode){
@@ -332,9 +257,8 @@ if(slideEdgeKeys.has(key)) return;
 slideEdgeKeys.add(key);
 slideEdges.push({ from:String(fromNode.id), to:String(toNode.id) });
 }
-const baseNodeNames = new Map(); // istantanea PRIMA di aggiungere nodi di Slide Evolution
+const baseNodeNames = new Map();
 nodes.forEach(n=> baseNodeNames.set(String(n.name||'').trim().toLowerCase(), n));
-// Verso "in avanti": i Digimon già nell'albero che dichiarano un proprio Slide Target.
 Array.from(nodes.values()).forEach(nd=>{
 (nd.slide_targets||[]).forEach(tn=>{
 const t = byName[String(tn).trim().toLowerCase()];
@@ -343,8 +267,6 @@ if(!nodes.has(String(t.id))) nodes.set(String(t.id), t);
 addSlideEdge(nd, t);
 });
 });
-// Verso "inverso": un altro Digimon del Dex indica uno dei nodi già nell'albero come proprio Slide
-// Target, anche se il collegamento non è stato aggiunto anche dall'altra parte.
 cachedDex.forEach(other=>{
 if(isArmor(other) || !other.slide_targets || !other.slide_targets.length) return;
 other.slide_targets.forEach(tn=>{
@@ -382,20 +304,12 @@ if(!graph || graph.nodes.length<=1) return '';
 const isMaster = !!(session && session.role==='master');
 const byIdFull = {};
 const byNameFull = {};
-cachedDex.forEach(e=>{ byIdFull[String(e.id)] = e; byNameFull[String(e.name||'').trim().toLowerCase()] = e; }); // tutto il dex, non solo i nodi già raccolti nel grafo:
-// serve per controllare lo Stage del genitore anche quando il genitore stesso non compare in QUESTO albero
-// (es. guardando Paildramon, "Omnimon" non è nel grafo ma serve comunque per capire che Omnimon Merciful
-// Mode è un salto di livello e non una sua evoluzione diretta).
+cachedDex.forEach(e=>{ byIdFull[String(e.id)] = e; byNameFull[String(e.name||'').trim().toLowerCase()] = e; });
 const columns = {};
 STAGE_ORDER.forEach(s=>columns[s]=[]);
 const extra = [];
-const leaps = []; // ogni salto di livello: {node, depth}, uno per colonna propria, MAI impilati insieme
+const leaps = [];
 function parentsOf(n){
-// BUGFIX: prima risolveva SOLO per id. Un collegamento evolvesFrom salvato senza id valido (caso noto
-// per vecchi import) veniva quindi ignorato qui — anche se la linea/il grafo lo mostrava comunque
-// (perché resolveRef ha il fallback per nome) — con il risultato che due "fratelli" nella stessa
-// situazione (es. Omnimon e Imperialdramon Fighter Mode, entrambi un passo oltre un Mega base)
-// finivano classificati diversamente: uno correttamente Mega+, l'altro no.
 return (n.evolves_from || n.evolvesFrom || []).map(p=>{
 if(p.id!=null && byIdFull[String(p.id)]) return byIdFull[String(p.id)];
 if(p.name) return byNameFull[String(p.name).trim().toLowerCase()] || null;
@@ -403,21 +317,13 @@ return null;
 }).filter(Boolean);
 }
 function leapDepth(n, seen){
-if(seen.has(String(n.id))) return 0; // guardia anti-ciclo
+if(seen.has(String(n.id))) return 0;
 seen.add(String(n.id));
 const sameTierParents = parentsOf(n).filter(p=>p.stage===n.stage);
-if(!sameTierParents.length) return 0; // Mega "base" (raggiunto da Ultimate): zero passi extra
+if(!sameTierParents.length) return 0;
 return 1 + Math.max(...sameTierParents.map(p=>leapDepth(p, seen)));
 }
 graph.nodes.forEach(n=>{
-// Il meccanismo "+"/"++" esiste SOLO per il Mega: Rocco non vuole Champion+/Rookie+/Ultimate+.
-// Un Digimon che resta allo stesso Stage del proprio genitore, per QUALSIASI motivo (Jogress,
-// Burst Mode, Slide Evolution, ecc.), a qualunque Stage diverso da Mega, va semplicemente nella
-// colonna normale di quello Stage (impilato, collegato da linea verticale) — non è un "salto".
-// Solo al Mega un passo ulteriore rappresenta davvero un nuovo livello di potere: Mega+ è il
-// livello raggiunto da una fusione (es. Omnimon = fusione di due Mega) o da un'ulteriore
-// evoluzione di un Mega (es. Diaboromon -> Armageddemon, o una Burst Mode). Un'evoluzione
-// ulteriore di un Mega+ (es. Omnimon -> Omnimon Merciful Mode) è un Mega++, e così via.
 const isSameTierLeap = n.stage==='Mega' && parentsOf(n).some(p=>p.stage===n.stage);
 if(isSameTierLeap){ leaps.push({ node:n, depth: leapDepth(n, new Set()) }); }
 else if(columns[n.stage]) columns[n.stage].push(n);
@@ -425,10 +331,6 @@ else extra.push(n);
 });
 leaps.sort((a,b)=>a.depth-b.depth || a.node.name.localeCompare(b.node.name));
 const stagesPresent = STAGE_ORDER.filter(s=>columns[s].length);
-// Riordina le righe di ogni colonna in base alla posizione dei genitori nella colonna precedente
-// (tecnica "barycenter", standard per i diagrammi ad albero): così i rami restano il più possibile
-// vicini a chi li genera, invece di ritrovarsi sparsi a caso — è quello che rende una diramazione
-// ampia come quella di Koromon molto più leggibile da seguire con l'occhio.
 for(let i=1;i<stagesPresent.length;i++){
 const prevOrder = new Map(columns[stagesPresent[i-1]].map((n,idx)=>[String(n.id), idx]));
 columns[stagesPresent[i]].sort((a,b)=>{
@@ -442,11 +344,6 @@ return a.name.localeCompare(b.name);
 }
 function nodeBoxHTML(n, borderColor, icon){
 const isCurrent = String(n.id)===String(entry.id);
-// Un Digimon non ancora scoperto dai giocatori resta comunque al proprio posto nell'albero
-// (la struttura/le linee non cambiano), ma per un non-Master viene mostrato come un "?" —
-// niente immagine, niente nome, niente pulsante "Apri" o "Espandi": solo la sua presenza,
-// esattamente come un Digidex canonico che mostra una silhouette per ciò che non è ancora
-// stato incontrato.
 if(!isMaster && !n.discovered && !isCurrent){
 return `<div id="chart-node-${n.id}" style="position:relative;display:flex;flex-direction:column;align-items:center;width:68px;padding:4px;border-radius:6px;background:transparent;border:1px dashed ${borderColor};opacity:0.55;">
 <div style="width:38px;height:38px;border-radius:50%;background:var(--panel);border:1px solid ${borderColor};display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:bold;color:${borderColor};">?</div>
@@ -510,31 +407,17 @@ const h = Math.max(wrap.scrollHeight, wrap.clientHeight);
 svg.setAttribute('width', w);
 svg.setAttribute('height', h);
 svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
-// Contiamo quante volte ogni colonna (stessa X, cioè stesso Stage) ha già un collegamento verticale,
-// per scostare leggermente le linee successive ed evitare che si sovrappongano esattamente.
 const columnLineCount = {};
-// Quante linee "by-pass" sono già state disegnate per ciascuna delle due corsie (sopra/sotto),
-// per impilarle una sopra l'altra invece di sovrapporle esattamente.
 let skipLaneCountTop = 0, skipLaneCountBottom = 0;
-// Trova l'indice di colonna (data-col-idx) del contenitore che ospita il nodo, per sapere se due nodi
-// sono in colonne adiacenti (curva diretta nel gap, sempre sicura) o separate da altre colonne (in tal
-// caso una curva diretta taglierebbe dritta attraverso i riquadri delle colonne di mezzo).
 function colIndexOf(nodeEl){
 const col = nodeEl.closest('[data-col-idx]');
 return col ? Number(col.getAttribute('data-col-idx')) : null;
 }
-// Controlla se, nelle colonne di mezzo tra colA e colB, c'è REALMENTE un riquadro che occupa
-// l'intervallo verticale [yMin,yMax] — solo in quel caso serve davvero il giro largo; altrimenti
-// una curva diretta (come tra colonne adiacenti) è più corta e altrettanto sicura.
 function pathBlocked(colA, colB, yMin, yMax){
 const lo = Math.min(colA, colB), hi = Math.max(colA, colB);
 for(let c=lo+1; c<hi; c++){
 const colEl = document.querySelector(`[data-col-idx="${c}"]`);
 if(!colEl) continue;
-// Le colonne "salto" (Mega+/Mega++ ecc.) sono strette e appartengono a un'altra diramazione:
-// non vanno considerate un vero ostacolo per un collegamento che non le riguarda, altrimenti
-// basta un salto qualunque piazzato "in mezzo" per costringere linee non correlate a un giro
-// enorme (esattamente quello che succedeva con Imperialdramon Fighter Mode tra Mega e Omnimon).
 if(colEl.getAttribute('data-leap')==='1') continue;
 const boxes = colEl.querySelectorAll('[id^="chart-node-"]');
 for(const box of boxes){
@@ -546,11 +429,6 @@ if(bBottom > yMin && bTop < yMax) return true;
 }
 return false;
 }
-// Cima e fondo SOLO delle colonne effettivamente coinvolte nel salto (da colA a colB compresi),
-// non dell'intero grafico: un albero può avere una sezione altissima (es. Fresh→Champion) e una
-// cortissima (es. Mega+/Mega++) fianco a fianco — usare gli estremi di TUTTO il grafico avrebbe
-// fatto fare alle linee della zona corta un giro enorme per raggiungere il fondo di una sezione
-// completamente diversa e lontana.
 function localYBounds(colA, colB){
 const lo = Math.min(colA, colB), hi = Math.max(colA, colB);
 let top = Infinity, bottom = -Infinity;
@@ -575,21 +453,12 @@ const a = document.getElementById('chart-node-'+ed.from);
 const b = document.getElementById('chart-node-'+ed.to);
 if(!a || !b) return '';
 const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
-// Le Slide Evolution hanno uno stile proprio, tratteggiato e ben distinto: NON sono una vera
-// evoluzione (non c'è un "prima" e un "dopo"), quindi non devono sembrare identiche a una linea
-// di Jogress/discendenza normale.
 const isSlide = ed.kind==='slide';
-// Un ramo ancora "bloccato" (non espanso) ha un colore spento e uniforme, per distinguerlo a
-// colpo d'occhio da un ramo attivo — prima invece il colore alternava arancione/verde in modo
-// puramente casuale (in base alla posizione nell'array), senza alcun significato reale.
 const targetBlocked = !isSlide && b.getAttribute('data-collapsed')==='1';
 const color = isSlide ? 'rgba(127,214,201,0.9)' : (targetBlocked ? 'rgba(150,150,160,0.55)' : (i%2===0 ? 'rgba(255,150,60,0.85)' : 'rgba(110,220,140,0.85)'));
 const dash = isSlide ? ' stroke-dasharray="5,4"' : '';
 const sameColumn = Math.abs(((ar.left+ar.right)/2) - ((br.left+br.right)/2)) < 8;
 if(sameColumn){
-// Stessa colonna (es. una Slide Evolution): linea verticale dritta e CENTRATA sul riquadro,
-// che passa nello spazio vuoto tra una riga e l'altra (ora più ampio apposta) invece che a
-// fianco dei box.
 const lineX = (ar.left+ar.right)/2 - wrapRect.left + wrap.scrollLeft;
 const top = ar.top < br.top ? ar : br, bottom = ar.top < br.top ? br : ar;
 const y1 = top.top + top.height - wrapRect.top + wrap.scrollTop;
@@ -601,9 +470,6 @@ const colGap = (colA!=null && colB!=null) ? Math.abs(colB-colA) : 1;
 const aMidY = ar.top + ar.height/2 - wrapRect.top + wrap.scrollTop;
 const bMidY = br.top + br.height/2 - wrapRect.top + wrap.scrollTop;
 if(colGap > 1 && pathBlocked(colA, colB, Math.min(aMidY,bMidY), Math.max(aMidY,bMidY))){
-// Colonne NON adiacenti E c'è davvero un riquadro nel mezzo: una curva diretta lo taglierebbe.
-// Si passa "sopra o sotto" (qualunque sia più vicina ai due Digimon in questione), con una
-// corsia dedicata oltre l'ultimo box in quella direzione.
 const riserKey = 'riser'+colA;
 const rn = columnLineCount[riserKey] || 0;
 columnLineCount[riserKey] = rn + 1;
@@ -614,13 +480,13 @@ const x1 = (ar.right - wrapRect.left + wrap.scrollLeft) + 6 + rn*5;
 const x2 = (br.left+br.right)/2 - wrapRect.left + wrap.scrollLeft;
 let y1, y2, laneY;
 if(useBottom){
-y1 = ar.top + ar.height - wrapRect.top + wrap.scrollTop; // esce dal basso del box A
-y2 = br.top + br.height - wrapRect.top + wrap.scrollTop; // entra dal basso del box B
+y1 = ar.top + ar.height - wrapRect.top + wrap.scrollTop;
+y2 = br.top + br.height - wrapRect.top + wrap.scrollTop;
 laneY = localBottom + 12 + skipLaneCountBottom*6;
 skipLaneCountBottom++;
 } else {
-y1 = aMidY; // esce dal fianco del box A
-y2 = br.top - wrapRect.top + wrap.scrollTop; // entra dalla cima del box B
+y1 = aMidY;
+y2 = br.top - wrapRect.top + wrap.scrollTop;
 laneY = Math.max(4, localTop - 12 - skipLaneCountTop*6);
 skipLaneCountTop++;
 }
@@ -669,7 +535,7 @@ ${depth>0?'↳ ':''}${escapeHTML(node.entry.name)}${icon?' '+icon:''}${slideIcon
 }
 return `<div class="muted" style="margin:10px 0 4px;">Linea Evolutiva Completa (con diramazioni)</div>
 <div style="background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:8px;max-height:220px;overflow-y:auto;">
-${trees.map(t=>renderNode(t,0)).join('<div class="divider"></div>')}
+${trees.map(t=>renderNode(t,0).join('<div class="divider"></div>')}
 </div>`;
 }
 function qualitiesHTML(qualities, dpTotal){
@@ -915,11 +781,9 @@ return `<div class="hud-frame dex-card unknown" data-id="${e.id}">
 <div class="info"><div class="name">???</div></div>
 </div>`;
 }
-// MODIFICA: Nella griglia mostriamo SEMPRE l'immagine statica (non la GIF).
-// La GIF verrà mostrata solo nella scheda aperta, in un piccolo riquadro.
 return `<div class="hud-frame dex-card" data-id="${e.id}">
-<div class="thumb">${e.image_url ? `<img src="${escapeAttr(e.image_url)}" onerror="this.parentNode.innerHTML='<span class=&quot;placeholder&quot;>${escapeHTML((e.name||'?').charAt(0))}</span>'" />` : `<span class="placeholder">${escapeHTML((e.name||'?').charAt(0))}</span>`}
-${e.gif_url ? `<span style="position:absolute;bottom:4px;right:4px;font-size:11px;" title="Ha una GIF animata (visibile nella scheda)">🎬</span>` : ''}
+<div class="thumb">${(e.gif_url||e.image_url) ? `<img src="${escapeAttr(e.gif_url||e.image_url)}" onerror="this.parentNode.innerHTML='<span class=&quot;placeholder&quot;>${escapeHTML((e.name||'?').charAt(0))}</span>'" />` : `<span class="placeholder">${escapeHTML((e.name||'?').charAt(0))}</span>`}
+${e.gif_url ? `<span style="position:absolute;bottom:4px;right:4px;font-size:11px;" title="Ha una GIF animata">🎬</span>` : ''}
 ${e.origin_type==='armor' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Armor">🛡️</span>` : ''}
 ${e.origin_type==='jogress' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Jogress/Fusione">🤝</span>` : ''}
 ${e.origin_type==='spirit' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Spirito (Digimon Frontier)">✨</span>` : ''}
@@ -983,27 +847,13 @@ const hasStats = bs.baseAccuracy || bs.baseDamage || bs.baseDodge || bs.baseArmo
 const overlay = document.createElement('div');
 overlay.className = 'modal-overlay';
 overlay.id = 'modal-overlay';
-
-// MODIFICA: Il ritratto grande usa SOLO l'immagine statica.
-// La GIF animata verrà mostrata in un piccolo riquadro separato più in basso.
-const portraitHTML = entry.image_url ? `<img class="portrait-lg" src="${escapeAttr(entry.image_url)}" style="cursor:zoom-in;" onerror="this.style.display='none'" data-zoom-img="${escapeAttr(entry.image_url)}" />` : '';
-
-// MODIFICA: Riquadro per la GIF animata (solo se esiste una gif_url)
-const gifBoxHTML = entry.gif_url ? `
-<div class="gif-display-box">
-    <img src="${escapeAttr(entry.gif_url)}" alt="Animazione ${escapeAttr(entry.name)}" />
-    <div class="gif-label">🎬 Animazione</div>
-</div>
-` : '';
-
 overlay.innerHTML = `
 <div class="hud-frame modal-box card">
 <div class="flex-between" style="margin-bottom:10px;">
 <div class="section-title" style="margin:0;border:none;padding:0;">${escapeHTML(entry.name)}</div>
 <button class="btn ghost small" id="btn-close-modal">✕</button>
 </div>
-${portraitHTML}
-${gifBoxHTML}
+${entry.image_url ? `<img class="portrait-lg" src="${escapeAttr(entry.image_url)}" style="cursor:zoom-in;" onerror="this.style.display='none'" data-zoom-img="${escapeAttr(entry.image_url)}" />` : ''}
 <div style="margin-bottom:8px;">
 <span class="tag">${entry.origin_type==='armor'?'🛡️ Armor':(entry.origin_type==='jogress'?'🤝 Jogress/Fusione':(entry.origin_type==='spirit'?'✨ Spirito (Digimon Frontier)':(entry.origin_type==='burst'?'🔥 Burst Mode':escapeHTML(entry.stage))))}</span>
 ${entry.slide_evolution ? `<span class="tag" style="margin-left:4px;">🔄 Slide Evolution</span>` : ''}
@@ -1059,10 +909,8 @@ if(targetEntry){ closeModal(); openDetailModal(targetEntry); }
 });
 container.querySelectorAll('[data-expand-evo]').forEach(el=>{
 el.onclick = (e)=>{
-e.stopPropagation(); // non deve attivare anche il pulsante "Apri" sotto
+e.stopPropagation();
 const clickedId = String(el.getAttribute('data-expand-evo'));
-// Fisarmonica LOCALE: chiude solo i fratelli (stessi genitori) del nodo cliccato, lasciando
-// intatta l'espansione degli antenati necessaria per arrivare fin qui nell'albero.
 const clickedEntry = cachedDex.find(x=>String(x.id)===clickedId);
 if(clickedEntry){
 (clickedEntry.evolves_from||[]).forEach(p=>{
@@ -1079,8 +927,6 @@ refreshEvoChartSection();
 };
 });
 }
-// Aggiorna SOLO l'albero evolutivo dentro la scheda già aperta, invece di richiudere e riaprire
-// tutta la scheda da zero (che dava una fastidiosa sensazione di "refresh" completo).
 function refreshEvoChartSection(){
 const container = document.getElementById('evo-chart-section');
 if(!container) return;
@@ -1107,12 +953,7 @@ renderDexPage();
 const SPECIES_SEED = [];
 const SPECIES_SEED_VILLAINS = [];
 const SPECIES_SEED_2 = [];
-// --- Digimon Frontier (Guerrieri Leggendari) ---
-// Nota di design: gli Spiriti Umani equivalgono a Champion, gli Spiriti Bestia a Ultimate,
-// le forme di Fusione a Mega (mappatura standard Card Game/Reference Book per gli Hybrid).
-// Attributo: Variable (tipico di tutti gli Hybrid). Famiglia non ufficialmente definita: 'Unknown'.
 const SPECIES_SEED_3 = [];
-// --- Digimon Beatbreak (anime 2025-in corso) + aggiunta classica Dracmon ---
 const SPECIES_SEED_4 = [
 { line:'Kyaromon', attribute:'Vaccine', family:'Unknown', chain:[
 {name:'Pafumon', stage:'Fresh', evolvesToNames:['Kyaromon']},
@@ -1174,8 +1015,6 @@ const SPECIES_SEED_4 = [
 {name:'Agumon', stage:'Rookie', evolvesFromNames:['Koromon']},
 ]},
 ];
-// Linea di Huckmon/Jesmon (fonte: Wikimon). Stadi: Huckmon Rookie, Bao Huckmon Champion,
-// Savior Huckmon Ultimate, Jesmon Mega.
 const SPECIES_SEED_5 = [
 { line:'Huckmon', attribute:'Data', family:'Virus Busters', chain:[
 {name:'Huckmon', stage:'Rookie', desc:'Piccolo Digimon drago bianco, discepolo di Gankoomon: instancabile e insofferente alle regole, si allena senza sosta per meritarsi un giorno il titolo di Royal Knight.', signatureMove:'Fifth Rush — [MELEE][DAMAGE 6-8]', attackDesc:'Scatta in avanti con un affondo fulmineo, colpendo il bersaglio con la velocità della propria carica.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:3, baseHealth:4}, evolvesToNames:['Bao Huckmon']},
@@ -1184,7 +1023,6 @@ const SPECIES_SEED_5 = [
 {name:'Jesmon', stage:'Mega', family:'Royal Knight', desc:'Forma suprema di Savior Huckmon, raggiunta dopo un addestramento estremo sotto la guida di Gankoomon: membro dei Royal Knights, dal carattere severo e inflessibile quanto il proprio maestro.', signatureMove:'Judgement of the Blade — [MELEE][DAMAGE 19-21]', attackDesc:'Scaglia un fendente giudicante con la propria lama, colpendo con la forza di un verdetto inappellabile.', stats:{baseAccuracy:15, baseDamage:18, baseDodge:13, baseArmor:10, baseHealth:12}, evolvesFromNames:['Savior Huckmon']},
 ]},
 ];
-// Linea di Monodramon (fonte: Wikimon). Monodramon Rookie -> Strikedramon Champion -> Cyberdramon Ultimate.
 const SPECIES_SEED_6 = [
 { line:'Monodramon', attribute:'Vaccine', family:'Nightmare Soldiers', chain:[
 {name:'Monodramon', stage:'Rookie', desc:'Piccolo Digimon drago incapace di volare nonostante le ali membranose sulle braccia: carattere rissoso al limite della brutalità, si ritrova sempre nel bel mezzo di qualche zuffa.', signatureMove:'Knuckle Beater — [MELEE][DAMAGE 6-8]', attackDesc:'Carica il bersaglio con forza dirompente, poi lo travolge con un fendente dei propri artigli possenti.', stats:{baseAccuracy:5, baseDamage:6, baseDodge:5, baseArmor:3, baseHealth:4}, evolvesToNames:['Strikedramon']},
@@ -1284,8 +1122,6 @@ seedEvolutions = sp.evolvesToNames.map(n=>byName[n.trim().toLowerCase()]).filter
 const next = si<line.chain.length-1 ? byName[line.chain[si+1].name.trim().toLowerCase()] : null;
 seedEvolutions = next ? [{ id: next.id, name: next.name, imageUrl: next.image_url||'' }] : [];
 }
-// UNIONE anziche sovrascrittura: mantiene eventuali collegamenti aggiunti/modificati a mano
-// nell'editor, aggiungendo solo quelli nuovi previsti dal seed che ancora mancano (per nome).
 function mergeByName(existingList, seedList){
 const existing = Array.isArray(existingList) ? existingList.slice() : [];
 const existingNames = new Set(existing.map(x=>(x.name||'').trim().toLowerCase()));
@@ -1394,7 +1230,6 @@ openEditModal(p.entry);
 }
 function runForceSync(){
 const ref = buildSeedReferenceByName();
-// Detect duplicates in the live catalog first, since force-sync would apply to both copies.
 const byName = {};
 cachedDex.forEach(e=>{ (byName[e.name] = byName[e.name]||[]).push(e); });
 const duplicates = Object.entries(byName).filter(([n,list])=>list.length>1).map(([n])=>n);
@@ -1463,30 +1298,25 @@ cachedDex = await getDex(session.code);
 setTimeout(()=>{ close(); renderDexPage(); }, 1200);
 };
 }
-// Coppie canoniche Spirito Umano <-> Spirito Bestia di Digimon Frontier (fonte: Wikimon).
-// Servono SOLO per collegare la Slide Evolution — non toccano stadio/attributo/famiglia/altro.
 const FRONTIER_SPIRIT_PAIRS = [
-['Agunimon', 'BurningGreymon'],       // Fuoco
-['Lobomon', 'KendoGarurumon'],        // Luce
-['Kazemon', 'Zephyrmon'],             // Vento
-['Beetlemon', 'MetalKabuterimon'],    // Tuono
-['Kumamon', 'Korikakumon'],           // Ghiaccio
-['Loweemon', 'JagerLoweemon'],        // Oscurità
-['Grumblemon', 'Gigasmon'],           // Terra
-['Arbormon', 'Petaldramon'],          // Legno
-['Ranamon', 'Calmaramon'],            // Acqua
-['Mercurymon', 'Sakkakumon'],         // Acciaio
+['Agunimon', 'BurningGreymon'],
+['Lobomon', 'KendoGarurumon'],
+['Kazemon', 'Zephyrmon'],
+['Beetlemon', 'MetalKabuterimon'],
+['Kumamon', 'Korikakumon'],
+['Loweemon', 'JagerLoweemon'],
+['Grumblemon', 'Gigasmon'],
+['Arbormon', 'Petaldramon'],
+['Ranamon', 'Calmaramon'],
+['Mercurymon', 'Sakkakumon'],
 ];
 function runSpiritSlideSync(){
-// Match più permissivo: prova prima il nome esatto, poi lo stesso nome ripulito da eventuali
-// qualificatori tra parentesi (es. "MetalKabuterimon (Beetlemon)" deve comunque combaciare con
-// "MetalKabuterimon"), così piccole differenze di come sono stati salvati non fanno fallire tutto.
 function normName(s){ return String(s||'').trim().toLowerCase().replace(/\s*\([^)]*\)\s*/g,'').trim(); }
 const byExact = {}, byNorm = {};
 cachedDex.forEach(e=>{
 byExact[e.name.trim().toLowerCase()] = e;
 const n = normName(e.name);
-if(!byNorm[n]) byNorm[n] = e; // se ci sono più corrispondenze normalizzate, tiene la prima
+if(!byNorm[n]) byNorm[n] = e;
 });
 function lookup(name){ return byExact[name.trim().toLowerCase()] || byNorm[normName(name)] || null; }
 function refMatches(ref, other){
@@ -1544,7 +1374,7 @@ const cleanedEvolutions = (entry.evolutions||[]).filter(ev=>!refMatches(ev, othe
 const cleanedEvolvesFrom = (entry.evolves_from||[]).filter(ev=>!refMatches(ev, other));
 const hadStrayLink = cleanedEvolutions.length !== (entry.evolutions||[]).length || cleanedEvolvesFrom.length !== (entry.evolves_from||[]).length;
 if(hadStrayLink) pairNote.push(`rimosso vecchio collegamento errato su ${entry.name}`);
-if(alreadyLinked && entry.slide_evolution && !hadStrayLink) continue; // già a posto, nessuna chiamata inutile
+if(alreadyLinked && entry.slide_evolution && !hadStrayLink) continue;
 statusEl.textContent += `Aggiorno ${entry.name}...\n`;
 try{
 const r = await updateDexEntry(session.code, entry.id, {
@@ -1556,8 +1386,6 @@ signatureMove2: entry.signature_move_2 || '', attackDesc2: entry.attack_desc_2 |
 attackDesc: entry.attack_desc || '', digimental: entry.digimental || '', extraAttacks: entry.extra_attacks || [],
 slideEvolution: true, slideTargets: newTargets
 });
-// updateDexEntry ritorna null in caso di fallimento (non lancia mai un'eccezione) — va
-// controllato esplicitamente, altrimenti un salvataggio fallito sembra sempre riuscito.
 if(!r) throw new Error('il server ha rifiutato la richiesta (vedi Console del browser, F12, per il dettaglio)');
 }catch(err){
 pairOk = false;
@@ -1578,8 +1406,6 @@ const draft = entry ? JSON.parse(JSON.stringify(entry)) : {
 name:'', stage:'Rookie', description:'', signature_move:'', image_url:'', gif_url:'', categories:[], base_stats:{}, evolutions:[], qualities:[], dp_total:0, discovered:false
 };
 if(!draft.evolutions) draft.evolutions = [];
-// BUGFIX: un entry letto dal DB ha il campo "evolves_from" (snake_case), non "evolvesFrom".
-// Prima questo fallback mancava e la Pre-Evoluzione veniva sempre azzerata all'apertura della scheda.
 if(!draft.evolvesFrom) draft.evolvesFrom = draft.evolves_from || [];
 if(!draft.qualities) draft.qualities = [];
 if(!draft.categories) draft.categories = [];
@@ -1602,7 +1428,7 @@ overlay.innerHTML = `
 </div>
 <div class="field"><label>URL Immagine</label><input type="text" id="ed-img" value="${escapeAttr(draft.image_url)}" /></div>
 </div>
-<div class="field"><label>URL GIF animata (opzionale — visibile solo nella scheda dettaglio)</label><input type="text" id="ed-gif" value="${escapeAttr(draft.gif_url||'')}" placeholder="https://... .gif" /></div>
+<div class="field"><label>URL GIF animata (opzionale — se presente, sostituisce l'immagine statica ovunque tranne quando la si ingrandisce)</label><input type="text" id="ed-gif" value="${escapeAttr(draft.gif_url||'')}" placeholder="https://... .gif" /></div>
 <div class="field"><label>Descrizione</label><textarea id="ed-desc" rows="2">${escapeHTML(draft.description)}</textarea></div>
 <div class="field"><label>⭐ Signature Move (nome + Tag meccanico, es. "Fire Rocket — [MELEE][DAMAGE 8-10]")</label><input type="text" id="ed-sigmove" value="${escapeAttr(draft.signature_move||'')}" placeholder="Nome — [TAG valore]" /></div>
 <div class="field"><label>💬 Descrizione narrativa dell'Attacco (mostrata quando l'attacco viene lanciato)</label><textarea id="ed-attackdesc" rows="2" placeholder="Es. Sputa una sfera di fuoco concentrato dalla bocca.">${escapeHTML(draft.attack_desc||'')}</textarea></div>
@@ -1836,13 +1662,7 @@ let result;
 if(isNew) result = await addDexEntry(session.code, payload);
 else result = await updateDexEntry(session.code, entry.id, payload);
 if(result){
-// Crea in automatico il collegamento reciproco sull'altro Digimon coinvolto, così non serve
-// più aprirlo a mano e aggiungerlo anche lì. Le due entry restano sincronizzate su entrambi i lati.
 statusEl.style.color='var(--text-mute)'; statusEl.textContent='Salvato, sincronizzo collegamenti reciproci...';
-// BUGFIX: prima si usava il cachedDex di prima dell'apertura di questa scheda per costruire il
-// payload completo dell'ALTRO Digimon coinvolto — se nel frattempo quell'altro Digimon aveva
-// ricevuto modifiche proprie (es. un suo Slide Target), venivano sovrascritte con la versione
-// vecchia. Aggiorniamo prima di leggere/scrivere i collegamenti reciproci.
 cachedDex = await getDex(session.code);
 const savedId = isNew ? (result.entry && result.entry.id) : entry.id;
 const savedRef = { id: savedId, name, imageUrl: payload.imageUrl || '' };
@@ -1874,13 +1694,10 @@ const current = target[field] || [];
 const already = current.some(x=> (x.id!=null && String(x.id)===String(savedId)) || (!x.id && x.name && x.name.toLowerCase()===name.toLowerCase()));
 if(already) return;
 const updatedList = current.concat([savedRef]);
-try { await updateDexEntry(session.code, target.id, fullPayloadFor(target, field, updatedList)); } catch(e){ /* best-effort, non bloccante */ }
+try { await updateDexEntry(session.code, target.id, fullPayloadFor(target, field, updatedList)); } catch(e){ /* best-effort */ }
 }
 for(const link of (draft.evolutions||[])) await ensureReciprocal(link, 'evolves_from');
 for(const link of (draft.evolvesFrom||[])) await ensureReciprocal(link, 'evolutions');
-// Auto-verifica: rileggiamo l'entry appena salvata dal server e controlliamo che lo Slide
-// Target inviato sia davvero lì. Se non lo è, lo mostriamo a schermo invece di dire "Salvato"
-// e basta — così si vede subito, senza bisogno di aprire Console o Network.
 const freshCheck = await getDex(session.code);
 const savedEntryCheck = freshCheck.find(e=>String(e.id)===String(savedId));
 const expected = (payload.slideTargets||[]).map(s=>String(s).trim().toLowerCase()).sort();
@@ -1904,5 +1721,88 @@ session = loadSession();
 render();
 })();
 </script>
+<!-- ===== Widget Audio Persistente: musica di sottofondo (fissa) + suoni click ===== -->
+<audio id="dvos-bg-music" loop preload="none" style="display:none;"></audio>
+<div id="dvos-audio-widget" style="position:fixed;bottom:10px;right:10px;z-index:9999;background:var(--panel,#0f1115);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:6px 10px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text,#cfd6e4);box-shadow:0 2px 10px rgba(0,0,0,0.5);">
+<button id="dvos-music-toggle" title="Musica di sottofondo: on/off" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;">🔊</button>
+<input type="range" id="dvos-music-volume" min="0" max="100" value="50" style="width:64px;" title="Volume musica" />
+<button id="dvos-click-toggle" title="Suoni click: on/off" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;">🖱️</button>
+</div>
+<script>
+(function(){
+const FIXED_BG_MUSIC_URL = 'https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787069260083_hho28k.mpeg';
+const musicEl = document.getElementById('dvos-bg-music');
+if(musicEl && FIXED_BG_MUSIC_URL){
+fetch(FIXED_BG_MUSIC_URL).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.blob(); })
+.then(blob=>{
+musicEl.src = URL.createObjectURL(blob);
+if(!prefs.musicMuted && window.__dvosUnlocked) musicEl.play().catch(()=>{});
+})
+.catch(e=>{ console.warn('Musica di sottofondo: impossibile caricarla (' + e.message + ')'); });
+}
+const PREFS_KEY = 'dvos_audio_prefs_v1';
+function loadPrefs(){
+try{ return Object.assign({musicVolume:0.5, musicMuted:false, clickMuted:false}, JSON.parse(localStorage.getItem(PREFS_KEY)||'{}')); }
+catch(e){ return {musicVolume:0.5, musicMuted:false, clickMuted:false}; }
+}
+function savePrefs(p){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(p)); }catch(e){} }
+const prefs = loadPrefs();
+const musicToggleBtn = document.getElementById('dvos-music-toggle');
+const musicVolumeInp = document.getElementById('dvos-music-volume');
+const clickToggleBtn = document.getElementById('dvos-click-toggle');
+function applyMusicVolume(){
+if(!musicEl) return;
+musicEl.volume = prefs.musicMuted ? 0 : prefs.musicVolume;
+if(prefs.musicMuted && !musicEl.paused) musicEl.pause();
+}
+function refreshUI(){
+if(musicToggleBtn) musicToggleBtn.textContent = prefs.musicMuted ? '🔇' : '🔊';
+if(musicVolumeInp) musicVolumeInp.value = Math.round(prefs.musicVolume*100);
+if(clickToggleBtn) clickToggleBtn.style.opacity = prefs.clickMuted ? '0.4' : '1';
+applyMusicVolume();
+}
+refreshUI();
+if(musicToggleBtn) musicToggleBtn.onclick = ()=>{
+prefs.musicMuted = !prefs.musicMuted;
+savePrefs(prefs);
+refreshUI();
+if(!prefs.musicMuted && musicEl && musicEl.paused && musicEl.src) musicEl.play().catch(()=>{});
+};
+if(musicVolumeInp) musicVolumeInp.oninput = ()=>{
+prefs.musicVolume = Number(musicVolumeInp.value)/100;
+if(prefs.musicVolume>0) prefs.musicMuted = false;
+savePrefs(prefs);
+refreshUI();
+};
+if(clickToggleBtn) clickToggleBtn.onclick = ()=>{
+prefs.clickMuted = !prefs.clickMuted;
+savePrefs(prefs);
+refreshUI();
+};
+let unlocked = false;
+function unlock(){
+if(unlocked) return;
+unlocked = true;
+window.__dvosUnlocked = true;
+if(!prefs.musicMuted && musicEl && musicEl.src) musicEl.play().catch(()=>{});
+['click','keydown','touchend'].forEach(ev=>document.removeEventListener(ev, unlock, true));
+}
+['click','keydown','touchend'].forEach(ev=>document.addEventListener(ev, unlock, { capture:true }));
+const CLICK_SFX_URL = "https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787070670792_1jktvp.mpeg";
+function __playClickSfx(){
+if(prefs.clickMuted) return;
+try{
+const a = new Audio(CLICK_SFX_URL);
+a.volume = 0.5;
+a.play().catch(()=>{});
+}catch(e){}
+}
+document.addEventListener('click', function(e){
+if(e.target.closest('input, textarea, select')) return;
+__playClickSfx();
+}, true);
+})();
+</script>
+<!-- ===== fine Widget Audio Persistente ===== -->
 </body>
 </html>
