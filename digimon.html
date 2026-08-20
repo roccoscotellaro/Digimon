@@ -126,6 +126,15 @@
     { name:'Decipher Intent', derived:'BIT' }, { name:'Survival', derived:'BIT' }, { name:'Knowledge', derived:'BIT' },
     { name:'Fortitude', derived:'DOS' }, { name:'Bravery', derived:'DOS' }, { name:'Awareness', derived:'DOS' }
   ];
+  // I 10 Elementi di Naturewalk (stessi nomi delle 10 voci "Naturewalk: X" del catalogo), usati sia
+  // lì che da Slayer (opzione "Elemento") e Natural Weakness (Elementi NON coperti da Naturewalk).
+  const ELEMENT_LIST = ['Fuoco','Acqua','Vento','Terra','Ghiaccio','Legno','Acciaio','Fulmine','Oscurità','Luce'];
+  // Le 10 Famiglie (field) usate da Slayer (opzione "Famiglia") — vedi anche la spiegazione nel
+  // pannello Regole (index.html) sotto "Famiglie".
+  const FAMILY_LIST = ['Nature Spirits','Deep Savers','Wind Guardians','Metal Empire','Virus Busters','Nightmare Soldiers',"Dragon's Roar",'Jungle Troopers','Dark Area','Unknown'];
+  // I 4 Tipi di Minion di Summoner (manuale 5.06/6.0x — costo Mastery/Size/bonus specifici non
+  // riprodotti qui, solo il nome per registrare la scelta).
+  const MINION_TYPE_LIST = ['Infantry','Protector','Recon','Volatile'];
   // Companion 3.02c — modificatori di Size ai 4 Derived Stat (BIT/DOS/RAM/CPU). Gigantic e Colossal
   // danno anche -1 Movement, non gestito qui (il Movement non è ancora calcolato in scheda).
   const SIZE_DERIVED_MOD = {
@@ -292,7 +301,7 @@
     { name:'Data Specialization: Code Wizard', category:'Static', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization: Effect Warrior. La Durata massima di tutti gli Effetti creati aumenta di 1. Può usare Called Shot (opzione Focused) illimitatamente a combattimento con penalità dimezzata. Ignora il requisito del Tag [DAMAGE] per alcuni Effetti (es. [BURN]).' },
     { name:'Data Specialization: Tactical Adaptation', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization: Variable. Guadagna una Stance Quality gratis, oppure 2 Ranks gratuiti di Mode Change. All\'inizio dell\'Iniziativa può fare Change Stance come Azione Libera; sul proprio turno può farlo come Azione Libera (o Mode Change se disponibile).' },
     { name:'Data Specialization: Supreme Code', category:'Static', dpPerRank:2, maxRank:1, mechanic:'supremeCode', desc:'STAGE 4+ — Richiede Data Optimization: Variable. +1 automatico ad Accuracy, Damage, Dodge e Armor. +1 anche a Health, da applicare manualmente a Ferite Massime.' },
-    { name:'Prodigious Skill', category:'Static', dpPerRank:1, maxRank:4, mechanic:'prodigiousSkill', desc:'Rank max = Stage (fino a 4). Scegli una Skill del Tamer (es. Feats of Strength, Stealth, Awareness): +1+2×Stat Derivata associata (CPU per Skill di Corpo, RAM per Agilità, BIT per Intelligenza/Carisma, DOS per Volontà) sui Check di quella Skill, invece della sola Stat Derivata.' },
+    { name:'Prodigious Skill', category:'Static', dpPerRank:1, maxRank:4, mechanic:'prodigiousSkill', desc:'Rank max = Stage (fino a 4). Scegli una Skill del Tamer (es. Feats of Strength, Stealth, Awareness): +3 sui Check di quella Skill, sommato alla Stat Derivata associata (CPU per Skill di Corpo, RAM per Agilità, BIT per Intelligenza/Carisma, DOS per Volontà).' },
     { name:'Mighty Blow', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 2+ — Applica [MIGHTY] a un Attacco [MELEE][DAMAGE]. Se infligge almeno 2 Danno dopo Armor (no Unalterable), Check CPU (Feats of Strength) TN 10+CPU bersaglio: Successo → [STUN] al bersaglio; Successo Critico → anche +2 Danno extra; Fallimento Critico → -1 Danno (min 1). La TN sale di 3 a ogni uso successivo (salvo Signature Move). Compatibile con altri Effetti tranne quelli di Danno.' },
     { name:'Precise Focus', category:'Attack', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 2+ — Applica [FOCUS] a un Attacco [RANGE]: ogni punto di Danno toglie 2 Caselle Ferita Temporanee invece di 1. Se usato con 1 Azione extra (Bolster, Called Shot, ecc.), Check RAM (Precision) TN 12+RAM bersaglio: Successo +3 Accuracy, Successo Critico +5 Accuracy, Fallimento Critico nessun bonus. Nessun beneficio su Area Attack.' },
     { name:'Feint Attack', category:'Attack', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 2+ — Applica [T:FEINT] a un Attacco [MELEE]. Attivabile alla dichiarazione: l\'Attacco subisce una penalità a Danno pari al tuo Stage, poi Check BIT (Manipulate) TN 6+BIT bersaglio; su Successo dimezzi il Dodge (o l\'Armor) del bersaglio per quell\'Attacco. Incompatibile con Counterattack.' },
@@ -317,7 +326,7 @@
     { name:'Altered Element', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'Richiede Element Master. Incompatibile con Elemental Myriad, Adaptive Element. Quando prendi Domain Control, puoi scegliere qualsiasi opzione di Dominio invece di essere limitato al tuo Elemento di Naturewalk (resta comunque considerato il tuo Elemento).' },
     { name:'Elemental Myriad', category:'Static', dpPerRank:1, maxRank:4, mechanic:'', desc:'Richiede Element Master. Incompatibile con Domain Control, Adaptive/Altered Element. Rank max per Stage (0-1:0, 2:1, 3:2, 4+:4). Per ogni Rank qui, puoi comprare 2 Ranks extra di Naturewalk (li paghi comunque normalmente), ma il bonus di Naturewalk a una singola Stat non supera +3 in totale.' },
     { name:'Conjurer', category:'Trigger', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 2+ — Richiesta per Evoker. Incompatibile con Summoner, Combat Monster, Positive Reinforcement. Risorsa "Creation Limit" = BIT+Stage. Con l\'Azione Conjure Objects (2 Azioni) crei oggetti/strutture (1 spazio cubico ciascuno, decisi alla presa della Quality) entro il tuo Range, fino al Creation Limit; non tirano Dodge, vengono distrutti da un Attacco che infligge Danno, e il costo torna disponibile quando distrutti. Non puoi riusare l\'Azione per 1 round dopo averla usata.' },
-    { name:'Summoner', category:'Trigger', dpPerRank:1, maxRank:3, mechanic:'', desc:'STAGE 2+ — Richiesta per Evoker. Incompatibile con Conjurer, Combat Monster, Positive Reinforcement, Showstopper. Risorsa "Mastery" = BIT+2×Ranks (+ Ranks di Conjurer se presente). Scegli un Tipo di Minion (Infantry/Protector/Recon/Volatile, ognuno con costo Mastery, Size e bonus propri — vedi manuale 5.06/6.0x per la tabella completa). Azione Summon (1 o 2 Azioni per metà/piena Mastery) crea Minion con Accuracy/Damage/Movimento basati sul tuo BIT e Ferite pari a DOS×2, senza Armor/Dodge, solo Attacchi [MELEE]. Azione Command Minion (1-2 Azioni) li fa Muovere/Attaccare/Aiutare.' },
+    { name:'Summoner', category:'Trigger', dpPerRank:1, maxRank:3, mechanic:'summoner', desc:'STAGE 2+ — Richiesta per Evoker. Incompatibile con Conjurer, Combat Monster, Positive Reinforcement, Showstopper. Risorsa "Mastery" = BIT+2×Ranks (+ Ranks di Conjurer se presente). Scegli un Tipo di Minion (Infantry/Protector/Recon/Volatile, ognuno con costo Mastery, Size e bonus propri — vedi manuale 5.06/6.0x per la tabella completa). Azione Summon (1 o 2 Azioni per metà/piena Mastery) crea Minion con Accuracy/Damage/Movimento basati sul tuo BIT e Ferite pari a DOS×2, senza Armor/Dodge, solo Attacchi [MELEE]. Azione Command Minion (1-2 Azioni) li fa Muovere/Attaccare/Aiutare.' },
     { name:'Evoker', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'Richiede Conjurer o Summoner. Puoi usare le Azioni Conjure e Summon con le stesse Azioni (Creation Limit/Mastery condivisi tra Oggetti e Minion).' },
     { name:'Hybrid Drive', category:'Static', dpPerRank:1, maxRank:1, mechanic:'', desc:'STAGE 4+ — Richiede Data Optimization. Puoi comprare una Data Specialization aggiuntiva a scelta libera, indipendentemente dalla tua Data Optimization.' },
     { name:'Coordinated Assault', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 3+ — Richiede Aggressive Flank. Come 1 Azione, Check BIT (Precision) TN 10+RAM bersaglio per applicare "Marchiato" a un singolo bersaglio (Successo Critico: anche -1 Dodge immediato). Il bersaglio Marchiato subisce una penalità Dodge pari al tuo Stage (invece di -1) per ogni Attacco oltre il primo che lo colpisce nel round. Un solo bersaglio attivo alla volta; se muore, puoi ri-marchiare come Azione Interrupt gratuita. Incide su Uncatchable Target/Absolute Evasione avversari, non su Speedster.' },
@@ -381,9 +390,9 @@
     { name:'Zero Unit', category:'Attack', dpPerRank:3, maxRank:1, mechanic:'', desc:'STAGE 4+/MEGA — Richiede 1 Rank di Instinct. Unica Gain Force; incompatibile con Algorithm/altre Gain Force. Applica [ZERO] a un Attacco [SUPPORT] (Effetto positivo senza Durata, 1 volta a Combattimento, 2 Azioni, mai come Area): o fa evolvere gratis un Alleato entro Stage spazi che ha già sbloccato lo Stage successivo (Punti Evoluzione extra pari ai Ranks di Instinct), oppure rianima un Alleato sconfitto con Ferite pari al doppio dei Ranks di Instinct (tornando allo Stage in cui è caduto). Su Signature Move il bonus scala anche con la Battery.' },
     { name:'Pure Overwrite', category:'Static', dpPerRank:2, maxRank:1, mechanic:'', desc:'STAGE 4+/MEGA — Richiede 2 Ranks di Instinct e 2 Ranks di Algorithm. Unica Gain Force; incompatibile con ogni altra. Immunità a tutti gli Effetti negativi di costo 2 DP o meno (mai sopprimibile). Con Second Wind: puoi attivarlo nel tuo turno senza consumare un uso, spendendo 1 Azione extra, anche senza usi rimasti.' },
     { name:'Memory Upgrade', category:'Static', dpPerRank:0, maxRank:3, mechanic:'', desc:'CAP. 7.01 (GRATIS) — +1 Attacco nella tua lista di Attacchi per Rank. Puoi comprare 1 Rank ogni 3 Tag da Attacco ottenuti da Qualities (es. [PIERCING 1]+[CERTAIN 1]+[CHARGE] = 1 Rank). Non conta nel limite di Free Qualities del Digimon.' },
-    { name:'Slayer', category:'Attack', dpPerRank:0, maxRank:1, mechanic:'', desc:'CAP. 7.01 (GRATIS) — Scegli una Famiglia, un Tipo (Drago/Demone/Bestia ecc.) o un Elemento di Naturewalk come "nemico preferito" (il Master deve approvarlo). +DOS Accuracy contro quel tipo di bersaglio; se manchi un Attacco che ne beneficerebbe, subisci Danno Unalterable pari al tuo Stage. Non conta nel limite di Free Qualities.' },
+    { name:'Slayer', category:'Attack', dpPerRank:0, maxRank:1, mechanic:'slayer', desc:'CAP. 7.01 (GRATIS) — Scegli una Famiglia, un Tipo (Drago/Demone/Bestia ecc.) o un Elemento di Naturewalk come "nemico preferito" (il Master deve approvarlo). +DOS Accuracy contro quel tipo di bersaglio; se manchi un Attacco che ne beneficerebbe, subisci Danno Unalterable pari al tuo Stage. Non conta nel limite di Free Qualities.' },
     { name:'Critical Arms', category:'Attack', dpPerRank:0, maxRank:1, mechanic:'', desc:'CAP. 7.01 (GRATIS) — Richiede 1+ Rank di Weapon. Tira 2d6 (Critical Dice) insieme alla Pool Accuracy su ogni Attacco [WEAPON]: 2 → l\'Attacco fallisce automaticamente e subisci [DISARM] fino a fine Combattimento (o 2 Azioni per rimuoverlo); 3-11 → nessun effetto; 12 → effetto positivo extra (vedi manuale per il dettaglio esatto). Non conta nel limite di Free Qualities.' },
-    { name:'Mind Over Matter', category:'Static', dpPerRank:0, maxRank:1, mechanic:'', desc:'CAP. 7.01 (GRATIS) — -1 a tutte le Stat Core. In cambio, scegli 2 Skills dello stesso Attributo (tranne RAM/Agilità pura) e trattale come se avessi Prodigious Skill su entrambe.' },
+    { name:'Mind Over Matter', category:'Static', dpPerRank:0, maxRank:1, mechanic:'mindOverMatter', desc:'CAP. 7.01 (GRATIS) — -1 a tutte le Stat Core. In cambio, scegli 2 Skills dello stesso Attributo (tranne RAM/Agilità pura) e trattale come se avessi Prodigious Skill su entrambe.' },
     { name:'Justice Is Blind', category:'Trigger', dpPerRank:0, maxRank:1, mechanic:'', desc:'CAP. 7.01 (GRATIS) — Il Digimon è cieco/ipovedente: fallisce automaticamente i Check visivi ma ha Prodigious Skill: Awareness per l\'udito e contro Hide in Plain Sight. In combattimento, i suoi [MELEE] hanno sempre [T:WAVE] e i [RANGE] sempre [T:CONE] gratuiti (non può comprare altri Tag Area); niente Selective Targeting. Un Attacco a bersaglio singolo richiede 1 Azione extra (o il Tamer cede 1 Azione per dirigerlo).' },
     { name:'Weakened Strike (Fragile Strike)', category:'Attack', dpPerRank:-1, maxRank:3, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Certain Strike (Ranks max = quelli di Certain Strike). Applica [FRAGILE] all\'Attacco con [CERTAIN]: -1 Danno e -1 Potenza/Durata degli Effetti (min 0) per Rank. Non applicabile a un Attacco [SUPPORT].' },
     { name:'Indiscriminate Targeting', category:'Static', dpPerRank:-1, maxRank:1, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Area Attack. Incompatibile con Zoner. I tuoi Area Attack non distinguono più Alleati da Nemici: colpiscono tutti tranne te.' },
@@ -391,7 +400,7 @@
     { name:'Broadside', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Avoidance (max Ranks = quelli di Avoidance). Quando usi Avoidance, riduci i Successi finali di Dodge di 1 per Rank qui.' },
     { name:'Illness', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Vital Energy (max Ranks = quelli di Vital Energy). Quando usi Vital Energy, riduci i Successi finali di Health di 1 per Rank qui.' },
     { name:'System Error', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'systemError', desc:'NEGATIVA — Richiede 1+ Rank di System Boost (max Ranks = quelli di System Boost). Per ogni Rank qui, riduci di 1 una Stat Derivata NON già toccata da System Boost.' },
-    { name:'Natural Weakness', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Naturewalk. Incompatibile con Elemental Myriad. Per ogni Rank, scegli 2 Elementi che NON hai da Naturewalk: subisci il doppio del bonus Danno di Elemental Force da quegli Elementi (max Ranks = quelli di Naturewalk).' },
+    { name:'Natural Weakness', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'naturalWeakness', desc:'NEGATIVA — Richiede 1+ Rank di Naturewalk. Incompatibile con Elemental Myriad. Per ogni Rank, scegli 2 Elementi che NON hai da Naturewalk: subisci il doppio del bonus Danno di Elemental Force da quegli Elementi (max Ranks = quelli di Naturewalk).' },
     { name:'Exploitable Program', category:'Static', dpPerRank:-1, maxRank:1, mechanic:'', desc:'NEGATIVA — La TN di ogni Nemico che richiede una tua Stat Derivata (es. Mighty Blow, Substitute subiti) è ridotta di 3.' },
     { name:'Accuracy Converter [Nemico]', category:'Static', dpPerRank:0, maxRank:99, mechanic:'', desc:'CAP. 3.01 GM INDEX (solo Nemici, gratis, non conta nel limite Free) — Per Rank: -1 Accuracy, +1 BIT. Non puoi scendere sotto l\'Accuracy di partenza né superare il doppio del BIT senza questa Quality. Usare con moderazione: serve solo ad abbassare Stat totali "esagerate" mantenendo la Stat Derivata.' },
     { name:'Damage Converter [Nemico]', category:'Static', dpPerRank:0, maxRank:99, mechanic:'', desc:'CAP. 3.01 GM INDEX (solo Nemici, gratis, non conta nel limite Free) — Per Rank: -1 Damage, +1 DOS. Non puoi scendere sotto il Damage di partenza né superare il doppio del DOS senza questa Quality.' },
@@ -402,7 +411,7 @@
     { name:'Boiling Point', category:'Static', dpPerRank:-2, maxRank:1, mechanic:'', desc:'NEGATIVA — Richiede Combat Monster. Quando inizi il turno con Resolve al massimo, Check CPU (Endurance) TN 15-DOS: Fallimento Critico → perdi Ferite pari al Resolve attuale; Fallimento → perdi metà Resolve attuale in Ferite e azzeri il Resolve; Successo → la TN sale del tuo Resolve massimo fino a fine Combattimento; Successo Critico → sale solo di metà.' },
     { name:'[BOSS] Adaptive Intelligence', category:'Boss', dpPerRank:1, maxRank:1, mechanic:'', desc:'+2 Dodge (stackabile) contro un Attacco già visto, per ogni volta vista dall\'inizio del combattimento. Riservata al Master per i Boss.' },
     { name:'[BOSS] Finesse', category:'Boss', dpPerRank:1, maxRank:99, mechanic:'', desc:'Per Rank: +1 Armor e 1 Danno Unalterable extra sugli Attacchi [DAMAGE]. Ranks massimi = Stage. Riservata al Master.' },
-    { name:'[BOSS] True Immunity', category:'Boss', dpPerRank:1, maxRank:99, mechanic:'', desc:'Per Rank, scegli un Effetto: quell\'Effetto non ha mai Durata o Potenza su questo Digimon. Riservata al Master.' },
+    { name:'[BOSS] True Immunity', category:'Boss', dpPerRank:1, maxRank:99, mechanic:'trueImmunity', desc:'Per Rank, scegli un Effetto: quell\'Effetto non ha mai Durata o Potenza su questo Digimon. Riservata al Master.' },
     { name:'[BOSS] Multigrappler', category:'Boss', dpPerRank:3, maxRank:1, mechanic:'', desc:'Può Clashare con più nemici insieme, fino al proprio Stage. Riservata al Master.' },
     { name:'[BOSS] Spatial Distortion', category:'Boss', dpPerRank:2, maxRank:1, mechanic:'', desc:'1 Azione extra per ignorare la distanza dell\'Attacco (Range senza penalità, Melee a qualsiasi distanza). Riservata al Master.' },
     { name:'[BOSS] Suppression', category:'Boss', dpPerRank:3, maxRank:1, mechanic:'', desc:'Blocca un tipo di Quality (Static/Trigger/Attack) per i nemici vicini, salvo un Check DOS (TN 10+DOS) con 2 Azioni per ignorarla. Riservata al Master.' }
@@ -505,6 +514,67 @@
     if(!q || !(q.mechanic==='naturewalk' && q.statTarget==='health')) return;
     d.maxWounds = stageIndex(d.stage) + Number(d.baseHealth)*2;
     if(d.currentWounds > d.maxWounds) d.currentWounds = d.maxWounds;
+  }
+  // Costruisce la entry Quality da salvare (nome con target incluso + campi extra), a partire da
+  // quanto scelto nel picker. Condivisa da Wizard e scheda approvata per non duplicare la logica
+  // di ognuno dei mechanic. Ritorna { error } se manca una scelta obbligatoria o viola una regola
+  // (es. System Boost sulla stessa Stat due volte), altrimenti { entry }.
+  function buildQualityEntry(q, rank, extra, existingQualities){
+    const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health' };
+    const existing = existingQualities || [];
+    let nameSuffix = '';
+    const entry = { cost: q.dpPerRank * rank, category:q.category, description:q.desc, mechanic:q.mechanic, rank };
+    switch(q.mechanic){
+      case 'naturewalk':
+        entry.statTarget = extra.statTarget;
+        nameSuffix = ` [+1 ${statLabels[extra.statTarget]}]`;
+        break;
+      case 'systemBoost':
+      case 'systemError':
+        if(q.mechanic==='systemBoost' && existing.some(e=>e.mechanic==='systemBoost' && e.derivedTarget===extra.derivedTarget)){
+          return { error: `Hai già un Rank di System Boost su ${extra.derivedTarget}: scegline un'altra.` };
+        }
+        entry.derivedTarget = extra.derivedTarget;
+        nameSuffix = ` [${q.mechanic==='systemError'?'-1':'+1'} ${extra.derivedTarget}]`;
+        break;
+      case 'prodigiousSkill':
+        if(!extra.skillTarget) return { error: 'Scegli una Skill.' };
+        entry.skillTarget = extra.skillTarget;
+        nameSuffix = ` [${extra.skillTarget}]`;
+        break;
+      case 'mindOverMatter':
+        if(!extra.skillTarget || !extra.skillTarget2) return { error: 'Scegli entrambe le Skill.' };
+        if(extra.skillTarget === extra.skillTarget2) return { error: 'Scegli due Skill diverse.' };
+        entry.skillTarget = extra.skillTarget;
+        entry.skillTarget2 = extra.skillTarget2;
+        nameSuffix = ` [${extra.skillTarget} + ${extra.skillTarget2}]`;
+        break;
+      case 'summoner':
+        if(!extra.minionType) return { error: 'Scegli un Tipo di Minion.' };
+        entry.minionType = extra.minionType;
+        nameSuffix = ` [Tipo: ${extra.minionType}]`;
+        break;
+      case 'slayer':
+        if(!extra.slayerValue || !extra.slayerValue.trim()) return { error: 'Scegli/scrivi il nemico preferito (Famiglia, Elemento o Tipo).' };
+        entry.slayerCategory = extra.slayerCategory;
+        entry.slayerValue = extra.slayerValue.trim();
+        nameSuffix = ` [${extra.slayerCategory}: ${entry.slayerValue}]`;
+        break;
+      case 'naturalWeakness':
+        if(!extra.elementTarget || !extra.elementTarget2) return { error: 'Scegli entrambi gli Elementi.' };
+        if(extra.elementTarget === extra.elementTarget2) return { error: 'Scegli due Elementi diversi.' };
+        entry.elementTarget = extra.elementTarget;
+        entry.elementTarget2 = extra.elementTarget2;
+        nameSuffix = ` [${extra.elementTarget} + ${extra.elementTarget2}]`;
+        break;
+      case 'trueImmunity':
+        if(!extra.effectTarget || !extra.effectTarget.trim()) return { error: 'Scrivi il nome dell\'Effetto (es. FEAR, BURN, STUN...).' };
+        entry.effectTarget = extra.effectTarget.trim().toUpperCase();
+        nameSuffix = ` [${entry.effectTarget}]`;
+        break;
+    }
+    entry.name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}${nameSuffix}`;
+    return { entry };
   }
   function naturewalkBonusFromQualities(qualities){
     // Naturewalk: +1 alla Stat scelta. Instinct: +1 automatico a Dodge (stessa eccezione "gratis"
@@ -1043,6 +1113,39 @@
               ${PRODIGIOUS_SKILL_LIST.map(s=>`<option value="${escapeAttr(s.name)}">${escapeHTML(s.name)} (${s.derived})</option>`).join('')}
             </select>
           </div>
+          <div class="field" id="${prefix}-skilltarget2-wrap" style="display:none;"><label>2ª Skill (Mind Over Matter)</label>
+            <select id="${prefix}-skilltarget2">
+              ${PRODIGIOUS_SKILL_LIST.map(s=>`<option value="${escapeAttr(s.name)}">${escapeHTML(s.name)} (${s.derived})</option>`).join('')}
+            </select>
+          </div>
+          <div class="field" id="${prefix}-minion-wrap" style="display:none;"><label>Tipo di Minion (Summoner)</label>
+            <select id="${prefix}-minion">
+              ${MINION_TYPE_LIST.map(t=>`<option value="${escapeAttr(t)}">${escapeHTML(t)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field" id="${prefix}-slayercat-wrap" style="display:none;"><label>Categoria Nemico Preferito (Slayer)</label>
+            <select id="${prefix}-slayercat">
+              <option value="Famiglia">Famiglia</option><option value="Elemento">Elemento (Naturewalk)</option><option value="Tipo">Tipo (testo libero)</option>
+            </select>
+          </div>
+          <div class="field" id="${prefix}-slayerfamily-wrap" style="display:none;"><label>Famiglia</label>
+            <select id="${prefix}-slayerfamily">${FAMILY_LIST.map(f=>`<option value="${escapeAttr(f)}">${escapeHTML(f)}</option>`).join('')}</select>
+          </div>
+          <div class="field" id="${prefix}-slayerelement-wrap" style="display:none;"><label>Elemento</label>
+            <select id="${prefix}-slayerelement">${ELEMENT_LIST.map(e=>`<option value="${escapeAttr(e)}">${escapeHTML(e)}</option>`).join('')}</select>
+          </div>
+          <div class="field" id="${prefix}-slayertype-wrap" style="display:none;"><label>Tipo (es. Drago, Demone, Bestia...)</label>
+            <input type="text" id="${prefix}-slayertype" placeholder="es. Drago" />
+          </div>
+          <div class="field" id="${prefix}-elementtarget-wrap" style="display:none;"><label>1° Elemento NON coperto da Naturewalk</label>
+            <select id="${prefix}-elementtarget">${ELEMENT_LIST.map(e=>`<option value="${escapeAttr(e)}">${escapeHTML(e)}</option>`).join('')}</select>
+          </div>
+          <div class="field" id="${prefix}-elementtarget2-wrap" style="display:none;"><label>2° Elemento NON coperto da Naturewalk</label>
+            <select id="${prefix}-elementtarget2">${ELEMENT_LIST.map(e=>`<option value="${escapeAttr(e)}">${escapeHTML(e)}</option>`).join('')}</select>
+          </div>
+          <div class="field" id="${prefix}-effecttarget-wrap" style="display:none;"><label>Effetto (es. BURN, FEAR, STUN...)</label>
+            <input type="text" id="${prefix}-effecttarget" placeholder="es. FEAR" />
+          </div>
         </div>
         <button class="btn solid small" id="${prefix}-add-catalog" style="width:100%;" disabled>+ Aggiungi Quality</button>
       </div>
@@ -1058,12 +1161,31 @@
     const statWrap = document.getElementById(prefix+'-stattarget-wrap');
     const derivedWrap = document.getElementById(prefix+'-derivedtarget-wrap');
     const skillWrap = document.getElementById(prefix+'-skilltarget-wrap');
+    const skill2Wrap = document.getElementById(prefix+'-skilltarget2-wrap');
+    const minionWrap = document.getElementById(prefix+'-minion-wrap');
+    const slayerCatWrap = document.getElementById(prefix+'-slayercat-wrap');
+    const slayerFamilyWrap = document.getElementById(prefix+'-slayerfamily-wrap');
+    const slayerElementWrap = document.getElementById(prefix+'-slayerelement-wrap');
+    const slayerTypeWrap = document.getElementById(prefix+'-slayertype-wrap');
+    const elementWrap = document.getElementById(prefix+'-elementtarget-wrap');
+    const element2Wrap = document.getElementById(prefix+'-elementtarget2-wrap');
+    const effectWrap = document.getElementById(prefix+'-effecttarget-wrap');
+    const slayerCatSel = document.getElementById(prefix+'-slayercat');
     const addBtn = document.getElementById(prefix+'-add-catalog');
     const rankInp = document.getElementById(prefix+'-rank');
 
     function currentQuality(){
       for(const sel of selects){ if(sel.value!=='') return QUALITY_CATALOG[Number(sel.value)]; }
       return null;
+    }
+    // Slayer ha 3 sotto-opzioni alternative (Famiglia/Elemento/Tipo libero) sotto un'unica Categoria:
+    // solo quella scelta nel menu Categoria resta visibile.
+    function refreshSlayerSub(){
+      if(!slayerCatSel) return;
+      const cat = slayerCatSel.value;
+      if(slayerFamilyWrap) slayerFamilyWrap.style.display = cat==='Famiglia' ? 'block' : 'none';
+      if(slayerElementWrap) slayerElementWrap.style.display = cat==='Elemento' ? 'block' : 'none';
+      if(slayerTypeWrap) slayerTypeWrap.style.display = cat==='Tipo' ? 'block' : 'none';
     }
     function refresh(changedSel){
       // Solo un menu alla volta può avere una selezione attiva: sceglierne uno svuota gli altri.
@@ -1075,11 +1197,25 @@
       if(derivedWrap) derivedWrap.style.display = isDerivedMechanic ? 'block' : 'none';
       const isProdigiousSkill = q && q.mechanic==='prodigiousSkill';
       if(skillWrap) skillWrap.style.display = isProdigiousSkill ? 'block' : 'none';
-      // System Boost/Error e Prodigious Skill: ogni Rank sceglie una Stat Derivata/Skill diversa
-      // dalle altre volte precedenti ("Whenever you take this Quality, choose a specific Skill" —
-      // Companion), quindi si compra 1 Rank alla volta, mai di più in un colpo solo, altrimenti un
-      // singolo click assegnerebbe più Rank alla stessa Stat/Skill.
-      const forceSingleRank = isDerivedMechanic || isProdigiousSkill;
+      const isMindOverMatter = q && q.mechanic==='mindOverMatter';
+      if(skill2Wrap) skill2Wrap.style.display = isMindOverMatter ? 'block' : 'none';
+      if(skillWrap && isMindOverMatter) skillWrap.style.display = 'block'; // riusa il 1° menu Skill
+      const isSummoner = q && q.mechanic==='summoner';
+      if(minionWrap) minionWrap.style.display = isSummoner ? 'block' : 'none';
+      const isSlayer = q && q.mechanic==='slayer';
+      if(slayerCatWrap) slayerCatWrap.style.display = isSlayer ? 'block' : 'none';
+      if(isSlayer) refreshSlayerSub(); else { [slayerFamilyWrap,slayerElementWrap,slayerTypeWrap].forEach(w=>{ if(w) w.style.display='none'; }); }
+      const isNaturalWeakness = q && q.mechanic==='naturalWeakness';
+      if(elementWrap) elementWrap.style.display = isNaturalWeakness ? 'block' : 'none';
+      if(element2Wrap) element2Wrap.style.display = isNaturalWeakness ? 'block' : 'none';
+      const isTrueImmunity = q && q.mechanic==='trueImmunity';
+      if(effectWrap) effectWrap.style.display = isTrueImmunity ? 'block' : 'none';
+      // System Boost/Error, Prodigious Skill, Natural Weakness, True Immunity: ogni Rank sceglie un
+      // bersaglio diverso dalle altre volte precedenti (regola Companion / stessa logica applicata
+      // per coerenza alle altre), quindi si compra 1 Rank alla volta, mai di più in un colpo solo.
+      // Summoner fa eccezione: il Tipo di Minion è UNA scelta sola per tutta la Quality, i Rank
+      // successivi servono solo ad aumentare la Mastery, quindi lì il Rank resta libero.
+      const forceSingleRank = isDerivedMechanic || isProdigiousSkill || isMindOverMatter || isNaturalWeakness || isTrueImmunity;
       if(rankInp && q){
         rankInp.max = forceSingleRank ? 1 : q.maxRank;
         if(forceSingleRank){ rankInp.value = 1; rankInp.disabled = true; }
@@ -1094,15 +1230,26 @@
       }
     }
     selects.forEach(sel=>{ sel.onchange = ()=>refresh(sel); });
+    if(slayerCatSel) slayerCatSel.onchange = refreshSlayerSub;
     if(addBtn){
       addBtn.onclick = ()=>{
         const q = currentQuality();
         if(!q) return;
         const rank = Math.max(1, Math.min(q.maxRank, Number(rankInp.value)||1));
-        const statTarget = document.getElementById(prefix+'-stattarget') ? document.getElementById(prefix+'-stattarget').value : null;
-        const derivedTarget = document.getElementById(prefix+'-derivedtarget') ? document.getElementById(prefix+'-derivedtarget').value : null;
-        const skillTarget = document.getElementById(prefix+'-skilltarget') ? document.getElementById(prefix+'-skilltarget').value : null;
-        onAdd(q, rank, statTarget, derivedTarget, skillTarget);
+        const val = id => { const el = document.getElementById(prefix+'-'+id); return el ? el.value : null; };
+        const extra = {
+          statTarget: val('stattarget'),
+          derivedTarget: val('derivedtarget'),
+          skillTarget: val('skilltarget'),
+          skillTarget2: val('skilltarget2'),
+          minionType: val('minion'),
+          slayerCategory: val('slayercat'),
+          slayerValue: val('slayercat')==='Famiglia' ? val('slayerfamily') : val('slayercat')==='Elemento' ? val('slayerelement') : val('slayertype'),
+          elementTarget: val('elementtarget'),
+          elementTarget2: val('elementtarget2'),
+          effectTarget: val('effecttarget')
+        };
+        onAdd(q, rank, extra);
         selects.forEach(sel=>{ sel.value=''; });
         refresh(null);
       };
@@ -1511,23 +1658,9 @@
         renderPage();
       };
     });
-    bindQualityPicker('wiz-q', (q, rank, statTarget, derivedTarget, skillTarget)=>{
-      const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health' };
-      // Regola Companion: System Boost non può toccare due volte la stessa Stat Derivata.
-      if(q.mechanic==='systemBoost' && (draft.qualities||[]).some(e=>e.mechanic==='systemBoost' && e.derivedTarget===derivedTarget)){
-        alert(`Hai già un Rank di System Boost su ${derivedTarget}: scegline un'altra.`);
-        return;
-      }
-      const derivedSign = q.mechanic==='systemError' ? '-1' : '+1';
-      const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}` +
-        `${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}` +
-        `${(q.mechanic==='systemBoost'||q.mechanic==='systemError')?` [${derivedSign} ${derivedTarget}]`:''}` +
-        `${q.mechanic==='prodigiousSkill'?` [${skillTarget}]`:''}`;
-      const cost = q.dpPerRank * rank;
-      const entry = { name, cost, category:q.category, description:q.desc, mechanic:q.mechanic, rank };
-      if(q.mechanic==='naturewalk') entry.statTarget = statTarget;
-      if(q.mechanic==='systemBoost'||q.mechanic==='systemError') entry.derivedTarget = derivedTarget;
-      if(q.mechanic==='prodigiousSkill') entry.skillTarget = skillTarget;
+    bindQualityPicker('wiz-q', (q, rank, extra)=>{
+      const { entry, error } = buildQualityEntry(q, rank, extra, draft.qualities);
+      if(error){ alert(error); return; }
       draft.qualities.push(entry);
       applyQualityStatBonus(draft, entry, 1, statHardCap(draft.stage));
       renderPage();
@@ -2294,23 +2427,9 @@
       await saveMember(session.code, target);
       renderPage();
     };
-    bindQualityPicker('d-q', async (q, rank, statTarget, derivedTarget, skillTarget)=>{
-      const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health' };
-      // Regola Companion: System Boost non può toccare due volte la stessa Stat Derivata.
-      if(q.mechanic==='systemBoost' && (target.digimon.qualities||[]).some(e=>e.mechanic==='systemBoost' && e.derivedTarget===derivedTarget)){
-        alert(`Hai già un Rank di System Boost su ${derivedTarget}: scegline un'altra.`);
-        return;
-      }
-      const derivedSign = q.mechanic==='systemError' ? '-1' : '+1';
-      const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}` +
-        `${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}` +
-        `${(q.mechanic==='systemBoost'||q.mechanic==='systemError')?` [${derivedSign} ${derivedTarget}]`:''}` +
-        `${q.mechanic==='prodigiousSkill'?` [${skillTarget}]`:''}`;
-      const cost = q.dpPerRank * rank;
-      const entry = { name, cost, category:q.category, description:q.desc, mechanic:q.mechanic, rank };
-      if(q.mechanic==='naturewalk') entry.statTarget = statTarget;
-      if(q.mechanic==='systemBoost'||q.mechanic==='systemError') entry.derivedTarget = derivedTarget;
-      if(q.mechanic==='prodigiousSkill') entry.skillTarget = skillTarget;
+    bindQualityPicker('d-q', async (q, rank, extra)=>{
+      const { entry, error } = buildQualityEntry(q, rank, extra, target.digimon.qualities);
+      if(error){ alert(error); return; }
       target.digimon.qualities.push(entry);
       applyQualityStatBonus(target.digimon, entry, 1);
       recalcMaxWoundsIfHealthChanged(target.digimon, entry);

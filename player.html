@@ -146,6 +146,19 @@
     return CAMPAIGN_LEVELS[level] || CAMPAIGN_LEVELS.Standard;
   }
   function skillMax(t, def){ return Math.max(...def.attrs.map(a=>Number(t[a])||0)); }
+  // Legge il Digimon partner (stesso membro di roster — le due schede condividono lo stesso record,
+  // vedi normalizeMember) per sommare eventuali bonus di Prodigious Skill / Mind Over Matter su
+  // questa Skill: +3 ai Check, per regola Companion 3.02a (aggiornata dal Changelog 21/11/25).
+  function prodigiousSkillBonus(m, def){
+    const qualities = (m && m.digimon && Array.isArray(m.digimon.qualities)) ? m.digimon.qualities : [];
+    let bonus = 0;
+    qualities.forEach(q=>{
+      if(!q) return;
+      if(q.mechanic==='prodigiousSkill' && q.skillTarget===def.label) bonus += 3;
+      if(q.mechanic==='mindOverMatter' && (q.skillTarget===def.label || q.skillTarget2===def.label)) bonus += 3;
+    });
+    return bonus;
+  }
 
   // ---------- Tamer Talents (soglia 3/5 Iniziali, 6/7 Avanzati — su Attributo o Skill) ----------
   const TALENT_DEFS = [
@@ -469,9 +482,11 @@
 
   function skillBoxHTML(m, def, editable){
     const val = Number(m.tamer.skills[def.key])||0;
+    const bonus = prodigiousSkillBonus(m, def);
+    const bonusHTML = bonus>0 ? `<span class="mono" style="color:var(--dchroma);font-size:10px;margin-left:4px;" title="Bonus dal Digimon partner (Prodigious Skill / Mind Over Matter)">+${bonus} 👾</span>` : '';
     return editable
-      ? `<div class="skill-box"><span class="l">${def.label}</span><input type="number" min="0" max="10" id="p-skill-${def.key}" value="${val}" /></div>`
-      : `<div class="skill-box"><span class="l">${def.label}</span><span class="mono" style="color:var(--cyan);">${val}</span></div>`;
+      ? `<div class="skill-box"><span class="l">${def.label}${bonusHTML}</span><input type="number" min="0" max="10" id="p-skill-${def.key}" value="${val}" /></div>`
+      : `<div class="skill-box"><span class="l">${def.label}</span><span class="mono" style="color:var(--cyan);">${val}${bonus>0?` <span style="color:var(--dchroma);font-size:10px;" title="Bonus dal Digimon partner (Prodigious Skill / Mind Over Matter)">(+${bonus})</span>`:''}</span></div>`;
   }
 
   function portraitBlockHTML(m, editable){

@@ -1328,6 +1328,19 @@
     SKILL_DEFS.forEach(sk=>{ s[sk.key] = 0; });
     return s;
   }
+  // Legge il Digimon partner (stesso membro di roster — le due schede condividono lo stesso record)
+  // per sommare eventuali bonus di Prodigious Skill / Mind Over Matter su questa Skill del Tamer:
+  // +3 ai Check, per regola Companion 3.02a (aggiornata dal Changelog 21/11/25).
+  function prodigiousSkillBonus(me, def){
+    const qualities = (me && me.digimon && Array.isArray(me.digimon.qualities)) ? me.digimon.qualities : [];
+    let bonus = 0;
+    qualities.forEach(q=>{
+      if(!q) return;
+      if(q.mechanic==='prodigiousSkill' && q.skillTarget===def.label) bonus += 3;
+      if(q.mechanic==='mindOverMatter' && (q.skillTarget===def.label || q.skillTarget2===def.label)) bonus += 3;
+    });
+    return bonus;
+  }
   function skillMax(t, def){
     return Math.max(...def.attrs.map(a=>Number(t[a])||0));
   }
@@ -4100,12 +4113,14 @@
       document.getElementById('roll-confirm-'+containerId).onclick = async ()=>{
         const tnVal = document.getElementById('roll-tn-'+containerId).value;
         const attrVal = me.tamer[chosenAttr];
-        const skillVal = me.tamer.skills[skillKey];
+        const digimonBonus = prodigiousSkillBonus(me, def);
+        const skillVal = Number(me.tamer.skills[skillKey]||0) + digimonBonus;
         const stuntBonus = Math.max(0, Math.min(3, Number(document.getElementById('roll-stunt-bonus-'+containerId).value)||0));
         const stuntDice = Math.max(0, Math.min(5, Number(document.getElementById('roll-stunt-dice-'+containerId).value)||0));
         const { dice, total: baseTotal } = rollSkillCheck(attrVal, skillVal, stuntDice);
         let total = baseTotal + stuntBonus;
         let aspectNote = '';
+        if(digimonBonus>0) aspectNote += ` +${digimonBonus} dal Digimon (Prodigious Skill/Mind Over Matter)`;
         if(stuntDice>0) aspectNote += ` +Stunt (${stuntDice} dadi extra, tenuti i 3 migliori)`;
         if(stuntBonus>0) aspectNote += ` +${stuntBonus} Stunt`;
         if(teamworkBonus!==0){
@@ -4176,10 +4191,11 @@
     if(def){
       const attr = def.attrs[0];
       const attrVal = me.tamer[attr];
-      const skillVal = me.tamer.skills[def.key];
+      const digimonBonus = prodigiousSkillBonus(me, def);
+      const skillVal = Number(me.tamer.skills[def.key]||0) + digimonBonus;
       const { dice, total: baseTotal } = rollSkillCheck(attrVal, skillVal);
       let total = baseTotal;
-      let aspectNote = '';
+      let aspectNote = digimonBonus>0 ? ` +${digimonBonus} dal Digimon (Prodigious Skill/Mind Over Matter)` : '';
       if(aspectWanted==='major' && me.tamer.majorAspect && (me.tamer.majorAspect.usesLeft||0)>0){
         total += 4;
         me.tamer.majorAspect.usesLeft -= 1;
@@ -7821,10 +7837,11 @@
           if(def){
             const attr = def.attrs[0];
             const attrVal = me.tamer[attr];
-            const skillVal = me.tamer.skills[def.key];
+            const digimonBonus = prodigiousSkillBonus(me, def);
+            const skillVal = Number(me.tamer.skills[def.key]||0) + digimonBonus;
             const { dice, total: baseTotal } = rollSkillCheck(attrVal, skillVal);
             let total = baseTotal;
-            let aspectNote = '';
+            let aspectNote = digimonBonus>0 ? ` +${digimonBonus} dal Digimon (Prodigious Skill/Mind Over Matter)` : '';
             const majorLeft = me.tamer.majorAspect ? (me.tamer.majorAspect.usesLeft||0) : 0;
             const minorLeft = me.tamer.minorAspect ? (me.tamer.minorAspect.usesLeft||0) : 0;
             if(majorLeft>0 || minorLeft>0){
