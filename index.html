@@ -2898,10 +2898,28 @@
     Free: 'https://wikimon.net/images/5/5b/DSTS_Icon_Attribute_Free.png',
     Variable: 'https://wikimon.net/images/0/0b/DSTS_Icon_Attribute_Variable.png'
   };
+  // Testo breve per Attributo (Variant Rule 2.05c — Attribute Advantage), usato come tooltip
+  // sull'icona: Vaccine batte Virus, Virus batte Data, Data batte Vaccine. Free non partecipa.
+  // Variable sceglie un Attributo all'Iniziativa, fisso per tutto il combattimento.
+  const ATTRIBUTE_DESC = {
+    Vaccine: 'Vaccine — batte Virus, perde da Data',
+    Data: 'Data — batte Vaccine, perde da Virus',
+    Virus: 'Virus — batte Data, perde da Vaccine',
+    Free: 'Free — non partecipa al vantaggio di Attributo',
+    Variable: 'Variable — sceglie un Attributo all\'Iniziativa, fisso per il combattimento'
+  };
   function attributeIconHTML(attribute, size){
     if(!attribute || !ATTRIBUTE_ICON_URL[attribute]) return '';
     const px = size || 14;
-    return `<img src="${ATTRIBUTE_ICON_URL[attribute]}" alt="${escapeAttr(attribute)}" title="${escapeAttr(attribute)}" style="width:${px}px;height:${px}px;vertical-align:middle;" onerror="this.style.display='none'" />`;
+    return `<img src="${ATTRIBUTE_ICON_URL[attribute]}" alt="${escapeAttr(attribute)}" title="${escapeAttr(ATTRIBUTE_DESC[attribute]||attribute)}" style="width:${px}px;height:${px}px;vertical-align:middle;" onerror="this.style.display='none'" />`;
+  }
+  // Trafiletto compatto da mettere vicino a ogni selettore Attributo: spiega il triangolo una volta
+  // sola, con le icone vere invece che solo testo.
+  function attributeLegendHTML(){
+    return `<div class="muted" style="font-size:10px;margin-top:4px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+      ${attributeIconHTML('Vaccine',13)} Vaccine ▸ ${attributeIconHTML('Virus',13)} Virus ▸ ${attributeIconHTML('Data',13)} Data ▸ <span style="opacity:0.6;">(torna a Vaccine)</span>
+      · ${attributeIconHTML('Free',13)} Free non conta · ${attributeIconHTML('Variable',13)} Variable sceglie all'Iniziativa
+    </div>`;
   }
   // A Dex entry's "categories" array holds both Attribute and Family/Field tags together (no separate
   // backend column for them). We treat any value matching a known Attribute as *the* Attribute, and
@@ -3825,6 +3843,7 @@
               </select>
               <span id="e-d-attribute-icon-${containerId}">${attributeIconHTML(d.attribute, 20)}</span>
             </span>
+            ${attributeLegendHTML()}
           </div>
         </div>
         <div class="divider"></div>

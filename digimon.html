@@ -116,6 +116,33 @@
   ];
   const STAGES = ['Fresh','Baby','Rookie','Champion','Ultimate','Mega'];
   const SIZES = ['Small','Medium','Large','Huge','Gigantic','Colossal'];
+  // Icone ufficiali Attributo (set Digimon Story: Time Stranger su Wikimon), stessa mappa usata in
+  // index.html/dex.html.
+  const ATTRIBUTE_ICON_URL = {
+    Vaccine: 'https://wikimon.net/images/6/6c/DSTS_Icon_Attribute_Vaccine.png',
+    Data: 'https://wikimon.net/images/2/2a/DSTS_Icon_Attribute_Data.png',
+    Virus: 'https://wikimon.net/images/2/2c/DSTS_Icon_Attribute_Virus.png',
+    Free: 'https://wikimon.net/images/5/5b/DSTS_Icon_Attribute_Free.png',
+    Variable: 'https://wikimon.net/images/0/0b/DSTS_Icon_Attribute_Variable.png'
+  };
+  const ATTRIBUTE_DESC = {
+    Vaccine: 'Vaccine — batte Virus, perde da Data',
+    Data: 'Data — batte Vaccine, perde da Virus',
+    Virus: 'Virus — batte Data, perde da Vaccine',
+    Free: 'Free — non partecipa al vantaggio di Attributo',
+    Variable: 'Variable — sceglie un Attributo all\'Iniziativa, fisso per il combattimento'
+  };
+  function attributeIconHTML(attribute, size){
+    if(!attribute || !ATTRIBUTE_ICON_URL[attribute]) return '';
+    const px = size || 14;
+    return `<img src="${ATTRIBUTE_ICON_URL[attribute]}" alt="${escapeAttr(attribute)}" title="${escapeAttr(ATTRIBUTE_DESC[attribute]||attribute)}" style="width:${px}px;height:${px}px;vertical-align:middle;" onerror="this.style.display='none'" />`;
+  }
+  function attributeLegendHTML(){
+    return `<div class="muted" style="font-size:10px;margin-top:4px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+      ${attributeIconHTML('Vaccine',13)} Vaccine ▸ ${attributeIconHTML('Virus',13)} Virus ▸ ${attributeIconHTML('Data',13)} Data ▸ <span style="opacity:0.6;">(torna a Vaccine)</span>
+      · ${attributeIconHTML('Free',13)} Free non conta · ${attributeIconHTML('Variable',13)} Variable sceglie all'Iniziativa
+    </div>`;
+  }
   // Le 15 Skill del Tamer (stesso elenco di player.html/SKILL_DEFS) con la Stat Derivata che le
   // governa (Companion 3.02a — CPU=Body, RAM=Agility, BIT=Intelligence/Charisma, DOS=Willpower),
   // usata da Prodigious Skill per sapere quale Check viene potenziato.
@@ -1536,9 +1563,13 @@
       <div class="field"><label>Personalità</label><textarea id="wiz-d-personality" rows="2">${escapeHTML(draft.personality)}</textarea></div>
       <div class="field"><label>URL Immagine (opz. — resterà nascosta finché il Master non approva)</label><input type="text" id="wiz-d-img" value="${escapeAttr(draft.imageUrl)}" /></div>
       <div class="field"><label>Attributo (Variant Rule 2.05c)</label>
-        <select id="wiz-d-attribute">
-          ${['Vaccine','Data','Virus','Free','Variable'].map(a=>`<option ${draft.attribute===a?'selected':''}>${a}</option>`).join('')}
-        </select>
+        <span style="display:inline-flex;align-items:center;gap:8px;">
+          <select id="wiz-d-attribute">
+            ${['Vaccine','Data','Virus','Free','Variable'].map(a=>`<option ${draft.attribute===a?'selected':''}>${a}</option>`).join('')}
+          </select>
+          <span id="wiz-d-attribute-icon">${attributeIconHTML(draft.attribute, 20)}</span>
+        </span>
+        ${attributeLegendHTML()}
       </div>
       <div style="border-top:1px dashed var(--line);margin:12px 0;"></div>
       ${errors.length ? `<div class="err">${errors.map(e=>escapeHTML(e)).join('<br/>')}</div>` : '<div class="ok-msg">Tutto valido, puoi salvare.</div>'}
@@ -1619,7 +1650,11 @@
     document.getElementById('wiz-d-name').onchange = (e)=>{ draft.name = e.target.value; applyDexMatchIfNeeded(); renderPage(); };
     document.getElementById('wiz-d-personality').onchange = (e)=>{ draft.personality = e.target.value; };
     document.getElementById('wiz-d-img').onchange = (e)=>{ draft.imageUrl = e.target.value; };
-    document.getElementById('wiz-d-attribute').onchange = (e)=>{ draft.attribute = e.target.value; };
+    document.getElementById('wiz-d-attribute').onchange = (e)=>{
+      draft.attribute = e.target.value;
+      const iconEl = document.getElementById('wiz-d-attribute-icon');
+      if(iconEl) iconEl.innerHTML = attributeIconHTML(draft.attribute, 20);
+    };
     document.getElementById('wiz-d-stage').onchange = (e)=>{
       draft.stage = e.target.value;
       const newCfg = STAGE_CREATION[draft.stage];
