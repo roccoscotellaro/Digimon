@@ -1094,5 +1094,105 @@
   })();
 })();
 </script>
+
+<!-- ===== Widget Audio Persistente: musica di sottofondo (fissa) + suoni click ===== -->
+<audio id="dvos-bg-music" loop preload="none" style="display:none;"></audio>
+<div id="dvos-audio-widget" style="position:fixed;bottom:10px;right:10px;z-index:9999;background:var(--panel,#0f1115);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:6px 10px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text,#cfd6e4);box-shadow:0 2px 10px rgba(0,0,0,0.5);">
+  <button id="dvos-music-toggle" title="Musica di sottofondo: on/off" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;">🔊</button>
+  <input type="range" id="dvos-music-volume" min="0" max="100" value="50" style="width:64px;" title="Volume musica" />
+  <button id="dvos-click-toggle" title="Suoni click: on/off" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;">🖱️</button>
+</div>
+<script>
+(function(){
+  // URL della traccia di sottofondo fissa, caricata su Supabase Storage (bucket campaign-audio).
+  // Stesso identico widget di digimon.html — player.html è una pagina satellite come quella,
+  // senza il #scene-audio-el che esiste solo in index.html, quindi usa una traccia fissa propria.
+  const FIXED_BG_MUSIC_URL = 'https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787069260083_hho28k.mpeg';
+  const musicEl = document.getElementById('dvos-bg-music');
+  // Scarichiamo il file per intero con fetch() invece di lasciare che sia <audio> a farlo in
+  // streaming: alcuni host (Supabase Storage incluso, in certe configurazioni) non gestiscono bene
+  // le richieste "Range" che il tag audio usa di default, causando riproduzione bloccata a 0:00/0:00
+  // anche se il file si scarica benissimo con una richiesta normale. Un Blob locale evita il problema.
+  if(musicEl && FIXED_BG_MUSIC_URL){
+    fetch(FIXED_BG_MUSIC_URL).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.blob(); })
+      .then(blob=>{
+        musicEl.src = URL.createObjectURL(blob);
+        if(!prefs.musicMuted && window.__dvosUnlocked) musicEl.play().catch(()=>{});
+      })
+      .catch(e=>{ console.warn('Musica di sottofondo: impossibile caricarla (' + e.message + ')'); });
+  }
+  const PREFS_KEY = 'dvos_audio_prefs_v1';
+  function loadPrefs(){
+    try{ return Object.assign({musicVolume:0.5, musicMuted:false, clickMuted:false}, JSON.parse(localStorage.getItem(PREFS_KEY)||'{}')); }
+    catch(e){ return {musicVolume:0.5, musicMuted:false, clickMuted:false}; }
+  }
+  function savePrefs(p){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(p)); }catch(e){} }
+  const prefs = loadPrefs();
+
+  const musicToggleBtn = document.getElementById('dvos-music-toggle');
+  const musicVolumeInp = document.getElementById('dvos-music-volume');
+  const clickToggleBtn = document.getElementById('dvos-click-toggle');
+
+  function applyMusicVolume(){
+    if(!musicEl) return;
+    musicEl.volume = prefs.musicMuted ? 0 : prefs.musicVolume;
+    if(prefs.musicMuted && !musicEl.paused) musicEl.pause();
+  }
+  function refreshUI(){
+    if(musicToggleBtn) musicToggleBtn.textContent = prefs.musicMuted ? '🔇' : '🔊';
+    if(musicVolumeInp) musicVolumeInp.value = Math.round(prefs.musicVolume*100);
+    if(clickToggleBtn) clickToggleBtn.style.opacity = prefs.clickMuted ? '0.4' : '1';
+    applyMusicVolume();
+  }
+  refreshUI();
+
+  if(musicToggleBtn) musicToggleBtn.onclick = ()=>{
+    prefs.musicMuted = !prefs.musicMuted;
+    savePrefs(prefs);
+    refreshUI();
+    if(!prefs.musicMuted && musicEl && musicEl.paused && musicEl.src) musicEl.play().catch(()=>{});
+  };
+  if(musicVolumeInp) musicVolumeInp.oninput = ()=>{
+    prefs.musicVolume = Number(musicVolumeInp.value)/100;
+    if(prefs.musicVolume>0) prefs.musicMuted = false;
+    savePrefs(prefs);
+    refreshUI();
+  };
+  if(clickToggleBtn) clickToggleBtn.onclick = ()=>{
+    prefs.clickMuted = !prefs.clickMuted;
+    savePrefs(prefs);
+    refreshUI();
+  };
+
+  // I browser bloccano l'autoplay finché l'utente non interagisce almeno una volta con la pagina:
+  // al primo click in assoluto proviamo a far partire la musica, se non mutata.
+  let unlocked = false;
+  function unlock(){
+    if(unlocked) return;
+    unlocked = true;
+    window.__dvosUnlocked = true;
+    if(!prefs.musicMuted && musicEl && musicEl.src) musicEl.play().catch(()=>{});
+    ['click','keydown','touchend'].forEach(ev=>document.removeEventListener(ev, unlock, true));
+  }
+  ['click','keydown','touchend'].forEach(ev=>document.addEventListener(ev, unlock, { capture:true }));
+
+  // Suono di click — stesso identico snippet già usato in index.html/digimon.html, riproposto
+  // qui per coerenza su tutte le pagine (nessun file esterno, tutto incorporato).
+  const CLICK_SFX_URL = "https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787070670792_1jktvp.mpeg";
+  function __playClickSfx(){
+    if(prefs.clickMuted || prefs.musicMuted) return;
+    try{
+      const a = new Audio(CLICK_SFX_URL);
+      a.volume = 0.5;
+      a.play().catch(()=>{});
+    }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    if(e.target.closest('input, textarea, select')) return;
+    __playClickSfx();
+  }, true);
+})();
+</script>
+<!-- ===== fine Widget Audio Persistente ===== -->
 </body>
 </html>

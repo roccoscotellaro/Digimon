@@ -104,8 +104,7 @@
       max-width: 90%;
       max-height: 90%;
       object-fit: contain;
-      image-rendering: pixelated;
-      image-rendering: -webkit-optimize-contrast;
+      image-rendering: auto;
   }
   .gif-label {
       position: absolute;
@@ -154,6 +153,20 @@
   let activeFamilyFilter = '';
   let activeStageFilter = '';
   const ATTRIBUTES = ['Vaccine','Data','Virus','Free','Variable'];
+  // Icone ufficiali Attributo (set Digimon Story: Time Stranger su Wikimon — stile coerente,
+  // copre tutti e 5 gli Attributi incluso Variable).
+  const ATTRIBUTE_ICON_URL = {
+    Vaccine: 'https://wikimon.net/images/6/6c/DSTS_Icon_Attribute_Vaccine.png',
+    Data: 'https://wikimon.net/images/2/2a/DSTS_Icon_Attribute_Data.png',
+    Virus: 'https://wikimon.net/images/2/2c/DSTS_Icon_Attribute_Virus.png',
+    Free: 'https://wikimon.net/images/5/5b/DSTS_Icon_Attribute_Free.png',
+    Variable: 'https://wikimon.net/images/0/0b/DSTS_Icon_Attribute_Variable.png'
+  };
+  function attributeIconHTML(attribute, size){
+    if(!attribute || !ATTRIBUTE_ICON_URL[attribute]) return '';
+    const px = size || 14;
+    return `<img src="${ATTRIBUTE_ICON_URL[attribute]}" alt="${escapeAttr(attribute)}" title="${escapeAttr(attribute)}" style="width:${px}px;height:${px}px;vertical-align:middle;image-rendering:auto;" onerror="this.style.display='none'" />`;
+  }
   const FAMILIES = ['Dark Empire','Deep Savers',"Dragon's Roar",'Jungle Troopers','Metal Empire','Nature Spirits','Nightmare Soldiers','Unknown','Virus Busters','Wind Guardians'];
   let editEntry = null; // entry being edited/added in modal
 
@@ -953,8 +966,8 @@ Devimon: https://..."></textarea>
         </div>`;
       }
       return `<div class="hud-frame dex-card" data-id="${e.id}">
-        <div class="thumb">${e.image_url ? `<img src="${escapeAttr(e.image_url)}" onerror="this.parentNode.innerHTML='<span class=&quot;placeholder&quot;>${escapeHTML((e.name||'?').charAt(0))}</span>'" />` : `<span class="placeholder">${escapeHTML((e.name||'?').charAt(0))}</span>`}
-          ${e.gif_url ? `<span style="position:absolute;bottom:4px;right:4px;font-size:11px;" title="Ha una GIF animata (visibile aprendo la scheda)">🎬</span>` : ''}
+        <div class="thumb">${(e.gif_url||e.image_url) ? `<img src="${escapeAttr(e.gif_url||e.image_url)}" onerror="this.parentNode.innerHTML='<span class=&quot;placeholder&quot;>${escapeHTML((e.name||'?').charAt(0))}</span>'" />` : `<span class="placeholder">${escapeHTML((e.name||'?').charAt(0))}</span>`}
+          ${e.gif_url ? `<span style="position:absolute;bottom:4px;right:4px;font-size:11px;" title="Ha una GIF animata (visibile nella scheda)">🎬</span>` : ''}
           ${e.origin_type==='armor' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Armor">🛡️</span>` : ''}
           ${e.origin_type==='jogress' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Jogress/Fusione">🤝</span>` : ''}
           ${e.origin_type==='spirit' ? `<span style="position:absolute;top:4px;right:4px;font-size:14px;" title="Spirito (Digimon Frontier)">✨</span>` : ''}
@@ -964,7 +977,7 @@ Devimon: https://..."></textarea>
         </div>
         <div class="info">
           <div class="name">${escapeHTML(e.name)}</div>
-          <div class="muted" style="font-size:10px;">${e.origin_type==='armor'?'Armor':(e.origin_type==='jogress'?'Jogress/Fusione':(e.origin_type==='spirit'?'Spirito':(e.origin_type==='burst'?'Burst Mode':escapeHTML(e.stage))))}${e.slide_evolution?' · 🔄 Slide':''}${e.attribute?` · ${escapeHTML(e.attribute)}`:''}${isMaster?(e.discovered?' · scoperto':' · nascosto'):''}</div>
+          <div class="muted" style="font-size:10px;">${e.origin_type==='armor'?'Armor':(e.origin_type==='jogress'?'Jogress/Fusione':(e.origin_type==='spirit'?'Spirito':(e.origin_type==='burst'?'Burst Mode':escapeHTML(e.stage))))}${e.slide_evolution?' · 🔄 Slide':''}${e.attribute?` · ${attributeIconHTML(e.attribute, 12)} ${escapeHTML(e.attribute)}`:''}${isMaster?(e.discovered?' · scoperto':' · nascosto'):''}</div>
         </div>
       </div>`;
     }
@@ -1036,7 +1049,7 @@ Devimon: https://..."></textarea>
           <span class="tag">${entry.origin_type==='armor'?'🛡️ Armor':(entry.origin_type==='jogress'?'🤝 Jogress/Fusione':(entry.origin_type==='spirit'?'✨ Spirito (Digimon Frontier)':(entry.origin_type==='burst'?'🔥 Burst Mode':escapeHTML(entry.stage))))}</span>
           ${entry.slide_evolution ? `<span class="tag" style="margin-left:4px;">🔄 Slide Evolution</span>` : ''}
           ${entry.digimental ? `<span class="tag" style="margin-left:4px;color:var(--violet, #b98cf0);border-color:var(--violet, #b98cf0);">💠 Digimental: ${escapeHTML(entry.digimental)}</span>` : ''}
-          ${entry.attribute ? `<span class="tag" style="margin-left:4px;color:var(--cyan);border-color:var(--cyan-dim);">${escapeHTML(entry.attribute)}</span>` : ''}
+          ${entry.attribute ? `<span class="tag" style="margin-left:4px;color:var(--cyan);border-color:var(--cyan-dim);">${attributeIconHTML(entry.attribute, 14)} ${escapeHTML(entry.attribute)}</span>` : ''}
           ${entry.family ? `<span class="tag" style="margin-left:4px;color:var(--amber);border-color:var(--amber);">${escapeHTML(entry.family)}</span>` : ''}
         </div>
         ${entry.origin_type ? `<div class="muted" style="margin-bottom:8px;font-size:10px;">Livello di riferimento: ${escapeHTML(entry.stage)}</div>` : ''}
@@ -1666,7 +1679,10 @@ Devimon: https://..."></textarea>
         </div>
         <div class="row">
           <div class="field"><label>Attributo</label>
-            <select id="ed-attribute"><option value="">— nessuno —</option>${ATTRIBUTES.map(a=>`<option ${draft.attribute===a?'selected':''}>${a}</option>`).join('')}</select>
+            <span style="display:inline-flex;align-items:center;gap:8px;">
+              <select id="ed-attribute"><option value="">— nessuno —</option>${ATTRIBUTES.map(a=>`<option ${draft.attribute===a?'selected':''}>${a}</option>`).join('')}</select>
+              <span id="ed-attribute-icon">${attributeIconHTML(draft.attribute, 20)}</span>
+            </span>
           </div>
           <div class="field"><label>Famiglia</label>
             <select id="ed-family"><option value="">— nessuna —</option>${FAMILIES.map(f=>`<option ${draft.family===f?'selected':''}>${f}</option>`).join('')}</select>
@@ -1747,6 +1763,13 @@ Devimon: https://..."></textarea>
     overlay.onclick = (e)=>{ if(e.target===overlay) closeModal(); };
     document.getElementById('btn-close-modal').onclick = closeModal;
     document.getElementById('btn-cancel-edit').onclick = closeModal;
+    const edAttrSel = document.getElementById('ed-attribute');
+    if(edAttrSel){
+      edAttrSel.onchange = ()=>{
+        const iconEl = document.getElementById('ed-attribute-icon');
+        if(iconEl) iconEl.innerHTML = attributeIconHTML(edAttrSel.value, 20);
+      };
+    }
     const deleteBtn = document.getElementById('btn-delete-entry');
     if(deleteBtn){
       deleteBtn.onclick = async ()=>{

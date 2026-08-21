@@ -2634,7 +2634,7 @@
   // per coerenza su tutte le pagine (nessun file esterno, tutto incorporato).
   const CLICK_SFX_URL = "https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787070670792_1jktvp.mpeg";
   function __playClickSfx(){
-    if(prefs.clickMuted) return;
+    if(prefs.clickMuted || prefs.musicMuted) return;
     try{
       const a = new Audio(CLICK_SFX_URL);
       a.volume = 0.5;

@@ -1169,6 +1169,7 @@
   }
   async function confirmNotice(code, id, username){ return apiPut('/api/notice', { code, id, ack: username }); }
   async function closeNotice(code, id){ return apiPut('/api/notice', { code, id, deactivate: true }); }
+  async function deleteNotice(code, id){ return apiDelete('/api/notice?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
 
   // ---------- Segnalazioni Bug ----------
   async function getBugReports(code){ const d = await apiGet('/api/notice?resource=bugreport&code=' + encodeURIComponent(code)); return d ? (d.reports||[]) : []; }
@@ -2888,6 +2889,20 @@
   const STAGES = ['Fresh','Baby','Rookie','Champion','Ultimate','Mega'];
   const DEX_ATTRIBUTES = ['Vaccine','Data','Virus','Free','Variable'];
   const DEX_ATTRIBUTE_COLOR = { Vaccine:'#5aa8ff', Data:'#3ddc84', Virus:'#ff5d5d', Free:'#b8b8b8', Variable:'#ff8a3d' };
+  // Icone ufficiali Attributo (set Digimon Story: Time Stranger su Wikimon — stile coerente,
+  // copre tutti e 5 gli Attributi incluso Variable). Stessa mappa usata in dex.html.
+  const ATTRIBUTE_ICON_URL = {
+    Vaccine: 'https://wikimon.net/images/6/6c/DSTS_Icon_Attribute_Vaccine.png',
+    Data: 'https://wikimon.net/images/2/2a/DSTS_Icon_Attribute_Data.png',
+    Virus: 'https://wikimon.net/images/2/2c/DSTS_Icon_Attribute_Virus.png',
+    Free: 'https://wikimon.net/images/5/5b/DSTS_Icon_Attribute_Free.png',
+    Variable: 'https://wikimon.net/images/0/0b/DSTS_Icon_Attribute_Variable.png'
+  };
+  function attributeIconHTML(attribute, size){
+    if(!attribute || !ATTRIBUTE_ICON_URL[attribute]) return '';
+    const px = size || 14;
+    return `<img src="${ATTRIBUTE_ICON_URL[attribute]}" alt="${escapeAttr(attribute)}" title="${escapeAttr(attribute)}" style="width:${px}px;height:${px}px;vertical-align:middle;" onerror="this.style.display='none'" />`;
+  }
   // A Dex entry's "categories" array holds both Attribute and Family/Field tags together (no separate
   // backend column for them). We treat any value matching a known Attribute as *the* Attribute, and
   // everything else as Family tags, so we can show/edit them as distinct fields without any schema change.
@@ -2900,7 +2915,7 @@
   function attributeBadgeHTML(attribute){
     if(!attribute) return '';
     const color = DEX_ATTRIBUTE_COLOR[attribute] || 'var(--text-mute)';
-    return `<span class="tag" style="color:${color};border-color:${color};">${escapeHTML(attribute)}</span>`;
+    return `<span class="tag" style="color:${color};border-color:${color};display:inline-flex;align-items:center;gap:3px;">${attributeIconHTML(attribute, 12)}${escapeHTML(attribute)}</span>`;
   }
   function stageIndex(s){ const i = STAGES.indexOf(s); return i<0?0:i; }
   // Specchio di digimon.html: slot Attacco massimi per Stage (regola 3.05a — 1 Signature + 2 extra
@@ -3492,6 +3507,13 @@
         evoTargetSel.onchange = updateEvoReadyGlow;
         updateEvoReadyGlow();
       }
+      const attrSel = document.getElementById('e-d-attribute-'+containerId);
+      if(attrSel){
+        attrSel.onchange = ()=>{
+          const iconEl = document.getElementById('e-d-attribute-icon-'+containerId);
+          if(iconEl) iconEl.innerHTML = attributeIconHTML(attrSel.value, 20);
+        };
+      }
       const evoBtn = document.getElementById('btn-evolve-'+containerId);
       if(evoBtn){
         evoBtn.onclick = async ()=>{
@@ -3797,9 +3819,12 @@
         </div>
         <div class="row">
           <div class="field"><label>Attributo (Variant Rule 2.05c)</label>
-            <select id="e-d-attribute-${containerId}">
-              ${['Vaccine','Data','Virus','Free','Variable'].map(a=>`<option ${d.attribute===a?'selected':''}>${a}</option>`).join('')}
-            </select>
+            <span style="display:inline-flex;align-items:center;gap:8px;">
+              <select id="e-d-attribute-${containerId}">
+                ${['Vaccine','Data','Virus','Free','Variable'].map(a=>`<option ${d.attribute===a?'selected':''}>${a}</option>`).join('')}
+              </select>
+              <span id="e-d-attribute-icon-${containerId}">${attributeIconHTML(d.attribute, 20)}</span>
+            </span>
           </div>
         </div>
         <div class="divider"></div>
@@ -5107,7 +5132,8 @@
     if(!cardEl) return;
     const notices = await getNotices(code);
     const active = notices.filter(n=>n.active);
-    const closed = notices.filter(n=>!n.active).slice(0, 5);
+    const closedAll = notices.filter(n=>!n.active);
+    const closed = closedAll.slice(0, 5);
 
     function targetDescHTML(n){
       if(n.target_type==='all') return 'Tutti i giocatori';
@@ -5152,8 +5178,11 @@
         </div>
       `).join('')}
       ${closed.length ? `
-      <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin:10px 0 6px;">Storico recente (chiusi)</div>
-      ${closed.map(n=>`<div class="muted" style="font-size:11px;margin-bottom:4px;">• ${escapeHTML((n.text||'').slice(0,60))}${(n.text||'').length>60?'…':''} — ${targetDescHTML(n)}</div>`).join('')}
+      <div class="flex-between" style="margin:10px 0 6px;">
+        <span class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;">Storico recente (chiusi)</span>
+        <button class="btn ghost small" id="btn-clear-notice-history" style="color:var(--danger);border-color:rgba(255,93,93,0.4);font-size:10px;padding:3px 8px;">🗑 Cancella storico</button>
+      </div>
+      ${closed.map(n=>`<div class="flex-between muted" style="font-size:11px;margin-bottom:4px;gap:6px;"><span>• ${escapeHTML((n.text||'').slice(0,60))}${(n.text||'').length>60?'…':''} — ${targetDescHTML(n)}</span><button class="btn ghost small" data-notice-delete="${n.id}" style="padding:1px 6px;flex-shrink:0;" title="Cancella questo avviso dallo storico">✕</button></div>`).join('')}
       ` : ''}
     `;
 
@@ -5198,6 +5227,21 @@
         renderNoticeManager(code, players);
       };
     });
+    cardEl.querySelectorAll('[data-notice-delete]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        if(!window.confirm('Cancellare definitivamente questo avviso dallo storico? Non si può annullare.')) return;
+        await deleteNotice(code, btn.getAttribute('data-notice-delete'));
+        renderNoticeManager(code, players);
+      };
+    });
+    const clearHistBtn = document.getElementById('btn-clear-notice-history');
+    if(clearHistBtn){
+      clearHistBtn.onclick = async ()=>{
+        if(!window.confirm(`Cancellare tutto lo storico avvisi chiusi (${closedAll.length} voci)? Non si può annullare.`)) return;
+        await Promise.all(closedAll.map(n=>deleteNotice(code, n.id)));
+        renderNoticeManager(code, players);
+      };
+    }
   }
 
   async function renderBugReportsMaster(code){
@@ -8164,8 +8208,31 @@
       return;
     }
     noticeModalOpen = true;
-    __startNoticeSfx();
     const n = noticeQueue[0];
+    const old = document.getElementById('notice-modal');
+    if(old) old.remove();
+    const modal = document.createElement('div');
+    modal.id = 'notice-modal';
+    modal.className = 'enc-modal-backdrop';
+    modal.style.zIndex = '9999';
+    // Passo 1 — solo un annuncio, niente suono ancora: i browser bloccano l'avvio automatico
+    // dell'audio se non parte da un click diretto dell'utente (la notifica compare da sola via
+    // polling, quindi far partire il suono qui verrebbe silenziosamente bloccato). Il click su
+    // "Leggi ora" è un gesto reale e sblocca l'audio per il passo 2.
+    modal.innerHTML = `
+      <div class="hud-frame" style="max-width:420px;width:92vw;padding:26px;position:relative;text-align:center;">
+        <div style="font-size:32px;margin-bottom:10px;">📢</div>
+        <div class="section-title" style="margin-bottom:6px;justify-content:center;">Hai una nuova notifica${noticeQueue.length>1?` (${noticeQueue.length} in attesa)`:''}</div>
+        <button class="btn solid" id="notice-open-btn" style="width:100%;padding:12px;margin-top:14px;">Leggi ora</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    document.getElementById('notice-open-btn').onclick = ()=>{
+      __startNoticeSfx();
+      showNoticeContent(n);
+    };
+  }
+  function showNoticeContent(n){
     const old = document.getElementById('notice-modal');
     if(old) old.remove();
     const modal = document.createElement('div');
