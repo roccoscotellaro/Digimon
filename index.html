@@ -2916,9 +2916,24 @@
   // Trafiletto compatto da mettere vicino a ogni selettore Attributo: spiega il triangolo una volta
   // sola, con le icone vere invece che solo testo.
   function attributeLegendHTML(){
-    return `<div class="muted" style="font-size:10px;margin-top:4px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
-      ${attributeIconHTML('Vaccine',13)} Vaccine ▸ ${attributeIconHTML('Virus',13)} Virus ▸ ${attributeIconHTML('Data',13)} Data ▸ <span style="opacity:0.6;">(torna a Vaccine)</span>
-      · ${attributeIconHTML('Free',13)} Free non conta · ${attributeIconHTML('Variable',13)} Variable sceglie all'Iniziativa
+    return `<div style="margin-top:4px;">
+      <svg viewBox="0 0 220 210" width="190" height="182" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:2px auto 6px auto;">
+  <defs>
+    <marker id="atriArrow" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto">
+      <path d="M0,0 L5,2.5 L0,5 Z" fill="#35e8c9"/>
+    </marker>
+  </defs>
+  <path d="M 95,46 Q 55,90 46,144" fill="none" stroke="#35e8c9" stroke-width="1.6" marker-end="url(#atriArrow)"/>
+  <path d="M 56,169 Q 110,198 165,169" fill="none" stroke="#35e8c9" stroke-width="1.6" marker-end="url(#atriArrow)"/>
+  <path d="M 175,144 Q 165,90 128,46" fill="none" stroke="#35e8c9" stroke-width="1.6" marker-end="url(#atriArrow)"/>
+  <image href="https://wikimon.net/images/6/6c/DSTS_Icon_Attribute_Vaccine.png" x="97" y="17" width="26" height="26"/>
+  <text x="110" y="10" text-anchor="middle" font-size="10" fill="#cfd6e4" font-family="sans-serif">Vaccine</text>
+  <image href="https://wikimon.net/images/2/2c/DSTS_Icon_Attribute_Virus.png" x="22" y="152" width="26" height="26"/>
+  <text x="35" y="196" text-anchor="middle" font-size="10" fill="#cfd6e4" font-family="sans-serif">Virus</text>
+  <image href="https://wikimon.net/images/2/2a/DSTS_Icon_Attribute_Data.png" x="172" y="152" width="26" height="26"/>
+  <text x="185" y="196" text-anchor="middle" font-size="10" fill="#cfd6e4" font-family="sans-serif">Data</text>
+</svg>
+      <div class="muted" style="font-size:9px;text-align:center;margin-top:-2px;">Free non conta · Variable sceglie all'Iniziativa</div>
     </div>`;
   }
   // A Dex entry's "categories" array holds both Attribute and Family/Field tags together (no separate
@@ -3347,7 +3362,7 @@
         ${!d.approved ? `<div class="muted" style="margin:4px 0 0;color:var(--amber);">🥚 In attesa di approvazione — il giocatore vede solo l'Uovo finché non premi Approva.</div>` : ''}
         <div class="sheet-head" style="margin-top:12px;">
           ${digimonPortraitHTML(d)}
-          <div class="info"><div class="nm">${escapeHTML(d.name||'(senza nome)')}</div><div class="tg">${escapeHTML(d.stage)}</div></div>
+          <div class="info"><div class="nm">${escapeHTML(d.name||'(senza nome)')}</div><div class="tg">${escapeHTML(d.stage)}${d.attribute ? ` · ${attributeIconHTML(d.attribute, 15)} ${escapeHTML(d.attribute)}` : ''}</div></div>
         </div>
         ${barHTML('Caselle Ferita', d.currentWounds, d.maxWounds, 'hp', 'dig-w-minus-'+containerId, 'dig-w-plus-'+containerId)}
         ${Number(d.tempWounds||0)>0 ? `<div class="muted" style="margin-top:-4px;margin-bottom:8px;color:var(--cyan);">🛡️ +${d.tempWounds} Caselle Ferita Temporanee (Shield)</div>` : ''}
@@ -8706,21 +8721,24 @@
 <!-- ===== Widget Triangolo Attributi: iconcina fissa sopra il pannello audio, si espande al click ===== -->
 <div id="dvos-attr-widget" style="position:fixed;bottom:52px;right:10px;z-index:9998;">
   <div id="dvos-attr-panel" style="display:none;position:absolute;bottom:38px;right:0;background:var(--panel,#0f1115);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:10px 12px;box-shadow:0 2px 14px rgba(0,0,0,0.6);white-space:nowrap;font-size:12px;color:var(--text,#cfd6e4);">
-    <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;opacity:0.7;margin-bottom:6px;">Vantaggio di Attributo (2.05c)</div>
-    <div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;">
-      <img src="https://wikimon.net/images/6/6c/DSTS_Icon_Attribute_Vaccine.png" style="width:16px;height:16px;" onerror="this.style.display='none'" /> Vaccine
-      <span style="opacity:0.6;">▸</span>
-      <img src="https://wikimon.net/images/2/2c/DSTS_Icon_Attribute_Virus.png" style="width:16px;height:16px;" onerror="this.style.display='none'" /> Virus
-      <span style="opacity:0.6;">▸</span>
-      <img src="https://wikimon.net/images/2/2a/DSTS_Icon_Attribute_Data.png" style="width:16px;height:16px;" onerror="this.style.display='none'" /> Data
-      <span style="opacity:0.6;">▸ (torna a Vaccine)</span>
-    </div>
-    <div style="display:flex;align-items:center;gap:5px;">
-      <img src="https://wikimon.net/images/5/5b/DSTS_Icon_Attribute_Free.png" style="width:16px;height:16px;" onerror="this.style.display='none'" /> <span style="opacity:0.8;">Free non conta</span>
-    </div>
-    <div style="display:flex;align-items:center;gap:5px;margin-top:2px;">
-      <img src="https://wikimon.net/images/0/0b/DSTS_Icon_Attribute_Variable.png" style="width:16px;height:16px;" onerror="this.style.display='none'" /> <span style="opacity:0.8;">Variable sceglie all'Iniziativa</span>
-    </div>
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;opacity:0.7;margin-bottom:2px;text-align:center;">Vantaggio di Attributo (2.05c)</div>
+    <svg viewBox="0 0 220 210" width="190" height="182" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:2px auto 6px auto;">
+  <defs>
+    <marker id="atriArrow" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto">
+      <path d="M0,0 L5,2.5 L0,5 Z" fill="#35e8c9"/>
+    </marker>
+  </defs>
+  <path d="M 95,46 Q 55,90 46,144" fill="none" stroke="#35e8c9" stroke-width="1.6" marker-end="url(#atriArrow)"/>
+  <path d="M 56,169 Q 110,198 165,169" fill="none" stroke="#35e8c9" stroke-width="1.6" marker-end="url(#atriArrow)"/>
+  <path d="M 175,144 Q 165,90 128,46" fill="none" stroke="#35e8c9" stroke-width="1.6" marker-end="url(#atriArrow)"/>
+  <image href="https://wikimon.net/images/6/6c/DSTS_Icon_Attribute_Vaccine.png" x="97" y="17" width="26" height="26"/>
+  <text x="110" y="10" text-anchor="middle" font-size="10" fill="#cfd6e4" font-family="sans-serif">Vaccine</text>
+  <image href="https://wikimon.net/images/2/2c/DSTS_Icon_Attribute_Virus.png" x="22" y="152" width="26" height="26"/>
+  <text x="35" y="196" text-anchor="middle" font-size="10" fill="#cfd6e4" font-family="sans-serif">Virus</text>
+  <image href="https://wikimon.net/images/2/2a/DSTS_Icon_Attribute_Data.png" x="172" y="152" width="26" height="26"/>
+  <text x="185" y="196" text-anchor="middle" font-size="10" fill="#cfd6e4" font-family="sans-serif">Data</text>
+</svg>
+    <div style="font-size:9px;text-align:center;opacity:0.7;margin-top:-2px;">Free non conta · Variable sceglie all'Iniziativa</div>
   </div>
   <button id="dvos-attr-toggle" title="Vantaggio di Attributo — chi batte chi" style="background:var(--panel,#0f1115);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:5px 7px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.5);display:flex;align-items:center;gap:3px;">
     <img src="https://wikimon.net/images/6/6c/DSTS_Icon_Attribute_Vaccine.png" style="width:15px;height:15px;" onerror="this.style.display='none'" />
