@@ -4672,6 +4672,15 @@
     if(match && (match.gif_url || match.image_url)) return match.gif_url || match.image_url;
     return fallbackImage || '';
   }
+  // Stessa ricerca live nel Digidex di bestDigimonImage, ma per l'Attributo — usata per mostrare
+  // l'iconcina Vaccine/Data/Virus/Free/Variable sui Digimon in scena senza doverlo salvare a parte
+  // sull'Incontro (che potrebbe non essere mai stato sincronizzato con quel campo).
+  function dexAttributeFor(dexId, name){
+    let match = null;
+    if(dexId) match = cachedDex.find(d=>d.id===dexId);
+    if(!match && name) match = cachedDex.find(d=>String(d.name).trim().toLowerCase()===String(name).trim().toLowerCase());
+    return match ? (match.attribute || '') : '';
+  }
   function resolveParticipantImage(p){
     if(p.isPC){
       const member = cachedRoster.find(m=>m.username===p.username);
@@ -7508,7 +7517,7 @@
         <div class="roster-item" style="padding:6px 8px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;${e.isBoss?'border-color:var(--danger);':''}border-left:3px solid ${disp.color};">
           ${(()=>{ const img = bestDigimonImage(e.dexId, e.name, e.gif || e.image); return img ? `<img src="${escapeAttr(img)}" onerror="this.style.display='none'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0;" />` : ''; })()}
           <div style="flex:1;min-width:140px;">
-            <div><b>${escapeHTML(e.name)}</b> ${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}<button class="tag" data-cycle-disposition="${i}" style="cursor:pointer;color:${disp.color};border-color:${disp.color};background:none;" title="Clicca per cambiare (Nemico/Alleato/Neutrale) — si riflette nell'aggiunta al combattimento">${disp.icon} ${disp.label}</button>${e.isBoss?`<span class="tag" style="color:var(--danger);border-color:var(--danger);">👑 Boss</span>`:''}${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>
+            <div><b>${escapeHTML(e.name)}</b> ${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}${attributeIconHTML(dexAttributeFor(e.dexId, e.name), 14)}<button class="tag" data-cycle-disposition="${i}" style="cursor:pointer;color:${disp.color};border-color:${disp.color};background:none;" title="Clicca per cambiare (Nemico/Alleato/Neutrale) — si riflette nell'aggiunta al combattimento">${disp.icon} ${disp.label}</button>${e.isBoss?`<span class="tag" style="color:var(--danger);border-color:var(--danger);">👑 Boss</span>`:''}${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>
             <div class="muted" style="font-size:11px;">${visible ? '👁️ Visibile ai giocatori' : '🙈 Nascosto — solo il Master lo vede'}</div>
             <div style="display:flex;align-items:center;gap:6px;max-width:220px;">
               ${miniHpBarHTML(curW, maxW)}
@@ -8693,6 +8702,42 @@
   render();
 })();
 </script>
+
+<!-- ===== Widget Triangolo Attributi: iconcina fissa sopra il pannello audio, si espande al click ===== -->
+<div id="dvos-attr-widget" style="position:fixed;bottom:52px;right:10px;z-index:9998;">
+  <div id="dvos-attr-panel" style="display:none;position:absolute;bottom:38px;right:0;background:var(--panel,#0f1115);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:10px 12px;box-shadow:0 2px 14px rgba(0,0,0,0.6);white-space:nowrap;font-size:12px;color:var(--text,#cfd6e4);">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;opacity:0.7;margin-bottom:6px;">Vantaggio di Attributo (2.05c)</div>
+    <div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;">
+      <img src="https://wikimon.net/images/6/6c/DSTS_Icon_Attribute_Vaccine.png" style="width:16px;height:16px;" onerror="this.style.display='none'" /> Vaccine
+      <span style="opacity:0.6;">▸</span>
+      <img src="https://wikimon.net/images/2/2c/DSTS_Icon_Attribute_Virus.png" style="width:16px;height:16px;" onerror="this.style.display='none'" /> Virus
+      <span style="opacity:0.6;">▸</span>
+      <img src="https://wikimon.net/images/2/2a/DSTS_Icon_Attribute_Data.png" style="width:16px;height:16px;" onerror="this.style.display='none'" /> Data
+      <span style="opacity:0.6;">▸ (torna a Vaccine)</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:5px;">
+      <img src="https://wikimon.net/images/5/5b/DSTS_Icon_Attribute_Free.png" style="width:16px;height:16px;" onerror="this.style.display='none'" /> <span style="opacity:0.8;">Free non conta</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:5px;margin-top:2px;">
+      <img src="https://wikimon.net/images/0/0b/DSTS_Icon_Attribute_Variable.png" style="width:16px;height:16px;" onerror="this.style.display='none'" /> <span style="opacity:0.8;">Variable sceglie all'Iniziativa</span>
+    </div>
+  </div>
+  <button id="dvos-attr-toggle" title="Vantaggio di Attributo — chi batte chi" style="background:var(--panel,#0f1115);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:5px 7px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.5);display:flex;align-items:center;gap:3px;">
+    <img src="https://wikimon.net/images/6/6c/DSTS_Icon_Attribute_Vaccine.png" style="width:15px;height:15px;" onerror="this.style.display='none'" />
+    <img src="https://wikimon.net/images/2/2c/DSTS_Icon_Attribute_Virus.png" style="width:15px;height:15px;" onerror="this.style.display='none'" />
+    <img src="https://wikimon.net/images/2/2a/DSTS_Icon_Attribute_Data.png" style="width:15px;height:15px;" onerror="this.style.display='none'" />
+  </button>
+</div>
+<script>
+(function(){
+  const toggle = document.getElementById('dvos-attr-toggle');
+  const panel = document.getElementById('dvos-attr-panel');
+  if(!toggle || !panel) return;
+  toggle.onclick = (e)=>{ e.stopPropagation(); panel.style.display = panel.style.display==='none' ? 'block' : 'none'; };
+  document.addEventListener('click', (e)=>{ if(panel.style.display!=='none' && !panel.contains(e.target) && e.target!==toggle){ panel.style.display = 'none'; } });
+})();
+</script>
+<!-- ===== fine Widget Triangolo Attributi ===== -->
 
 <!-- ===== Widget Audio Persistente: volume/mute su musica di scena (gia' gestita altrove) + suoni click ===== -->
 <div id="dvos-audio-widget" style="position:fixed;bottom:10px;right:10px;z-index:9999;background:var(--panel,#0f1115);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:6px 10px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text,#cfd6e4);box-shadow:0 2px 10px rgba(0,0,0,0.5);">

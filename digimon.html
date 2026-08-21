@@ -2584,6 +2584,42 @@
 })();
 </script>
 
+<!-- ===== Widget Triangolo Attributi: iconcina fissa sopra il pannello audio, si espande al click ===== -->
+<div id="dvos-attr-widget" style="position:fixed;bottom:52px;right:10px;z-index:9998;">
+  <div id="dvos-attr-panel" style="display:none;position:absolute;bottom:38px;right:0;background:var(--panel,#0f1115);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:10px 12px;box-shadow:0 2px 14px rgba(0,0,0,0.6);white-space:nowrap;font-size:12px;color:var(--text,#cfd6e4);">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;opacity:0.7;margin-bottom:6px;">Vantaggio di Attributo (2.05c)</div>
+    <div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;">
+      <img src="https://wikimon.net/images/6/6c/DSTS_Icon_Attribute_Vaccine.png" style="width:16px;height:16px;" onerror="this.style.display='none'" /> Vaccine
+      <span style="opacity:0.6;">▸</span>
+      <img src="https://wikimon.net/images/2/2c/DSTS_Icon_Attribute_Virus.png" style="width:16px;height:16px;" onerror="this.style.display='none'" /> Virus
+      <span style="opacity:0.6;">▸</span>
+      <img src="https://wikimon.net/images/2/2a/DSTS_Icon_Attribute_Data.png" style="width:16px;height:16px;" onerror="this.style.display='none'" /> Data
+      <span style="opacity:0.6;">▸ (torna a Vaccine)</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:5px;">
+      <img src="https://wikimon.net/images/5/5b/DSTS_Icon_Attribute_Free.png" style="width:16px;height:16px;" onerror="this.style.display='none'" /> <span style="opacity:0.8;">Free non conta</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:5px;margin-top:2px;">
+      <img src="https://wikimon.net/images/0/0b/DSTS_Icon_Attribute_Variable.png" style="width:16px;height:16px;" onerror="this.style.display='none'" /> <span style="opacity:0.8;">Variable sceglie all'Iniziativa</span>
+    </div>
+  </div>
+  <button id="dvos-attr-toggle" title="Vantaggio di Attributo — chi batte chi" style="background:var(--panel,#0f1115);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:5px 7px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.5);display:flex;align-items:center;gap:3px;">
+    <img src="https://wikimon.net/images/6/6c/DSTS_Icon_Attribute_Vaccine.png" style="width:15px;height:15px;" onerror="this.style.display='none'" />
+    <img src="https://wikimon.net/images/2/2c/DSTS_Icon_Attribute_Virus.png" style="width:15px;height:15px;" onerror="this.style.display='none'" />
+    <img src="https://wikimon.net/images/2/2a/DSTS_Icon_Attribute_Data.png" style="width:15px;height:15px;" onerror="this.style.display='none'" />
+  </button>
+</div>
+<script>
+(function(){
+  const toggle = document.getElementById('dvos-attr-toggle');
+  const panel = document.getElementById('dvos-attr-panel');
+  if(!toggle || !panel) return;
+  toggle.onclick = (e)=>{ e.stopPropagation(); panel.style.display = panel.style.display==='none' ? 'block' : 'none'; };
+  document.addEventListener('click', (e)=>{ if(panel.style.display!=='none' && !panel.contains(e.target) && e.target!==toggle){ panel.style.display = 'none'; } });
+})();
+</script>
+<!-- ===== fine Widget Triangolo Attributi ===== -->
+
 <!-- ===== Widget Audio Persistente: musica di sottofondo (fissa) + suoni click ===== -->
 <audio id="dvos-bg-music" loop preload="none" style="display:none;"></audio>
 <div id="dvos-audio-widget" style="position:fixed;bottom:10px;right:10px;z-index:9999;background:var(--panel,#0f1115);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:6px 10px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text,#cfd6e4);box-shadow:0 2px 10px rgba(0,0,0,0.5);">
