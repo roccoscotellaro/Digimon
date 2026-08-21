@@ -115,6 +115,11 @@
     { key:'baseArmor', label:'Armor' }, { key:'baseHealth', label:'Health' }
   ];
   const STAGES = ['Fresh','Baby','Rookie','Champion','Ultimate','Mega'];
+  // Estratto da digivice-scan.html (i campi "why" dei 40 starter + 16 secondari) — solo per
+  // completare a posteriori la Personalita' di schede create senza passare dallo Scan o prima che
+  // questo campo esistesse. Non e' collegata in tempo reale allo Scan: se aggiungi nuovi Digimon
+  // li' con un "why" proprio, vanno copiati anche qui a mano per essere recuperabili da questo tool.
+  const SCAN_PERSONALITY_MAP = {"Agumon": "Agisci prima di aver finito di pensare — non perché non ci arrivi, ma perché aspettare troppo ti sembra un tradimento verso chi hai davanti. Agumon non calcola i rischi: li affronta. La sua lealtà è un fatto, non una scelta.", "Gabumon": "Ti fidi lentamente e ti proteggi tenendo le persone a distanza di sicurezza — come Gabumon indossa la pelle di Garurumon prima ancora di sapere se sarà accettato per quello che è davvero. Ma quando ti affezioni, è per sempre.", "Veemon": "Per te il bicchiere è sempre mezzo pieno, anche quando è quasi vuoto. Veemon si butta prima di guardare, sbaglia, si rialza ridendo e ci riprova — trascinando tutti gli altri a crederci insieme a lui.", "Guilmon": "Non hai filtri tra quello che senti e quello che fai. Guilmon non mente mai perché non sa come si fa: agisce col cuore, e quando quel cuore è ferito o spaventato, la potenza che ne esce può sorprendere anche te.", "Renamon": "Preferisci dimostrare il tuo valore da sola/o piuttosto che chiedere aiuto. Renamon osserva prima di agire, si fida a fatica, e considera ogni legame una cosa da guadagnare — mai da dare per scontata.", "Terriermon": "Usi la battuta come scudo: se ridi prima tu, fa meno male quando arriva davvero. Terriermon nasconde dietro il sarcasmo un attaccamento fortissimo che non ammetterebbe mai ad alta voce.", "Palmon": "Ti prendi cura degli altri prima che di te stesso/a, ma non dimentichi facilmente chi ti ha ferito. Palmon ama con tutta se stessa, e per questo si aspetta lo stesso in cambio.", "Patamon": "Credi nel meglio delle persone anche quando le prove dicono il contrario. Patamon spera sempre che le cose si risolvano, e quando serve è pronto a sacrificare tutto pur di proteggere chi ama.", "Impmon": "Rifiuti l'aiuto anche quando ti servirebbe, per orgoglio. Impmon rifiuta perfino l'evoluzione tradizionale pur di farcela a modo suo — l'orgoglio è la corazza che porti contro la paura di essere abbandonato di nuovo.", "Wormmon": "Ti sacrifichi in silenzio pur di essere utile a chi ami, anche quando nessuno se ne accorge. Wormmon viene sottovalutato da tutti tranne che da chi conta davvero — e questo, per te, basta.", "Hawkmon": "Pensi prima di agire, valuti ogni mossa come una partita a scacchi — ma sotto la strategia batte un cuore romantico che si offre volentieri per chi ama. Hawkmon è tattica e sentimento nella stessa creatura.", "Armadillomon": "La tua lealtà è pura e senza calcoli. Armadillomon ama con semplicità disarmante, senza secondi fini né sospetti — è la prima persona che dà fiducia, non l'ultima.", "Lopmon": "Sei timido nel quotidiano, ma diventi incrollabile quando conta davvero. Lopmon si nasconde volentieri dietro la propria timidezza, finché arriva il momento in cui i suoi principi non si toccano.", "Salamon": "La tua fragilità apparente nasconde un coraggio enorme quando chi ami è in pericolo. Salamon è piccola e gentile, ma non esita mai quando serve proteggere qualcuno.", "Kudamon": "Osservi più di quanto parli, e la tua calma è la tua forza. Kudamon è saggio ben oltre la propria giovane età — preferisce capire prima di agire, e raramente si sbaglia.", "Gomamon": "Usi il gioco e la leggerezza per tenere unito il gruppo nei momenti difficili. Gomamon sdrammatizza sempre, ma la sua lealtà verso gli amici è più solida di quanto la sua leggerezza lasci intendere.", "Liollmon": "Non ammetti facilmente nessuno nel tuo spazio, e chi lo invade — anche un simile — non trova pietà. Liollmon è talmente raro che la sua stessa esistenza è stata confermata solo di recente: la sua territorialità non è cattiveria, è autodifesa.", "Elecmon": "Ti prendi cura dei più deboli o dei più giovani anche quando nessuno te lo chiede. Elecmon è il custode del Villaggio dei Nuovi Inizi — gentile per natura, severo quando la situazione lo richiede.", "Gaomon": "Ti alleni senza sosta e credi che il valore si dimostri con i fatti, non con le parole. Gaomon rispetta la disciplina e la forza guadagnata col sudore più di ogni talento naturale.", "Falcomon": "Sei cresciuto lontano dagli altri e fatichi a fidarti — ma quando lo fai, è per sempre. Falcomon è cresciuto quasi da solo nel Digital World, e questo lo ha reso fedele fino in fondo a chi ha scelto di fidarsi.", "Dracomon": "Il tuo temperamento è acceso: agisci di getto, litighi, ti scusi dopo. Il Gekirin di Dracomon lo rende impetuoso e combattivo — vive di getto, con tutta l'intensità che questo comporta.", "BlackAgumon": "Sei diffidente e feroce, e preferisci dimostrare il tuo valore a modo tuo, senza scorciatoie. BlackAgumon è la versione in ombra di Agumon — la stessa lealtà di fondo, ma filtrata attraverso più cicatrici.", "Lalamon": "Ti prendi cura degli altri prima ancora che te lo chiedano, perché essere utile è il modo in cui senti di valere qualcosa. Lalamon fiorisce quando può proteggere chi ama, ma nasconde una fragilità silenziosa quando teme di non bastare.", "Floramon": "La gelosia ti spinge più che paralizzarti. Floramon, rivale di Palmon nel canone, trasforma l'insicurezza in carburante per migliorarsi — anche se a volte fa più male del necessario.", "Lunamon": "Osservi da lontano e ti affezioni in silenzio, senza dirlo mai apertamente. Lunamon porta una dolcezza malinconica — ama profondamente, ma raramente lo dichiara ad alta voce.", "Dracmon": "Ti piace complicare le cose, ma raramente per vera cattiveria. Dracmon è il folletto più dispettoso della Dark Area — il caos che semina è quasi sempre un gioco, un modo per non annoiarsi mai.", "Strabimon": "Preferisci muoverti da solo/a, in silenzio, senza bisogno di spiegare ogni mossa. Strabimon è la forma agile e ninja che precede il lupo solitario Koji — diffidente all'inizio, ma assolutamente fedele quando qualcuno guadagna davvero la sua fiducia.", "Flamemon": "Ti butti nelle cose a testa bassa, con la fiamma sempre un po' instabile. Flamemon precede l'evoluzione di Takuya — spavaldo e testardo in superficie, ma con un cuore enorme che si vede solo quando conta davvero.", "Coronamon": "La tua energia contagia chi ti sta intorno. Coronamon è un leoncino di fuoco dal carattere allegro — semplice, diretto, e fedele senza secondi fini a chi considera famiglia.", "Monodramon": "Non hai bisogno di compagnia per sentirti completo/a. Monodramon è un piccolo drago solitario dal fiuto acuto — sottovaluta se stesso quanto gli altri lo sottovalutano, ma nasconde una forza sorprendente.", "Gammamon": "Sei curioso di tutto e non riesci a stare fermo — vuoi \"assaggiare\" ogni cosa nuova che incontri, letteralmente o no. Gammamon è dispettoso ma ascolta sempre chi ama davvero, e si affeziona con una lealtà quasi ingenua.", "Angoramon": "Ascolti più di quanto parli — letteralmente, nel caso di Angoramon, le cui lunghe orecchie colgono ogni minimo dettaglio. Calmo e riservato, agisci solo dopo aver capito davvero la situazione.", "Jellymon": "Ti adatti a qualsiasi situazione senza rigidità, un po' come Jellymon attraversa pareti e terreno senza sforzo. Gentile ma diretta/o, non hai bisogno di troppi fronzoli per far capire cosa provi.", "Ghostmon": "Aiuti gli altri senza volere essere visto/a — quasi ti infastidisce essere ringraziato/a. Ghostmon è timido fino all'invisibilità letterale, ma il suo cuore gentile lo spinge sempre ad aiutare chi ha bisogno, di nascosto.", "Gekkomon": "Prendi la vita così com'è, senza troppe complicazioni: quello che conta è il momento presente. Gekkomon (Beatbreak) è sempre affamato e sempre entusiasta — la sua semplicità è la sua forza più grande.", "Tentomon": "Preferisci capire prima di agire, e ogni domanda nuova ti entusiasma più di una battaglia. Tentomon è curioso ed erudito — analizza ogni situazione con calma, spesso trovando la soluzione che altri si perdono per fretta.", "KoKabuterimon": "Senti di avere dentro qualcosa di più grande di te, e non vedi l'ora di dimostrare di esserne all'altezza. KoKabuterimon porta il potere di uno dei Dieci Guerrieri Leggendari ancora prima di sapere come usarlo davvero.", "BlackGabumon": "Ti avvolgi in un'armatura di diffidenza per non farti scoprire vulnerabile. BlackGabumon è la versione in ombra di Gabumon — la stessa insicurezza di fondo, filtrata attraverso più sospetto e meno pazienza per chi cerca di avvicinarsi.", "DemiDevimon": "Ti attacchi a chi è più forte di te per sentirti al sicuro, e non hai troppi scrupoli a piegare la verità pur di restarci vicino. DemiDevimon mente e manipola non per pura cattiveria, ma perché non si fida di poter contare solo sulle proprie forze.", "Betamon": "Non hai bisogno dei riflettori per essere utile — osservi con attenzione e ti adatti a qualsiasi situazione. Betamon è modesto e vigile, il tipo di compagno su cui puoi sempre contare anche se non fa mai rumore.", "Dorumon": "Cerchi un posto dove sentirti davvero a casa, più di ogni altra cosa. Dorumon è gentile e curioso, spesso solitario per circostanze più che per scelta — ma una volta trovata una famiglia, la sua lealtà non vacilla mai.", "Meicoomon": "Sei gentile e affettuoso/a nella norma, ma sotto stress qualcosa dentro di te può esplodere in modi che sorprendono anche te stesso/a. Meicoomon ha un cuore dolce, ma nasconde un potenziale oscuro che si risveglia solo per proteggere il legame che ama di più.", "BlackGuilmon": "Non hai bisogno dell'approvazione di nessuno per sapere quanto vali — la tua sicurezza è totale, quasi spavalda. BlackGuilmon è la forma naturale e selvaggia di Guilmon: la stessa specie, ma cresciuta senza un Tamer che la guidasse, ormai completamente istintiva e sicura che la propria forza basti a risolvere qualunque scontro.", "Psychemon": "Ti nascondi dietro un'immagine appariscente per non far vedere quanto in realtà ti senti fragile. Psychemon condivide con Gabumon la stessa timidezza di fondo — nasconde solo la propria vera natura dietro un pelo variopinto invece che sotto una pelliccia presa in prestito.", "Tsukaimon": "Ti senti davvero parte di qualcosa di più grande solo quando sei al servizio di qualcuno più forte di te — la paura di restare escluso pesa più dell'orgoglio. Tsukaimon condivide con Patamon lo stesso bisogno di appartenenza, ma lo soddisfa servendo chi comanda invece che proteggendo chi ama.", "Biyomon": "Usi la tua voce per sollevare il morale di chi ti sta intorno, anche nei momenti più difficili. Biyomon è affettuosa e leale fino in fondo, capace di trovare sempre qualcosa di positivo da cantare anche quando le cose sembrano andare male.", "Herissmon": "Sei timido all'inizio, ma ti affezioni rapidamente a chi ti tratta con gentilezza. Herissmon si acciambella per difendersi molto più spesso di quanto attacchi direttamente — preferisce proteggersi piuttosto che colpire per primo.", "Blucomon": "Sei cresciuto in un ambiente isolato, e questo ti ha reso capace di legami fortissimi con le poche persone che incontri davvero — anche se diverse da te. Blucomon forma amicizie solide proprio perché rare, ma il suo corpo di ghiaccio si indebolisce quando le cose si scaldano troppo, in ogni senso.", "Vorvomon": "Le tue emozioni si vedono subito, letteralmente: più ti emozioni, più \"ti scaldi\" e diventi intenso. Vorvomon è fatto di un minerale incandescente che si accende con l'emozione — e può volare solo per pochi secondi prima di stancarsi, proprio come la sua intensità non dura mai troppo a lungo.", "Loogamon": "Senti dentro di te un potenziale molto più grande di quello che il tuo aspetto attuale lascia intendere, quasi premesse per uscire. Loogamon è un Digimon Prototipo che cela nel proprio DigiCore i dati di un leggendario warg — capace di attacchi ben oltre la portata di un tipico Rookie.", "SnowAgumon": "Condividi la stessa monelleria giocosa di Agumon, ma preferisci nasconderti e colpire di sorpresa piuttosto che agire allo scoperto. SnowAgumon si mimetizza perfettamente con la neve, sbucando all'improvviso quando meno te lo aspetti.", "Labramon": "Consideri la protezione di chi ami un dovere non negoziabile, e vai dritto al punto invece di girarci intorno. Labramon non conosce mezze misure nella lealtà: cura le ferite altrui prima ancora di pensare alle proprie.", "Zubamon": "Detesti tutto ciò che è storto o disonesto, e cerchi sempre il modo più \"di classe\" per affrontare le cose — anche se non sempre sai spiegare perché. Zubamon si vanta di essere \"il Ventesimo\" senza saperne il vero significato: la sua vera forza si rivela solo quando smette di parlare e agisce.", "Ludomon": "Non ti importa apparire elegante o vincere con stile: ti importa solo che chi proteggi resti al sicuro. Ludomon porta scudi su ogni lato del corpo non per vanità ma per dovere, ed è pronto a incassare qualsiasi colpo al posto di un alleato senza mai chiedere applausi.", "Pteromon": "Sei incuriosito da chiunque sia diverso da te, e cerchi sempre un modo per entrare in contatto invece che restarne a distanza. Pteromon vola libero sui boschi e legge i venti prima ancora che cambino — percepisce le persone allo stesso modo, prima ancora che si spieghino.", "Hagurumon": "Fai quello che va fatto senza calcolare secondi fini — gli ingranaggi dentro di te girano sempre nella stessa direzione, che tu ci creda o no. Hagurumon non possiede un vero senso di sé: la sua lealtà meccanica lo rende prezioso, ma anche vulnerabile a chi vuole usarlo per fini che non gli appartengono."};
   const SIZES = ['Small','Medium','Large','Huge','Gigantic','Colossal'];
   // Icone ufficiali Attributo (set Digimon Story: Time Stranger su Wikimon), stessa mappa usata in
   // index.html/dex.html.
@@ -987,6 +992,7 @@
         <div class="pixel-title" style="font-size:22px;color:var(--dchroma);text-shadow:0 0 10px rgba(200,150,255,0.4);">${escapeHTML(d.name || '— nessun Digimon —')}</div>
         <div class="muted" style="margin-top:2px;">${escapeHTML(d.stage||'')}${d.attribute ? ` · ${attributeIconHTML(d.attribute, 15)} ${escapeHTML(d.attribute)}` : ''} · Partner di ${escapeHTML(m.username)}</div>
         ${d.personality ? `<div class="muted" style="margin-top:6px;">${escapeHTML(d.personality)}</div>` : ''}
+        ${stageSwitchInnerHTML(m, isMaster)}
         `}
         ${editable ? `
         <div class="field" style="margin-top:12px;">
@@ -1027,29 +1033,35 @@
     </div>`;
   }
 
-  // Switch semplice tra gli Stage già sbloccati (tra Default Stage e Default Stage + Default Range,
-  // gli Stage raggiungibili senza spendere Evolution Points). Non replica le meccaniche complete di
-  // Evoluzione/Blast/Slide del Tavolo (che restano lì) — qui è solo un cambio rapido di visualizzazione/stato.
-  function stageSwitchBlockHTML(m, editable, isMaster){
+  // Solo i pulsanti (nessun contenitore .hud-frame) — usata per integrarli nell'intestazione al
+  // posto di una card separata più in basso, così lo spazio vuoto accanto a nome/Stage/Personalità
+  // non resta vuoto. Visibile solo in sola lettura: in modifica c'è già la <select> Stage sopra.
+  function stageSwitchInnerHTML(m, isMaster){
     const d = m.digimon;
     if(!d.name) return '';
     const defIdx = STAGES.indexOf(d.defaultStage||'Rookie');
     const maxIdx = Math.min(STAGES.length-1, defIdx + Number(d.defaultRange||0));
-    // Il giocatore vede solo gli Stage che il Master ha già sbloccato (Default Range); il Master
-    // vede invece SEMPRE tutti gli Stage già costruiti per questo Digimon (più quello attuale, nel
-    // caso sia diverso da tutti i costruiti) — deve poter passare da uno all'altro in ogni momento,
-    // a prescindere da cosa è visibile ai giocatori.
     const unlocked = isMaster
       ? STAGES.filter(s => (d.stageStats && d.stageStats[s]) || s===d.stage || (STAGES.indexOf(s)>=defIdx && STAGES.indexOf(s)<=maxIdx))
       : STAGES.slice(Math.max(0,defIdx), maxIdx+1);
     if(unlocked.length<=1) return '';
     return `
+      <div class="muted" style="font-size:10px;margin-top:10px;text-transform:uppercase;letter-spacing:0.05em;">Stage Attuale</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
+        ${unlocked.map(s=>`<button class="btn ${s===d.stage?'solid':'ghost'} small" data-stage-switch="${escapeAttr(s)}" ${s===d.stage?'disabled':''}>${s}</button>`).join('')}
+      </div>`;
+  }
+
+  // Switch semplice tra gli Stage già sbloccati (tra Default Stage e Default Stage + Default Range,
+  // gli Stage raggiungibili senza spendere Evolution Points). Non replica le meccaniche complete di
+  // Evoluzione/Blast/Slide del Tavolo (che restano lì) — qui è solo un cambio rapido di visualizzazione/stato.
+  function stageSwitchBlockHTML(m, editable, isMaster){
+    const inner = stageSwitchInnerHTML(m, isMaster);
+    if(!inner) return '';
+    return `
     <div class="hud-frame card">
       <div class="section-title"><span>Stage Attuale</span></div>
-      <div class="muted" style="margin-bottom:10px;">${isMaster ? `Stage già costruiti per questo Digimon (come Master puoi passare da uno all'altro liberamente): ${unlocked.join(' → ')}.` : `Stage sbloccati senza spendere Evolution Points: ${unlocked.join(' → ')}.`}</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        ${unlocked.map(s=>`<button class="btn ${s===d.stage?'solid':'ghost'} small" data-stage-switch="${escapeAttr(s)}" ${s===d.stage?'disabled':''}>${s}</button>`).join('')}
-      </div>
+      ${inner}
     </div>`;
   }
 
@@ -2168,6 +2180,10 @@
         <button class="btn ghost small" id="btn-refix-freshbaby">🔧 Ricalcola Fresh/Baby per tutta la squadra</button>
         <div class="muted" style="margin-top:6px;">Per le schede create prima che il Wizard risalisse da solo la catena evolutiva nel Digidex — riprova ad agganciare le vere pre-evoluzioni (es. Puyomon/Puyoyomon per Jellymon) a chi ancora ha Fresh/Baby col nome del Rookie ripetuto.</div>
         <div class="muted" id="refix-freshbaby-status" style="margin-top:6px;"></div>
+        <div style="border-top:1px dashed var(--line);margin:10px 0;"></div>
+        <button class="btn ghost small" id="btn-fill-personality">🧠 Completa Personalità dal Digiscan</button>
+        <div class="muted" style="margin-top:6px;">Per le schede senza Personalità (create prima di questo campo, o a mano senza passare dallo Scan): la recupera dal testo dello Scan stesso per chi ha un Digimon tra i 40+16 con un profilo già scritto. Non tocca chi ha già una Personalità.</div>
+        <div class="muted" id="fill-personality-status" style="margin-top:6px;"></div>
       </div>`;
     } else {
       target = cachedRoster.find(m=>m.username===session.username);
@@ -2240,7 +2256,6 @@
         </div>
         ${derivedStatsBlockHTML(target.digimon, target.digimon.size, target.digimon.qualities)}
         ${evolutionLockBlockHTML(target, isMaster)}
-        ${stageSwitchBlockHTML(target, editable, isMaster)}
         ${statoBlockHTML(target, editable)}
         ${qualitiesBlockHTML(target, editable)}
         ${attacksBlockHTML(target, editable)}
@@ -2311,6 +2326,34 @@
             : `Corretti ${results.length}: ` + results.map(r=>`${r.username} (Fresh: ${r.before.fresh||'—'}→${r.after.fresh||'—'}, Baby: ${r.before.baby||'—'}→${r.after.baby||'—'})`).join(' · ');
         }
         refixBtn.disabled = false;
+        renderPage();
+      };
+      const fillPersBtn = document.getElementById('btn-fill-personality');
+      if(fillPersBtn) fillPersBtn.onclick = async ()=>{
+        const statusEl = document.getElementById('fill-personality-status');
+        const players = cachedRoster.filter(m=>m.role==='player' && m.digimon && m.digimon.name && !m.digimon.personality);
+        if(players.length===0){ if(statusEl) statusEl.textContent = 'Nessuna scheda senza Personalità: niente da completare.'; return; }
+        if(!window.confirm(`Trovo ${players.length} Digimon senza Personalità. Per chi ha un nome tra i 40+16 dello Scan, la imposto dal testo già scritto lì. Procedere?`)) return;
+        fillPersBtn.disabled = true;
+        if(statusEl) statusEl.textContent = 'Ricerca in corso...';
+        const filled = [];
+        const notFound = [];
+        for(const member of players){
+          const why = SCAN_PERSONALITY_MAP[member.digimon.name];
+          if(why){
+            member.digimon.personality = why;
+            await saveMember(session.code, member);
+            filled.push(member.username);
+          } else {
+            notFound.push(`${member.username} (${member.digimon.name})`);
+          }
+        }
+        cachedRoster = await getRoster(session.code);
+        if(statusEl){
+          statusEl.textContent = (filled.length ? `Completati ${filled.length}: ${filled.join(', ')}. ` : 'Nessuno completato. ')
+            + (notFound.length ? `${notFound.length} non nello Scan (nessun testo disponibile): ${notFound.join(', ')}.` : '');
+        }
+        fillPersBtn.disabled = false;
         renderPage();
       };
     }
