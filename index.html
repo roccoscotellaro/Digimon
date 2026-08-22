@@ -2933,7 +2933,7 @@
   <image href="https://wikimon.net/images/2/2a/DSTS_Icon_Attribute_Data.png" x="172" y="152" width="26" height="26"/>
   <text x="185" y="196" text-anchor="middle" font-size="10" fill="#cfd6e4" font-family="sans-serif">Data</text>
 </svg>
-      <div class="muted" style="font-size:9px;text-align:center;margin-top:-2px;">Free non conta · Variable sceglie all'Iniziativa</div>
+      <div class="muted" style="font-size:9px;text-align:center;margin-top:-2px;display:flex;align-items:center;justify-content:center;gap:4px;">${attributeIconHTML('Free',13)} Free non conta · ${attributeIconHTML('Variable',13)} Variable sceglie all'Iniziativa</div>
     </div>`;
   }
   // A Dex entry's "categories" array holds both Attribute and Family/Field tags together (no separate
@@ -5160,12 +5160,16 @@
   let combatSelectedAttackIndex = null;
   let masterPrivateUnread = {}; // { username: true } — thread ha messaggi non ancora visti dal Master
 
-  async function grantMilestoneRewards(code){
+  async function grantMilestoneRewards(code, milestoneNumber, reason){
     const players = cachedRoster.filter(m=>m.role==='player');
     for(const p of players){
       p.tamer.unspentGrowthPoints = Number(p.tamer.unspentGrowthPoints||0) + 3;
       p.tamer.inspirationPoints = Number(p.tamer.inspirationPoints||0) + 1;
       p.digimon.unspentBonusDP = Number(p.digimon.unspentBonusDP||0) + 3;
+      // Traccia l'origine di ogni concessione (quale Milestone, quando, come) — prima si perdeva,
+      // lasciando solo un numero grezzo senza modo di risalire al perché per il Master.
+      p.digimon.bonusDpLog = Array.isArray(p.digimon.bonusDpLog) ? p.digimon.bonusDpLog : [];
+      p.digimon.bonusDpLog.push({ amount: 3, milestone: milestoneNumber, date: new Date().toISOString(), reason: reason || 'Milestone' });
       await saveMember(code, p);
     }
   }
@@ -5400,7 +5404,7 @@
       cachedProgression = prog;
       await pushLog(code, { who:'Sistema', role:'gm', text: `+${amount} XP (${label}). XP: ${prog.xp}/7.` });
       if(hitMilestone){
-        await grantMilestoneRewards(code);
+        await grantMilestoneRewards(code, prog.milestone, 'XP');
         await pushLog(code, { who:'Sistema', role:'gm', text: `🌟 Milestone ${prog.milestone} raggiunta! Ogni giocatore riceve 3 Growth Points, 1 IP, e il proprio Digimon 3 DP Bonus. Il party guadagna 1 Punto Ispirazione.` });
       }
       renderProgressionMaster(code);
@@ -5461,7 +5465,7 @@
       prog.inspiration = Number(prog.inspiration||0) + 1;
       await saveProgression(code, prog);
       cachedProgression = prog;
-      await grantMilestoneRewards(code);
+      await grantMilestoneRewards(code, prog.milestone, 'Narrativa');
       await pushLog(code, { who:'Sistema', role:'gm', text: `🌟 Milestone ${prog.milestone} raggiunta (narrativa)! Ogni giocatore riceve 3 Growth Points, 1 IP, e il proprio Digimon 3 DP Bonus. Il party guadagna 1 Punto Ispirazione.` });
       renderProgressionMaster(code);
       refreshLiveParts();
@@ -8738,7 +8742,7 @@
   <image href="https://wikimon.net/images/2/2a/DSTS_Icon_Attribute_Data.png" x="172" y="152" width="26" height="26"/>
   <text x="185" y="196" text-anchor="middle" font-size="10" fill="#cfd6e4" font-family="sans-serif">Data</text>
 </svg>
-    <div style="font-size:9px;text-align:center;opacity:0.7;margin-top:-2px;">Free non conta · Variable sceglie all'Iniziativa</div>
+    <div style="font-size:9px;text-align:center;opacity:0.7;margin-top:-2px;display:flex;align-items:center;justify-content:center;gap:4px;"><img src="https://wikimon.net/images/5/5b/DSTS_Icon_Attribute_Free.png" style="width:13px;height:13px;" onerror="this.style.display='none'" /> Free non conta · <img src="https://wikimon.net/images/0/0b/DSTS_Icon_Attribute_Variable.png" style="width:13px;height:13px;" onerror="this.style.display='none'" /> Variable sceglie all'Iniziativa</div>
   </div>
   <button id="dvos-attr-toggle" title="Vantaggio di Attributo — chi batte chi" style="background:var(--panel,#0f1115);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:5px 7px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.5);display:flex;align-items:center;gap:3px;">
     <img src="https://wikimon.net/images/6/6c/DSTS_Icon_Attribute_Vaccine.png" style="width:15px;height:15px;" onerror="this.style.display='none'" />

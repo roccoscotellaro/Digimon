@@ -684,13 +684,18 @@
     // fosse davvero atterrato su una Stat reale (non solo contato "sulla carta" nel budget).
     const expectedStatSum = cfg.startStat*5 + dpSpentOnStats + freeBonus;
     const statMismatch = actualSum !== expectedStatSum;
+    const bonusPool = Number(d.unspentBonusDP||0);
     return `
       <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);font-size:11px;">
         <div class="flex-between"><span class="muted">Totale Stat Base</span><span class="mono" style="color:${statMismatch?'var(--danger)':'var(--dchroma)'};">${actualSum} <span class="muted">/ ${expectedStatSum} atteso</span></span></div>
         <div class="flex-between"><span class="muted">DP Stat spesi (Stage ${escapeHTML(d.stage||'')})</span><span class="mono">${dpSpentOnStats}</span></div>
         ${freeBonus>0 ? `<div class="flex-between"><span class="muted">Bonus gratuito (Naturewalk/Instinct)</span><span class="mono">+${freeBonus}</span></div>` : ''}
         <div class="flex-between"><span class="muted">DP Qualities</span><span class="mono">${qDpSpent}</span></div>
-        <div class="flex-between" style="margin-top:4px;padding-top:4px;border-top:1px solid var(--line);"><span class="muted" style="font-weight:600;">DP Totali (Stat + Qualities)</span><span class="mono" style="color:${unspent!==0?'var(--amber)':'var(--dchroma)'};font-weight:600;">${totalUsed} <span class="muted">/ ${totalAvailable} disponibili</span></span></div>
+        <div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--line);"></div>
+        <div class="flex-between"><span class="muted">DP di Stage (dovuti — ${escapeHTML(d.stage||'')})</span><span class="mono">${cfg.dp}</span></div>
+        <div class="flex-between"><span class="muted">DP Bonus da Milestone — in Qualities</span><span class="mono">${bonusDp}</span></div>
+        ${bonusPool>0 ? `<div class="flex-between"><span class="muted">DP Bonus da Milestone — in sospeso</span><span class="mono" style="color:var(--dchroma);">${bonusPool}</span></div>` : ''}
+        <div class="muted" style="margin-top:4px;font-style:italic;">I DP Bonus spesi su una Stat (invece che in Qualities) non sono distinguibili qui da quelli di Stage: una volta applicati diventano lo stesso numero sulla Stat, senza tracciarne l'origine.</div>
         ${unspent>0 ? `<div style="color:var(--amber);margin-top:6px;">⚠ ${unspent} DP ancora da spendere (né su Stat né su Qualities) — non sono persi, ma non sono ancora assegnati a nulla.</div>` : ''}
         ${unspent<0 ? `<div style="color:var(--danger);margin-top:6px;">⚠ Spesi ${Math.abs(unspent)} DP in più di quelli disponibili per questo Stage — controlla Stat/Qualities.</div>` : ''}
         ${statMismatch ? `<div style="color:var(--danger);margin-top:6px;">⚠ Il totale reale delle Stat non combacia con quello atteso (differenza: ${expectedStatSum-actualSum>0?'-':'+'}${Math.abs(expectedStatSum-actualSum)}). Probabile bonus Naturewalk/Instinct non applicato a nessuna Stat — controlla l'avviso nella card Qualities qui sotto.</div>` : ''}
@@ -1603,15 +1608,26 @@
       ${(draft.suggestedQualities||[]).length ? `
       <div class="section-title" style="font-size:12px;"><span>📡 Qualities suggerite dallo Scan</span></div>
       <div class="muted" style="margin-bottom:8px;">Questo Digimon ha di norma queste Qualities — decidi tu se aggiungerle: se accetti, il costo si scala subito dal contatore DP qui sopra.</div>
-      ${draft.suggestedQualities.map((q,qi)=>`
+      ${draft.suggestedQualities.map((q,qi)=>{
+        const needsStatPick = q.mechanic==='naturewalk' && !q.statTarget;
+        return `
         <div class="list-item" style="border-color:var(--dchroma);margin-bottom:8px;">
           <div class="top-row">
             <span class="name">${escapeHTML(q.name)} <span class="muted">(${q.cost} DP)</span></span>
-            <button class="btn small" data-wiz-suggested-add="${qi}">+ Aggiungi</button>
+            ${needsStatPick ? '' : `<button class="btn small" data-wiz-suggested-add="${qi}">+ Aggiungi</button>`}
           </div>
           <div style="font-size:12px;line-height:1.5;margin-top:6px;">${escapeHTML(q.description)}</div>
+          ${needsStatPick ? `
+          <div class="row" style="margin-top:8px;">
+            <select id="wiz-sugg-stat-${qi}" style="flex:2;">
+              ${Object.entries(STAT_SHORT_TO_KEY).map(([short,key])=>`<option value="${short}">${STAT_DEFS.find(s=>s.key===key).label}</option>`).join('')}
+            </select>
+            <button class="btn small" data-wiz-suggested-add-withstat="${qi}" style="flex:1;">+ Aggiungi</button>
+          </div>
+          <div class="muted" style="font-size:10px;margin-top:4px;">⚠ Questa Quality arriva dal Digidex senza sapere a quale Stat applicare il +1 — scegline una prima di aggiungerla.</div>
+          ` : ''}
         </div>
-      `).join('')}
+      `;}).join('')}
       <div style="border-top:1px dashed var(--line);margin:12px 0;"></div>
       ` : ''}
       <div class="section-title" style="font-size:12px;"><span>Qualities di partenza</span></div>
@@ -1761,6 +1777,26 @@
         if(!q) return;
         // Accettata: sposta dal suggerimento alla lista vera, scala il costo dal budget E applica
         // davvero il +1 alla Stat che questa Quality promette.
+        draft.suggestedQualities.splice(idx,1);
+        draft.qualities.push(q);
+        applyQualityStatBonus(draft, q, 1, statHardCap(draft.stage));
+        renderPage();
+      };
+    });
+    root.querySelectorAll('[data-wiz-suggested-add-withstat]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const idx = Number(btn.getAttribute('data-wiz-suggested-add-withstat'));
+        const q = (draft.suggestedQualities||[])[idx];
+        if(!q) return;
+        const sel = document.getElementById('wiz-sugg-stat-'+idx);
+        const statShort = sel ? sel.value : null;
+        if(!statShort){ alert('Scegli una Stat prima di aggiungere questa Quality.'); return; }
+        const statKey = STAT_SHORT_TO_KEY[statShort];
+        const statLabel = STAT_DEFS.find(s=>s.key===statKey).label;
+        q.statTarget = statShort;
+        // Stesso formato usato da buildQualityEntry per le Quality aggiunte a mano, così il nome
+        // mostra sempre a colpo d'occhio dove è finito il bonus, invece di restare generico.
+        if(!/\[\+\d+ /.test(q.name)) q.name = `${q.name} [+${Number(q.rank)||1} ${statLabel}]`;
         draft.suggestedQualities.splice(idx,1);
         draft.qualities.push(q);
         applyQualityStatBonus(draft, q, 1, statHardCap(draft.stage));
@@ -2146,12 +2182,27 @@
   }
 
   // ---------- Bonus DP da Milestone: da spendere su Stat (propagate a tutti gli Stage costruiti) o Qualities ----------
-  function bonusDpBlockHTML(m){
+  function bonusDpBlockHTML(m, isMaster){
     const d = m.digimon;
     const pool = Number(d.unspentBonusDP||0);
-    if(pool<=0) return '';
+    const log = Array.isArray(d.bonusDpLog) ? d.bonusDpLog : [];
+    if(pool<=0 && (!isMaster || log.length===0)) return '';
     const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
     const statLabels = { baseAccuracy:'Accuracy', baseDamage:'Damage', baseDodge:'Dodge', baseArmor:'Armor', baseHealth:'Health' };
+    const historyHTML = (isMaster && log.length) ? `
+      <details style="margin-top:10px;">
+        <summary class="muted" style="cursor:pointer;">📜 Origine dei DP Bonus concessi (${log.length})</summary>
+        <div style="margin-top:6px;">
+          ${log.slice().reverse().map(entry=>`
+            <div class="muted" style="font-size:10px;padding:3px 0;border-bottom:1px solid var(--line);">
+              +${entry.amount} DP — Milestone ${entry.milestone!=null?entry.milestone:'?'} (${escapeHTML(entry.reason||'Milestone')}), ${entry.date ? new Date(entry.date).toLocaleDateString('it-IT') : 'data sconosciuta'}
+            </div>
+          `).join('')}
+        </div>
+      </details>` : '';
+    if(pool<=0){
+      return `<div class="hud-frame card" style="border-color:var(--line);"><div class="section-title"><span>🎁 Bonus DP da Milestone</span></div><div class="muted">Nessun DP Bonus in sospeso al momento.</div>${historyHTML}</div>`;
+    }
     return `
     <div class="hud-frame card" style="border-color:var(--dchroma);">
       <div class="section-title"><span>🎁 Bonus DP da Milestone: ${pool}</span></div>
@@ -2165,7 +2216,12 @@
       <div class="row" style="margin-top:6px;">
         <button class="btn ghost small" id="btn-bdp-quality" style="width:100%;">Sposta 1 DP nel budget Qualities</button>
       </div>
+      ${isMaster ? `
+      <div class="row" style="margin-top:6px;">
+        <button class="btn ghost small" id="btn-bdp-remove" style="width:100%;color:var(--danger);border-color:rgba(255,93,93,0.4);">🗑 Master: rimuovi 1 DP (concesso per errore)</button>
+      </div>` : ''}
       <div class="muted" id="bdp-status" style="margin-top:6px;"></div>
+      ${historyHTML}
     </div>`;
   }
 
@@ -2197,6 +2253,18 @@
     if(qBtn){
       qBtn.onclick = async ()=>{
         target.digimon.dpTotal = Number(target.digimon.dpTotal||0) + 1;
+        target.digimon.unspentBonusDP = Math.max(0, Number(target.digimon.unspentBonusDP||0) - 1);
+        const st = document.getElementById('bdp-status');
+        st.textContent = 'Salvataggio...';
+        const ok = await saveMember(session.code, target);
+        if(ok){ cachedRoster = await getRoster(session.code); renderPage(); }
+        else { st.style.color='var(--danger)'; st.textContent = 'Errore: ' + (lastApiError||'sconosciuto'); }
+      };
+    }
+    const removeBtn = document.getElementById('btn-bdp-remove');
+    if(removeBtn){
+      removeBtn.onclick = async ()=>{
+        if(!window.confirm('Rimuovere 1 DP Bonus in sospeso? Non va né su una Stat né su Qualities, sparisce e basta — usalo solo se è stato concesso per errore.')) return;
         target.digimon.unspentBonusDP = Math.max(0, Number(target.digimon.unspentBonusDP||0) - 1);
         const st = document.getElementById('bdp-status');
         st.textContent = 'Salvataggio...';
@@ -2293,7 +2361,7 @@
             ? `<button class="btn ghost small" id="btn-digimon-viewmode" style="width:100%;">👁️ Chiudi Modifica (torna a sola lettura)</button>`
             : `<button class="btn small" id="btn-digimon-editmode" style="width:100%;">✏️ Modifica Scheda</button>`}
         </div>
-        ${bonusDpBlockHTML(target)}
+        ${bonusDpBlockHTML(target, isMaster)}
         ${stageBuilderHTML(target, isMaster)}
         <div class="hud-frame card">
           <div class="section-title"><span>Punteggi Base</span></div>
