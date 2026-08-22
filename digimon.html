@@ -164,7 +164,7 @@
   <image href="https://wikimon.net/images/2/2a/DSTS_Icon_Attribute_Data.png" x="172" y="152" width="26" height="26"/>
   <text x="185" y="196" text-anchor="middle" font-size="10" fill="#cfd6e4" font-family="sans-serif">Data</text>
 </svg>
-      <div class="muted" style="font-size:9px;text-align:center;margin-top:-2px;">Free non conta · Variable sceglie all'Iniziativa</div>
+      <div class="muted" style="font-size:9px;text-align:center;margin-top:-2px;display:flex;align-items:center;justify-content:center;gap:4px;">${attributeIconHTML('Free',13)} Free non conta · ${attributeIconHTML('Variable',13)} Variable sceglie all'Iniziativa</div>
     </div>`;
   }
   // Le 15 Skill del Tamer (stesso elenco di player.html/SKILL_DEFS) con la Stat Derivata che le
@@ -655,6 +655,46 @@
   function qualityDpBudget(d){
     const cfg = STAGE_CREATION[d.stage] || STAGE_CREATION.Rookie;
     return Math.max(0, cfg.dp - statDpSpentForStage(d)) + Number(d.dpTotal||0);
+  }
+  // Riepilogo/verifica dei totali: la somma REALE delle 5 Stat Base contro quella TEORICA attesa
+  // (5×Starting Stat + DP di Stage già spesi in Stat + bonus gratuito Naturewalk/Instinct). Se non
+  // combaciano — tipico segnale di un bonus Naturewalk rimasto "senza casa" per statTarget mancante,
+  // vedi avviso nella card Qualities — lo si vede subito qui invece di doverlo scoprire a mano.
+  // Riusa le stesse funzioni di calcolo del budget Qualities, non una formula parallela: se quella
+  // cambia, questo riepilogo resta automaticamente coerente.
+  // Bilancio DP vero: Stat e Qualities pescano dallo STESSO montepunti (i DP di Stage, più eventuali
+  // DP Bonus da Milestone) — non due budget indipendenti. La versione precedente di questo controllo
+  // calcolava "quanto atteso" a partire dagli stessi numeri della Stat reale (statDpSpentForStage),
+  // quindi tornava sempre giusto per costruzione: non poteva MAI segnalare un errore, nemmeno quando
+  // c'era davvero (es. bonus Naturewalk rimasto senza Stat, o DP semplicemente mai spesi da nessuna
+  // parte). Qui invece si confronta il totale DISPONIBILE (indipendente) con quanto è VERAMENTE speso
+  // in entrambe le voci insieme.
+  function statTotalCheckHTML(d){
+    const cfg = STAGE_CREATION[d.stage] || STAGE_CREATION.Rookie;
+    const statKeys = ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'];
+    const actualSum = statKeys.reduce((s,k)=>s+(Number(d[k])||0),0);
+    const dpSpentOnStats = statDpSpentForStage(d); // già al netto del bonus gratuito Naturewalk/Instinct
+    const freeBonus = naturewalkBonusFromQualities(d.qualities);
+    const qDpSpent = (d.qualities||[]).reduce((s,q)=>s+(Number(q.cost)||0),0);
+    const bonusDp = Number(d.dpTotal||0);
+    const totalAvailable = cfg.dp + bonusDp;
+    const totalUsed = dpSpentOnStats + qDpSpent;
+    const unspent = totalAvailable - totalUsed;
+    // Verifica indipendente sul totale delle Stat: quanto dovrebbero valere SE il bonus gratuito
+    // fosse davvero atterrato su una Stat reale (non solo contato "sulla carta" nel budget).
+    const expectedStatSum = cfg.startStat*5 + dpSpentOnStats + freeBonus;
+    const statMismatch = actualSum !== expectedStatSum;
+    return `
+      <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);font-size:11px;">
+        <div class="flex-between"><span class="muted">Totale Stat Base</span><span class="mono" style="color:${statMismatch?'var(--danger)':'var(--dchroma)'};">${actualSum} <span class="muted">/ ${expectedStatSum} atteso</span></span></div>
+        <div class="flex-between"><span class="muted">DP Stat spesi (Stage ${escapeHTML(d.stage||'')})</span><span class="mono">${dpSpentOnStats}</span></div>
+        ${freeBonus>0 ? `<div class="flex-between"><span class="muted">Bonus gratuito (Naturewalk/Instinct)</span><span class="mono">+${freeBonus}</span></div>` : ''}
+        <div class="flex-between"><span class="muted">DP Qualities</span><span class="mono">${qDpSpent}</span></div>
+        <div class="flex-between" style="margin-top:4px;padding-top:4px;border-top:1px solid var(--line);"><span class="muted" style="font-weight:600;">DP Totali (Stat + Qualities)</span><span class="mono" style="color:${unspent!==0?'var(--amber)':'var(--dchroma)'};font-weight:600;">${totalUsed} <span class="muted">/ ${totalAvailable} disponibili</span></span></div>
+        ${unspent>0 ? `<div style="color:var(--amber);margin-top:6px;">⚠ ${unspent} DP ancora da spendere (né su Stat né su Qualities) — non sono persi, ma non sono ancora assegnati a nulla.</div>` : ''}
+        ${unspent<0 ? `<div style="color:var(--danger);margin-top:6px;">⚠ Spesi ${Math.abs(unspent)} DP in più di quelli disponibili per questo Stage — controlla Stat/Qualities.</div>` : ''}
+        ${statMismatch ? `<div style="color:var(--danger);margin-top:6px;">⚠ Il totale reale delle Stat non combacia con quello atteso (differenza: ${expectedStatSum-actualSum>0?'-':'+'}${Math.abs(expectedStatSum-actualSum)}). Probabile bonus Naturewalk/Instinct non applicato a nessuna Stat — controlla l'avviso nella card Qualities qui sotto.</div>` : ''}
+      </div>`;
   }
   // Risale la catena evolutiva nel Digidex: trova la voce che elenca `name` fra le proprie
   // evoluzioni (es. da "Gekkomon" risale a "Otamamon", la sua pre-evoluzione registrata).
@@ -1323,16 +1363,19 @@
     <div class="hud-frame card">
       <div class="section-title"><span>Qualities</span></div>
       <div class="flex-between" style="margin-bottom:10px;"><span class="muted">Budget Qualities</span><span class="mono" style="color:${dpSpent>dpBudget?'var(--danger)':'var(--dchroma)'};">${dpSpent} / ${dpBudget} DP</span></div>
-      ${items.length===0 ? '<div class="muted">Nessuna Quality.</div>' : items.map((q,i)=>`
-        <div class="list-item">
+      ${items.length===0 ? '<div class="muted">Nessuna Quality.</div>' : items.map((q,i)=>{
+        const naturewalkBroken = q.mechanic==='naturewalk' && !q.statTarget;
+        return `
+        <div class="list-item" ${naturewalkBroken ? 'style="border-color:var(--danger);"' : ''}>
           <div class="top-row">
             <span class="name">${escapeHTML(q.name||'')} ${q.cost!=null?`<span class="muted">(${q.cost} DP)</span>`:''}</span>
             ${editable ? `<button class="btn ghost small" data-q-remove="${i}">Rimuovi</button>` : ''}
           </div>
           ${q.category ? `<div class="sub">${escapeHTML(q.category)}</div>` : ''}
           ${q.description ? `<div class="sub">${escapeHTML(q.description)}</div>` : ''}
+          ${naturewalkBroken ? `<div class="sub" style="color:var(--danger);">⚠ Manca la Stat a cui applicare il +1 (arrivata dal Digidex senza quel dato) — nessun bonus è attivo. Rimuovila e riaggiungila scegliendo la Stat.</div>` : ''}
         </div>
-      `).join('')}
+      `;}).join('')}
       ${editable ? `
       <div class="add-row">
         ${qualityPickerHTML('d-q', d.stage)}
@@ -2257,6 +2300,7 @@
           <div class="grid-stats">
             ${STAT_DEFS.map(d=>statBoxHTML(target, d.key, d.label, editable)).join('')}
           </div>
+          ${statTotalCheckHTML(target.digimon)}
         </div>
         ${derivedStatsBlockHTML(target.digimon, target.digimon.size, target.digimon.qualities)}
         ${evolutionLockBlockHTML(target, isMaster)}
@@ -2684,7 +2728,7 @@
   <image href="https://wikimon.net/images/2/2a/DSTS_Icon_Attribute_Data.png" x="172" y="152" width="26" height="26"/>
   <text x="185" y="196" text-anchor="middle" font-size="10" fill="#cfd6e4" font-family="sans-serif">Data</text>
 </svg>
-    <div style="font-size:9px;text-align:center;opacity:0.7;margin-top:-2px;">Free non conta · Variable sceglie all'Iniziativa</div>
+    <div style="font-size:9px;text-align:center;opacity:0.7;margin-top:-2px;display:flex;align-items:center;justify-content:center;gap:4px;"><img src="https://wikimon.net/images/5/5b/DSTS_Icon_Attribute_Free.png" style="width:13px;height:13px;" onerror="this.style.display='none'" /> Free non conta · <img src="https://wikimon.net/images/0/0b/DSTS_Icon_Attribute_Variable.png" style="width:13px;height:13px;" onerror="this.style.display='none'" /> Variable sceglie all'Iniziativa</div>
   </div>
   <button id="dvos-attr-toggle" title="Vantaggio di Attributo — chi batte chi" style="background:var(--panel,#0f1115);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:5px 7px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.5);display:flex;align-items:center;gap:3px;">
     <img src="https://wikimon.net/images/6/6c/DSTS_Icon_Attribute_Vaccine.png" style="width:15px;height:15px;" onerror="this.style.display='none'" />
