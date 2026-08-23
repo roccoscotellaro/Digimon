@@ -548,29 +548,46 @@
   // carta" nel calcolo del budget DP, ma non venivano MAI applicati al numero della Stat mostrato
   // e salvato: la Quality costava 1 DP e non faceva letteralmente nulla. Questa funzione applica
   // (o toglie, con sign=-1) il bonus vero e proprio al numero, in aggiunta/rimozione della Quality.
-  function applyQualityStatBonus(statObj, q, sign, hardCap){
-    if(!q) return;
-    let key = null;
-    if(q.mechanic==='naturewalk' && q.statTarget) key = STAT_SHORT_TO_KEY[q.statTarget];
-    else if(q.mechanic==='instinct') key = 'baseDodge';
-    if(!key) return;
-    const amount = (Number(q.rank)||1) * sign;
-    const next = (Number(statObj[key])||0) + amount;
-    statObj[key] = hardCap ? Math.max(0, Math.min(hardCap, next)) : Math.max(0, next);
-    // Propaga a tutti gli altri Stage già costruiti (regola 10.03: le Qualities — e i loro bonus —
-    // valgono per l'intera linea evolutiva, non solo per lo Stage in cui sono state aggiunte),
-    // esattamente come fa già il pulsante "+1 Stat" dei DP Bonus. Prima questa funzione toccava
-    // solo lo Stage corrente: regredendo/avanzando di Stage il bonus spariva perché lo snapshot
-    // dell'altro Stage non l'aveva mai ricevuto. Se statObj non ha stageStats (es. il draft del
-    // Wizard prima dell'approvazione) il ciclo semplicemente non trova nulla da fare.
-    if(statObj.stageStats){
-      Object.keys(statObj.stageStats).forEach(stage=>{
-        if(stage===statObj.stage) return;
-        const cur = Number(statObj.stageStats[stage][key]||0) + amount;
-        statObj.stageStats[stage][key] = hardCap ? Math.max(0, Math.min(hardCap, cur)) : Math.max(0, cur);
-      });
-      if(statObj.stageStats[statObj.stage]) statObj.stageStats[statObj.stage][key] = statObj[key];
-    }
+  // Sostituisce applyQualityStatBonus: invece di "aggiungi +1 quando compri, spera che si propaghi",
+  // ricalcola SEMPRE da zero quanto bonus gratuito (Naturewalk/Instinct) questo Digimon dovrebbe avere
+  // per ogni Stat, confronta con quanto risulta già applicato (d.freeBonusApplied, un registro esplicito
+  // per Stat — non dedotto dai valori, che sono ambigui), e propaga solo la DIFFERENZA a TUTTI gli Stage
+  // già costruiti, incluso quello attuale. Idempotente: richiamarla più volte senza che nulla sia
+  // cambiato non fa nulla. Corregge anche eventuale dati vecchi rotti la prima volta che gira, perché
+  // non assume mai "lo Stage attuale è già giusto" — lo verifica come tutti gli altri.
+  function syncFreeBonusEverywhere(d){
+    if(!d.freeBonusApplied) d.freeBonusApplied = {};
+    const currentByKey = {};
+    (d.qualities||[]).forEach(q=>{
+      let key = null;
+      if(q.mechanic==='naturewalk' && q.statTarget) key = STAT_SHORT_TO_KEY[q.statTarget];
+      else if(q.mechanic==='instinct') key = 'baseDodge';
+      if(key) currentByKey[key] = (currentByKey[key]||0) + (Number(q.rank)||1);
+    });
+    const allKeys = new Set([...Object.keys(currentByKey), ...Object.keys(d.freeBonusApplied)]);
+    let changed = false;
+    allKeys.forEach(key=>{
+      const target = currentByKey[key]||0;
+      const already = d.freeBonusApplied[key]||0;
+      const delta = target - already;
+      if(delta===0) return;
+      changed = true;
+      const capCurrent = statHardCap(d.stage);
+      d[key] = Math.max(0, Math.min(capCurrent, (Number(d[key])||0) + delta));
+      if(d.stageStats){
+        Object.keys(d.stageStats).forEach(stage=>{
+          const cap = statHardCap(stage);
+          const cur = Number(d.stageStats[stage][key]||0) + delta;
+          d.stageStats[stage][key] = Math.max(0, Math.min(cap, cur));
+        });
+      }
+      d.freeBonusApplied[key] = target;
+      if(key==='baseHealth'){
+        d.maxWounds = stageIndex(d.stage) + Number(d.baseHealth)*2;
+        if(d.currentWounds > d.maxWounds) d.currentWounds = d.maxWounds;
+      }
+    });
+    return changed;
   }
   // Se il bonus tocca Health, le Ferite Massime (= Indice Stage + Health×2) vanno ricalcolate subito:
   // altrimenti la scheda approvata (e la card nel Tavolo, che legge lo stesso dato) restano ferme
@@ -1778,9 +1795,8 @@
     root.querySelectorAll('[data-wiz-q-remove]').forEach(btn=>{
       btn.onclick = ()=>{
         const idx = Number(btn.getAttribute('data-wiz-q-remove'));
-        const removed = draft.qualities[idx];
-        applyQualityStatBonus(draft, removed, -1, statHardCap(draft.stage));
         draft.qualities.splice(idx,1);
+        syncFreeBonusEverywhere(draft);
         renderPage();
       };
     });
@@ -1793,7 +1809,7 @@
         // davvero il +1 alla Stat che questa Quality promette.
         draft.suggestedQualities.splice(idx,1);
         draft.qualities.push(q);
-        applyQualityStatBonus(draft, q, 1, statHardCap(draft.stage));
+        syncFreeBonusEverywhere(draft);
         renderPage();
       };
     });
@@ -1813,7 +1829,7 @@
         if(!/\[\+\d+ /.test(q.name)) q.name = `${q.name} [+${Number(q.rank)||1} ${statLabel}]`;
         draft.suggestedQualities.splice(idx,1);
         draft.qualities.push(q);
-        applyQualityStatBonus(draft, q, 1, statHardCap(draft.stage));
+        syncFreeBonusEverywhere(draft);
         renderPage();
       };
     });
@@ -1821,7 +1837,7 @@
       const { entry, error } = buildQualityEntry(q, rank, extra, draft.qualities);
       if(error){ alert(error); return; }
       draft.qualities.push(entry);
-      applyQualityStatBonus(draft, entry, 1, statHardCap(draft.stage));
+      syncFreeBonusEverywhere(draft);
       renderPage();
     });
     document.getElementById('btn-wiz-cancel').onclick = ()=>{ creationDraft = null; renderPage(); };
@@ -2314,12 +2330,21 @@
         <div class="muted" style="margin-top:6px;">Per le schede senza Personalità (create prima di questo campo, o a mano senza passare dallo Scan): la recupera dal testo dello Scan stesso per chi ha un Digimon tra i 40+16 con un profilo già scritto. Non tocca chi ha già una Personalità.</div>
         <div class="muted" id="fill-personality-status" style="margin-top:6px;"></div>
         <div style="border-top:1px dashed var(--line);margin:10px 0;"></div>
-        <button class="btn ghost small" id="btn-sync-naturewalk">🔧 Sincronizza bonus Naturewalk/Instinct su tutti gli Stage</button>
-        <div class="muted" style="margin-top:6px;">La propagazione del bonus (+1 Stat) di Naturewalk/Instinct agli Stage già costruiti era rotta fin dall'inizio — non ha mai funzionato per nessuno. Questo strumento assume quindi con sicurezza che <b>solo lo Stage attuale</b> di ogni Digimon abbia già il bonus corretto, e lo aggiunge a tutti gli altri Stage costruiti. Mostra un resoconto di cosa cambia prima di salvare nulla.</div>
-        <div class="muted" id="sync-naturewalk-status" style="margin-top:6px;max-height:200px;overflow-y:auto;"></div>
+        <button class="btn ghost small" id="btn-sync-naturewalk">🔧 Sincronizza subito bonus Naturewalk/Instinct per tutta la squadra</button>
+        <div class="muted" style="margin-top:6px;">Normalmente non serve più: ogni scheda si auto-ripara da sola al primo caricamento. Utile solo per sistemare in blocco chi non ha ancora aperto la propria scheda dopo questo aggiornamento.</div>
+        <div class="muted" id="sync-naturewalk-status" style="margin-top:6px;"></div>
       </div>`;
     } else {
       target = cachedRoster.find(m=>m.username===session.username);
+    }
+
+    // Auto-riparazione silenziosa: ogni volta che si apre una scheda approvata, ricontrolla che il
+    // bonus gratuito di Naturewalk/Instinct sia davvero presente su OGNI Stage già costruito (non
+    // solo su quello attuale, che può disallinearsi di nuovo cambiando Stage). Idempotente — se è
+    // già tutto a posto non fa nulla e non salva nulla.
+    if(target && target.digimon && target.digimon.approved){
+      const healed = syncFreeBonusEverywhere(target.digimon);
+      if(healed) saveMember(session.code, target).catch(()=>{});
     }
 
     const editable = digimonEditMode===null ? isMaster : digimonEditMode;
@@ -2386,12 +2411,13 @@
           <div class="grid-stats">
             ${STAT_DEFS.map(d=>statBoxHTML(target, d.key, d.label, editable)).join('')}
           </div>
-          ${statTotalCheckHTML(target.digimon)}
+          ${target.digimon.stage==='Fresh' ? '' : statTotalCheckHTML(target.digimon)}
+          <div class="muted" style="font-size:9px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);">DP per Stage — Fresh 2 · Baby 5 · Rookie 10 · Champion 20 · Ultimate 30 · Mega 40</div>
         </div>
+        ${qualitiesBlockHTML(target, editable)}
         ${derivedStatsBlockHTML(target.digimon, target.digimon.size, target.digimon.qualities)}
         ${evolutionLockBlockHTML(target, isMaster)}
         ${statoBlockHTML(target, editable)}
-        ${qualitiesBlockHTML(target, editable)}
         ${attacksBlockHTML(target, editable)}
         ${editable ? `
         <div class="save-bar">
@@ -2502,43 +2528,18 @@
       const syncNwBtn = document.getElementById('btn-sync-naturewalk');
       if(syncNwBtn) syncNwBtn.onclick = async ()=>{
         const statusEl = document.getElementById('sync-naturewalk-status');
-        const statLabels = { baseAccuracy:'Accuracy', baseDamage:'Damage', baseDodge:'Dodge', baseArmor:'Armor', baseHealth:'Health' };
-        const players = cachedRoster.filter(m=>m.role==='player' && m.digimon && m.digimon.name && m.digimon.stageStats && Object.keys(m.digimon.stageStats).length>1);
-        const report = [];
+        const players = cachedRoster.filter(m=>m.role==='player' && m.digimon && m.digimon.name && m.digimon.approved);
         const affected = [];
         for(const member of players){
-          const d = member.digimon;
-          const freeBonusByKey = {};
-          (d.qualities||[]).forEach(q=>{
-            let key = null;
-            if(q.mechanic==='naturewalk' && q.statTarget) key = STAT_SHORT_TO_KEY[q.statTarget];
-            else if(q.mechanic==='instinct') key = 'baseDodge';
-            if(key) freeBonusByKey[key] = (freeBonusByKey[key]||0) + (Number(q.rank)||1);
-          });
-          if(Object.keys(freeBonusByKey).length===0) continue;
-          let changed = false;
-          Object.entries(freeBonusByKey).forEach(([key, amount])=>{
-            Object.keys(d.stageStats).forEach(stage=>{
-              if(stage===d.stage) return; // già corretto: il bonus viene sempre applicato lì al momento dell'acquisto
-              const cap = statHardCap(stage);
-              const before = Number(d.stageStats[stage][key]||0);
-              const after = Math.max(0, Math.min(cap, before + amount));
-              if(after!==before){
-                d.stageStats[stage][key] = after;
-                report.push(`${member.username} — ${d.name} (${stage}): ${statLabels[key]} ${before} → ${after}`);
-                changed = true;
-              }
-            });
-          });
-          if(changed) affected.push(member);
+          if(syncFreeBonusEverywhere(member.digimon)) affected.push(member);
         }
-        if(report.length===0){ if(statusEl) statusEl.textContent = 'Nessuna correzione necessaria: nessun Digimon ha Naturewalk/Instinct con più Stage costruiti, o sono già tutti a posto.'; return; }
-        if(!window.confirm(`Trovate ${report.length} correzioni su ${affected.length} Digimon. Procedere e salvare?\n\n` + report.slice(0,15).join('\n') + (report.length>15?`\n... e altre ${report.length-15}`:''))) return;
+        if(affected.length===0){ if(statusEl) statusEl.textContent = 'Nessuna correzione necessaria: tutti già a posto.'; return; }
+        if(!window.confirm(`Sincronizzare il bonus Naturewalk/Instinct per ${affected.length} Digimon?`)) return;
         syncNwBtn.disabled = true;
         if(statusEl) statusEl.textContent = 'Salvataggio...';
         for(const member of affected){ await saveMember(session.code, member); }
         cachedRoster = await getRoster(session.code);
-        if(statusEl) statusEl.innerHTML = `Corretto: ${report.length} valori su ${affected.length} Digimon.<br>` + report.map(r=>escapeHTML(r)).join('<br>');
+        if(statusEl) statusEl.textContent = `Sincronizzati: ${affected.map(m=>m.username).join(', ')}.`;
         syncNwBtn.disabled = false;
         renderPage();
       };
@@ -2687,10 +2688,8 @@
     root.querySelectorAll('[data-q-remove]').forEach(btn=>{
       btn.onclick = async ()=>{
         const idx = Number(btn.getAttribute('data-q-remove'));
-        const removed = target.digimon.qualities[idx];
-        applyQualityStatBonus(target.digimon, removed, -1);
-        recalcMaxWoundsIfHealthChanged(target.digimon, removed);
         target.digimon.qualities.splice(idx,1);
+        syncFreeBonusEverywhere(target.digimon);
         await saveMember(session.code, target);
         renderPage();
       };
@@ -2710,8 +2709,7 @@
       const { entry, error } = buildQualityEntry(q, rank, extra, target.digimon.qualities);
       if(error){ alert(error); return; }
       target.digimon.qualities.push(entry);
-      applyQualityStatBonus(target.digimon, entry, 1);
-      recalcMaxWoundsIfHealthChanged(target.digimon, entry);
+      syncFreeBonusEverywhere(target.digimon);
       await saveMember(session.code, target);
       renderPage();
     });
