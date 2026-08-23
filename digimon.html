@@ -555,15 +555,23 @@
   // già costruiti, incluso quello attuale. Idempotente: richiamarla più volte senza che nulla sia
   // cambiato non fa nulla. Corregge anche eventuale dati vecchi rotti la prima volta che gira, perché
   // non assume mai "lo Stage attuale è già giusto" — lo verifica come tutti gli altri.
+  // Ricalcola il bonus gratuito (Naturewalk/Instinct) da zero, sulla base delle Qualities dello Stage
+  // ATTUALE soltanto — le Qualities sono specifiche per Stage (interpretazione confermata: solo i
+  // Bonus DP spesi in Qualities richiedono equivalenza su tutti gli Stage, non quelle comprate coi DP
+  // normali di Stage), quindi qui non c'è più nulla da propagare altrove: cambiare Stage scambia già
+  // l'intera lista di Qualities tramite stageQualities, portandosi dietro il proprio bonus corretto.
+  // Resta idempotente e utile come auto-riparazione per dati vecchi salvati prima di questa modifica.
   function syncFreeBonusEverywhere(d){
     if(!d.freeBonusApplied) d.freeBonusApplied = {};
     const currentByKey = {};
-    (d.qualities||[]).forEach(q=>{
-      let key = null;
-      if(q.mechanic==='naturewalk' && q.statTarget) key = STAT_SHORT_TO_KEY[q.statTarget];
-      else if(q.mechanic==='instinct') key = 'baseDodge';
-      if(key) currentByKey[key] = (currentByKey[key]||0) + (Number(q.rank)||1);
-    });
+    if(d.stage!=='Fresh'){ // regola 3.0: un Fresh non ha mai Qualities, quindi mai bonus
+      (d.qualities||[]).forEach(q=>{
+        let key = null;
+        if(q.mechanic==='naturewalk' && q.statTarget) key = STAT_SHORT_TO_KEY[q.statTarget];
+        else if(q.mechanic==='instinct') key = 'baseDodge';
+        if(key) currentByKey[key] = (currentByKey[key]||0) + (Number(q.rank)||1);
+      });
+    }
     const allKeys = new Set([...Object.keys(currentByKey), ...Object.keys(d.freeBonusApplied)]);
     let changed = false;
     allKeys.forEach(key=>{
@@ -574,13 +582,6 @@
       changed = true;
       const capCurrent = statHardCap(d.stage);
       d[key] = Math.max(0, Math.min(capCurrent, (Number(d[key])||0) + delta));
-      if(d.stageStats){
-        Object.keys(d.stageStats).forEach(stage=>{
-          const cap = statHardCap(stage);
-          const cur = Number(d.stageStats[stage][key]||0) + delta;
-          d.stageStats[stage][key] = Math.max(0, Math.min(cap, cur));
-        });
-      }
       d.freeBonusApplied[key] = target;
       if(key==='baseHealth'){
         d.maxWounds = stageIndex(d.stage) + Number(d.baseHealth)*2;
@@ -1392,6 +1393,15 @@
 
   function qualitiesBlockHTML(m, editable){
     const d = m.digimon;
+    if(d.stage==='Fresh'){
+      // Regola 3.0: "Il Digimon Fresh ha sempre... nessuna Quality... e non beneficia di DP Bonus" —
+      // non un effetto collaterale del budget a 0, è un'esclusione esplicita e categorica.
+      return `
+      <div class="hud-frame card">
+        <div class="section-title"><span>Qualities</span></div>
+        <div class="muted">Un Digimon Fresh non ha mai Qualities, per regola (3.0) — indipendentemente dai DP disponibili.</div>
+      </div>`;
+    }
     const items = d.qualities || [];
     const dpSpent = items.reduce((s,q)=>s+(Number(q.cost)||0),0);
     const dpBudget = qualityDpBudget(d);
@@ -1969,6 +1979,13 @@
       // correnti (che potrebbero essere di un altro Stage appena lasciato).
       attacks: (Array.isArray(d.attacks) && d.attacks.length) ? d.attacks : prevAttacks
     };
+    // Le Qualities sono specifiche per Stage (un Digimon può cambiare caratteristiche evolvendosi —
+    // solo i Bonus DP spesi in Qualities richiedono un equivalente in costo su ogni altro Stage, non
+    // le Qualities comprate coi DP normali dello Stage, che quindi non si propagano da nessuna parte).
+    if(!d.stageQualities) d.stageQualities = {};
+    d.stageQualities[stage] = Array.isArray(d.qualities) ? d.qualities : [];
+    if(!d.stageFreeBonusApplied) d.stageFreeBonusApplied = {};
+    d.stageFreeBonusApplied[stage] = Object.assign({}, d.freeBonusApplied);
   }
   function applyStageChange(d, oldStage, newStage){
     if(oldStage === newStage) return;
@@ -1992,6 +2009,13 @@
       d.maxWounds = stageIndex(newStage) + cfg.startStat*2;
       d.size = allowedSizes(newStage)[0] || 'Medium';
     }
+    // Le Qualities sono specifiche per Stage: si carica quello che era già stato costruito per lo
+    // Stage di destinazione, oppure si riparte da una lista vuota (un nuovo Stage non eredita le
+    // Qualities di un altro — è compito del giocatore ricomprarle/investirle di nuovo, per regola).
+    if(!d.stageQualities) d.stageQualities = {};
+    d.qualities = Array.isArray(d.stageQualities[newStage]) ? d.stageQualities[newStage] : [];
+    if(!d.stageFreeBonusApplied) d.stageFreeBonusApplied = {};
+    d.freeBonusApplied = d.stageFreeBonusApplied[newStage] ? Object.assign({}, d.stageFreeBonusApplied[newStage]) : {};
     d.stage = newStage;
     if(d.currentWounds > d.maxWounds) d.currentWounds = d.maxWounds;
     if(d.currentMp > d.maxMp) d.currentMp = d.maxMp;
@@ -2613,9 +2637,27 @@
         const newStage = document.getElementById('d-stage').value;
         const stageCfg = STAGE_CREATION[newStage] || STAGE_CREATION.Rookie;
         const statMin = stageCfg.startStat, statMax = statHardCap(newStage);
+        // Regola 3.02a/10.03: i DP spesi su una Stat si applicano automaticamente a tutti gli Stage
+        // della linea evolutiva (es. +3 Accuracy su Palmon si riflette anche su Togemon, Lilymon,
+        // Rosemon) — non è DP extra per ogni Stage, è lo stesso incremento condiviso. Qui si calcola
+        // la differenza tra il vecchio e il nuovo valore di ogni Stat e la si propaga a ogni altro
+        // Stage già costruito, esattamente come già succede per il bonus gratuito di Naturewalk.
+        const oldStage = target.digimon.stage;
         STAT_DEFS.forEach(d=>{
           const el = document.getElementById('d-stat-'+d.key);
-          if(el) target.digimon[d.key] = Math.max(statMin, Math.min(statMax, Number(el.value)||statMin));
+          if(!el) return;
+          const oldVal = Number(target.digimon[d.key])||0;
+          const newVal = Math.max(statMin, Math.min(statMax, Number(el.value)||statMin));
+          const delta = newVal - oldVal;
+          target.digimon[d.key] = newVal;
+          if(delta!==0 && target.digimon.stageStats){
+            Object.keys(target.digimon.stageStats).forEach(stage=>{
+              if(stage===oldStage || stage==='Fresh') return; // regola 3.0: Fresh resta sempre a 1, mai toccato
+              const cap = statHardCap(stage);
+              const cur = Number(target.digimon.stageStats[stage][d.key]||0) + delta;
+              target.digimon.stageStats[stage][d.key] = Math.max(0, Math.min(cap, cur));
+            });
+          }
         });
         const imgEl = document.getElementById('d-imageUrl');
         if(imgEl) target.digimon.imageUrl = imgEl.value.trim();
