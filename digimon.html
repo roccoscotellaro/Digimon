@@ -2412,6 +2412,8 @@
             ${STAT_DEFS.map(d=>statBoxHTML(target, d.key, d.label, editable)).join('')}
           </div>
           ${target.digimon.stage==='Fresh' ? '' : statTotalCheckHTML(target.digimon)}
+          <button class="btn ghost small" id="btn-force-heal-bonus" style="width:100%;margin-top:8px;">🔧 Ricalcola e salva subito il bonus (aspetta il salvataggio)</button>
+          <div class="muted" id="force-heal-status" style="margin-top:4px;"></div>
           <div class="muted" style="font-size:9px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);">DP per Stage — Fresh 2 · Baby 5 · Rookie 10 · Champion 20 · Ultimate 30 · Mega 40</div>
         </div>
         ${qualitiesBlockHTML(target, editable)}
@@ -2677,6 +2679,39 @@
           renderPage();
         };
       }
+    }
+
+    if(target){
+      const forceHealBtn = document.getElementById('btn-force-heal-bonus');
+      if(forceHealBtn) forceHealBtn.onclick = async ()=>{
+        const statusEl = document.getElementById('force-heal-status');
+        const d = target.digimon;
+        console.log('[force-heal] prima:', JSON.stringify({ stage:d.stage, baseAccuracy:d.baseAccuracy, baseDamage:d.baseDamage, baseDodge:d.baseDodge, baseArmor:d.baseArmor, baseHealth:d.baseHealth, freeBonusApplied:d.freeBonusApplied, qualities:(d.qualities||[]).map(q=>({name:q.name, mechanic:q.mechanic, statTarget:q.statTarget, rank:q.rank})), stageStats:d.stageStats }));
+        const healed = syncFreeBonusEverywhere(d);
+        console.log('[force-heal] healed?', healed, 'dopo:', JSON.stringify({ baseAccuracy:d.baseAccuracy, baseDamage:d.baseDamage, baseDodge:d.baseDodge, baseArmor:d.baseArmor, baseHealth:d.baseHealth, freeBonusApplied:d.freeBonusApplied, stageStats:d.stageStats }));
+        if(!healed){
+          statusEl.style.color = 'var(--text-mute)';
+          statusEl.textContent = 'Nessuna correzione da fare secondo il calcolo (vedi Console per i dettagli — F12 o tasto destro → Ispeziona).';
+          return;
+        }
+        statusEl.textContent = 'Salvataggio in corso...';
+        forceHealBtn.disabled = true;
+        const ok = await saveMember(session.code, target);
+        console.log('[force-heal] salvataggio riuscito?', ok, 'lastApiError:', lastApiError);
+        if(!ok){
+          statusEl.style.color = 'var(--danger)';
+          statusEl.textContent = 'Salvataggio FALLITO: ' + (lastApiError||'errore sconosciuto') + ' — vedi anche la Console.';
+          forceHealBtn.disabled = false;
+          return;
+        }
+        cachedRoster = await getRoster(session.code);
+        const reloaded = cachedRoster.find(m=>m.username===target.username);
+        console.log('[force-heal] ricaricato dal server:', JSON.stringify({ baseAccuracy:reloaded && reloaded.digimon.baseAccuracy, freeBonusApplied:reloaded && reloaded.digimon.freeBonusApplied }));
+        statusEl.style.color = 'var(--dchroma)';
+        statusEl.textContent = 'Salvato e ricaricato dal server — controlla se i numeri sono giusti ora.';
+        forceHealBtn.disabled = false;
+        renderPage();
+      };
     }
 
     enableCollapsibleCards(root);

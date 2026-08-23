@@ -247,6 +247,22 @@
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s){ return escapeHTML(s); }
 
+  // Normalizza il campo categories: alcune entry nel DB possono averlo salvato non come
+  // array (stringa JSON, stringa semplice, oggetto) — senza questa funzione un solo record
+  // "sporco" manda in crash renderFilterBar/renderGrid e fa sparire l'intero Digidex (filtri
+  // compresi), perché l'eccezione blocca l'esecuzione prima che arrivi a disegnare la griglia.
+  function catArr(e){
+    const c = e && e.categories;
+    if(Array.isArray(c)) return c;
+    if(c==null) return [];
+    if(typeof c === 'string'){
+      try{ const p = JSON.parse(c); if(Array.isArray(p)) return p; }catch(err){}
+      return c.trim() ? [c.trim()] : [];
+    }
+    if(typeof c === 'object') return Object.values(c).filter(v=>typeof v==='string' && v.trim());
+    return [];
+  }
+
   function computeDpSpent(qualities){ return (qualities||[]).reduce((s,q)=>s+(Number(q.cost)||0),0); }
 
   function evolutionsHTML(evolutions, label){
@@ -888,7 +904,7 @@ Devimon: https://..."></textarea>
     const usedAttrs = new Set(cachedDex.map(e=>e.attribute).filter(Boolean));
     const usedFamilies = new Set(cachedDex.map(e=>e.family).filter(Boolean));
     const allCats = new Set();
-    cachedDex.forEach(e=>(e.categories||[]).forEach(c=>allCats.add(c)));
+    cachedDex.forEach(e=>catArr(e).forEach(c=>allCats.add(c)));
 
     let html = '';
     const usedStages = new Set(cachedDex.map(e=>stageGroupKey(e)).filter(Boolean));
@@ -968,7 +984,7 @@ Devimon: https://..."></textarea>
     if(!grid) return;
     const isMaster = session.role==='master';
     let filtered = cachedDex;
-    if(activeFilters.length>0) filtered = filtered.filter(e=>(e.categories||[]).some(c=>activeFilters.includes(c)));
+    if(activeFilters.length>0) filtered = filtered.filter(e=>catArr(e).some(c=>activeFilters.includes(c)));
     if(activeAttrFilter) filtered = filtered.filter(e=>e.attribute===activeAttrFilter);
     if(activeFamilyFilter) filtered = filtered.filter(e=>e.family===activeFamilyFilter);
     if(activeStageFilter) filtered = filtered.filter(e=>stageGroupKey(e)===activeStageFilter);
@@ -1072,7 +1088,7 @@ Devimon: https://..."></textarea>
         </div>
         ${entry.attribute ? attributeLegendHTML() : ''}
         ${entry.origin_type ? `<div class="muted" style="margin-bottom:8px;font-size:10px;">Livello di riferimento: ${escapeHTML(entry.stage)}</div>` : ''}
-        ${entry.categories && entry.categories.length ? `<div style="margin-bottom:8px;">${entry.categories.map(c=>`<span class="tag" style="margin-right:4px;">${escapeHTML(c)}</span>`).join('')}</div>` : ''}
+        ${catArr(entry).length ? `<div style="margin-bottom:8px;">${catArr(entry).map(c=>`<span class="tag" style="margin-right:4px;">${escapeHTML(c)}</span>`).join('')}</div>` : ''}
         ${entry.description ? `<div class="muted" style="margin-bottom:10px;">${escapeHTML(entry.description)}</div>` : ''}
         ${entry.signature_move ? `<div class="hud-frame" style="padding:8px 10px;margin-bottom:10px;border-color:var(--amber);"><div class="muted" style="font-size:10px;margin-bottom:2px;">⭐ SIGNATURE MOVE</div><div style="color:var(--amber);font-family:'Share Tech Mono',monospace;font-size:13px;margin-bottom:${entry.attack_desc?'6px':'0'};">${escapeHTML(entry.signature_move)}</div>${entry.attack_desc ? `<div class="muted" style="font-size:12px;font-style:italic;line-height:1.4;">${escapeHTML(entry.attack_desc)}</div>` : ''}</div>` : ''}
         ${entry.signature_move_2 ? `<div class="hud-frame" style="padding:8px 10px;margin-bottom:10px;border-color:var(--amber);"><div class="muted" style="font-size:10px;margin-bottom:2px;">⭐ SIGNATURE MOVE 2 (Jogress)</div><div style="color:var(--amber);font-family:'Share Tech Mono',monospace;font-size:13px;margin-bottom:${entry.attack_desc_2?'6px':'0'};">${escapeHTML(entry.signature_move_2)}</div>${entry.attack_desc_2 ? `<div class="muted" style="font-size:12px;font-style:italic;line-height:1.4;">${escapeHTML(entry.attack_desc_2)}</div>` : ''}</div>` : ''}
@@ -1659,7 +1675,7 @@ Devimon: https://..."></textarea>
     // Prima questo fallback mancava e la Pre-Evoluzione veniva sempre azzerata all'apertura della scheda.
     if(!draft.evolvesFrom) draft.evolvesFrom = draft.evolves_from || [];
     if(!draft.qualities) draft.qualities = [];
-    if(!draft.categories) draft.categories = [];
+    draft.categories = catArr(draft);
     if(!draft.extraAttacks) draft.extraAttacks = draft.extra_attacks || [];
     if(!draft.slideTargets) draft.slideTargets = draft.slide_targets || [];
     const bs = draft.base_stats || {};
