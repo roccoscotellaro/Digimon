@@ -289,7 +289,7 @@
       unspentGrowthPoints:0, inspirationPoints:0, tormentPenalty:0, torments:[],
       majorAspect:{text:'',usesLeft:1}, minorAspect:{text:'',usesLeft:2}, built:false,
       age:'', nationality:'', height:'', hairColor:'', eyeColor:'', distinctiveTraits:'', background:'',
-      portraitPosX:50, portraitPosY:50, portraitZoom:100, imageThumbUrl:'' };
+      portraitPosX:50, portraitPosY:50, portraitZoom:100 };
   }
   function normalizeMember(m){
     const hadPriorTamer = !!(m.tamer && typeof m.tamer.built === 'undefined' && Object.keys(m.tamer).length>0);
@@ -527,19 +527,15 @@
   }
 
   function portraitBlockHTML(m, editable){
-    const hasThumb = !!m.tamer.imageThumbUrl;
-    const circleSrc = hasThumb ? m.tamer.imageThumbUrl : m.tamer.imageUrl;
-    const hasCircleImg = !!circleSrc;
+    const hasImg = !!m.tamer.imageUrl;
+    const x = Math.max(0, Math.min(100, Number(m.tamer.portraitPosX ?? 50)));
+    const y = Math.max(0, Math.min(100, Number(m.tamer.portraitPosY ?? 50)));
     const zoom = Math.max(100, Math.min(250, Number(m.tamer.portraitZoom ?? 100)));
-    // Se c'è una miniatura dedicata (già ritagliata a mano), va mostrata così com'è, semplice
-    // e centrata — niente trascinamento/zoom, che si applicano solo all'immagine principale.
-    const circleStyle = hasThumb ? 'object-position:50% 50%;' : portraitTransformStyle(m.tamer);
-    const circleCursor = (editable && !hasThumb) ? 'cursor:grab;' : (editable ? '' : 'cursor:zoom-in;');
     return `
     <div class="portrait-wrap">
       <div class="portrait-frame">
-      ${hasCircleImg
-        ? `<img class="portrait" id="p-portrait-img" src="${escapeAttr(circleSrc)}" draggable="false" ondragstart="return false;" ${editable?'':`data-lightbox-src="${escapeAttr(m.tamer.imageUrl||circleSrc)}"`} style="${circleCursor}${circleStyle}" title="${editable ? (hasThumb ? 'Miniatura già pronta' : 'Trascina per centrare il volto') : 'Clicca per ingrandire'}" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'portrait-placeholder',innerHTML:'⚠️',title:'Immagine non caricabile'}));" />`
+      ${hasImg
+        ? `<img class="portrait" id="p-portrait-img" src="${escapeAttr(m.tamer.imageUrl)}" draggable="false" ondragstart="return false;" ${editable?'':`data-lightbox-src="${escapeAttr(m.tamer.imageUrl)}"`} style="${editable?'cursor:grab;':'cursor:zoom-in;'}${portraitTransformStyle(m.tamer)}" title="${editable?'Trascina per centrare il volto (o usa gli slider qui sotto)':'Clicca per ingrandire'}" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'portrait-placeholder',innerHTML:'⚠️',title:'Immagine non caricabile'}));" />`
         : `<div class="portrait-placeholder" id="p-portrait-img">👤</div>`}
       </div>
       <div style="flex:1;min-width:220px;">
@@ -549,32 +545,28 @@
         <div class="muted" style="margin-top:2px;">Tamer — Campagna ${escapeHTML(session.code)}</div>
         ${editable ? `
         <div class="field" style="margin-top:12px;">
-          <label>URL Immagine Profilo (a corpo intero)</label>
+          <label>URL Immagine Profilo</label>
           <input type="text" id="p-imageUrl" value="${escapeAttr(m.tamer.imageUrl||'')}" placeholder="https://..." />
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <input type="file" accept="image/*" id="p-img-file" style="display:none;" />
           <button type="button" class="btn ghost small" id="p-img-btn">📎 Carica immagine</button>
-          ${(!!m.tamer.imageUrl && !hasThumb) ? `<button type="button" class="btn ghost small" id="p-img-center">🎯 Centra</button>` : ''}
+          ${hasImg ? `<button type="button" class="btn ghost small" id="p-img-center">🎯 Centra</button>` : ''}
           <span class="muted" id="p-img-status"></span>
         </div>
-        ${(!!m.tamer.imageUrl && !hasThumb) ? `
-        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+        ${hasImg ? `
+        <div style="display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:6px 8px;margin-top:10px;">
+          <span class="muted" style="font-size:10px;">↔ Orizz.</span>
+          <input type="range" id="p-img-posx" min="0" max="100" step="1" value="${x}" />
+          <span class="muted mono" id="p-img-posx-val" style="font-size:10px;min-width:32px;text-align:right;">${x}%</span>
+          <span class="muted" style="font-size:10px;">↕ Vert.</span>
+          <input type="range" id="p-img-posy" min="0" max="100" step="1" value="${y}" />
+          <span class="muted mono" id="p-img-posy-val" style="font-size:10px;min-width:32px;text-align:right;">${y}%</span>
           <span class="muted" style="font-size:10px;">🔍 Zoom</span>
-          <input type="range" id="p-img-zoom" min="100" max="250" step="5" value="${zoom}" style="width:130px;" />
-          <span class="muted mono" id="p-img-zoom-val" style="font-size:10px;min-width:34px;">${zoom}%</span>
+          <input type="range" id="p-img-zoom" min="100" max="250" step="5" value="${zoom}" />
+          <span class="muted mono" id="p-img-zoom-val" style="font-size:10px;min-width:32px;text-align:right;">${zoom}%</span>
         </div>
-        <div class="muted" style="margin-top:4px;">Trascina l'immagine nel cerchio per centrare il volto, usa lo zoom per ingrandirlo.</div>` : ''}
-        <div class="field" style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);">
-          <label>URL Miniatura (opzionale — foto già ritagliata sul volto, per il cerchio)</label>
-          <input type="text" id="p-imageThumbUrl" value="${escapeAttr(m.tamer.imageThumbUrl||'')}" placeholder="https://..." />
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <input type="file" accept="image/*" id="p-img-thumb-file" style="display:none;" />
-          <button type="button" class="btn ghost small" id="p-img-thumb-btn">📎 Carica miniatura</button>
-          <span class="muted" id="p-img-thumb-status"></span>
-        </div>
-        <div class="muted" style="margin-top:4px;">Se la aggiungi, sostituisce nel cerchio l'immagine principale (niente trascinamento necessario) — utile se il trascinamento non funziona sul tuo dispositivo.</div>` : ''}
+        <div class="muted" style="margin-top:4px;">Usa gli slider per centrare il volto e ingrandirlo — oppure trascina direttamente l'immagine nel cerchio.</div>` : ''}` : ''}
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);">
@@ -1132,8 +1124,6 @@
     });
     const imgEl = document.getElementById('p-imageUrl');
     if(imgEl) target.tamer.imageUrl = imgEl.value.trim();
-    const imgThumbEl = document.getElementById('p-imageThumbUrl');
-    if(imgThumbEl) target.tamer.imageThumbUrl = imgThumbEl.value.trim();
     const digiviceEl = document.getElementById('p-digiviceImageUrl');
     if(digiviceEl) target.tamer.digiviceImageUrl = digiviceEl.value.trim();
     const woundsEl = document.getElementById('p-currentWounds');
@@ -1242,9 +1232,31 @@
     const imgEl = document.getElementById('p-portrait-img');
     const t = target.tamer;
     if(!imgEl || imgEl.tagName !== 'IMG') return;
-    if(t.imageThumbUrl) return; // miniatura dedicata in uso: niente trascinamento/zoom da gestire
     imgEl.setAttribute('draggable', 'false');
     applyPortraitTransform(imgEl, t);
+
+    const posXInp = document.getElementById('p-img-posx');
+    const posXVal = document.getElementById('p-img-posx-val');
+    const posYInp = document.getElementById('p-img-posy');
+    const posYVal = document.getElementById('p-img-posy-val');
+    const zoomInp = document.getElementById('p-img-zoom');
+    const zoomVal = document.getElementById('p-img-zoom-val');
+
+    // Aggiorna sia l'immagine sia le posizioni degli slider — usata sia quando si trascina
+    // l'immagine sia quando si muove uno slider, così restano sempre sincronizzati tra loro.
+    function syncAll(){
+      applyPortraitTransform(imgEl, t);
+      const x = Math.round(Math.max(0, Math.min(100, Number(t.portraitPosX ?? 50))));
+      const y = Math.round(Math.max(0, Math.min(100, Number(t.portraitPosY ?? 50))));
+      const z = Math.round(Math.max(100, Math.min(250, Number(t.portraitZoom ?? 100))));
+      if(posXInp) posXInp.value = x;
+      if(posXVal) posXVal.textContent = x + '%';
+      if(posYInp) posYInp.value = y;
+      if(posYVal) posYVal.textContent = y + '%';
+      if(zoomInp) zoomInp.value = z;
+      if(zoomVal) zoomVal.textContent = z + '%';
+    }
+
     let dragging = false, moved = false;
     let startX = 0, startY = 0, startPosX = 50, startPosY = 50;
 
@@ -1267,7 +1279,7 @@
       // solito sta il volto): il segno è quindi invertito rispetto al movimento del puntatore.
       t.portraitPosX = Math.max(0, Math.min(100, startPosX - (dx / rect.width) * 100));
       t.portraitPosY = Math.max(0, Math.min(100, startPosY - (dy / rect.height) * 100));
-      applyPortraitTransform(imgEl, t);
+      syncAll();
     }
     function onEnd(){
       if(!dragging) return;
@@ -1282,6 +1294,8 @@
     // Uso mouse/touch "classici" invece dei Pointer Events: sono supportati ovunque da anni
     // senza le stranezze note di Safari con setPointerCapture su elementi con transform/clip
     // (esattamente la combinazione — cerchio ritagliato + zoom via transform — usata qui).
+    // Gli slider qui sotto restano comunque il modo garantito di funzionare, indipendentemente
+    // dal browser/dispositivo, nel caso il trascinamento continui a non rispondere.
     function onStart(e){
       if(e.cancelable) e.preventDefault();
       const p = getPoint(e);
@@ -1302,14 +1316,19 @@
     const centerBtn = document.getElementById('p-img-center');
     if(centerBtn) centerBtn.onclick = ()=>{
       t.portraitPosX = 50; t.portraitPosY = 50;
-      applyPortraitTransform(imgEl, t);
+      syncAll();
     };
-    const zoomInp = document.getElementById('p-img-zoom');
-    const zoomVal = document.getElementById('p-img-zoom-val');
+    if(posXInp) posXInp.oninput = ()=>{
+      t.portraitPosX = Number(posXInp.value)||50;
+      syncAll();
+    };
+    if(posYInp) posYInp.oninput = ()=>{
+      t.portraitPosY = Number(posYInp.value)||50;
+      syncAll();
+    };
     if(zoomInp) zoomInp.oninput = ()=>{
       t.portraitZoom = Number(zoomInp.value)||100;
-      if(zoomVal) zoomVal.textContent = t.portraitZoom + '%';
-      applyPortraitTransform(imgEl, t);
+      syncAll();
     };
   }
 
@@ -1351,41 +1370,6 @@
         }
         btn.disabled = false;
         fileInput.value = '';
-      };
-    }
-
-    const thumbFileInput = document.getElementById('p-img-thumb-file');
-    const thumbBtn = document.getElementById('p-img-thumb-btn');
-    const thumbStatusEl = document.getElementById('p-img-thumb-status');
-    if(thumbFileInput && thumbBtn){
-      thumbBtn.onclick = ()=> thumbFileInput.click();
-      thumbFileInput.onchange = async ()=>{
-        const file = thumbFileInput.files[0];
-        if(!file) return;
-        thumbStatusEl.textContent = 'Caricamento...';
-        thumbBtn.disabled = true;
-        try{
-          const dataUrl = await new Promise((resolve,reject)=>{
-            const reader = new FileReader();
-            reader.onload = ()=> resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-          const res = await uploadImage(session.code, dataUrl);
-          if(res && res.ok && res.url){
-            collectFormValues(target);
-            target.tamer.imageThumbUrl = res.url;
-            renderPage();
-            const freshStatus = document.getElementById('p-img-thumb-status');
-            if(freshStatus) freshStatus.textContent = '✔ Caricata — ricordati di salvare.';
-          } else {
-            thumbStatusEl.textContent = '⚠ Caricamento fallito: ' + (lastApiError||'errore sconosciuto');
-          }
-        }catch(e){
-          thumbStatusEl.textContent = '⚠ Errore: ' + e.message;
-        }
-        thumbBtn.disabled = false;
-        thumbFileInput.value = '';
       };
     }
   }

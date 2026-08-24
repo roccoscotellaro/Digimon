@@ -1792,6 +1792,23 @@
     return `<div class="${cls}" style="display:flex;align-items:center;justify-content:center;color:var(--cyan);font-family:'Share Tech Mono',monospace;font-size:${size==='sm'?'14px':'20px'};">${initial}</div>`;
   }
 
+  // Come portraitHTML, ma per il ritratto del TAMER: applica il ritaglio/zoom sul volto
+  // impostato in player.html (portraitPosX/Y/portraitZoom), invece di mostrare l'immagine
+  // intera. Se il tamer non ha ancora impostato una posizione, i default (50/50/100) equivalgono
+  // a un semplice centraggio, quindi è sicuro usarla anche su schede vecchie senza quei campi.
+  function tamerAvatarHTML(t, name, size){
+    const cls = size==='sm' ? 'portrait-sm' : 'portrait';
+    if(t && t.imageUrl){
+      const x = Math.max(0, Math.min(100, Number(t.portraitPosX ?? 50)));
+      const y = Math.max(0, Math.min(100, Number(t.portraitPosY ?? 50)));
+      const zoom = Math.max(100, Math.min(250, Number(t.portraitZoom ?? 100)));
+      return `<span class="${cls}" style="display:inline-block;overflow:hidden;position:relative;padding:0;">`
+        + `<img src="${escapeAttr(t.imageUrl)}" onerror="this.parentElement.style.visibility='hidden'" style="width:100%;height:100%;object-fit:cover;object-position:${x}% ${y}%;transform:scale(${zoom/100});display:block;" />`
+        + `</span>`;
+    }
+    return portraitHTML('', name, size);
+  }
+
   // Finché il Master non approva la scheda (dopo la Creazione Guidata), mostriamo un Digitama
   // al posto dell'immagine — anche se il giocatore ha già impostato un'immagine.
   function digimonPortraitHTML(d, size){
@@ -2454,7 +2471,7 @@
         <div class="flex-between"><div class="section-title" style="margin:0;border:none;padding:0;">Scheda Tamer</div>
         <span><a href="player.html" target="_blank" class="btn ghost small" style="margin-right:4px;text-decoration:none;">✏️ Scheda Completa</a><button class="btn small" id="btn-edit-tamer">Modifica</button>${containerId && containerId.indexOf('m-tamer-')===0 ? `<button class="btn ghost small" id="btn-reset-tamer" style="margin-left:4px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera</button>` : ''}</span></div>
         <div class="sheet-head" style="margin-top:12px;">
-          ${portraitHTML(t.imageUrl, me.username)}
+          ${tamerAvatarHTML(t, me.username)}
           <div class="info"><div class="nm">${escapeHTML(me.username)}</div><div class="tg">AGI ${t.agility} · BODY ${t.body} · CAR ${t.charisma} · INT ${t.intelligence} · WILL ${t.willpower}</div></div>
           <div style="margin-left:auto;text-align:center;">
             ${t.digiviceImageUrl
@@ -6913,6 +6930,7 @@
       <div class="roster-item">
         <div class="flex-between">
           <div style="display:flex;align-items:center;gap:8px;">
+            ${tamerAvatarHTML(p.tamer, p.username, 'sm')}
             <div style="position:relative;display:inline-flex;flex-shrink:0;">${digimonPortraitHTML(p.digimon, 'sm')}<span style="position:absolute;bottom:-2px;right:-2px;width:9px;height:9px;border-radius:50%;background:${onlineColor};box-shadow:${online?`0 0 5px ${onlineColor}`:'none'};border:1.5px solid var(--bg,#05070a);"></span></div>
             <div>
               <span class="name">${escapeHTML(p.username)}</span>
