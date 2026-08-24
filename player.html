@@ -67,7 +67,9 @@
   .skill-box .l{font-size:10px;color:var(--text-mute);text-transform:uppercase;}
   .skill-box input{width:60px;text-align:center;}
   .portrait-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:6px;}
-  .portrait{width:120px;height:120px;border-radius:50%;object-fit:cover;border:2px solid var(--cyan-dim);background:#05070a;touch-action:none;-webkit-user-drag:none;user-select:none;}
+  .portrait-frame{width:120px;height:120px;border-radius:50%;overflow:hidden;position:relative;background:#05070a;border:2px solid var(--cyan-dim);flex:none;}
+  .portrait-frame .portrait{width:100%;height:100%;object-fit:cover;display:block;touch-action:none;-webkit-user-drag:none;user-select:none;}
+  .portrait-frame .portrait-placeholder{width:100%;height:100%;border-radius:0;border:none;}
   .portrait-placeholder{width:120px;height:120px;border-radius:50%;background:var(--panel-2);border:2px dashed var(--line);display:flex;align-items:center;justify-content:center;font-size:34px;color:var(--text-mute);}
   .list-item{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin-bottom:8px;}
   .list-item .top-row{display:flex;justify-content:space-between;align-items:center;gap:8px;}
@@ -287,7 +289,7 @@
       unspentGrowthPoints:0, inspirationPoints:0, tormentPenalty:0, torments:[],
       majorAspect:{text:'',usesLeft:1}, minorAspect:{text:'',usesLeft:2}, built:false,
       age:'', nationality:'', height:'', hairColor:'', eyeColor:'', distinctiveTraits:'', background:'',
-      portraitPosX:50, portraitPosY:50 };
+      portraitPosX:50, portraitPosY:50, portraitZoom:100 };
   }
   function normalizeMember(m){
     const hadPriorTamer = !!(m.tamer && typeof m.tamer.built === 'undefined' && Object.keys(m.tamer).length>0);
@@ -517,19 +519,23 @@
       : `<div class="skill-box"><span class="l">${def.label}</span><span class="mono" style="color:var(--cyan);">${val}${bonus>0?` <span style="color:var(--dchroma);font-size:10px;" title="Bonus dal Digimon partner (Prodigious Skill / Mind Over Matter)">(+${bonus})</span>`:''}</span></div>`;
   }
 
-  function portraitPositionStyle(t){
+  function portraitTransformStyle(t){
     const x = Math.max(0, Math.min(100, Number(t.portraitPosX ?? 50)));
     const y = Math.max(0, Math.min(100, Number(t.portraitPosY ?? 50)));
-    return `object-position:${x}% ${y}%;`;
+    const zoom = Math.max(100, Math.min(250, Number(t.portraitZoom ?? 100)));
+    return `object-position:${x}% ${y}%;transform:scale(${zoom/100});`;
   }
 
   function portraitBlockHTML(m, editable){
     const hasImg = !!m.tamer.imageUrl;
+    const zoom = Math.max(100, Math.min(250, Number(m.tamer.portraitZoom ?? 100)));
     return `
     <div class="portrait-wrap">
+      <div class="portrait-frame">
       ${hasImg
-        ? `<img class="portrait" id="p-portrait-img" src="${escapeAttr(m.tamer.imageUrl)}" ${editable?'':`data-lightbox-src="${escapeAttr(m.tamer.imageUrl)}"`} style="${editable?'cursor:grab;':'cursor:zoom-in;'}${portraitPositionStyle(m.tamer)}" title="${editable?'Trascina per centrare il volto':'Clicca per ingrandire'}" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'portrait-placeholder',innerHTML:'⚠️',title:'Immagine non caricabile'}));" />`
+        ? `<img class="portrait" id="p-portrait-img" src="${escapeAttr(m.tamer.imageUrl)}" ${editable?'':`data-lightbox-src="${escapeAttr(m.tamer.imageUrl)}"`} style="${editable?'cursor:grab;':'cursor:zoom-in;'}${portraitTransformStyle(m.tamer)}" title="${editable?'Trascina per centrare il volto':'Clicca per ingrandire'}" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'portrait-placeholder',innerHTML:'⚠️',title:'Immagine non caricabile'}));" />`
         : `<div class="portrait-placeholder" id="p-portrait-img">👤</div>`}
+      </div>
       <div style="flex:1;min-width:220px;">
         ${editable
           ? `<div class="field"><label>Nome Utente (login — non modificabile qui)</label><input type="text" value="${escapeAttr(m.username)}" disabled /></div>`
@@ -546,7 +552,13 @@
           ${hasImg ? `<button type="button" class="btn ghost small" id="p-img-center">🎯 Centra</button>` : ''}
           <span class="muted" id="p-img-status"></span>
         </div>
-        ${hasImg ? `<div class="muted" style="margin-top:4px;">Trascina l'immagine nel cerchio per centrare il volto.</div>` : ''}` : ''}
+        ${hasImg ? `
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+          <span class="muted" style="font-size:10px;">🔍 Zoom</span>
+          <input type="range" id="p-img-zoom" min="100" max="250" step="5" value="${zoom}" style="width:130px;" />
+          <span class="muted mono" id="p-img-zoom-val" style="font-size:10px;min-width:34px;">${zoom}%</span>
+        </div>
+        <div class="muted" style="margin-top:4px;">Trascina l'immagine nel cerchio per centrare il volto, usa lo zoom per ingrandirlo.</div>` : ''}` : ''}
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);">
@@ -1198,19 +1210,21 @@
     };
   }
 
-  // ---------- trascinamento ritratto (per centrare il volto nel cerchio) ----------
-  function applyPortraitPosition(imgEl, t){
+  // ---------- trascinamento + zoom ritratto (per centrare/ingrandire il volto nel cerchio) ----------
+  function applyPortraitTransform(imgEl, t){
     if(!imgEl || imgEl.tagName !== 'IMG') return;
     const x = Math.max(0, Math.min(100, Number(t.portraitPosX ?? 50)));
     const y = Math.max(0, Math.min(100, Number(t.portraitPosY ?? 50)));
+    const zoom = Math.max(100, Math.min(250, Number(t.portraitZoom ?? 100)));
     imgEl.style.objectPosition = x + '% ' + y + '%';
+    imgEl.style.transform = 'scale(' + (zoom/100) + ')';
   }
 
   function bindPortraitDrag(target){
     const imgEl = document.getElementById('p-portrait-img');
     const t = target.tamer;
     if(!imgEl || imgEl.tagName !== 'IMG') return;
-    applyPortraitPosition(imgEl, t);
+    applyPortraitTransform(imgEl, t);
     let dragging = false, moved = false;
     let startClientX = 0, startClientY = 0, startPosX = 50, startPosY = 50;
     imgEl.onpointerdown = (e)=>{
@@ -1223,6 +1237,8 @@
     };
     imgEl.onpointermove = (e)=>{
       if(!dragging) return;
+      // getBoundingClientRect riflette la dimensione GIÀ zoomata (transform:scale incluso),
+      // quindi il trascinamento resta preciso in pixel anche quando l'immagine è ingrandita.
       const rect = imgEl.getBoundingClientRect();
       const dx = e.clientX - startClientX;
       const dy = e.clientY - startClientY;
@@ -1233,7 +1249,7 @@
       // solito sta il volto): il segno è quindi invertito rispetto al movimento del puntatore.
       t.portraitPosX = Math.max(0, Math.min(100, startPosX - (dx / rect.width) * 100));
       t.portraitPosY = Math.max(0, Math.min(100, startPosY - (dy / rect.height) * 100));
-      applyPortraitPosition(imgEl, t);
+      applyPortraitTransform(imgEl, t);
     };
     const endDrag = (e)=>{
       if(!dragging) return;
@@ -1246,7 +1262,14 @@
     const centerBtn = document.getElementById('p-img-center');
     if(centerBtn) centerBtn.onclick = ()=>{
       t.portraitPosX = 50; t.portraitPosY = 50;
-      applyPortraitPosition(imgEl, t);
+      applyPortraitTransform(imgEl, t);
+    };
+    const zoomInp = document.getElementById('p-img-zoom');
+    const zoomVal = document.getElementById('p-img-zoom-val');
+    if(zoomInp) zoomInp.oninput = ()=>{
+      t.portraitZoom = Number(zoomInp.value)||100;
+      if(zoomVal) zoomVal.textContent = t.portraitZoom + '%';
+      applyPortraitTransform(imgEl, t);
     };
   }
 
@@ -1275,10 +1298,11 @@
           statusEl.textContent = '✔ Caricata — ricordati di salvare.';
           // Anteprima immediata: aggiorna/crea l'elemento <img> del ritratto sul posto,
           // senza un renderPage() completo, per non perdere altri campi in modifica.
-          // Una foto nuova riparte centrata: l'utente la ritocca trascinandola.
+          // Una foto nuova riparte centrata e senza zoom: l'utente la ritocca dopo.
           target.tamer.imageUrl = res.url;
           target.tamer.portraitPosX = 50;
           target.tamer.portraitPosY = 50;
+          target.tamer.portraitZoom = 100;
           const preview = document.getElementById('p-portrait-img');
           if(preview){
             let imgNode = preview;
@@ -1292,9 +1316,9 @@
             imgNode.src = res.url;
             imgNode.style.cursor = 'grab';
             imgNode.title = 'Trascina per centrare il volto';
-            imgNode.removeAttribute('data-lightbox-src'); // in modifica niente zoom, solo trascinamento
+            imgNode.removeAttribute('data-lightbox-src'); // in modifica niente zoom-click, solo trascinamento
           }
-          // Se prima non c'era immagine, il pulsante "Centra" non esisteva ancora: lo creiamo.
+          // Se prima non c'era immagine, i controlli "Centra"/Zoom non esistevano ancora: li creiamo.
           if(!document.getElementById('p-img-center')){
             const centerBtn = document.createElement('button');
             centerBtn.type = 'button';
@@ -1302,6 +1326,14 @@
             centerBtn.id = 'p-img-center';
             centerBtn.textContent = '🎯 Centra';
             btn.insertAdjacentElement('afterend', centerBtn);
+          }
+          if(!document.getElementById('p-img-zoom')){
+            const zoomRow = document.createElement('div');
+            zoomRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:8px;';
+            zoomRow.innerHTML = '<span class="muted" style="font-size:10px;">🔍 Zoom</span>'
+              + '<input type="range" id="p-img-zoom" min="100" max="250" step="5" value="100" style="width:130px;" />'
+              + '<span class="muted mono" id="p-img-zoom-val" style="font-size:10px;min-width:34px;">100%</span>';
+            btn.closest('div').insertAdjacentElement('afterend', zoomRow);
           }
           bindPortraitDrag(target);
         } else {
