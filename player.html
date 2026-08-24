@@ -67,9 +67,7 @@
   .skill-box .l{font-size:10px;color:var(--text-mute);text-transform:uppercase;}
   .skill-box input{width:60px;text-align:center;}
   .portrait-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:6px;}
-  .portrait-frame{width:120px;height:120px;border-radius:50%;overflow:hidden;position:relative;background:#05070a;border:2px solid var(--cyan-dim);flex:none;}
-  .portrait-frame .portrait{width:100%;height:100%;background-size:cover;background-repeat:no-repeat;display:block;touch-action:none;user-select:none;}
-  .portrait-frame .portrait-placeholder{width:100%;height:100%;border-radius:0;border:none;}
+  .portrait{width:120px;height:120px;border-radius:50%;object-fit:cover;border:2px solid var(--cyan-dim);background:#05070a;}
   .portrait-placeholder{width:120px;height:120px;border-radius:50%;background:var(--panel-2);border:2px dashed var(--line);display:flex;align-items:center;justify-content:center;font-size:34px;color:var(--text-mute);}
   .list-item{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin-bottom:8px;}
   .list-item .top-row{display:flex;justify-content:space-between;align-items:center;gap:8px;}
@@ -102,9 +100,6 @@
   <div class="scanline" style="position:fixed;inset:0;pointer-events:none;z-index:50;background:repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);mix-blend-mode:overlay;"></div>
   <div id="root-app"></div>
 </div>
-<div id="dvos-lightbox" style="display:none;position:fixed;inset:0;z-index:9998;background:rgba(2,4,6,0.92);align-items:center;justify-content:center;cursor:zoom-out;padding:24px;">
-  <img id="dvos-lightbox-img" src="" style="max-width:92vw;max-height:92vh;object-fit:contain;border:1px solid var(--cyan-dim);box-shadow:0 0 40px rgba(53,232,201,0.15);" />
-</div>
 <script>
 (function(){
   const SESSION_KEY = 'digivice_session_v1';
@@ -117,28 +112,6 @@
   let pollTimer = null;
 
   const root = document.getElementById('root-app');
-
-  // ---------- lightbox (anteprima immagine a corpo intero) ----------
-  // Vive fuori da #root-app così non viene ricreato ad ogni renderPage(); la delega degli
-  // eventi su document intercetta il click su qualunque elemento con data-lightbox-src,
-  // presente o futuro, senza dover ri-agganciare listener dopo ogni render.
-  (function initLightbox(){
-    const overlay = document.getElementById('dvos-lightbox');
-    const img = document.getElementById('dvos-lightbox-img');
-    if(!overlay || !img) return;
-    document.addEventListener('click', (e)=>{
-      const trigger = e.target.closest('[data-lightbox-src]');
-      if(trigger){
-        const src = trigger.getAttribute('data-lightbox-src');
-        if(src){ img.src = src; overlay.style.display = 'flex'; }
-        return;
-      }
-      if(e.target === overlay){ overlay.style.display = 'none'; img.src = ''; }
-    }, true);
-    document.addEventListener('keydown', (e)=>{
-      if(e.key === 'Escape' && overlay.style.display === 'flex'){ overlay.style.display = 'none'; img.src = ''; }
-    });
-  })();
 
   const SKILL_DEFS = [
     { key:'evade', label:'Evade', attrs:['agility','willpower'] },
@@ -287,9 +260,14 @@
     const skills = {}; SKILL_DEFS.forEach(s=>skills[s.key]=0);
     return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, imageUrl:'', currentWounds:null, inventory:[], skills,
       unspentGrowthPoints:0, inspirationPoints:0, tormentPenalty:0, torments:[],
-      majorAspect:{text:'',usesLeft:1}, minorAspect:{text:'',usesLeft:2}, built:false,
-      age:'', nationality:'', height:'', hairColor:'', eyeColor:'', distinctiveTraits:'', background:'',
-      imageThumbUrl:'' };
+      majorAspect:{text:'',usesLeft:1}, minorAspect:{text:'',usesLeft:2}, built:false, characterName:'' };
+  }
+  // Nome da mostrare in UI per un membro del roster: il nome del personaggio se è stato impostato,
+  // altrimenti lo username di login (fallback per personaggi esistenti che non l'hanno mai compilato).
+  // Lo username resta SEMPRE la chiave di login/sessione/query — questa funzione è solo per la visualizzazione.
+  function displayName(m){
+    const cn = m && m.tamer && m.tamer.characterName;
+    return (cn && String(cn).trim()) ? String(cn).trim() : ((m && m.username) || '');
   }
   function normalizeMember(m){
     const hadPriorTamer = !!(m.tamer && typeof m.tamer.built === 'undefined' && Object.keys(m.tamer).length>0);
@@ -332,7 +310,6 @@
   async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]).map(normalizeMember) : []; }
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
   async function uploadImage(code, dataUrl){ return apiPost('/api/upload', { code, dataUrl }); }
-  async function correggiItaliano(testo){ const d = await apiPost('/api/ai', { mode:'correzione', text: testo }); return d && d.corrected ? d.corrected : testo; }
   async function getProgression(code){
     const d = await apiGet('/api/state?resource=progression&code=' + encodeURIComponent(code));
     const p = d ? d.progression : { milestone:0, xp:0, inspiration:0, campaign_level:'Standard' };
@@ -520,90 +497,34 @@
   }
 
   function portraitBlockHTML(m, editable){
-    const hasThumb = !!m.tamer.imageThumbUrl;
-    const circleSrc = hasThumb ? m.tamer.imageThumbUrl : m.tamer.imageUrl;
-    const hasCircleImg = !!circleSrc;
     return `
     <div class="portrait-wrap">
-      <div class="portrait-frame">
-      ${hasCircleImg
-        ? `<div class="portrait" id="p-portrait-img" ${editable?'':`data-lightbox-src="${escapeAttr(m.tamer.imageUrl||circleSrc)}"`} style="background-image:url('${escapeAttr(circleSrc)}');background-position:center;${editable?'':'cursor:zoom-in;'}" title="${editable?'':'Clicca per ingrandire'}"></div>`
-        : `<div class="portrait-placeholder" id="p-portrait-img">👤</div>`}
-      </div>
+      ${m.tamer.imageUrl ? `<img class="portrait" src="${escapeAttr(m.tamer.imageUrl)}" />` : `<div class="portrait-placeholder">👤</div>`}
       <div style="flex:1;min-width:220px;">
         ${editable
-          ? `<div class="field"><label>Nome Utente (login — non modificabile qui)</label><input type="text" value="${escapeAttr(m.username)}" disabled /></div>`
-          : `<div class="pixel-title" style="font-size:22px;color:var(--cyan);text-shadow:0 0 10px rgba(53,232,201,0.4);">${escapeHTML(m.username)}</div>`}
+          ? `<div class="field"><label>Nome Personaggio (mostrato nell'interfaccia)</label><input type="text" id="p-characterName" value="${escapeAttr(m.tamer.characterName||'')}" placeholder="${escapeAttr(m.username)}" /></div>
+             <div class="field" style="margin-top:8px;"><label>Nome Utente (login — non modificabile qui)</label><input type="text" value="${escapeAttr(m.username)}" disabled /></div>`
+          : `<div class="pixel-title" style="font-size:22px;color:var(--cyan);text-shadow:0 0 10px rgba(53,232,201,0.4);">${escapeHTML(displayName(m))}</div>`}
         <div class="muted" style="margin-top:2px;">Tamer — Campagna ${escapeHTML(session.code)}</div>
         ${editable ? `
         <div class="field" style="margin-top:12px;">
-          <label>URL Immagine Profilo (a corpo intero)</label>
+          <label>URL Immagine Profilo</label>
           <input type="text" id="p-imageUrl" value="${escapeAttr(m.tamer.imageUrl||'')}" placeholder="https://..." />
         </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:8px;">
           <input type="file" accept="image/*" id="p-img-file" style="display:none;" />
           <button type="button" class="btn ghost small" id="p-img-btn">📎 Carica immagine</button>
           <span class="muted" id="p-img-status"></span>
-        </div>
-        <div class="field" style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);">
-          <label>Miniatura del volto (quella mostrata nel cerchio)</label>
-          <input type="text" id="p-imageThumbUrl" value="${escapeAttr(m.tamer.imageThumbUrl||'')}" placeholder="https://..." />
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <input type="file" accept="image/*" id="p-img-thumb-file" style="display:none;" />
-          <button type="button" class="btn ghost small" id="p-img-thumb-btn">📎 Carica miniatura</button>
-          ${hasThumb ? `<button type="button" class="btn ghost small" id="p-img-thumb-remove">🗑️ Rimuovi</button>` : ''}
-          <span class="muted" id="p-img-thumb-status"></span>
-        </div>
-        <div class="muted" style="margin-top:4px;">${hasThumb ? 'La miniatura è impostata: è lei a comparire nel cerchio qui sopra.' : 'Se non carichi una miniatura, nel cerchio comparirà l\'immagine principale (a corpo intero) così com\'è.'} Per un buon risultato, scegli o ritaglia prima una foto già centrata sul volto (es. con l\'editor foto del telefono) prima di caricarla qui.</div>` : ''}
+        </div>` : ''}
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);">
       ${m.tamer.digiviceImageUrl
-        ? `<img id="p-digivice-img" src="${escapeAttr(m.tamer.digiviceImageUrl)}" data-lightbox-src="${escapeAttr(m.tamer.digiviceImageUrl)}" onerror="this.style.visibility='hidden'" style="width:48px;height:48px;object-fit:contain;border:1px solid var(--cyan-dim);border-radius:var(--radius);background:var(--panel-2);padding:4px;cursor:zoom-in;" title="Clicca per ingrandire" />`
-        : `<div id="p-digivice-img" style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:var(--radius);color:var(--text-mute);font-size:20px;">📟</div>`}
+        ? `<img src="${escapeAttr(m.tamer.digiviceImageUrl)}" onerror="this.style.visibility='hidden'" style="width:48px;height:48px;object-fit:contain;border:1px solid var(--cyan-dim);border-radius:var(--radius);background:var(--panel-2);padding:4px;" />`
+        : `<div style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:var(--radius);color:var(--text-mute);font-size:20px;">📟</div>`}
       ${editable
         ? `<div class="field" style="flex:1;margin:0;"><label>URL Immagine Digivice</label><input type="text" id="p-digiviceImageUrl" value="${escapeAttr(m.tamer.digiviceImageUrl||'')}" placeholder="https://..." /></div>`
         : `<div class="muted">Digivice</div>`}
-    </div>`;
-  }
-
-  const BG_TRAIT_DEFS = [
-    { key:'age', label:'Età', placeholder:'es. 14 anni' },
-    { key:'nationality', label:'Nazionalità', placeholder:'es. Italiana' },
-    { key:'height', label:'Altezza', placeholder:'es. 165 cm' },
-    { key:'hairColor', label:'Colore Capelli', placeholder:'es. Castano' },
-    { key:'eyeColor', label:'Colore Occhi', placeholder:'es. Verde' }
-  ];
-
-  function backgroundBlockHTML(m, editable){
-    const t = m.tamer;
-    if(!editable){
-      return `
-      <div class="hud-frame card">
-        <div class="section-title"><span>Background</span></div>
-        <div class="grid-2">
-          ${BG_TRAIT_DEFS.map(d=>`<div class="field"><label>${d.label}</label><div>${escapeHTML(t[d.key]||'—')}</div></div>`).join('')}
-        </div>
-        <div class="field"><label>Tratti Distintivi</label><div>${escapeHTML(t.distinctiveTraits||'—')}</div></div>
-        <div class="field" style="margin-bottom:0;"><label>Storia</label><div style="white-space:pre-wrap;">${escapeHTML(t.background||'—')}</div></div>
-      </div>`;
-    }
-    return `
-    <div class="hud-frame card">
-      <div class="section-title"><span>Background</span></div>
-      <div class="grid-2">
-        ${BG_TRAIT_DEFS.map(d=>`<div class="field"><label>${d.label}</label><input type="text" id="p-bg-${d.key}" value="${escapeAttr(t[d.key]||'')}" placeholder="${d.placeholder}" /></div>`).join('')}
-      </div>
-      <div class="field"><label>Tratti Distintivi</label><input type="text" id="p-bg-distinctiveTraits" value="${escapeAttr(t.distinctiveTraits||'')}" placeholder="es. cicatrice sul sopracciglio, ride sempre..." /></div>
-      <div class="field" style="margin-bottom:6px;">
-        <label>Storia</label>
-        <textarea id="p-bg-background" rows="6" placeholder="Racconta chi è il tuo Tamer, da dove viene, cosa lo ha portato nel Mondo Digitale...">${escapeHTML(t.background||'')}</textarea>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;">
-        <button type="button" class="btn ghost small" id="p-bg-correct">✨ Correggi Italiano</button>
-        <span class="muted" id="p-bg-correct-status"></span>
-      </div>
     </div>`;
   }
 
@@ -734,7 +655,6 @@
   let creationDraft = null;
   let justBuiltTamer = false;
   let isEditingFullForm = false;
-  let sheetEditMode = false; // scheda in sola lettura finché non si preme "✏️ Modifica Scheda"
 
   function startTamerWizard(existingTamer){
     creationDraft = {
@@ -778,7 +698,6 @@
         const max = skillMax(t, def);
         const statusEl = document.getElementById('gp-status');
         if((Number(t.skills[key])||0) >= max){ statusEl.style.color='var(--danger)'; statusEl.textContent = `${def.label} è già al massimo consentito (${max}).`; return; }
-        collectFormValues(target);
         t.skills[key] = (Number(t.skills[key])||0) + 1;
         t.unspentGrowthPoints = Number(t.unspentGrowthPoints||0) - 1;
         const ok = await saveMember(session.code, target);
@@ -796,7 +715,6 @@
         let cap = 5;
         if(milestone>=6) cap = 7; else if(milestone>=3) cap = 6;
         if(current >= cap){ statusEl.style.color='var(--danger)'; statusEl.textContent = `Tetto attuale per gli Attributi: ${cap} (Milestone ${milestone}).`; return; }
-        collectFormValues(target);
         t[attr] = current + 1;
         t.unspentGrowthPoints = Number(t.unspentGrowthPoints||0) - 3;
         const ok = await saveMember(session.code, target);
@@ -902,7 +820,7 @@
         st.textContent = 'Salvataggio...';
         const ok = await saveMember(session.code, target);
         if(ok){
-          await pushLog(session.code, { who: session.username, role:'player', text: `${target.username} ha completato la Creazione Guidata del Tamer.` });
+          await pushLog(session.code, { who: session.username, role:'player', text: `${displayName(target)} ha completato la Creazione Guidata del Tamer.` });
           creationDraft = null;
           justBuiltTamer = true;
           cachedRoster = await getRoster(session.code);
@@ -928,7 +846,7 @@
       <div class="hud-frame card">
         <div class="section-title"><span>Seleziona Giocatore</span></div>
         <select id="p-select-player">
-          ${players.length===0 ? '<option>— nessun giocatore —</option>' : players.map(p=>`<option value="${escapeAttr(p.username)}" ${target && target.username===p.username?'selected':''}>${escapeHTML(p.username)}</option>`).join('')}
+          ${players.length===0 ? '<option>— nessun giocatore —</option>' : players.map(p=>`<option value="${escapeAttr(p.username)}" ${target && target.username===p.username?'selected':''}>${escapeHTML(displayName(p))}</option>`).join('')}
         </select>
         <div class="muted" style="margin-top:8px;">Come Master puoi modificare direttamente la scheda selezionata.</div>
       </div>`;
@@ -936,7 +854,7 @@
       target = cachedRoster.find(m=>m.username===session.username);
     }
 
-    const editable = sheetEditMode;
+    const editable = true;
 
     let bodyHTML;
     if(creationDraft && target){
@@ -954,7 +872,7 @@
       bodyHTML = `
         <div class="hud-frame card muted">
           ${isMaster ? (target ? `
-            <div style="margin-bottom:10px;">${escapeHTML(target.username)} non ha ancora completato la Creazione Guidata.</div>
+            <div style="margin-bottom:10px;">${escapeHTML(displayName(target))} non ha ancora completato la Creazione Guidata.</div>
             <button class="btn solid" id="btn-start-wizard" style="padding:10px 16px;">🧙 Apri Creazione Guidata</button>
           ` : 'Nessuna scheda trovata. Seleziona un giocatore.') : `
             <div style="margin-bottom:10px;">Non hai ancora una scheda. Puoi crearla subito con la Creazione Guidata.</div>
@@ -965,20 +883,15 @@
       bodyHTML = null; // usa il ramo completo sotto
     }
     // Il form completo (Punteggi/Skill/Inventario/ecc.) è quello con campi editabili non ancora
-    // salvati — mentre è aperto in modifica, il polling non deve ridisegnare la pagina sopra le
-    // modifiche in corso, altrimenti si perdono silenziosamente ad ogni refresh di 4s. In sola
-    // lettura invece va bene continuare ad aggiornare (es. per vedere modifiche fatte altrove).
-    isEditingFullForm = (bodyHTML === null && editable) || !!creationDraft;
+    // salvati — mentre è aperto, il polling non deve ridisegnare la pagina sopra le modifiche
+    // in corso, altrimenti si perdono silenziosamente ad ogni refresh di 4s.
+    isEditingFullForm = (bodyHTML === null) || !!creationDraft;
 
     root.innerHTML = `
       <div style="max-width:760px;margin:0 auto;">
         ${topbar()}
         ${selectorHTML}
         ${bodyHTML !== null ? bodyHTML : `
-        <div class="hud-frame card" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;gap:10px;flex-wrap:wrap;">
-          <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;">${editable ? '✏️ Modalità Modifica' : '👁️ Sola Lettura'}</div>
-          <button class="btn ${editable ? 'solid' : ''} small" id="p-toggle-edit">${editable ? '✅ Fine Modifica' : '✏️ Modifica Scheda'}</button>
-        </div>
         <div class="hud-frame card">
           ${portraitBlockHTML(target, editable)}
         </div>
@@ -995,7 +908,6 @@
           </div>
         </div>
         ${growthPointsBlockHTML(target)}
-        ${backgroundBlockHTML(target, editable)}
         ${statoBlockHTML(target, editable)}
         ${aspectsBlockHTML(target, editable)}
         ${inventoryBlockHTML(target, editable)}
@@ -1034,7 +946,7 @@
 
     if(isMaster){
       const sel = document.getElementById('p-select-player');
-      if(sel) sel.onchange = ()=>{ window.__playerSelected = sel.value; justBuiltTamer=false; creationDraft=null; sheetEditMode=false; renderPage(); };
+      if(sel) sel.onchange = ()=>{ window.__playerSelected = sel.value; justBuiltTamer=false; creationDraft=null; renderPage(); };
     }
 
     const startWizBtn = document.getElementById('btn-start-wizard');
@@ -1042,65 +954,44 @@
     if(creationDraft && target) bindTamerWizard(target);
     if(target && target.tamer.built && bodyHTML===null) bindGrowthPoints(target);
 
-    const toggleEditBtn = document.getElementById('p-toggle-edit');
-    if(toggleEditBtn) toggleEditBtn.onclick = async ()=>{
-      if(editable){
-        // Si sta uscendo dalla modifica: salva DAVVERO sul server (non solo in memoria),
-        // altrimenti caricamenti/modifiche fatte e poi chiuse con "Fine Modifica" (invece di
-        // "Salva Scheda") sembravano andate a buon fine ma sparivano al refresh successivo.
-        collectFormValues(target);
-        toggleEditBtn.disabled = true;
-        toggleEditBtn.textContent = 'Salvataggio...';
-        const ok = await saveMember(session.code, target);
-        if(ok) cachedRoster = await getRoster(session.code);
-        sheetEditMode = false;
-        renderPage();
-        if(!ok) window.alert('Attenzione: il salvataggio non è riuscito (' + (lastApiError||'errore sconosciuto') + '). Le modifiche potrebbero non essere state salvate — riprova.');
-      } else {
-        sheetEditMode = true;
-        renderPage();
-      }
-    };
-
     if(target && editable && bodyHTML === null){
       bindImageUpload(target);
-      checkPortraitLoadable(target.tamer.imageThumbUrl || target.tamer.imageUrl);
       bindListEditors(target);
-      const bgCorrectBtn = document.getElementById('p-bg-correct');
-      if(bgCorrectBtn) bgCorrectBtn.onclick = async ()=>{
-        const ta = document.getElementById('p-bg-background');
-        const status = document.getElementById('p-bg-correct-status');
-        if(!ta || !ta.value.trim()){ if(status) status.textContent = 'Scrivi prima qualcosa nella Storia.'; return; }
-        bgCorrectBtn.disabled = true;
-        status.textContent = 'Correzione in corso...';
-        const corrected = await correggiItaliano(ta.value);
-        ta.value = corrected;
-        status.textContent = lastApiError ? ('Errore: ' + lastApiError) : '✔ Testo corretto.';
-        bgCorrectBtn.disabled = false;
-      };
       document.getElementById('p-save').onclick = async ()=>{
-        collectFormValues(target);
+        STAT_DEFS.forEach(d=>{
+          const el = document.getElementById('p-stat-'+d.key);
+          if(el) target.tamer[d.key] = Math.max(0, Number(el.value)||0);
+        });
+        SKILL_DEFS.forEach(d=>{
+          const el = document.getElementById('p-skill-'+d.key);
+          if(el) target.tamer.skills[d.key] = Math.max(0, Number(el.value)||0);
+        });
+        const charNameEl = document.getElementById('p-characterName');
+        if(charNameEl) target.tamer.characterName = charNameEl.value.trim();
+        const imgEl = document.getElementById('p-imageUrl');
+        if(imgEl) target.tamer.imageUrl = imgEl.value.trim();
+        const digiviceEl = document.getElementById('p-digiviceImageUrl');
+        if(digiviceEl) target.tamer.digiviceImageUrl = digiviceEl.value.trim();
+        target.tamer.currentWounds = Math.max(0, Number(document.getElementById('p-currentWounds').value)||0);
+        target.tamer.unspentGrowthPoints = Math.max(0, Number(document.getElementById('p-unspentGrowthPoints').value)||0);
+        target.tamer.inspirationPoints = Math.max(0, Number(document.getElementById('p-inspirationPoints').value)||0);
+        target.tamer.tormentPenalty = Number(document.getElementById('p-tormentPenalty').value)||0;
+        target.tamer.majorAspect.text = document.getElementById('p-majorText').value.trim();
+        target.tamer.majorAspect.usesLeft = Math.max(0, Number(document.getElementById('p-majorUses').value)||0);
+        target.tamer.minorAspect.text = document.getElementById('p-minorText').value.trim();
+        target.tamer.minorAspect.usesLeft = Math.max(0, Number(document.getElementById('p-minorUses').value)||0);
 
         const msgEl = document.getElementById('p-save-msg');
         msgEl.innerHTML = '<span class="muted">Salvataggio...</span>';
         const ok = await saveMember(session.code, target);
-        if(ok){
-          // Ricarica e ridisegna: senza questo, la scheda restava visivamente "vecchia"
-          // dopo il salvataggio (es. un'immagine rimossa nel campo URL continuava a
-          // comparire finché non si ricaricava la pagina a mano).
-          cachedRoster = await getRoster(session.code);
-          renderPage();
-          const freshMsgEl = document.getElementById('p-save-msg');
-          if(freshMsgEl) freshMsgEl.innerHTML = '<span class="ok-msg">✔ Salvato.</span>';
-        } else {
-          msgEl.innerHTML = `<span class="err">⚠ ${escapeHTML(lastApiError||'errore sconosciuto')}</span>`;
-        }
+        msgEl.innerHTML = ok ? '<span class="ok-msg">✔ Salvato.</span>' : `<span class="err">⚠ ${escapeHTML(lastApiError||'errore sconosciuto')}</span>`;
+        if(ok) cachedRoster = await getRoster(session.code);
       };
       const resetBtn = document.getElementById('p-reset');
       if(resetBtn){
         resetBtn.onclick = async ()=>{
-          if(!window.confirm(`Azzerare la Scheda Tamer di ${target.username}? Attributi, Skill, Torments, Aspetti e Inventario torneranno a zero e potrà rifare la Creazione Guidata. L'azione non è reversibile.`)) return;
-          if(!window.confirm(`Sei sicuro? Questa è l'ultima conferma prima di azzerare definitivamente la Scheda Tamer di ${target.username}.`)) return;
+          if(!window.confirm(`Azzerare la Scheda Tamer di ${displayName(target)}? Attributi, Skill, Torments, Aspetti e Inventario torneranno a zero e potrà rifare la Creazione Guidata. L'azione non è reversibile.`)) return;
+          if(!window.confirm(`Sei sicuro? Questa è l'ultima conferma prima di azzerare definitivamente la Scheda Tamer di ${displayName(target)}.`)) return;
           target.tamer = defaultTamer();
           const ok = await saveMember(session.code, target);
           if(ok) cachedRoster = await getRoster(session.code);
@@ -1112,52 +1003,9 @@
     enableCollapsibleCards(root);
   }
 
-  function collectFormValues(target){
-    STAT_DEFS.forEach(d=>{
-      const el = document.getElementById('p-stat-'+d.key);
-      if(el) target.tamer[d.key] = Math.max(0, Number(el.value)||0);
-    });
-    SKILL_DEFS.forEach(d=>{
-      const el = document.getElementById('p-skill-'+d.key);
-      if(el) target.tamer.skills[d.key] = Math.max(0, Number(el.value)||0);
-    });
-    const imgEl = document.getElementById('p-imageUrl');
-    if(imgEl) target.tamer.imageUrl = imgEl.value.trim();
-    const imgThumbEl = document.getElementById('p-imageThumbUrl');
-    if(imgThumbEl) target.tamer.imageThumbUrl = imgThumbEl.value.trim();
-    const digiviceEl = document.getElementById('p-digiviceImageUrl');
-    if(digiviceEl) target.tamer.digiviceImageUrl = digiviceEl.value.trim();
-    const woundsEl = document.getElementById('p-currentWounds');
-    if(woundsEl) target.tamer.currentWounds = Math.max(0, Number(woundsEl.value)||0);
-    const gpEl = document.getElementById('p-unspentGrowthPoints');
-    if(gpEl) target.tamer.unspentGrowthPoints = Math.max(0, Number(gpEl.value)||0);
-    const ipEl = document.getElementById('p-inspirationPoints');
-    if(ipEl) target.tamer.inspirationPoints = Math.max(0, Number(ipEl.value)||0);
-    const tpEl = document.getElementById('p-tormentPenalty');
-    if(tpEl) target.tamer.tormentPenalty = Number(tpEl.value)||0;
-    const majorTextEl = document.getElementById('p-majorText');
-    if(majorTextEl) target.tamer.majorAspect.text = majorTextEl.value.trim();
-    const majorUsesEl = document.getElementById('p-majorUses');
-    if(majorUsesEl) target.tamer.majorAspect.usesLeft = Math.max(0, Number(majorUsesEl.value)||0);
-    const minorTextEl = document.getElementById('p-minorText');
-    if(minorTextEl) target.tamer.minorAspect.text = minorTextEl.value.trim();
-    const minorUsesEl = document.getElementById('p-minorUses');
-    if(minorUsesEl) target.tamer.minorAspect.usesLeft = Math.max(0, Number(minorUsesEl.value)||0);
-
-    BG_TRAIT_DEFS.forEach(d=>{
-      const el = document.getElementById('p-bg-'+d.key);
-      if(el) target.tamer[d.key] = el.value.trim();
-    });
-    const bgTraitsEl = document.getElementById('p-bg-distinctiveTraits');
-    if(bgTraitsEl) target.tamer.distinctiveTraits = bgTraitsEl.value.trim();
-    const bgTextEl = document.getElementById('p-bg-background');
-    if(bgTextEl) target.tamer.background = bgTextEl.value.trim();
-  }
-
   function bindListEditors(target){
     root.querySelectorAll('[data-inv-remove]').forEach(btn=>{
       btn.onclick = async ()=>{
-        collectFormValues(target);
         target.tamer.inventory.splice(Number(btn.getAttribute('data-inv-remove')),1);
         await saveMember(session.code, target);
         renderPage();
@@ -1169,14 +1017,12 @@
       if(!name) return;
       const qty = Number(document.getElementById('p-inv-qty').value)||1;
       const desc = document.getElementById('p-inv-desc').value.trim();
-      collectFormValues(target);
       target.tamer.inventory.push({ name, qty, desc });
       await saveMember(session.code, target);
       renderPage();
     };
     root.querySelectorAll('[data-torment-remove]').forEach(btn=>{
       btn.onclick = async ()=>{
-        collectFormValues(target);
         target.tamer.torments.splice(Number(btn.getAttribute('data-torment-remove')),1);
         await saveMember(session.code, target);
         renderPage();
@@ -1184,7 +1030,6 @@
     });
     root.querySelectorAll('[data-tor-plus]').forEach(btn=>{
       btn.onclick = async ()=>{
-        collectFormValues(target);
         const tor = target.tamer.torments[Number(btn.getAttribute('data-tor-plus'))];
         tor.boxes = Math.min(10, (Number(tor.boxes)||0)+1);
         await saveMember(session.code, target);
@@ -1193,7 +1038,6 @@
     });
     root.querySelectorAll('[data-tor-minus]').forEach(btn=>{
       btn.onclick = async ()=>{
-        collectFormValues(target);
         const tor = target.tamer.torments[Number(btn.getAttribute('data-tor-minus'))];
         tor.boxes = Math.max(0, (Number(tor.boxes)||0)-1);
         await saveMember(session.code, target);
@@ -1202,7 +1046,6 @@
     });
     root.querySelectorAll('[data-torment-rest]').forEach(chk=>{
       chk.onchange = async ()=>{
-        collectFormValues(target);
         target.tamer.torments[Number(chk.getAttribute('data-torment-rest'))].usedThisRest = chk.checked;
         await saveMember(session.code, target);
       };
@@ -1212,131 +1055,43 @@
       const name = document.getElementById('p-tor-name').value.trim();
       if(!name) return;
       const boxes = Math.max(0, Math.min(10, Number(document.getElementById('p-tor-boxes').value)||0));
-      collectFormValues(target);
       target.tamer.torments.push({ name, boxes, usedThisRest:false });
       await saveMember(session.code, target);
       renderPage();
     };
   }
 
-  // I div/img senza src valido non hanno un modo affidabile di segnalare l'errore in tutti i
-  // casi: verifichiamo il caricamento con un Image() di appoggio, e se fallisce sostituiamo
-  // con il placeholder.
-  function checkPortraitLoadable(url){
-    if(!url) return;
-    const probe = new Image();
-    probe.onerror = ()=>{
-      const current = document.getElementById('p-portrait-img');
-      if(current && current.classList && current.classList.contains('portrait')){
-        const ph = document.createElement('div');
-        ph.className = 'portrait-placeholder';
-        ph.id = 'p-portrait-img';
-        ph.textContent = '⚠️';
-        ph.title = 'Immagine non caricabile';
-        current.replaceWith(ph);
-      }
-    };
-    probe.src = url;
-  }
-
-  // Limite prudenziale lato client: Vercel (piano Hobby) rifiuta richieste oltre ~4.5MB, e le
-  // foto scattate con lo smartphone (specie in HEIC/alta risoluzione) possono superarlo — con un
-  // errore che a volte il fetch non riesce a segnalare chiaramente. Meglio avvisare subito.
-  const MAX_UPLOAD_MB = 4;
-  function fileTooBig(file){
-    return file && file.size > MAX_UPLOAD_MB * 1024 * 1024;
-  }
-
   function bindImageUpload(target){
     const fileInput = document.getElementById('p-img-file');
     const btn = document.getElementById('p-img-btn');
     const statusEl = document.getElementById('p-img-status');
-    if(fileInput && btn && statusEl){
-      btn.onclick = ()=> fileInput.click();
-      fileInput.onchange = async ()=>{
-        const file = fileInput.files[0];
-        if(!file) return;
-        if(fileTooBig(file)){
-          statusEl.textContent = `⚠ File troppo grande (${(file.size/1024/1024).toFixed(1)}MB) — usa una foto sotto i ${MAX_UPLOAD_MB}MB.`;
-          fileInput.value = '';
-          return;
+    if(!fileInput || !btn) return;
+    btn.onclick = ()=> fileInput.click();
+    fileInput.onchange = async ()=>{
+      const file = fileInput.files[0];
+      if(!file) return;
+      statusEl.textContent = 'Caricamento...';
+      btn.disabled = true;
+      try{
+        const dataUrl = await new Promise((resolve,reject)=>{
+          const reader = new FileReader();
+          reader.onload = ()=> resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const res = await uploadImage(session.code, dataUrl);
+        if(res && res.ok && res.url){
+          const imgEl = document.getElementById('p-imageUrl');
+          if(imgEl) imgEl.value = res.url;
+          statusEl.textContent = '✔ Caricata — ricordati di salvare.';
+        } else {
+          statusEl.textContent = '⚠ Caricamento fallito: ' + (lastApiError||'errore sconosciuto');
         }
-        statusEl.textContent = 'Caricamento...';
-        btn.disabled = true;
-        try{
-          const dataUrl = await new Promise((resolve,reject)=>{
-            const reader = new FileReader();
-            reader.onload = ()=> resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-          const res = await uploadImage(session.code, dataUrl);
-          if(res && res.ok && res.url){
-            // Cattura prima gli altri campi (per non perderli), poi aggiorna e ridisegna:
-            // più semplice e robusto di rattoppare a mano il DOM del ritratto.
-            collectFormValues(target);
-            target.tamer.imageUrl = res.url;
-            renderPage();
-            const freshStatus = document.getElementById('p-img-status');
-            if(freshStatus) freshStatus.textContent = '✔ Caricata — ricordati di salvare.';
-          } else {
-            statusEl.textContent = '⚠ Caricamento fallito: ' + (lastApiError||'errore sconosciuto');
-          }
-        }catch(e){
-          statusEl.textContent = '⚠ Errore: ' + e.message;
-        }
-        btn.disabled = false;
-        fileInput.value = '';
-      };
-    }
-
-    // ---- Miniatura (immagine mostrata nel cerchio) — stesso identico meccanismo del
-    // caricamento sopra, solo con ID diversi e scrive su imageThumbUrl invece che imageUrl. ----
-    const thumbFileInput = document.getElementById('p-img-thumb-file');
-    const thumbBtn = document.getElementById('p-img-thumb-btn');
-    const thumbStatusEl = document.getElementById('p-img-thumb-status');
-    if(thumbFileInput && thumbBtn && thumbStatusEl){
-      thumbBtn.onclick = ()=> thumbFileInput.click();
-      thumbFileInput.onchange = async ()=>{
-        const file = thumbFileInput.files[0];
-        if(!file) return;
-        if(fileTooBig(file)){
-          thumbStatusEl.textContent = `⚠ File troppo grande (${(file.size/1024/1024).toFixed(1)}MB) — usa una foto sotto i ${MAX_UPLOAD_MB}MB.`;
-          thumbFileInput.value = '';
-          return;
-        }
-        thumbStatusEl.textContent = 'Caricamento...';
-        thumbBtn.disabled = true;
-        try{
-          const dataUrl = await new Promise((resolve,reject)=>{
-            const reader = new FileReader();
-            reader.onload = ()=> resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-          const res = await uploadImage(session.code, dataUrl);
-          if(res && res.ok && res.url){
-            collectFormValues(target);
-            target.tamer.imageThumbUrl = res.url;
-            renderPage();
-            const freshStatus = document.getElementById('p-img-thumb-status');
-            if(freshStatus) freshStatus.textContent = '✔ Caricata — ricordati di salvare.';
-          } else {
-            thumbStatusEl.textContent = '⚠ Caricamento fallito: ' + (lastApiError||'errore sconosciuto');
-          }
-        }catch(e){
-          thumbStatusEl.textContent = '⚠ Errore: ' + e.message;
-        }
-        thumbBtn.disabled = false;
-        thumbFileInput.value = '';
-      };
-    }
-
-    const thumbRemoveBtn = document.getElementById('p-img-thumb-remove');
-    if(thumbRemoveBtn) thumbRemoveBtn.onclick = ()=>{
-      collectFormValues(target);
-      target.tamer.imageThumbUrl = '';
-      renderPage();
+      }catch(e){
+        statusEl.textContent = '⚠ Errore: ' + e.message;
+      }
+      btn.disabled = false;
+      fileInput.value = '';
     };
   }
 
