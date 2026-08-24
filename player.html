@@ -1004,35 +1004,7 @@
         bgCorrectBtn.disabled = false;
       };
       document.getElementById('p-save').onclick = async ()=>{
-        STAT_DEFS.forEach(d=>{
-          const el = document.getElementById('p-stat-'+d.key);
-          if(el) target.tamer[d.key] = Math.max(0, Number(el.value)||0);
-        });
-        SKILL_DEFS.forEach(d=>{
-          const el = document.getElementById('p-skill-'+d.key);
-          if(el) target.tamer.skills[d.key] = Math.max(0, Number(el.value)||0);
-        });
-        const imgEl = document.getElementById('p-imageUrl');
-        if(imgEl) target.tamer.imageUrl = imgEl.value.trim();
-        const digiviceEl = document.getElementById('p-digiviceImageUrl');
-        if(digiviceEl) target.tamer.digiviceImageUrl = digiviceEl.value.trim();
-        target.tamer.currentWounds = Math.max(0, Number(document.getElementById('p-currentWounds').value)||0);
-        target.tamer.unspentGrowthPoints = Math.max(0, Number(document.getElementById('p-unspentGrowthPoints').value)||0);
-        target.tamer.inspirationPoints = Math.max(0, Number(document.getElementById('p-inspirationPoints').value)||0);
-        target.tamer.tormentPenalty = Number(document.getElementById('p-tormentPenalty').value)||0;
-        target.tamer.majorAspect.text = document.getElementById('p-majorText').value.trim();
-        target.tamer.majorAspect.usesLeft = Math.max(0, Number(document.getElementById('p-majorUses').value)||0);
-        target.tamer.minorAspect.text = document.getElementById('p-minorText').value.trim();
-        target.tamer.minorAspect.usesLeft = Math.max(0, Number(document.getElementById('p-minorUses').value)||0);
-
-        BG_TRAIT_DEFS.forEach(d=>{
-          const el = document.getElementById('p-bg-'+d.key);
-          if(el) target.tamer[d.key] = el.value.trim();
-        });
-        const bgTraitsEl = document.getElementById('p-bg-distinctiveTraits');
-        if(bgTraitsEl) target.tamer.distinctiveTraits = bgTraitsEl.value.trim();
-        const bgTextEl = document.getElementById('p-bg-background');
-        if(bgTextEl) target.tamer.background = bgTextEl.value.trim();
+        collectFormValues(target);
 
         const msgEl = document.getElementById('p-save-msg');
         msgEl.innerHTML = '<span class="muted">Salvataggio...</span>';
@@ -1056,9 +1028,50 @@
     enableCollapsibleCards(root);
   }
 
+  function collectFormValues(target){
+    STAT_DEFS.forEach(d=>{
+      const el = document.getElementById('p-stat-'+d.key);
+      if(el) target.tamer[d.key] = Math.max(0, Number(el.value)||0);
+    });
+    SKILL_DEFS.forEach(d=>{
+      const el = document.getElementById('p-skill-'+d.key);
+      if(el) target.tamer.skills[d.key] = Math.max(0, Number(el.value)||0);
+    });
+    const imgEl = document.getElementById('p-imageUrl');
+    if(imgEl) target.tamer.imageUrl = imgEl.value.trim();
+    const digiviceEl = document.getElementById('p-digiviceImageUrl');
+    if(digiviceEl) target.tamer.digiviceImageUrl = digiviceEl.value.trim();
+    const woundsEl = document.getElementById('p-currentWounds');
+    if(woundsEl) target.tamer.currentWounds = Math.max(0, Number(woundsEl.value)||0);
+    const gpEl = document.getElementById('p-unspentGrowthPoints');
+    if(gpEl) target.tamer.unspentGrowthPoints = Math.max(0, Number(gpEl.value)||0);
+    const ipEl = document.getElementById('p-inspirationPoints');
+    if(ipEl) target.tamer.inspirationPoints = Math.max(0, Number(ipEl.value)||0);
+    const tpEl = document.getElementById('p-tormentPenalty');
+    if(tpEl) target.tamer.tormentPenalty = Number(tpEl.value)||0;
+    const majorTextEl = document.getElementById('p-majorText');
+    if(majorTextEl) target.tamer.majorAspect.text = majorTextEl.value.trim();
+    const majorUsesEl = document.getElementById('p-majorUses');
+    if(majorUsesEl) target.tamer.majorAspect.usesLeft = Math.max(0, Number(majorUsesEl.value)||0);
+    const minorTextEl = document.getElementById('p-minorText');
+    if(minorTextEl) target.tamer.minorAspect.text = minorTextEl.value.trim();
+    const minorUsesEl = document.getElementById('p-minorUses');
+    if(minorUsesEl) target.tamer.minorAspect.usesLeft = Math.max(0, Number(minorUsesEl.value)||0);
+
+    BG_TRAIT_DEFS.forEach(d=>{
+      const el = document.getElementById('p-bg-'+d.key);
+      if(el) target.tamer[d.key] = el.value.trim();
+    });
+    const bgTraitsEl = document.getElementById('p-bg-distinctiveTraits');
+    if(bgTraitsEl) target.tamer.distinctiveTraits = bgTraitsEl.value.trim();
+    const bgTextEl = document.getElementById('p-bg-background');
+    if(bgTextEl) target.tamer.background = bgTextEl.value.trim();
+  }
+
   function bindListEditors(target){
     root.querySelectorAll('[data-inv-remove]').forEach(btn=>{
       btn.onclick = async ()=>{
+        collectFormValues(target);
         target.tamer.inventory.splice(Number(btn.getAttribute('data-inv-remove')),1);
         await saveMember(session.code, target);
         renderPage();
@@ -1070,12 +1083,14 @@
       if(!name) return;
       const qty = Number(document.getElementById('p-inv-qty').value)||1;
       const desc = document.getElementById('p-inv-desc').value.trim();
+      collectFormValues(target);
       target.tamer.inventory.push({ name, qty, desc });
       await saveMember(session.code, target);
       renderPage();
     };
     root.querySelectorAll('[data-torment-remove]').forEach(btn=>{
       btn.onclick = async ()=>{
+        collectFormValues(target);
         target.tamer.torments.splice(Number(btn.getAttribute('data-torment-remove')),1);
         await saveMember(session.code, target);
         renderPage();
@@ -1083,6 +1098,7 @@
     });
     root.querySelectorAll('[data-tor-plus]').forEach(btn=>{
       btn.onclick = async ()=>{
+        collectFormValues(target);
         const tor = target.tamer.torments[Number(btn.getAttribute('data-tor-plus'))];
         tor.boxes = Math.min(10, (Number(tor.boxes)||0)+1);
         await saveMember(session.code, target);
@@ -1091,6 +1107,7 @@
     });
     root.querySelectorAll('[data-tor-minus]').forEach(btn=>{
       btn.onclick = async ()=>{
+        collectFormValues(target);
         const tor = target.tamer.torments[Number(btn.getAttribute('data-tor-minus'))];
         tor.boxes = Math.max(0, (Number(tor.boxes)||0)-1);
         await saveMember(session.code, target);
@@ -1099,6 +1116,7 @@
     });
     root.querySelectorAll('[data-torment-rest]').forEach(chk=>{
       chk.onchange = async ()=>{
+        collectFormValues(target);
         target.tamer.torments[Number(chk.getAttribute('data-torment-rest'))].usedThisRest = chk.checked;
         await saveMember(session.code, target);
       };
@@ -1108,6 +1126,7 @@
       const name = document.getElementById('p-tor-name').value.trim();
       if(!name) return;
       const boxes = Math.max(0, Math.min(10, Number(document.getElementById('p-tor-boxes').value)||0));
+      collectFormValues(target);
       target.tamer.torments.push({ name, boxes, usedThisRest:false });
       await saveMember(session.code, target);
       renderPage();
