@@ -260,7 +260,8 @@
     const skills = {}; SKILL_DEFS.forEach(s=>skills[s.key]=0);
     return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, imageUrl:'', currentWounds:null, inventory:[], skills,
       unspentGrowthPoints:0, inspirationPoints:0, tormentPenalty:0, torments:[],
-      majorAspect:{text:'',usesLeft:1}, minorAspect:{text:'',usesLeft:2}, built:false };
+      majorAspect:{text:'',usesLeft:1}, minorAspect:{text:'',usesLeft:2}, built:false,
+      age:'', nationality:'', height:'', hairColor:'', eyeColor:'', distinctiveTraits:'', background:'' };
   }
   function normalizeMember(m){
     const hadPriorTamer = !!(m.tamer && typeof m.tamer.built === 'undefined' && Object.keys(m.tamer).length>0);
@@ -303,6 +304,7 @@
   async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]).map(normalizeMember) : []; }
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
   async function uploadImage(code, dataUrl){ return apiPost('/api/upload', { code, dataUrl }); }
+  async function correggiItaliano(testo){ const d = await apiPost('/api/ai', { mode:'correzione', text: testo }); return d && d.corrected ? d.corrected : testo; }
   async function getProgression(code){
     const d = await apiGet('/api/state?resource=progression&code=' + encodeURIComponent(code));
     const p = d ? d.progression : { milestone:0, xp:0, inspiration:0, campaign_level:'Standard' };
@@ -517,6 +519,45 @@
       ${editable
         ? `<div class="field" style="flex:1;margin:0;"><label>URL Immagine Digivice</label><input type="text" id="p-digiviceImageUrl" value="${escapeAttr(m.tamer.digiviceImageUrl||'')}" placeholder="https://..." /></div>`
         : `<div class="muted">Digivice</div>`}
+    </div>`;
+  }
+
+  const BG_TRAIT_DEFS = [
+    { key:'age', label:'Età', placeholder:'es. 14 anni' },
+    { key:'nationality', label:'Nazionalità', placeholder:'es. Italiana' },
+    { key:'height', label:'Altezza', placeholder:'es. 165 cm' },
+    { key:'hairColor', label:'Colore Capelli', placeholder:'es. Castano' },
+    { key:'eyeColor', label:'Colore Occhi', placeholder:'es. Verde' }
+  ];
+
+  function backgroundBlockHTML(m, editable){
+    const t = m.tamer;
+    if(!editable){
+      return `
+      <div class="hud-frame card">
+        <div class="section-title"><span>Background</span></div>
+        <div class="grid-2">
+          ${BG_TRAIT_DEFS.map(d=>`<div class="field"><label>${d.label}</label><div>${escapeHTML(t[d.key]||'—')}</div></div>`).join('')}
+        </div>
+        <div class="field"><label>Tratti Distintivi</label><div>${escapeHTML(t.distinctiveTraits||'—')}</div></div>
+        <div class="field" style="margin-bottom:0;"><label>Storia</label><div style="white-space:pre-wrap;">${escapeHTML(t.background||'—')}</div></div>
+      </div>`;
+    }
+    return `
+    <div class="hud-frame card">
+      <div class="section-title"><span>Background</span></div>
+      <div class="grid-2">
+        ${BG_TRAIT_DEFS.map(d=>`<div class="field"><label>${d.label}</label><input type="text" id="p-bg-${d.key}" value="${escapeAttr(t[d.key]||'')}" placeholder="${d.placeholder}" /></div>`).join('')}
+      </div>
+      <div class="field"><label>Tratti Distintivi</label><input type="text" id="p-bg-distinctiveTraits" value="${escapeAttr(t.distinctiveTraits||'')}" placeholder="es. cicatrice sul sopracciglio, ride sempre..." /></div>
+      <div class="field" style="margin-bottom:6px;">
+        <label>Storia</label>
+        <textarea id="p-bg-background" rows="6" placeholder="Racconta chi è il tuo Tamer, da dove viene, cosa lo ha portato nel Mondo Digitale...">${escapeHTML(t.background||'')}</textarea>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button type="button" class="btn ghost small" id="p-bg-correct">✨ Correggi Italiano</button>
+        <span class="muted" id="p-bg-correct-status"></span>
+      </div>
     </div>`;
   }
 
@@ -900,6 +941,7 @@
           </div>
         </div>
         ${growthPointsBlockHTML(target)}
+        ${backgroundBlockHTML(target, editable)}
         ${statoBlockHTML(target, editable)}
         ${aspectsBlockHTML(target, editable)}
         ${inventoryBlockHTML(target, editable)}
@@ -949,6 +991,18 @@
     if(target && editable && bodyHTML === null){
       bindImageUpload(target);
       bindListEditors(target);
+      const bgCorrectBtn = document.getElementById('p-bg-correct');
+      if(bgCorrectBtn) bgCorrectBtn.onclick = async ()=>{
+        const ta = document.getElementById('p-bg-background');
+        const status = document.getElementById('p-bg-correct-status');
+        if(!ta || !ta.value.trim()){ if(status) status.textContent = 'Scrivi prima qualcosa nella Storia.'; return; }
+        bgCorrectBtn.disabled = true;
+        status.textContent = 'Correzione in corso...';
+        const corrected = await correggiItaliano(ta.value);
+        ta.value = corrected;
+        status.textContent = lastApiError ? ('Errore: ' + lastApiError) : '✔ Testo corretto.';
+        bgCorrectBtn.disabled = false;
+      };
       document.getElementById('p-save').onclick = async ()=>{
         STAT_DEFS.forEach(d=>{
           const el = document.getElementById('p-stat-'+d.key);
@@ -970,6 +1024,15 @@
         target.tamer.majorAspect.usesLeft = Math.max(0, Number(document.getElementById('p-majorUses').value)||0);
         target.tamer.minorAspect.text = document.getElementById('p-minorText').value.trim();
         target.tamer.minorAspect.usesLeft = Math.max(0, Number(document.getElementById('p-minorUses').value)||0);
+
+        BG_TRAIT_DEFS.forEach(d=>{
+          const el = document.getElementById('p-bg-'+d.key);
+          if(el) target.tamer[d.key] = el.value.trim();
+        });
+        const bgTraitsEl = document.getElementById('p-bg-distinctiveTraits');
+        if(bgTraitsEl) target.tamer.distinctiveTraits = bgTraitsEl.value.trim();
+        const bgTextEl = document.getElementById('p-bg-background');
+        if(bgTextEl) target.tamer.background = bgTextEl.value.trim();
 
         const msgEl = document.getElementById('p-save-msg');
         msgEl.innerHTML = '<span class="muted">Salvataggio...</span>';
