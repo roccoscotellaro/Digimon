@@ -67,7 +67,7 @@
   .skill-box .l{font-size:10px;color:var(--text-mute);text-transform:uppercase;}
   .skill-box input{width:60px;text-align:center;}
   .portrait-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:6px;}
-  .portrait{width:120px;height:120px;border-radius:50%;object-fit:cover;border:2px solid var(--cyan-dim);background:#05070a;}
+  .portrait{width:120px;height:120px;border-radius:50%;object-fit:cover;border:2px solid var(--cyan-dim);background:#05070a;touch-action:none;-webkit-user-drag:none;user-select:none;}
   .portrait-placeholder{width:120px;height:120px;border-radius:50%;background:var(--panel-2);border:2px dashed var(--line);display:flex;align-items:center;justify-content:center;font-size:34px;color:var(--text-mute);}
   .list-item{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin-bottom:8px;}
   .list-item .top-row{display:flex;justify-content:space-between;align-items:center;gap:8px;}
@@ -286,7 +286,8 @@
     return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, imageUrl:'', currentWounds:null, inventory:[], skills,
       unspentGrowthPoints:0, inspirationPoints:0, tormentPenalty:0, torments:[],
       majorAspect:{text:'',usesLeft:1}, minorAspect:{text:'',usesLeft:2}, built:false,
-      age:'', nationality:'', height:'', hairColor:'', eyeColor:'', distinctiveTraits:'', background:'' };
+      age:'', nationality:'', height:'', hairColor:'', eyeColor:'', distinctiveTraits:'', background:'',
+      portraitPosX:50, portraitPosY:50 };
   }
   function normalizeMember(m){
     const hadPriorTamer = !!(m.tamer && typeof m.tamer.built === 'undefined' && Object.keys(m.tamer).length>0);
@@ -516,12 +517,18 @@
       : `<div class="skill-box"><span class="l">${def.label}</span><span class="mono" style="color:var(--cyan);">${val}${bonus>0?` <span style="color:var(--dchroma);font-size:10px;" title="Bonus dal Digimon partner (Prodigious Skill / Mind Over Matter)">(+${bonus})</span>`:''}</span></div>`;
   }
 
+  function portraitPositionStyle(t){
+    const x = Math.max(0, Math.min(100, Number(t.portraitPosX ?? 50)));
+    const y = Math.max(0, Math.min(100, Number(t.portraitPosY ?? 50)));
+    return `object-position:${x}% ${y}%;`;
+  }
+
   function portraitBlockHTML(m, editable){
     const hasImg = !!m.tamer.imageUrl;
     return `
     <div class="portrait-wrap">
       ${hasImg
-        ? `<img class="portrait" id="p-portrait-img" src="${escapeAttr(m.tamer.imageUrl)}" data-lightbox-src="${escapeAttr(m.tamer.imageUrl)}" style="cursor:zoom-in;" title="Clicca per ingrandire" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'portrait-placeholder',innerHTML:'⚠️',title:'Immagine non caricabile'}));" />`
+        ? `<img class="portrait" id="p-portrait-img" src="${escapeAttr(m.tamer.imageUrl)}" ${editable?'':`data-lightbox-src="${escapeAttr(m.tamer.imageUrl)}"`} style="${editable?'cursor:grab;':'cursor:zoom-in;'}${portraitPositionStyle(m.tamer)}" title="${editable?'Trascina per centrare il volto':'Clicca per ingrandire'}" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'portrait-placeholder',innerHTML:'⚠️',title:'Immagine non caricabile'}));" />`
         : `<div class="portrait-placeholder" id="p-portrait-img">👤</div>`}
       <div style="flex:1;min-width:220px;">
         ${editable
@@ -533,11 +540,13 @@
           <label>URL Immagine Profilo</label>
           <input type="text" id="p-imageUrl" value="${escapeAttr(m.tamer.imageUrl||'')}" placeholder="https://..." />
         </div>
-        <div style="display:flex;align-items:center;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <input type="file" accept="image/*" id="p-img-file" style="display:none;" />
           <button type="button" class="btn ghost small" id="p-img-btn">📎 Carica immagine</button>
+          ${hasImg ? `<button type="button" class="btn ghost small" id="p-img-center">🎯 Centra</button>` : ''}
           <span class="muted" id="p-img-status"></span>
-        </div>` : ''}
+        </div>
+        ${hasImg ? `<div class="muted" style="margin-top:4px;">Trascina l'immagine nel cerchio per centrare il volto.</div>` : ''}` : ''}
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);">
@@ -1036,6 +1045,7 @@
 
     if(target && editable && bodyHTML === null){
       bindImageUpload(target);
+      bindPortraitDrag(target);
       bindListEditors(target);
       const bgCorrectBtn = document.getElementById('p-bg-correct');
       if(bgCorrectBtn) bgCorrectBtn.onclick = async ()=>{
@@ -1188,6 +1198,58 @@
     };
   }
 
+  // ---------- trascinamento ritratto (per centrare il volto nel cerchio) ----------
+  function applyPortraitPosition(imgEl, t){
+    if(!imgEl || imgEl.tagName !== 'IMG') return;
+    const x = Math.max(0, Math.min(100, Number(t.portraitPosX ?? 50)));
+    const y = Math.max(0, Math.min(100, Number(t.portraitPosY ?? 50)));
+    imgEl.style.objectPosition = x + '% ' + y + '%';
+  }
+
+  function bindPortraitDrag(target){
+    const imgEl = document.getElementById('p-portrait-img');
+    const t = target.tamer;
+    if(!imgEl || imgEl.tagName !== 'IMG') return;
+    applyPortraitPosition(imgEl, t);
+    let dragging = false, moved = false;
+    let startClientX = 0, startClientY = 0, startPosX = 50, startPosY = 50;
+    imgEl.onpointerdown = (e)=>{
+      dragging = true; moved = false;
+      try{ imgEl.setPointerCapture(e.pointerId); }catch(err){}
+      imgEl.style.cursor = 'grabbing';
+      startClientX = e.clientX; startClientY = e.clientY;
+      startPosX = Number(t.portraitPosX ?? 50);
+      startPosY = Number(t.portraitPosY ?? 50);
+    };
+    imgEl.onpointermove = (e)=>{
+      if(!dragging) return;
+      const rect = imgEl.getBoundingClientRect();
+      const dx = e.clientX - startClientX;
+      const dy = e.clientY - startClientY;
+      if(Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
+      if(!moved) return;
+      e.preventDefault();
+      // Trascinare la foto verso il basso deve rivelare la parte alta dell'immagine (dove di
+      // solito sta il volto): il segno è quindi invertito rispetto al movimento del puntatore.
+      t.portraitPosX = Math.max(0, Math.min(100, startPosX - (dx / rect.width) * 100));
+      t.portraitPosY = Math.max(0, Math.min(100, startPosY - (dy / rect.height) * 100));
+      applyPortraitPosition(imgEl, t);
+    };
+    const endDrag = (e)=>{
+      if(!dragging) return;
+      dragging = false;
+      imgEl.style.cursor = 'grab';
+      try{ imgEl.releasePointerCapture(e.pointerId); }catch(err){}
+    };
+    imgEl.onpointerup = endDrag;
+    imgEl.onpointercancel = endDrag;
+    const centerBtn = document.getElementById('p-img-center');
+    if(centerBtn) centerBtn.onclick = ()=>{
+      t.portraitPosX = 50; t.portraitPosY = 50;
+      applyPortraitPosition(imgEl, t);
+    };
+  }
+
   function bindImageUpload(target){
     const fileInput = document.getElementById('p-img-file');
     const btn = document.getElementById('p-img-btn');
@@ -1208,28 +1270,40 @@
         });
         const res = await uploadImage(session.code, dataUrl);
         if(res && res.ok && res.url){
-          const imgEl = document.getElementById('p-imageUrl');
-          if(imgEl) imgEl.value = res.url;
+          const imgUrlEl = document.getElementById('p-imageUrl');
+          if(imgUrlEl) imgUrlEl.value = res.url;
           statusEl.textContent = '✔ Caricata — ricordati di salvare.';
           // Anteprima immediata: aggiorna/crea l'elemento <img> del ritratto sul posto,
           // senza un renderPage() completo, per non perdere altri campi in modifica.
+          // Una foto nuova riparte centrata: l'utente la ritocca trascinandola.
+          target.tamer.imageUrl = res.url;
+          target.tamer.portraitPosX = 50;
+          target.tamer.portraitPosY = 50;
           const preview = document.getElementById('p-portrait-img');
           if(preview){
-            if(preview.tagName === 'IMG'){
-              preview.src = res.url;
-              preview.setAttribute('data-lightbox-src', res.url);
-            } else {
-              const newImg = document.createElement('img');
-              newImg.className = 'portrait';
-              newImg.id = 'p-portrait-img';
-              newImg.src = res.url;
-              newImg.setAttribute('data-lightbox-src', res.url);
-              newImg.style.cursor = 'zoom-in';
-              newImg.title = 'Clicca per ingrandire';
-              newImg.onerror = function(){ this.onerror=null; const ph=document.createElement('div'); ph.className='portrait-placeholder'; ph.id='p-portrait-img'; ph.textContent='⚠️'; ph.title='Immagine non caricabile'; this.replaceWith(ph); };
-              preview.replaceWith(newImg);
+            let imgNode = preview;
+            if(preview.tagName !== 'IMG'){
+              imgNode = document.createElement('img');
+              imgNode.className = 'portrait';
+              imgNode.id = 'p-portrait-img';
+              imgNode.onerror = function(){ this.onerror=null; const ph=document.createElement('div'); ph.className='portrait-placeholder'; ph.id='p-portrait-img'; ph.textContent='⚠️'; ph.title='Immagine non caricabile'; this.replaceWith(ph); };
+              preview.replaceWith(imgNode);
             }
+            imgNode.src = res.url;
+            imgNode.style.cursor = 'grab';
+            imgNode.title = 'Trascina per centrare il volto';
+            imgNode.removeAttribute('data-lightbox-src'); // in modifica niente zoom, solo trascinamento
           }
+          // Se prima non c'era immagine, il pulsante "Centra" non esisteva ancora: lo creiamo.
+          if(!document.getElementById('p-img-center')){
+            const centerBtn = document.createElement('button');
+            centerBtn.type = 'button';
+            centerBtn.className = 'btn ghost small';
+            centerBtn.id = 'p-img-center';
+            centerBtn.textContent = '🎯 Centra';
+            btn.insertAdjacentElement('afterend', centerBtn);
+          }
+          bindPortraitDrag(target);
         } else {
           statusEl.textContent = '⚠ Caricamento fallito: ' + (lastApiError||'errore sconosciuto');
         }
