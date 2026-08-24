@@ -1411,8 +1411,10 @@
       <div class="flex-between" style="margin-bottom:10px;"><span class="muted">Budget Qualities</span><span class="mono" style="color:${dpSpent>dpBudget?'var(--danger)':'var(--dchroma)'};">${dpSpent} / ${dpBudget} DP</span></div>
       ${items.length===0 ? '<div class="muted">Nessuna Quality.</div>' : items.map((q,i)=>{
         const naturewalkBroken = q.mechanic==='naturewalk' && !q.statTarget;
+        const skillBroken = q.mechanic==='prodigiousSkill' && !q.skillTarget;
+        const broken = naturewalkBroken || skillBroken;
         return `
-        <div class="list-item" ${naturewalkBroken ? 'style="border-color:var(--danger);"' : ''}>
+        <div class="list-item" ${broken ? 'style="border-color:var(--danger);"' : ''}>
           <div class="top-row">
             <span class="name">${escapeHTML(q.name||'')} ${q.cost!=null?`<span class="muted">(${q.cost} DP)</span>`:''}</span>
             ${editable ? `<button class="btn ghost small" data-q-remove="${i}">Rimuovi</button>` : ''}
@@ -1420,6 +1422,7 @@
           ${q.category ? `<div class="sub">${escapeHTML(q.category)}</div>` : ''}
           ${q.description ? `<div class="sub">${escapeHTML(q.description)}</div>` : ''}
           ${naturewalkBroken ? `<div class="sub" style="color:var(--danger);">⚠ Manca la Stat a cui applicare il +1 (arrivata dal Digidex senza quel dato) — nessun bonus è attivo. Rimuovila e riaggiungila scegliendo la Stat.</div>` : ''}
+          ${skillBroken ? `<div class="sub" style="color:var(--danger);">⚠ Manca la Skill del Tamer su cui applicare il +3 — nessun bonus è attivo. Rimuovila e riaggiungila scegliendo la Skill.</div>` : ''}
         </div>
       `;}).join('')}
       ${editable ? `
@@ -1502,17 +1505,21 @@
   // Wizard la mostra e la conta nel budget esattamente come se l'avessi scelta tu.
   function buildQualityEntryFromScanHint(hint){
     if(!hint || !hint.name) return null;
-    const q = QUALITY_CATALOG.find(c=>c.name===hint.name);
+    const rankMatch = hint.name.match(/\(Rank\s*(\d+)\)\s*$/i);
+    const cleanName = hint.name.replace(/\s*\(Rank\s*\d+\)\s*$/i, '').replace(/\s*\[.*?\]\s*$/,'').trim();
+    const q = QUALITY_CATALOG.find(c=>c.name===cleanName) || QUALITY_CATALOG.find(c=>c.name===hint.name);
     if(!q) return null;
     const statKeyToTarget = { baseAccuracy:'accuracy', baseDamage:'damage', baseDodge:'dodge', baseArmor:'armor', baseHealth:'health' };
     // Naturewalk: la Stat la sceglie lo Scan (hint.stat). Instinct: il bonus va SEMPRE a Dodge,
     // non è una scelta (regola 4.0x) — altrimenti il +1 non saprebbe dove applicarsi.
     const statTarget = q.mechanic==='naturewalk' ? (statKeyToTarget[hint.stat] || null) : (q.mechanic==='instinct' ? 'dodge' : null);
     const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health' };
-    const rank = 1;
-    const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}${statTarget?` [+1 ${statLabels[statTarget]}]`:''}`;
+    const skillTarget = (q.mechanic==='prodigiousSkill' && hint.skillTarget) ? hint.skillTarget : null;
+    const rank = hint.rank!=null ? Number(hint.rank) : (rankMatch ? Number(rankMatch[1]) : 1);
+    const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}${statTarget?` [+1 ${statLabels[statTarget]}]`:''}${skillTarget?` [${skillTarget}]`:''}`;
     const entry = { name, cost:q.dpPerRank*rank, category:q.category, description:q.desc, mechanic:q.mechanic, rank };
     if(statTarget) entry.statTarget = statTarget;
+    if(skillTarget) entry.skillTarget = skillTarget;
     return entry;
   }
 
@@ -1525,16 +1532,29 @@
   // giocatore dovrà scegliere lui la Stat, esattamente come se l'avesse aggiunta da zero.
   function buildQualityEntryFromDexHint(hint){
     if(!hint || !hint.name) return null;
-    const q = QUALITY_CATALOG.find(c=>c.name===hint.name);
+    // Il nome salvato nel Digidex include spesso il Rank tra parentesi (es. "Prodigious Skill
+    // (Rank 1)"), che non combacia mai col nome "pulito" del catalogo — prima questo faceva
+    // fallire il confronto esatto e la Quality spariva dai suggerimenti senza nessun avviso.
+    // Qui si toglie il suffisso prima di cercarla, e si usa il numero trovato come Rank se
+    // hint.rank non è già stato passato esplicitamente.
+    const rankMatch = hint.name.match(/\(Rank\s*(\d+)\)\s*$/i);
+    const cleanName = hint.name.replace(/\s*\(Rank\s*\d+\)\s*$/i, '').replace(/\s*\[.*?\]\s*$/,'').trim();
+    const q = QUALITY_CATALOG.find(c=>c.name===cleanName) || QUALITY_CATALOG.find(c=>c.name===hint.name);
     if(!q) return null;
-    const rank = Number(hint.rank)||1;
+    const rank = hint.rank!=null ? Number(hint.rank) : (rankMatch ? Number(rankMatch[1]) : 1);
     const cost = hint.cost!=null ? Number(hint.cost) : q.dpPerRank*rank;
     const statKeyToTarget = { baseAccuracy:'accuracy', baseDamage:'damage', baseDodge:'dodge', baseArmor:'armor', baseHealth:'health' };
     const statTarget = q.mechanic==='naturewalk' ? (statKeyToTarget[hint.stat] || null) : (q.mechanic==='instinct' ? 'dodge' : null);
     const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health' };
-    const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}${statTarget?` [+1 ${statLabels[statTarget]}]`:''}`;
+    // Prodigious Skill (e Mind Over Matter) richiedono di scegliere una Skill del Tamer — il Digidex
+    // non può saperlo in anticipo (è una scelta del giocatore, non della specie), quindi arriva
+    // sempre senza: la si chiede esplicitamente al momento di accettare il suggerimento, stessa
+    // logica già usata per la Stat di Naturewalk.
+    const skillTarget = (q.mechanic==='prodigiousSkill' && hint.skillTarget) ? hint.skillTarget : null;
+    const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}${statTarget?` [+1 ${statLabels[statTarget]}]`:''}${skillTarget?` [${skillTarget}]`:''}`;
     const entry = { name, cost, category:q.category, description:q.desc, mechanic:q.mechanic, rank };
     if(statTarget) entry.statTarget = statTarget;
+    if(skillTarget) entry.skillTarget = skillTarget;
     return entry;
   }
 
@@ -1651,11 +1671,12 @@
       <div class="muted" style="margin-bottom:8px;">Questo Digimon ha di norma queste Qualities — decidi tu se aggiungerle: se accetti, il costo si scala subito dal contatore DP qui sopra.</div>
       ${draft.suggestedQualities.map((q,qi)=>{
         const needsStatPick = q.mechanic==='naturewalk' && !q.statTarget;
+        const needsSkillPick = q.mechanic==='prodigiousSkill' && !q.skillTarget;
         return `
         <div class="list-item" style="border-color:var(--dchroma);margin-bottom:8px;">
           <div class="top-row">
             <span class="name">${escapeHTML(q.name)} <span class="muted">(${q.cost} DP)</span></span>
-            ${needsStatPick ? '' : `<button class="btn small" data-wiz-suggested-add="${qi}">+ Aggiungi</button>`}
+            ${(needsStatPick || needsSkillPick) ? '' : `<button class="btn small" data-wiz-suggested-add="${qi}">+ Aggiungi</button>`}
           </div>
           <div style="font-size:12px;line-height:1.5;margin-top:6px;">${escapeHTML(q.description)}</div>
           ${needsStatPick ? `
@@ -1666,6 +1687,15 @@
             <button class="btn small" data-wiz-suggested-add-withstat="${qi}" style="flex:1;">+ Aggiungi</button>
           </div>
           <div class="muted" style="font-size:10px;margin-top:4px;">⚠ Questa Quality arriva dal Digidex senza sapere a quale Stat applicare il +1 — scegline una prima di aggiungerla.</div>
+          ` : ''}
+          ${needsSkillPick ? `
+          <div class="row" style="margin-top:8px;">
+            <select id="wiz-sugg-skill-${qi}" style="flex:2;">
+              ${PRODIGIOUS_SKILL_LIST.map(s=>`<option value="${escapeAttr(s.name)}">${escapeHTML(s.name)} (${s.derived})</option>`).join('')}
+            </select>
+            <button class="btn small" data-wiz-suggested-add-withskill="${qi}" style="flex:1;">+ Aggiungi</button>
+          </div>
+          <div class="muted" style="font-size:10px;margin-top:4px;">⚠ Prodigious Skill richiede una Skill del Tamer — è una scelta del giocatore, il Digidex non può saperla in anticipo. Scegline una prima di aggiungerla.</div>
           ` : ''}
         </div>
       `;}).join('')}
@@ -1840,6 +1870,21 @@
         draft.suggestedQualities.splice(idx,1);
         draft.qualities.push(q);
         syncFreeBonusEverywhere(draft);
+        renderPage();
+      };
+    });
+    root.querySelectorAll('[data-wiz-suggested-add-withskill]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const idx = Number(btn.getAttribute('data-wiz-suggested-add-withskill'));
+        const q = (draft.suggestedQualities||[])[idx];
+        if(!q) return;
+        const sel = document.getElementById('wiz-sugg-skill-'+idx);
+        const skillName = sel ? sel.value : null;
+        if(!skillName){ alert('Scegli una Skill prima di aggiungere questa Quality.'); return; }
+        q.skillTarget = skillName;
+        if(!/\[[^\]]+\]$/.test(q.name)) q.name = `${q.name} [${skillName}]`;
+        draft.suggestedQualities.splice(idx,1);
+        draft.qualities.push(q);
         renderPage();
       };
     });
