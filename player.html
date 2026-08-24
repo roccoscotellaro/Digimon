@@ -68,7 +68,7 @@
   .skill-box input{width:60px;text-align:center;}
   .portrait-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:6px;}
   .portrait-frame{width:120px;height:120px;border-radius:50%;overflow:hidden;position:relative;background:#05070a;border:2px solid var(--cyan-dim);flex:none;}
-  .portrait-frame .portrait{width:100%;height:100%;object-fit:cover;display:block;touch-action:none;-webkit-user-drag:none;user-select:none;}
+  .portrait-frame .portrait{width:100%;height:100%;background-size:cover;background-repeat:no-repeat;display:block;touch-action:none;user-select:none;}
   .portrait-frame .portrait-placeholder{width:100%;height:100%;border-radius:0;border:none;}
   .portrait-placeholder{width:120px;height:120px;border-radius:50%;background:var(--panel-2);border:2px dashed var(--line);display:flex;align-items:center;justify-content:center;font-size:34px;color:var(--text-mute);}
   .list-item{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin-bottom:8px;}
@@ -523,7 +523,7 @@
     const x = Math.max(0, Math.min(100, Number(t.portraitPosX ?? 50)));
     const y = Math.max(0, Math.min(100, Number(t.portraitPosY ?? 50)));
     const zoom = Math.max(100, Math.min(250, Number(t.portraitZoom ?? 100)));
-    return `object-position:${x}% ${y}%;transform:scale(${zoom/100});`;
+    return `background-position:${x}% ${y}%;transform:scale(${zoom/100});`;
   }
 
   function portraitBlockHTML(m, editable){
@@ -535,7 +535,7 @@
     <div class="portrait-wrap">
       <div class="portrait-frame">
       ${hasImg
-        ? `<img class="portrait" id="p-portrait-img" src="${escapeAttr(m.tamer.imageUrl)}" draggable="false" ondragstart="return false;" ${editable?'':`data-lightbox-src="${escapeAttr(m.tamer.imageUrl)}"`} style="${editable?'cursor:grab;':'cursor:zoom-in;'}${portraitTransformStyle(m.tamer)}" title="${editable?'Trascina per centrare il volto (o usa gli slider qui sotto)':'Clicca per ingrandire'}" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'portrait-placeholder',innerHTML:'⚠️',title:'Immagine non caricabile'}));" />`
+        ? `<div class="portrait" id="p-portrait-img" ${editable?'':`data-lightbox-src="${escapeAttr(m.tamer.imageUrl)}"`} style="background-image:url('${escapeAttr(m.tamer.imageUrl)}');${editable?'cursor:grab;':'cursor:zoom-in;'}${portraitTransformStyle(m.tamer)}" title="${editable?'Trascina per centrare il volto (o usa gli slider qui sotto)':'Clicca per ingrandire'}"></div>`
         : `<div class="portrait-placeholder" id="p-portrait-img">👤</div>`}
       </div>
       <div style="flex:1;min-width:220px;">
@@ -1219,20 +1219,46 @@
   }
 
   // ---------- trascinamento + zoom ritratto (per centrare/ingrandire il volto nel cerchio) ----------
+  // Il cerchio usa un <div> con background-image invece di un <img> con object-fit/object-position:
+  // la combinazione object-fit:cover + object-position + transform su un <img> ha un comportamento
+  // meno prevedibile tra browser rispetto a background-image + background-position (tecnica standard
+  // per i "ritagliatori" di avatar), quindi qui usiamo quella per garantire che zoom/spostamento
+  // si vedano davvero.
+  function isPortraitEl(el){
+    return !!el && el.classList && el.classList.contains('portrait');
+  }
   function applyPortraitTransform(imgEl, t){
-    if(!imgEl || imgEl.tagName !== 'IMG') return;
+    if(!isPortraitEl(imgEl)) return;
     const x = Math.max(0, Math.min(100, Number(t.portraitPosX ?? 50)));
     const y = Math.max(0, Math.min(100, Number(t.portraitPosY ?? 50)));
     const zoom = Math.max(100, Math.min(250, Number(t.portraitZoom ?? 100)));
-    imgEl.style.objectPosition = x + '% ' + y + '%';
+    imgEl.style.backgroundPosition = x + '% ' + y + '%';
     imgEl.style.transform = 'scale(' + (zoom/100) + ')';
+  }
+  // I div non hanno un evento onerror nativo per le immagini di sfondo: verifichiamo il
+  // caricamento con un Image() di appoggio, e se fallisce sostituiamo con il placeholder.
+  function checkPortraitLoadable(url){
+    if(!url) return;
+    const probe = new Image();
+    probe.onerror = ()=>{
+      const current = document.getElementById('p-portrait-img');
+      if(current && isPortraitEl(current)){
+        const ph = document.createElement('div');
+        ph.className = 'portrait-placeholder';
+        ph.id = 'p-portrait-img';
+        ph.textContent = '⚠️';
+        ph.title = 'Immagine non caricabile';
+        current.replaceWith(ph);
+      }
+    };
+    probe.src = url;
   }
 
   function bindPortraitDrag(target){
     const imgEl = document.getElementById('p-portrait-img');
     const t = target.tamer;
-    if(!imgEl || imgEl.tagName !== 'IMG') return;
-    imgEl.setAttribute('draggable', 'false');
+    if(!isPortraitEl(imgEl)) return;
+    checkPortraitLoadable(t.imageUrl);
     applyPortraitTransform(imgEl, t);
 
     const posXInp = document.getElementById('p-img-posx');
