@@ -1043,13 +1043,23 @@
     if(target && target.tamer.built && bodyHTML===null) bindGrowthPoints(target);
 
     const toggleEditBtn = document.getElementById('p-toggle-edit');
-    if(toggleEditBtn) toggleEditBtn.onclick = ()=>{
-      // Se si sta uscendo dalla modifica, cattura in memoria quanto scritto finora nei campi
-      // (senza salvarlo sul server) così passare alla sola lettura non cancella nulla: se poi
-      // si rientra in modifica, i valori digitati sono ancora lì, pronti per essere salvati.
-      if(editable) collectFormValues(target);
-      sheetEditMode = !sheetEditMode;
-      renderPage();
+    if(toggleEditBtn) toggleEditBtn.onclick = async ()=>{
+      if(editable){
+        // Si sta uscendo dalla modifica: salva DAVVERO sul server (non solo in memoria),
+        // altrimenti caricamenti/modifiche fatte e poi chiuse con "Fine Modifica" (invece di
+        // "Salva Scheda") sembravano andate a buon fine ma sparivano al refresh successivo.
+        collectFormValues(target);
+        toggleEditBtn.disabled = true;
+        toggleEditBtn.textContent = 'Salvataggio...';
+        const ok = await saveMember(session.code, target);
+        if(ok) cachedRoster = await getRoster(session.code);
+        sheetEditMode = false;
+        renderPage();
+        if(!ok) window.alert('Attenzione: il salvataggio non è riuscito (' + (lastApiError||'errore sconosciuto') + '). Le modifiche potrebbero non essere state salvate — riprova.');
+      } else {
+        sheetEditMode = true;
+        renderPage();
+      }
     };
 
     if(target && editable && bodyHTML === null){
