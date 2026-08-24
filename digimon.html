@@ -1427,6 +1427,51 @@
       `;}).join('')}
       ${editable ? `
       <div class="add-row">
+        ${(()=>{
+          // Suggerimenti dal Digidex — prima esistevano SOLO nel Wizard di creazione iniziale: un
+          // Digimon già approvato, quando gli si costruisce un nuovo Stage, non aveva mai questa
+          // sezione, quindi bisognava aggiungere tutto a mano dal picker sotto senza alcun aiuto.
+          const dexMatch = cachedDex.find(e=>(e.name||'').trim().toLowerCase()===(d.name||'').trim().toLowerCase());
+          const already = new Set((d.qualities||[]).map(q=>(q.name||'').split(' (Rank')[0].split(' [')[0].trim()));
+          const suggested = (dexMatch && Array.isArray(dexMatch.qualities) ? dexMatch.qualities.map(buildQualityEntryFromDexHint) : [])
+            .filter(Boolean)
+            .filter(q=>!already.has(q.name.split(' (Rank')[0].split(' [')[0].trim()));
+          if(suggested.length===0) return '';
+          return `
+          <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px dashed var(--line);">
+            <div class="muted" style="margin-bottom:8px;">📡 Suggerite dal Digidex per ${escapeHTML(d.name)} — decidi tu se aggiungerle:</div>
+            ${suggested.map((q,qi)=>{
+              const needsStatPick = q.mechanic==='naturewalk' && !q.statTarget;
+              const needsSkillPick = q.mechanic==='prodigiousSkill' && !q.skillTarget;
+              return `
+              <div class="list-item" style="border-color:var(--dchroma);">
+                <div class="top-row">
+                  <span class="name">${escapeHTML(q.name)} <span class="muted">(${q.cost} DP)</span></span>
+                  ${(needsStatPick || needsSkillPick) ? '' : `<button class="btn small" data-dq-suggested-add="${qi}">+ Aggiungi</button>`}
+                </div>
+                <div class="sub">${escapeHTML(q.description)}</div>
+                ${needsStatPick ? `
+                <div class="row" style="margin-top:8px;">
+                  <select id="dq-sugg-stat-${qi}" style="flex:2;">
+                    ${Object.entries(STAT_SHORT_TO_KEY).map(([short,key])=>`<option value="${short}">${STAT_DEFS.find(s=>s.key===key).label}</option>`).join('')}
+                  </select>
+                  <button class="btn small" data-dq-suggested-add-withstat="${qi}" style="flex:1;">+ Aggiungi</button>
+                </div>
+                <div class="muted" style="font-size:10px;margin-top:4px;">⚠ Manca a quale Stat applicare il +1 — scegline una.</div>
+                ` : ''}
+                ${needsSkillPick ? `
+                <div class="row" style="margin-top:8px;">
+                  <select id="dq-sugg-skill-${qi}" style="flex:2;">
+                    ${PRODIGIOUS_SKILL_LIST.map(s=>`<option value="${escapeAttr(s.name)}">${escapeHTML(s.name)} (${s.derived})</option>`).join('')}
+                  </select>
+                  <button class="btn small" data-dq-suggested-add-withskill="${qi}" style="flex:1;">+ Aggiungi</button>
+                </div>
+                <div class="muted" style="font-size:10px;margin-top:4px;">⚠ Manca la Skill del Tamer — scegline una.</div>
+                ` : ''}
+              </div>`;
+            }).join('')}
+          </div>`;
+        })()}
         ${qualityPickerHTML('d-q', d.stage)}
         <details style="margin-top:10px;">
           <summary class="muted" style="cursor:pointer;">Oppure inserisci una Quality homebrew manualmente</summary>
@@ -2812,8 +2857,8 @@
         const idx = Number(btn.getAttribute('data-q-remove'));
         target.digimon.qualities.splice(idx,1);
         syncFreeBonusEverywhere(target.digimon);
-        await saveMember(session.code, target);
         renderPage();
+        await saveMember(session.code, target);
       };
     });
     const qAdd = document.getElementById('d-q-add');
@@ -2827,13 +2872,66 @@
       await saveMember(session.code, target);
       renderPage();
     };
+    // Stessa identica logica di filtro usata in qualitiesBlockHTML per calcolare "suggested": deve
+    // rimanere IDENTICA perché gli indici (qi) nei bottoni si riferiscano alla stessa voce.
+    (()=>{
+      const d = target.digimon;
+      const dexMatch = cachedDex.find(e=>(e.name||'').trim().toLowerCase()===(d.name||'').trim().toLowerCase());
+      const already = new Set((d.qualities||[]).map(q=>(q.name||'').split(' (Rank')[0].split(' [')[0].trim()));
+      const suggested = (dexMatch && Array.isArray(dexMatch.qualities) ? dexMatch.qualities.map(buildQualityEntryFromDexHint) : [])
+        .filter(Boolean)
+        .filter(q=>!already.has(q.name.split(' (Rank')[0].split(' [')[0].trim()));
+      root.querySelectorAll('[data-dq-suggested-add]').forEach(btn=>{
+        btn.onclick = ()=>{
+          const q = suggested[Number(btn.getAttribute('data-dq-suggested-add'))];
+          if(!q) return;
+          target.digimon.qualities.push(q);
+          syncFreeBonusEverywhere(target.digimon);
+          renderPage();
+          saveMember(session.code, target);
+        };
+      });
+      root.querySelectorAll('[data-dq-suggested-add-withstat]').forEach(btn=>{
+        btn.onclick = ()=>{
+          const idx = Number(btn.getAttribute('data-dq-suggested-add-withstat'));
+          const q = suggested[idx];
+          if(!q) return;
+          const sel = document.getElementById('dq-sugg-stat-'+idx);
+          const statShort = sel ? sel.value : null;
+          if(!statShort){ alert('Scegli una Stat prima di aggiungere questa Quality.'); return; }
+          const statKey = STAT_SHORT_TO_KEY[statShort];
+          const statLabel = STAT_DEFS.find(s=>s.key===statKey).label;
+          q.statTarget = statShort;
+          if(!/\[\+\d+ /.test(q.name)) q.name = `${q.name} [+${Number(q.rank)||1} ${statLabel}]`;
+          target.digimon.qualities.push(q);
+          syncFreeBonusEverywhere(target.digimon);
+          renderPage();
+          saveMember(session.code, target);
+        };
+      });
+      root.querySelectorAll('[data-dq-suggested-add-withskill]').forEach(btn=>{
+        btn.onclick = ()=>{
+          const idx = Number(btn.getAttribute('data-dq-suggested-add-withskill'));
+          const q = suggested[idx];
+          if(!q) return;
+          const sel = document.getElementById('dq-sugg-skill-'+idx);
+          const skillName = sel ? sel.value : null;
+          if(!skillName){ alert('Scegli una Skill prima di aggiungere questa Quality.'); return; }
+          q.skillTarget = skillName;
+          if(!/\[[^\]]+\]$/.test(q.name)) q.name = `${q.name} [${skillName}]`;
+          target.digimon.qualities.push(q);
+          renderPage();
+          saveMember(session.code, target);
+        };
+      });
+    })();
     bindQualityPicker('d-q', async (q, rank, extra)=>{
       const { entry, error } = buildQualityEntry(q, rank, extra, target.digimon.qualities);
       if(error){ alert(error); return; }
       target.digimon.qualities.push(entry);
       syncFreeBonusEverywhere(target.digimon);
+      renderPage(); // subito, senza aspettare il salvataggio: si vede all'istante
       await saveMember(session.code, target);
-      renderPage();
     });
     root.querySelectorAll('[data-a-remove]').forEach(btn=>{
       btn.onclick = async ()=>{
