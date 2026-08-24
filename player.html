@@ -533,7 +533,7 @@
     <div class="portrait-wrap">
       <div class="portrait-frame">
       ${hasImg
-        ? `<img class="portrait" id="p-portrait-img" src="${escapeAttr(m.tamer.imageUrl)}" ${editable?'':`data-lightbox-src="${escapeAttr(m.tamer.imageUrl)}"`} style="${editable?'cursor:grab;':'cursor:zoom-in;'}${portraitTransformStyle(m.tamer)}" title="${editable?'Trascina per centrare il volto':'Clicca per ingrandire'}" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'portrait-placeholder',innerHTML:'⚠️',title:'Immagine non caricabile'}));" />`
+        ? `<img class="portrait" id="p-portrait-img" src="${escapeAttr(m.tamer.imageUrl)}" draggable="false" ondragstart="return false;" ${editable?'':`data-lightbox-src="${escapeAttr(m.tamer.imageUrl)}"`} style="${editable?'cursor:grab;':'cursor:zoom-in;'}${portraitTransformStyle(m.tamer)}" title="${editable?'Trascina per centrare il volto':'Clicca per ingrandire'}" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'portrait-placeholder',innerHTML:'⚠️',title:'Immagine non caricabile'}));" />`
         : `<div class="portrait-placeholder" id="p-portrait-img">👤</div>`}
       </div>
       <div style="flex:1;min-width:220px;">
@@ -1224,10 +1224,12 @@
     const imgEl = document.getElementById('p-portrait-img');
     const t = target.tamer;
     if(!imgEl || imgEl.tagName !== 'IMG') return;
+    imgEl.setAttribute('draggable', 'false');
     applyPortraitTransform(imgEl, t);
     let dragging = false, moved = false;
     let startClientX = 0, startClientY = 0, startPosX = 50, startPosY = 50;
     imgEl.onpointerdown = (e)=>{
+      e.preventDefault();
       dragging = true; moved = false;
       try{ imgEl.setPointerCapture(e.pointerId); }catch(err){}
       imgEl.style.cursor = 'grabbing';
@@ -1310,6 +1312,8 @@
               imgNode = document.createElement('img');
               imgNode.className = 'portrait';
               imgNode.id = 'p-portrait-img';
+              imgNode.draggable = false;
+              imgNode.ondragstart = ()=>false;
               imgNode.onerror = function(){ this.onerror=null; const ph=document.createElement('div'); ph.className='portrait-placeholder'; ph.id='p-portrait-img'; ph.textContent='⚠️'; ph.title='Immagine non caricabile'; this.replaceWith(ph); };
               preview.replaceWith(imgNode);
             }
