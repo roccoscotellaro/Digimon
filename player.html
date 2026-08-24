@@ -100,6 +100,9 @@
   <div class="scanline" style="position:fixed;inset:0;pointer-events:none;z-index:50;background:repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);mix-blend-mode:overlay;"></div>
   <div id="root-app"></div>
 </div>
+<div id="dvos-lightbox" style="display:none;position:fixed;inset:0;z-index:9998;background:rgba(2,4,6,0.92);align-items:center;justify-content:center;cursor:zoom-out;padding:24px;">
+  <img id="dvos-lightbox-img" src="" style="max-width:92vw;max-height:92vh;object-fit:contain;border:1px solid var(--cyan-dim);box-shadow:0 0 40px rgba(53,232,201,0.15);" />
+</div>
 <script>
 (function(){
   const SESSION_KEY = 'digivice_session_v1';
@@ -112,6 +115,28 @@
   let pollTimer = null;
 
   const root = document.getElementById('root-app');
+
+  // ---------- lightbox (anteprima immagine a corpo intero) ----------
+  // Vive fuori da #root-app così non viene ricreato ad ogni renderPage(); la delega degli
+  // eventi su document intercetta il click su qualunque elemento con data-lightbox-src,
+  // presente o futuro, senza dover ri-agganciare listener dopo ogni render.
+  (function initLightbox(){
+    const overlay = document.getElementById('dvos-lightbox');
+    const img = document.getElementById('dvos-lightbox-img');
+    if(!overlay || !img) return;
+    document.addEventListener('click', (e)=>{
+      const trigger = e.target.closest('[data-lightbox-src]');
+      if(trigger){
+        const src = trigger.getAttribute('data-lightbox-src');
+        if(src){ img.src = src; overlay.style.display = 'flex'; }
+        return;
+      }
+      if(e.target === overlay){ overlay.style.display = 'none'; img.src = ''; }
+    }, true);
+    document.addEventListener('keydown', (e)=>{
+      if(e.key === 'Escape' && overlay.style.display === 'flex'){ overlay.style.display = 'none'; img.src = ''; }
+    });
+  })();
 
   const SKILL_DEFS = [
     { key:'evade', label:'Evade', attrs:['agility','willpower'] },
@@ -492,9 +517,12 @@
   }
 
   function portraitBlockHTML(m, editable){
+    const hasImg = !!m.tamer.imageUrl;
     return `
     <div class="portrait-wrap">
-      ${m.tamer.imageUrl ? `<img class="portrait" src="${escapeAttr(m.tamer.imageUrl)}" />` : `<div class="portrait-placeholder">👤</div>`}
+      ${hasImg
+        ? `<img class="portrait" id="p-portrait-img" src="${escapeAttr(m.tamer.imageUrl)}" data-lightbox-src="${escapeAttr(m.tamer.imageUrl)}" style="cursor:zoom-in;" title="Clicca per ingrandire" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'portrait-placeholder',innerHTML:'⚠️',title:'Immagine non caricabile'}));" />`
+        : `<div class="portrait-placeholder" id="p-portrait-img">👤</div>`}
       <div style="flex:1;min-width:220px;">
         ${editable
           ? `<div class="field"><label>Nome Utente (login — non modificabile qui)</label><input type="text" value="${escapeAttr(m.username)}" disabled /></div>`
@@ -514,8 +542,8 @@
     </div>
     <div style="display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);">
       ${m.tamer.digiviceImageUrl
-        ? `<img src="${escapeAttr(m.tamer.digiviceImageUrl)}" onerror="this.style.visibility='hidden'" style="width:48px;height:48px;object-fit:contain;border:1px solid var(--cyan-dim);border-radius:var(--radius);background:var(--panel-2);padding:4px;" />`
-        : `<div style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:var(--radius);color:var(--text-mute);font-size:20px;">📟</div>`}
+        ? `<img id="p-digivice-img" src="${escapeAttr(m.tamer.digiviceImageUrl)}" data-lightbox-src="${escapeAttr(m.tamer.digiviceImageUrl)}" onerror="this.style.visibility='hidden'" style="width:48px;height:48px;object-fit:contain;border:1px solid var(--cyan-dim);border-radius:var(--radius);background:var(--panel-2);padding:4px;cursor:zoom-in;" title="Clicca per ingrandire" />`
+        : `<div id="p-digivice-img" style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:var(--radius);color:var(--text-mute);font-size:20px;">📟</div>`}
       ${editable
         ? `<div class="field" style="flex:1;margin:0;"><label>URL Immagine Digivice</label><input type="text" id="p-digiviceImageUrl" value="${escapeAttr(m.tamer.digiviceImageUrl||'')}" placeholder="https://..." /></div>`
         : `<div class="muted">Digivice</div>`}
@@ -688,6 +716,7 @@
   let creationDraft = null;
   let justBuiltTamer = false;
   let isEditingFullForm = false;
+  let sheetEditMode = false; // scheda in sola lettura finché non si preme "✏️ Modifica Scheda"
 
   function startTamerWizard(existingTamer){
     creationDraft = {
@@ -731,6 +760,7 @@
         const max = skillMax(t, def);
         const statusEl = document.getElementById('gp-status');
         if((Number(t.skills[key])||0) >= max){ statusEl.style.color='var(--danger)'; statusEl.textContent = `${def.label} è già al massimo consentito (${max}).`; return; }
+        collectFormValues(target);
         t.skills[key] = (Number(t.skills[key])||0) + 1;
         t.unspentGrowthPoints = Number(t.unspentGrowthPoints||0) - 1;
         const ok = await saveMember(session.code, target);
@@ -748,6 +778,7 @@
         let cap = 5;
         if(milestone>=6) cap = 7; else if(milestone>=3) cap = 6;
         if(current >= cap){ statusEl.style.color='var(--danger)'; statusEl.textContent = `Tetto attuale per gli Attributi: ${cap} (Milestone ${milestone}).`; return; }
+        collectFormValues(target);
         t[attr] = current + 1;
         t.unspentGrowthPoints = Number(t.unspentGrowthPoints||0) - 3;
         const ok = await saveMember(session.code, target);
@@ -887,7 +918,7 @@
       target = cachedRoster.find(m=>m.username===session.username);
     }
 
-    const editable = true;
+    const editable = sheetEditMode;
 
     let bodyHTML;
     if(creationDraft && target){
@@ -916,15 +947,20 @@
       bodyHTML = null; // usa il ramo completo sotto
     }
     // Il form completo (Punteggi/Skill/Inventario/ecc.) è quello con campi editabili non ancora
-    // salvati — mentre è aperto, il polling non deve ridisegnare la pagina sopra le modifiche
-    // in corso, altrimenti si perdono silenziosamente ad ogni refresh di 4s.
-    isEditingFullForm = (bodyHTML === null) || !!creationDraft;
+    // salvati — mentre è aperto in modifica, il polling non deve ridisegnare la pagina sopra le
+    // modifiche in corso, altrimenti si perdono silenziosamente ad ogni refresh di 4s. In sola
+    // lettura invece va bene continuare ad aggiornare (es. per vedere modifiche fatte altrove).
+    isEditingFullForm = (bodyHTML === null && editable) || !!creationDraft;
 
     root.innerHTML = `
       <div style="max-width:760px;margin:0 auto;">
         ${topbar()}
         ${selectorHTML}
         ${bodyHTML !== null ? bodyHTML : `
+        <div class="hud-frame card" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;gap:10px;flex-wrap:wrap;">
+          <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;">${editable ? '✏️ Modalità Modifica' : '👁️ Sola Lettura'}</div>
+          <button class="btn ${editable ? 'solid' : ''} small" id="p-toggle-edit">${editable ? '✅ Fine Modifica' : '✏️ Modifica Scheda'}</button>
+        </div>
         <div class="hud-frame card">
           ${portraitBlockHTML(target, editable)}
         </div>
@@ -980,13 +1016,23 @@
 
     if(isMaster){
       const sel = document.getElementById('p-select-player');
-      if(sel) sel.onchange = ()=>{ window.__playerSelected = sel.value; justBuiltTamer=false; creationDraft=null; renderPage(); };
+      if(sel) sel.onchange = ()=>{ window.__playerSelected = sel.value; justBuiltTamer=false; creationDraft=null; sheetEditMode=false; renderPage(); };
     }
 
     const startWizBtn = document.getElementById('btn-start-wizard');
     if(startWizBtn) startWizBtn.onclick = ()=>{ startTamerWizard(target && target.tamer); };
     if(creationDraft && target) bindTamerWizard(target);
     if(target && target.tamer.built && bodyHTML===null) bindGrowthPoints(target);
+
+    const toggleEditBtn = document.getElementById('p-toggle-edit');
+    if(toggleEditBtn) toggleEditBtn.onclick = ()=>{
+      // Se si sta uscendo dalla modifica, cattura in memoria quanto scritto finora nei campi
+      // (senza salvarlo sul server) così passare alla sola lettura non cancella nulla: se poi
+      // si rientra in modifica, i valori digitati sono ancora lì, pronti per essere salvati.
+      if(editable) collectFormValues(target);
+      sheetEditMode = !sheetEditMode;
+      renderPage();
+    };
 
     if(target && editable && bodyHTML === null){
       bindImageUpload(target);
@@ -1009,8 +1055,17 @@
         const msgEl = document.getElementById('p-save-msg');
         msgEl.innerHTML = '<span class="muted">Salvataggio...</span>';
         const ok = await saveMember(session.code, target);
-        msgEl.innerHTML = ok ? '<span class="ok-msg">✔ Salvato.</span>' : `<span class="err">⚠ ${escapeHTML(lastApiError||'errore sconosciuto')}</span>`;
-        if(ok) cachedRoster = await getRoster(session.code);
+        if(ok){
+          // Ricarica e ridisegna: senza questo, la scheda restava visivamente "vecchia"
+          // dopo il salvataggio (es. un'immagine rimossa nel campo URL continuava a
+          // comparire finché non si ricaricava la pagina a mano).
+          cachedRoster = await getRoster(session.code);
+          renderPage();
+          const freshMsgEl = document.getElementById('p-save-msg');
+          if(freshMsgEl) freshMsgEl.innerHTML = '<span class="ok-msg">✔ Salvato.</span>';
+        } else {
+          msgEl.innerHTML = `<span class="err">⚠ ${escapeHTML(lastApiError||'errore sconosciuto')}</span>`;
+        }
       };
       const resetBtn = document.getElementById('p-reset');
       if(resetBtn){
@@ -1156,6 +1211,25 @@
           const imgEl = document.getElementById('p-imageUrl');
           if(imgEl) imgEl.value = res.url;
           statusEl.textContent = '✔ Caricata — ricordati di salvare.';
+          // Anteprima immediata: aggiorna/crea l'elemento <img> del ritratto sul posto,
+          // senza un renderPage() completo, per non perdere altri campi in modifica.
+          const preview = document.getElementById('p-portrait-img');
+          if(preview){
+            if(preview.tagName === 'IMG'){
+              preview.src = res.url;
+              preview.setAttribute('data-lightbox-src', res.url);
+            } else {
+              const newImg = document.createElement('img');
+              newImg.className = 'portrait';
+              newImg.id = 'p-portrait-img';
+              newImg.src = res.url;
+              newImg.setAttribute('data-lightbox-src', res.url);
+              newImg.style.cursor = 'zoom-in';
+              newImg.title = 'Clicca per ingrandire';
+              newImg.onerror = function(){ this.onerror=null; const ph=document.createElement('div'); ph.className='portrait-placeholder'; ph.id='p-portrait-img'; ph.textContent='⚠️'; ph.title='Immagine non caricabile'; this.replaceWith(ph); };
+              preview.replaceWith(newImg);
+            }
+          }
         } else {
           statusEl.textContent = '⚠ Caricamento fallito: ' + (lastApiError||'errore sconosciuto');
         }
