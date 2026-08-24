@@ -1239,6 +1239,14 @@
     probe.src = url;
   }
 
+  // Limite prudenziale lato client: Vercel (piano Hobby) rifiuta richieste oltre ~4.5MB, e le
+  // foto scattate con lo smartphone (specie in HEIC/alta risoluzione) possono superarlo — con un
+  // errore che a volte il fetch non riesce a segnalare chiaramente. Meglio avvisare subito.
+  const MAX_UPLOAD_MB = 4;
+  function fileTooBig(file){
+    return file && file.size > MAX_UPLOAD_MB * 1024 * 1024;
+  }
+
   function bindImageUpload(target){
     const fileInput = document.getElementById('p-img-file');
     const btn = document.getElementById('p-img-btn');
@@ -1248,6 +1256,11 @@
       fileInput.onchange = async ()=>{
         const file = fileInput.files[0];
         if(!file) return;
+        if(fileTooBig(file)){
+          statusEl.textContent = `⚠ File troppo grande (${(file.size/1024/1024).toFixed(1)}MB) — usa una foto sotto i ${MAX_UPLOAD_MB}MB.`;
+          fileInput.value = '';
+          return;
+        }
         statusEl.textContent = 'Caricamento...';
         btn.disabled = true;
         try{
@@ -1287,6 +1300,11 @@
       thumbFileInput.onchange = async ()=>{
         const file = thumbFileInput.files[0];
         if(!file) return;
+        if(fileTooBig(file)){
+          thumbStatusEl.textContent = `⚠ File troppo grande (${(file.size/1024/1024).toFixed(1)}MB) — usa una foto sotto i ${MAX_UPLOAD_MB}MB.`;
+          thumbFileInput.value = '';
+          return;
+        }
         thumbStatusEl.textContent = 'Caricamento...';
         thumbBtn.disabled = true;
         try{

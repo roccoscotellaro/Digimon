@@ -1796,14 +1796,14 @@
   // impostato in player.html (portraitPosX/Y/portraitZoom), invece di mostrare l'immagine
   // intera. Se il tamer non ha ancora impostato una posizione, i default (50/50/100) equivalgono
   // a un semplice centraggio, quindi è sicuro usarla anche su schede vecchie senza quei campi.
+  // Mostra la MINIATURA del Tamer (t.imageThumbUrl, impostata in player.html) se presente;
+  // altrimenti l'immagine principale a corpo intero, semplicemente centrata.
   function tamerAvatarHTML(t, name, size){
     const cls = size==='sm' ? 'portrait-sm' : 'portrait';
-    if(t && t.imageUrl){
-      const x = Math.max(0, Math.min(100, Number(t.portraitPosX ?? 50)));
-      const y = Math.max(0, Math.min(100, Number(t.portraitPosY ?? 50)));
-      const zoom = Math.max(100, Math.min(250, Number(t.portraitZoom ?? 100)));
+    const src = t && (t.imageThumbUrl || t.imageUrl);
+    if(src){
       return `<span class="${cls}" style="display:inline-block;overflow:hidden;position:relative;padding:0;">`
-        + `<img src="${escapeAttr(t.imageUrl)}" onerror="this.parentElement.style.visibility='hidden'" style="width:100%;height:100%;object-fit:cover;object-position:${x}% ${y}%;transform:scale(${zoom/100});display:block;" />`
+        + `<img src="${escapeAttr(src)}" onerror="this.parentElement.style.visibility='hidden'" style="width:100%;height:100%;object-fit:cover;display:block;" />`
         + `</span>`;
     }
     return portraitHTML('', name, size);
