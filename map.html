@@ -670,6 +670,7 @@
             <div style="flex:1;display:flex;align-items:center;">${audioUploadRowHTML('edit-sector-music')}</div>
           </div>
           <div class="err" id="edit-sector-music-status"></div>
+          <div class="muted" style="margin-top:2px;font-size:11px;">Se un Luogo di questo Settore viene reso attuale e ha una sua traccia, quella ha la precedenza su questa.</div>
         </div>
         <div class="field"><label>🗡️ Musica da Combattimento Settore (opzionale)</label>
           <div class="row" style="align-items:flex-start;">
@@ -905,7 +906,7 @@
           const name = input.value.trim();
           if(!name) return;
           if(!s.luoghi) s.luoghi = [];
-          s.luoghi.push({ id:'l'+Date.now()+Math.random().toString(36).slice(2,6), name, description:'', revealed:false });
+          s.luoghi.push({ id:'l'+Date.now()+Math.random().toString(36).slice(2,6), name, description:'', revealed:false, music:'', combatMusic:'' });
           await persist();
           renderMapBody(activeMacro);
         };
@@ -950,6 +951,23 @@
               </div>
               <div class="err" id="edit-luogo-image-status"></div>
             </div>
+            <div class="field">
+              <label>🎵 URL Musica (opzionale)</label>
+              <div class="row" style="align-items:flex-start;">
+                <input type="text" id="edit-luogo-music" value="${escapeAttr(lg.music||'')}" placeholder="https://.../traccia.mp3 (opzionale)" style="flex:2;" />
+                <div style="flex:1;display:flex;align-items:center;">${audioUploadRowHTML('edit-luogo-music')}</div>
+              </div>
+              <div class="err" id="edit-luogo-music-status"></div>
+              <div class="muted" style="margin-top:2px;font-size:11px;">Parte in automatico quando questo Luogo viene reso attuale — ha priorità sulla musica del Settore e della Macroscena (a meno che non ci sia una musica manuale impostata in Scena).</div>
+            </div>
+            <div class="field">
+              <label>🗡️ URL Musica da Combattimento (opzionale)</label>
+              <div class="row" style="align-items:flex-start;">
+                <input type="text" id="edit-luogo-combat-music" value="${escapeAttr(lg.combatMusic||'')}" placeholder="https://.../boss-theme.mp3 (opzionale)" style="flex:2;" />
+                <div style="flex:1;display:flex;align-items:center;">${audioUploadRowHTML('edit-luogo-combat-music')}</div>
+              </div>
+              <div class="err" id="edit-luogo-combat-music-status"></div>
+            </div>
             <button class="btn ${lg.revealed?'ghost':''} small" id="btn-toggle-luogo-reveal">${lg.revealed?'🙈 Nascondi ai giocatori':'👁️ Rivela ai giocatori'}</button>
           </div>
         ` : `
@@ -976,6 +994,12 @@
         if(descEl) descEl.onchange = async ()=>{ lg.description = descEl.value; await persist(); renderMapBody(activeMacro); };
         const imageEl = document.getElementById('edit-luogo-image');
         if(imageEl) imageEl.onchange = async ()=>{ lg.image = imageEl.value.trim(); await persist(); renderMapBody(activeMacro); };
+        bindAudioUpload('edit-luogo-music', 'edit-luogo-music-status');
+        const musicEl = document.getElementById('edit-luogo-music');
+        if(musicEl) musicEl.onchange = async ()=>{ lg.music = musicEl.value.trim(); await persist(); renderMapBody(activeMacro); };
+        bindAudioUpload('edit-luogo-combat-music', 'edit-luogo-combat-music-status');
+        const combatMusicEl = document.getElementById('edit-luogo-combat-music');
+        if(combatMusicEl) combatMusicEl.onchange = async ()=>{ lg.combatMusic = combatMusicEl.value.trim(); await persist(); renderMapBody(activeMacro); };
         const luogoRevealBtn = document.getElementById('btn-toggle-luogo-reveal');
         if(luogoRevealBtn) luogoRevealBtn.onclick = async ()=>{ lg.revealed = !lg.revealed; await persist(); renderMapBody(activeMacro); };
         const deleteBtn = document.getElementById('btn-delete-luogo');

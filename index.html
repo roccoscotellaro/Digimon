@@ -454,7 +454,7 @@
               const revertIdx = Math.max(0, stageIndex(member.digimon.defaultStage)-1);
               const revertStage = STAGES[revertIdx];
               applyStageChange(member.digimon, member.digimon.stage, revertStage);
-              await pushLog(code, { who:'Sistema', role:'gm', text: `${member.digimon.name||member.username} torna a ${member.digimon.stage} (fine Evoluzione Forzata) — Stat aggiornate.` });
+              await pushLog(code, { who:'Sistema', role:'gm', text: `${member.digimon.name||displayName(member)} torna a ${member.digimon.stage} (fine Evoluzione Forzata) — Stat aggiornate.` });
             }
           }
           await saveMember(code, member);
@@ -948,6 +948,7 @@
     if(isMaster || (session && session.username===p.username)) return p.name;
     const member = cachedRoster.find(m=>m.username===p.username);
     if(member && member.digimon && member.digimon.approved===false) return '🥚 (Uovo)';
+    if(isDigimonHiddenFromViewer(member)) return '❔ (???)';
     return p.name;
   }
 
@@ -985,7 +986,11 @@
                 ${here.map(p=>{
                   const color = p.side==='ally' ? 'var(--cyan)' : 'var(--danger)';
                   const dispName = combatDisplayName(p, isMaster);
-                  return `<div title="${escapeAttr(dispName)}" style="width:26px;height:26px;border-radius:6px;overflow:hidden;border:2px solid ${color};box-shadow:0 0 4px rgba(0,0,0,0.4);">${portraitHTML(resolveParticipantImage(p), dispName, 'sm')}</div>`;
+                  const isMasked = dispName !== p.name;
+                  const portrait = isMasked
+                    ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--panel-2);color:var(--text-mute);font-size:14px;">❔</div>`
+                    : portraitHTML(resolveParticipantImage(p), dispName, 'sm');
+                  return `<div title="${escapeAttr(dispName)}" style="width:26px;height:26px;border-radius:6px;overflow:hidden;border:2px solid ${color};box-shadow:0 0 4px rgba(0,0,0,0.4);">${portrait}</div>`;
                 }).join('')}
               </div>
               <div style="width:10px;height:10px;border-radius:50%;background:${zi===activeIdx?'var(--cyan)':(here.length?'var(--amber)':'var(--panel)')};border:2px solid var(--line);"></div>
@@ -1359,7 +1364,9 @@
       minorAspect: { text:'', usesLeft:2 },
       specialOrdersUsed: {},
       teamworkBonus: 0,
-      built: false // diventa true al completamento della Creazione Guidata — segnala che la scheda non è più "vuota"
+      built: false, // diventa true al completamento della Creazione Guidata — segnala che la scheda non è più "vuota"
+      currentSectorId: null, // null = segue il Settore attuale del gruppo; un id esplicito = si è separato dal gruppo
+      characterName:'' // nome del personaggio mostrato in UI, indipendente dallo username di login (fallback: username)
     };
   }
   function defaultDigimon(){
@@ -1379,6 +1386,7 @@
       stageStats:{},
       armorForms:[],
       hybridMode:false,
+      hiddenFromParty:false, // true = nascosto agli altri giocatori (es. non ancora "schiuso" narrativamente); Master e proprietario lo vedono sempre
       attacks:[
         { name:'Colpo Base', shape:'Melee', type:'Damage', effectKey:'', extraTags:'', desc:'Un attacco fisico semplice.', signature:false, reach:0, areaAttack:false },
         { name:'Raggio a Distanza', shape:'Range', type:'Damage', effectKey:'', extraTags:'', desc:'Un colpo dalla distanza.', signature:false, reach:1, areaAttack:false }
@@ -1400,6 +1408,23 @@
     if(!m.digimon.attacks || !m.digimon.attacks.length) m.digimon.attacks = defaultDigimon().attacks;
     if(!Array.isArray(m.digimon.unlockedEvolutions)) m.digimon.unlockedEvolutions = [];
     return m;
+  }
+
+  // Nome da mostrare in UI per un membro del roster: il nome del personaggio (tamer.characterName)
+  // se è stato impostato, altrimenti lo username di login (fallback per schede esistenti che non
+  // l'hanno mai compilato). Lo username resta SEMPRE la chiave di login/sessione/query — questa
+  // funzione (e la variante sotto) sono solo per la visualizzazione.
+  function displayName(member){
+    const cn = member && member.tamer && member.tamer.characterName;
+    return (cn && String(cn).trim()) ? String(cn).trim() : ((member && member.username) || '');
+  }
+  // Variante comoda quando si ha solo lo username (es. record non collegati a un member completo:
+  // bug report, log di scan, thread di chat privata) — cerca il membro in cachedRoster e ricade sullo
+  // username grezzo se non lo trova o non ha un characterName impostato.
+  function displayNameFor(username){
+    if(!username) return '';
+    const member = (cachedRoster||[]).find(m=>m.username===username);
+    return member ? displayName(member) : username;
   }
 
   function render(){
@@ -1560,7 +1585,34 @@
   function onlineSummary(members){
     const online = (members||[]).filter(m=>m.last_seen && (Date.now()-new Date(m.last_seen).getTime())<ONLINE_WINDOW_MS);
     if(online.length===0) return 'nessun altro online';
-    return online.map(m=>`${m.username}${m.role==='master'?' (Master)':''}`).join(', ') + ' online';
+    return online.map(m=>`${displayName(m)}${m.role==='master'?' (Master)':''}`).join(', ') + ' online';
+  }
+
+  // Settore "effettivo" di un membro: se non si è mai separato dal gruppo (currentSectorId nullo)
+  // segue semplicemente il Settore attuale della Scena; altrimenti resta dove si è spostato da solo
+  // finché il Master non lo fa "Rientrare nel gruppo" o non sposta l'intero gruppo (che resetta tutti).
+  function memberEffectiveSectorId(member){
+    const override = member && member.tamer && member.tamer.currentSectorId;
+    return override || (cachedScene && cachedScene.currentSectorId) || null;
+  }
+  // Un Digimon del roster segnato "hiddenFromParty" resta visibile SOLO a Master e proprietario —
+  // serve a coprire il tempo tra la creazione/evoluzione di un Digimon e il momento in cui il Master
+  // vuole rivelarlo narrativamente al resto del gruppo (es. un Digitama che si schiude prima degli altri).
+  // Cerca un Settore per id in TUTTE le Macroscene (non solo quella attiva), utile per mostrare
+  // dove si trova un membro anche se il Master sta guardando una Macroscena diversa in quel momento.
+  function sectorNameById(sectorId){
+    if(!sectorId) return null;
+    for(const m of (cachedScene.macroScenes||[])){
+      const s = (m.sectors||[]).find(x=>x.id===sectorId);
+      if(s) return s.name;
+    }
+    return null;
+  }
+  function isDigimonHiddenFromViewer(member){
+    if(!member || !member.digimon || !member.digimon.hiddenFromParty) return false;
+    if(session && session.role==='master') return false;
+    if(session && member.username===session.username) return false;
+    return true;
   }
 
   // ---------- LIVE PARTS (updated by polling, never touch forms) ----------
@@ -2188,7 +2240,7 @@
       const raw = ta.value.trim();
       if(!raw) return;
       if(playerChatMode==='private'){
-        await pushPrivateLog(code, session.username, { who: session.username, role:'player', text: raw });
+        await pushPrivateLog(code, session.username, { who: displayName(me), role:'player', text: raw });
         ta.value='';
         await refreshPlayerLogDisplay(code, me);
         return;
@@ -2203,11 +2255,11 @@
         }
         const rollMeta = rollResult.dice ? { dice: rollResult.dice } : {};
         if(pendingActionImageUrl) rollMeta.image = pendingActionImageUrl;
-        await pushLog(code, { who: session.username, role:'roll', text: rollResult.text, meta: Object.keys(rollMeta).length ? rollMeta : null });
+        await pushLog(code, { who: displayName(me), role:'roll', text: rollResult.text, meta: Object.keys(rollMeta).length ? rollMeta : null });
       } else {
         const textMeta = {};
         if(pendingActionImageUrl) textMeta.image = pendingActionImageUrl;
-        await pushLog(code, { who: session.username, role:'player', text: raw, meta: Object.keys(textMeta).length ? textMeta : null });
+        await pushLog(code, { who: displayName(me), role:'player', text: raw, meta: Object.keys(textMeta).length ? textMeta : null });
       }
       ta.value='';
       pendingActionImageUrl = null;
@@ -2476,8 +2528,8 @@
         <div class="flex-between"><div class="section-title" style="margin:0;border:none;padding:0;">Scheda Tamer</div>
         <span><a href="player.html" target="_blank" class="btn ghost small" style="margin-right:4px;text-decoration:none;">✏️ Scheda Completa</a><button class="btn small" id="btn-edit-tamer">Modifica</button>${containerId && containerId.indexOf('m-tamer-')===0 ? `<button class="btn ghost small" id="btn-reset-tamer" style="margin-left:4px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera</button>` : ''}</span></div>
         <div class="sheet-head" style="margin-top:12px;">
-          ${tamerAvatarHTML(t, me.username)}
-          <div class="info"><div class="nm">${escapeHTML(me.username)}</div><div class="tg">AGI ${t.agility} · BODY ${t.body} · CAR ${t.charisma} · INT ${t.intelligence} · WILL ${t.willpower}</div></div>
+          ${tamerAvatarHTML(t, displayName(me))}
+          <div class="info"><div class="nm">${escapeHTML(displayName(me))}</div><div class="tg">AGI ${t.agility} · BODY ${t.body} · CAR ${t.charisma} · INT ${t.intelligence} · WILL ${t.willpower}</div></div>
           <div style="margin-left:auto;text-align:center;">
             ${t.digiviceImageUrl
               ? `<img src="${escapeAttr(t.digiviceImageUrl)}" onerror="this.style.visibility='hidden'" style="width:44px;height:44px;object-fit:contain;border:1px solid var(--cyan-dim);border-radius:var(--radius);background:var(--panel-2);padding:3px;" />`
@@ -2547,11 +2599,11 @@
       const resetTamerBtn = document.getElementById('btn-reset-tamer');
       if(resetTamerBtn){
         resetTamerBtn.onclick = async ()=>{
-          if(!window.confirm(`Azzerare la Scheda Tamer di ${me.username}? Attributi, Skill, Torments, Aspetti e Inventario torneranno a zero e potrà rifare la Creazione Guidata. L'azione non è reversibile.`)) return;
-          if(!window.confirm(`Sei sicuro? Questa è l'ultima conferma prima di azzerare definitivamente la Scheda Tamer di ${me.username}.`)) return;
+          if(!window.confirm(`Azzerare la Scheda Tamer di ${displayName(me)}? Attributi, Skill, Torments, Aspetti e Inventario torneranno a zero e potrà rifare la Creazione Guidata. L'azione non è reversibile.`)) return;
+          if(!window.confirm(`Sei sicuro? Questa è l'ultima conferma prima di azzerare definitivamente la Scheda Tamer di ${displayName(me)}.`)) return;
           me.tamer = defaultTamer();
           await saveMember(session.code, me);
-          await pushLog(session.code, { who:'Master', role:'gm', text: `La Scheda Tamer di ${me.username} è stata azzerata dal Master.` });
+          await pushLog(session.code, { who:'Master', role:'gm', text: `La Scheda Tamer di ${displayName(me)} è stata azzerata dal Master.` });
           renderTamerCard(me, containerId);
           refreshLiveParts();
         };
@@ -2565,11 +2617,11 @@
         const asPenalty = window.confirm('OK = usa come bonus (+4, consuma 1 uso). Annulla = invoca la penalità (-4, ripristina l\'uso e guadagni 1 IP).');
         if(asPenalty){
           me.tamer.majorAspect.usesLeft = Math.max(0,(me.tamer.majorAspect.usesLeft||0)-1);
-          await pushLog(session.code, { who: session.username, role:'player', text: `Usa il Major Aspect "${me.tamer.majorAspect.text}" (+4 al prossimo Check).` });
+          await pushLog(session.code, { who: displayName(me), role:'player', text: `Usa il Major Aspect "${me.tamer.majorAspect.text}" (+4 al prossimo Check).` });
         } else {
           me.tamer.majorAspect.usesLeft = 1;
           me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1;
-          await pushLog(session.code, { who: session.username, role:'player', text: `Invoca la penalità del Major Aspect "${me.tamer.majorAspect.text}" (-4), ripristina l'uso e guadagna 1 IP.` });
+          await pushLog(session.code, { who: displayName(me), role:'player', text: `Invoca la penalità del Major Aspect "${me.tamer.majorAspect.text}" (-4), ripristina l'uso e guadagna 1 IP.` });
         }
         await saveMember(session.code, me);
         renderTamerCard(me, containerId);
@@ -2580,10 +2632,10 @@
         const asPenalty = window.confirm('OK = usa come bonus (+2, consuma 1 uso). Annulla = invoca la penalità (-2, ripristina entrambi gli usi).');
         if(asPenalty){
           me.tamer.minorAspect.usesLeft = Math.max(0,(me.tamer.minorAspect.usesLeft||0)-1);
-          await pushLog(session.code, { who: session.username, role:'player', text: `Usa il Minor Aspect "${me.tamer.minorAspect.text}" (+2 al prossimo Check).` });
+          await pushLog(session.code, { who: displayName(me), role:'player', text: `Usa il Minor Aspect "${me.tamer.minorAspect.text}" (+2 al prossimo Check).` });
         } else {
           me.tamer.minorAspect.usesLeft = 2;
-          await pushLog(session.code, { who: session.username, role:'player', text: `Invoca la penalità del Minor Aspect "${me.tamer.minorAspect.text}" (-2), ripristina entrambi gli usi.` });
+          await pushLog(session.code, { who: displayName(me), role:'player', text: `Invoca la penalità del Minor Aspect "${me.tamer.minorAspect.text}" (-2), ripristina entrambi gli usi.` });
         }
         await saveMember(session.code, me);
         renderTamerCard(me, containerId);
@@ -2653,7 +2705,7 @@
           await saveMember(session.code, me);
           const resEl = document.getElementById('torment-result-'+idx);
           if(resEl) resEl.innerHTML = `${diceRowHTML(result.dice)} <b>${result.total}</b> vs TN ${result.tn} — ${outcomeText}`;
-          await pushLog(session.code, { who: session.username, role:'roll', text: `Torment Check su "${tor.name}": 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText}`, meta:{dice: result.dice} });
+          await pushLog(session.code, { who: displayName(me), role:'roll', text: `Torment Check su "${tor.name}": 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText}`, meta:{dice: result.dice} });
           if(tor.usedThisRest){ btn.disabled = true; btn.textContent = 'Già tentato (Rest)'; }
           refreshLiveParts();
         };
@@ -3512,7 +3564,7 @@
         approveDigimonBtn.onclick = async ()=>{
           me.digimon.approved = true;
           await saveMember(session.code, me);
-          await pushLog(session.code, { who:'Master', role:'gm', text: `Il Digimon di ${me.username} (${me.digimon.name||'senza nome'}) è stato approvato dal Master.` });
+          await pushLog(session.code, { who:'Master', role:'gm', text: `Il Digimon di ${displayName(me)} (${me.digimon.name||'senza nome'}) è stato approvato dal Master.` });
           renderDigimonCard(me, containerId);
           refreshLiveParts();
         };
@@ -3520,11 +3572,11 @@
       const resetDigimonBtn = document.getElementById('btn-reset-digimon-'+containerId);
       if(resetDigimonBtn){
         resetDigimonBtn.onclick = async ()=>{
-          if(!window.confirm(`Azzerare il Digimon di ${me.username} (${d.name||'senza nome'})? Nome, Stage, Qualities, Attacchi e tutti i punteggi torneranno ai valori iniziali e potrà rifare la Creazione Guidata. L'azione non è reversibile.`)) return;
-          if(!window.confirm(`Sei sicuro? Questa è l'ultima conferma prima di azzerare definitivamente il Digimon di ${me.username}.`)) return;
+          if(!window.confirm(`Azzerare il Digimon di ${displayName(me)} (${d.name||'senza nome'})? Nome, Stage, Qualities, Attacchi e tutti i punteggi torneranno ai valori iniziali e potrà rifare la Creazione Guidata. L'azione non è reversibile.`)) return;
+          if(!window.confirm(`Sei sicuro? Questa è l'ultima conferma prima di azzerare definitivamente il Digimon di ${displayName(me)}.`)) return;
           me.digimon = defaultDigimon();
           await saveMember(session.code, me);
-          await pushLog(session.code, { who:'Master', role:'gm', text: `Il Digimon di ${me.username} è stato azzerato dal Master.` });
+          await pushLog(session.code, { who:'Master', role:'gm', text: `Il Digimon di ${displayName(me)} è stato azzerato dal Master.` });
           renderDigimonCard(me, containerId);
           refreshLiveParts();
         };
@@ -3545,7 +3597,7 @@
           me.digimon.battery = 0;
           me.digimon.usedSigMoveThisTurn = true;
           await saveMember(session.code, me);
-          await pushLog(session.code, { who: me.digimon.name||session.username, role:'roll', text: `⚡ ${me.digimon.name||'Il Digimon'} usa la Signature Move! Bonus da Battery: +${spent} Accuracy/Damage (o +${spent} da dividere tra Accuracy e Potenza Effetto se [SUPPORT]) su questo attacco.` });
+          await pushLog(session.code, { who: me.digimon.name||displayName(me), role:'roll', text: `⚡ ${me.digimon.name||'Il Digimon'} usa la Signature Move! Bonus da Battery: +${spent} Accuracy/Damage (o +${spent} da dividere tra Accuracy e Potenza Effetto se [SUPPORT]) su questo attacco.` });
           renderDigimonCard(me, containerId);
           refreshLiveParts();
         };
@@ -3591,7 +3643,7 @@
           // Regola 8.05: un Digimon che evolve recupera tutte le Wound Box.
           me.digimon.currentWounds = me.digimon.maxWounds;
           await saveMember(session.code, me);
-          await pushLog(session.code, { who: session.username, role:'player', text: `✨ ${me.digimon.name||'Il Digimon'} è avvolto da un bagliore di dati... e digivolve in ${target}!${cost>0?` (spesi ${cost} Evolution Points)`:''} — Stat aggiornate automaticamente. Ricorda di segnare 1 Azione spesa.` });
+          await pushLog(session.code, { who: displayName(me), role:'player', text: `✨ ${me.digimon.name||'Il Digimon'} è avvolto da un bagliore di dati... e digivolve in ${target}!${cost>0?` (spesi ${cost} Evolution Points)`:''} — Stat aggiornate automaticamente. Ricorda di segnare 1 Azione spesa.` });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Evoluzione applicata, Stat aggiornate.';
           try{ __playEvolutionSfx('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787073018875_mziu9s.mpeg'); }catch(e){}
           showEvolutionTransition(__oldImg, bestDigimonImage(null, me.digimon.name, me.digimon.imageUrl), me.digimon.name);
@@ -3624,7 +3676,7 @@
             outcomeText = `${verdict.label}. Nessuna evoluzione forzata — possibili conseguenze pericolose a discrezione del Master.`;
           }
           await saveMember(session.code, me);
-          await pushLog(session.code, { who: session.username, role:'roll', text: `⚡ Forza Evoluzione (TN ${tn}): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText}`, meta:{ dice } });
+          await pushLog(session.code, { who: displayName(me), role:'roll', text: `⚡ Forza Evoluzione (TN ${tn}): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText}`, meta:{ dice } });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = outcomeText;
           if(verdict.cls==='crit-success' || verdict.cls==='success'){
             try{ __playEvolutionSfx('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787073018875_mziu9s.mpeg'); }catch(e){}
@@ -3640,7 +3692,7 @@
         toggleEvolveBtn.onclick = async ()=>{
           me.digimon.evolveUnlocked = !me.digimon.evolveUnlocked;
           await saveMember(session.code, me);
-          await pushLog(session.code, { who:'Master', role:'gm', text: me.digimon.evolveUnlocked ? `${me.digimon.name||'Il Digimon'} di ${me.username} sente una strana energia provenire dall'interno...` : `${me.digimon.name||'Il Digimon'} di ${me.username} non sente più quella strana energia (Evoluzione ribloccata dal Master).` });
+          await pushLog(session.code, { who:'Master', role:'gm', text: me.digimon.evolveUnlocked ? `${me.digimon.name||'Il Digimon'} di ${displayName(me)} sente una strana energia provenire dall'interno...` : `${me.digimon.name||'Il Digimon'} di ${displayName(me)} non sente più quella strana energia (Evoluzione ribloccata dal Master).` });
           renderDigimonCard(me, containerId);
           refreshLiveParts();
         };
@@ -3655,7 +3707,7 @@
             me.digimon.unlockedEvolutions = me.digimon.unlockedEvolutions.filter(n=>n!==name);
           }
           await saveMember(session.code, me);
-          await pushLog(session.code, { who:'Master', role:'gm', text: `Il Master ha ${chk.checked?'sbloccato':'bloccato'} la linea evolutiva "${name}" per ${me.username}.` });
+          await pushLog(session.code, { who:'Master', role:'gm', text: `Il Master ha ${chk.checked?'sbloccato':'bloccato'} la linea evolutiva "${name}" per ${displayName(me)}.` });
         };
       });
       const blastBtn = document.getElementById('btn-blast-evolve-'+containerId);
@@ -3692,7 +3744,7 @@
             outcomeText = `Fallimento. Scende a ${STAGES[revertIdx]} (sotto il Default Stage) e non può Evolvere per il resto del Combattimento.`;
           }
           await saveMember(session.code, me);
-          await pushLog(session.code, { who: session.username, role:'roll', text: `💥 Blast Evolution a ${target} — Willpower Check (TN ${tn}): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText} (Usi rimasti: ${me.digimon.blastEvolutionUses})`, meta:{ dice } });
+          await pushLog(session.code, { who: displayName(me), role:'roll', text: `💥 Blast Evolution a ${target} — Willpower Check (TN ${tn}): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText} (Usi rimasti: ${me.digimon.blastEvolutionUses})`, meta:{ dice } });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = outcomeText;
           renderDigimonCard(me, containerId);
           renderTamerCard(me, siblingCardId(containerId,'tamer'));
@@ -3714,7 +3766,7 @@
             me.digimon.currentWounds = Math.max(0, Math.min(me.digimon.maxWounds, Number(me.digimon.currentWounds||0) + woundDiff));
           }
           await saveMember(session.code, me);
-          await pushLog(session.code, { who: session.username, role:'player', text: `🔀 ${me.digimon.name} usa Slide Evolution (stesso Stage, 1 Evolution Point speso)${woundDiff!==0?`, Ferite Massime ${woundDiff>0?'+':''}${woundDiff}`:''}.` });
+          await pushLog(session.code, { who: displayName(me), role:'player', text: `🔀 ${me.digimon.name} usa Slide Evolution (stesso Stage, 1 Evolution Point speso)${woundDiff!==0?`, Ferite Massime ${woundDiff>0?'+':''}${woundDiff}`:''}.` });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = `Slide Evolution completata: ora sei ${newName}.`;
           renderDigimonCard(me, containerId);
           refreshLiveParts();
@@ -3764,7 +3816,7 @@
           });
           af.usedThisRest = true;
           await saveMember(session.code, me);
-          await pushLog(session.code, { who: session.username, role:'player', text: `${me.digimon.name||'Il Digimon'} usa il Digimental "${af.digimentalName}" per Armor Evolvere in ${af.name} (${af.stage}, 0 Evolution Points).` });
+          await pushLog(session.code, { who: displayName(me), role:'player', text: `${me.digimon.name||'Il Digimon'} usa il Digimental "${af.digimentalName}" per Armor Evolvere in ${af.name} (${af.stage}, 0 Evolution Points).` });
           renderDigimonCard(me, containerId);
           refreshLiveParts();
         };
@@ -3777,7 +3829,7 @@
           applyStageChange(me.digimon, me.digimon.stage, me.digimon.defaultStage);
           me.digimon.qualities = (me.digimon.qualities||[]).filter(q=>q.armorSource!==af.name);
           await saveMember(session.code, me);
-          await pushLog(session.code, { who: session.username, role:'player', text: `${me.digimon.name||'Il Digimon'} torna al Default Stage (${me.digimon.defaultStage}), lasciando la forma ${af.name}.` });
+          await pushLog(session.code, { who: displayName(me), role:'player', text: `${me.digimon.name||'Il Digimon'} torna al Default Stage (${me.digimon.defaultStage}), lasciando la forma ${af.name}.` });
           renderDigimonCard(me, containerId);
           refreshLiveParts();
         };
@@ -3790,7 +3842,7 @@
           const resEl = document.getElementById('pool-roll-result-'+containerId);
           if(resEl) resEl.innerHTML = `${diceRowHTML(dice)}<span class="roll-total">${successes} successi</span>`;
           const logText = `Pool Check ${statLabel} (${d[statKey]}d6): [${dice.join(',')}] → ${successes} successi`;
-          await pushLog(session.code, { who: (d.name||session.username), role:'roll', text: logText, meta: { dice, successes } });
+          await pushLog(session.code, { who: (d.name||displayName(me)), role:'roll', text: logText, meta: { dice, successes } });
           refreshLiveParts();
         };
       });
@@ -4233,7 +4285,7 @@
         const resEl = document.getElementById('roll-result-'+containerId);
         resEl.innerHTML = `${diceRowHTML(dice)}<span class="roll-total">${total}</span>${verdict?`<span class="roll-verdict ${verdict.cls}">${verdict.label}</span>`:''}`;
         const logText = `tira ${def.label} (${ATTR_ABBR[chosenAttr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict ? ` vs TN ${tnVal} → ${verdict.label}` : '');
-        await pushLog(session.code, { who: session.username, role:'roll', text: logText, meta: { dice, total, verdict: verdict?verdict.label:null } });
+        await pushLog(session.code, { who: displayName(me), role:'roll', text: logText, meta: { dice, total, verdict: verdict?verdict.label:null } });
         refreshLiveParts();
       };
     };
@@ -4379,7 +4431,7 @@
             <div class="field" style="margin-top:10px;"><label>Parla come</label>
               <select id="speak-as">
                 <option value="master">Master (narrazione)</option>
-                ${players.map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (p.username+' — Digimon'))}</option>`).join('')}
+                ${players.map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (displayName(p)+' — Digimon'))}</option>`).join('')}
                 ${(cachedScene.encounters||[]).map((e,i)=>`<option value="encounter:${i}">${escapeHTML(encName(e))} (in scena)</option>`).join('')}
                 <option value="enemy">Nemico personalizzato...</option>
               </select>
@@ -4430,7 +4482,7 @@
           <div class="hud-frame card">
             <div class="section-title">Richiedi un Tiro</div>
             <div class="field"><label>Giocatore</label>
-              <select id="req-player">${players.map(p=>`<option value="${escapeAttr(p.username)}">${escapeHTML(p.username)}</option>`).join('')}</select>
+              <select id="req-player">${players.map(p=>`<option value="${escapeAttr(p.username)}">${escapeHTML(displayName(p))}</option>`).join('')}</select>
             </div>
             <div class="field"><label>Skill o Stat</label>
               <select id="req-skill">
@@ -4665,10 +4717,20 @@
       const delBtn = document.getElementById('btn-delete-'+i);
       if(delBtn){
         delBtn.onclick = async ()=>{
-          if(!window.confirm(`Eliminare definitivamente il personaggio di ${p.username} (Tamer + Digimon)? L'azione non è reversibile.`)) return;
+          if(!window.confirm(`Eliminare definitivamente il personaggio di ${displayName(p)} (Tamer + Digimon)? L'azione non è reversibile.`)) return;
           await deleteMember(session.code, p.username);
           if(openManageIdx===i) openManageIdx = null;
-          await pushLog(session.code, { who:'Master', role:'gm', text: `Il personaggio di ${p.username} è stato eliminato dalla campagna.` });
+          await pushLog(session.code, { who:'Master', role:'gm', text: `Il personaggio di ${displayName(p)} è stato eliminato dalla campagna.` });
+          refreshLiveParts();
+        };
+      }
+      const hideBtn = document.getElementById('btn-toggle-hidden-'+i);
+      if(hideBtn){
+        hideBtn.onclick = async ()=>{
+          p.digimon.hiddenFromParty = !p.digimon.hiddenFromParty;
+          hideBtn.disabled = true;
+          const ok = await saveMember(session.code, p);
+          if(!ok){ p.digimon.hiddenFromParty = !p.digimon.hiddenFromParty; hideBtn.disabled = false; window.alert('Errore: ' + (lastApiError||'salvataggio non riuscito')); return; }
           refreshLiveParts();
         };
       }
@@ -5207,7 +5269,7 @@
     function targetDescHTML(n){
       if(n.target_type==='all') return 'Tutti i giocatori';
       const list = Array.isArray(n.target_usernames) ? n.target_usernames : [];
-      return (n.target_type==='single' ? 'Solo: ' : 'Alcuni: ') + (list.length ? list.join(', ') : '—');
+      return (n.target_type==='single' ? 'Solo: ' : 'Alcuni: ') + (list.length ? list.map(displayNameFor).join(', ') : '—');
     }
     function confirmProgressHTML(n){
       const targetUsers = n.target_type==='all' ? players.map(p=>p.username) : (n.target_usernames||[]);
@@ -5215,8 +5277,8 @@
       const pending = targetUsers.filter(u=>!confirmed.includes(u));
       return `
         <div class="muted" style="margin-top:6px;font-size:11px;">
-          ✔ Confermato: ${confirmed.length ? confirmed.join(', ') : '—'}<br/>
-          ⏳ In attesa: ${pending.length ? pending.join(', ') : 'nessuno'}
+          ✔ Confermato: ${confirmed.length ? confirmed.map(displayNameFor).join(', ') : '—'}<br/>
+          ⏳ In attesa: ${pending.length ? pending.map(displayNameFor).join(', ') : 'nessuno'}
         </div>`;
     }
 
@@ -5233,7 +5295,7 @@
         </select>
       </div>
       <div id="notice-target-players" style="display:none;margin-bottom:10px;">
-        ${players.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;"><input type="${'checkbox'}" class="notice-target-player" value="${escapeAttr(p.username)}" /> ${escapeHTML(p.username)}</label>`).join('') || '<div class="muted">Nessun giocatore in roster.</div>'}
+        ${players.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;"><input type="${'checkbox'}" class="notice-target-player" value="${escapeAttr(p.username)}" /> ${escapeHTML(displayName(p))}</label>`).join('') || '<div class="muted">Nessun giocatore in roster.</div>'}
       </div>
       <button class="btn solid" id="btn-send-notice" style="width:100%;">Invia Avviso</button>
       <div class="muted" id="notice-status" style="margin-top:6px;"></div>
@@ -5326,7 +5388,7 @@
       </div>
       ${open.length===0 ? '<div class="muted">Nessuna segnalazione aperta.</div>' : open.map(r=>`
         <div class="roster-item" style="padding:8px;margin-bottom:6px;">
-          <div class="flex-between"><b style="font-size:12px;">${escapeHTML(r.username||'anonimo')}</b><button class="btn ghost small" data-bug-resolve="${r.id}">Segna risolto</button></div>
+          <div class="flex-between"><b style="font-size:12px;">${escapeHTML(displayNameFor(r.username)||'anonimo')}</b><button class="btn ghost small" data-bug-resolve="${r.id}">Segna risolto</button></div>
           <div style="margin-top:4px;font-size:12px;white-space:pre-wrap;">${escapeHTML(r.text)}</div>
           <div class="muted" style="font-size:10px;margin-top:4px;">${new Date(r.created_at).toLocaleString('it-IT')}</div>
         </div>
@@ -5559,7 +5621,7 @@
           return `
           <div class="row" style="align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px;">
             <div>
-              <b>${escapeHTML(l.username)}</b> <span class="muted">— tentativo ${l.attempt_number}/2</span><br/>
+              <b>${escapeHTML(member ? displayName(member) : l.username)}</b> <span class="muted">— tentativo ${l.attempt_number}/2</span><br/>
               <span class="mono">${escapeHTML(l.digimon_name)}</span>${l.crest_name ? ` <span class="muted">· Crest: ${escapeHTML(l.crest_name)}</span>` : ''}${l.digimental_name ? ` <span class="muted">· ${escapeHTML(l.digimental_name)}</span>` : ''}
               <div class="muted" style="font-size:10px;">${new Date(l.created_at).toLocaleString('it-IT')}</div>
             </div>
@@ -5656,7 +5718,7 @@
     const log = masterPrivateThread ? await getPrivateLog(code, masterPrivateThread) : [];
     cardEl.innerHTML = `
       <div class="field"><label>Con chi</label>
-        <select id="private-thread-select">${players.map(p=>`<option value="${escapeAttr(p.username)}" ${p.username===masterPrivateThread?'selected':''}>${masterPrivateUnread[p.username]?'🔴 ':''}${escapeHTML(p.username)}</option>`).join('')}</select>
+        <select id="private-thread-select">${players.map(p=>`<option value="${escapeAttr(p.username)}" ${p.username===masterPrivateThread?'selected':''}>${masterPrivateUnread[p.username]?'🔴 ':''}${escapeHTML(displayName(p))}</option>`).join('')}</select>
       </div>
       <div class="log" id="private-log-live-master" style="height:220px;">${logHTML(log, false)}</div>
       <textarea id="private-text-master" rows="2" placeholder="Scrivi in privato..." style="margin-top:8px;"></textarea>
@@ -5895,7 +5957,7 @@
       <div class="row">
         <select id="combat-add-player" style="flex:2;">
           <option value="">Aggiungi giocatore...</option>
-          ${players.map(p=>`<option value="${escapeAttr(p.username)}">${escapeHTML(p.username)}${p.digimon && p.digimon.name ? ' — '+escapeHTML(p.digimon.name) : ''}</option>`).join('')}
+          ${players.map(p=>`<option value="${escapeAttr(p.username)}">${escapeHTML(displayName(p))}${p.digimon && p.digimon.name ? ' — '+escapeHTML(p.digimon.name) : ''}</option>`).join('')}
         </select>
         <button class="btn small" id="btn-combat-add-player" style="flex:1;">+ Aggiungi</button>
       </div>
@@ -6826,7 +6888,7 @@
       const member = cachedRoster.find(m=>m.username===username);
       const ram = member ? computeDerivedStats(member.digimon).ram : 0;
       const startActions = (member && member.digimon.hybridMode) ? 3 : 2;
-      const fighterName = (member && member.digimon.name) ? member.digimon.name : username;
+      const fighterName = (member && member.digimon.name) ? member.digimon.name : (member ? displayName(member) : username);
       combat.participants.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:fighterName, side:'ally', ram, initiative:0, actions:startActions, attackedThisRound:false, effects:[], zone: combat.startZoneAlly||'Molto Corto', clashPinned:false, clashComebackBonus:0, isPC:true, username, imageUrl: (member && member.digimon.imageUrl) || '' });
       await persistAndRefresh();
     };
@@ -6935,10 +6997,10 @@
       <div class="roster-item">
         <div class="flex-between">
           <div style="display:flex;align-items:center;gap:8px;">
-            ${tamerAvatarHTML(p.tamer, p.username, 'sm')}
+            ${tamerAvatarHTML(p.tamer, displayName(p), 'sm')}
             <div style="position:relative;display:inline-flex;flex-shrink:0;">${digimonPortraitHTML(p.digimon, 'sm')}<span style="position:absolute;bottom:-2px;right:-2px;width:9px;height:9px;border-radius:50%;background:${onlineColor};box-shadow:${online?`0 0 5px ${onlineColor}`:'none'};border:1.5px solid var(--bg,#05070a);"></span></div>
             <div>
-              <span class="name">${escapeHTML(p.username)}</span>
+              <span class="name">${escapeHTML(displayName(p))}</span>
               ${isEgg ? '' : `<span class="tag" style="margin-left:6px;">${escapeHTML(p.digimon.stage)}</span>`}
               <span class="tag" style="margin-left:6px;color:${onlineColor};border-color:${online?'var(--cyan-dim)':'var(--line)'};">${online?'online':'offline'}</span>
             </div>
@@ -6946,11 +7008,13 @@
           <div style="display:flex;gap:6px;">
             <button class="btn ghost small" id="btn-manage-${i}">Gestisci Scheda</button>
             <button class="btn small" id="btn-suggest-${i}">Suggerisci Battuta</button>
+            <button class="btn ghost small" id="btn-toggle-hidden-${i}" title="${p.digimon.hiddenFromParty ? 'Il Digimon è nascosto agli altri giocatori — clicca per rivelarlo al gruppo' : 'Nascondi questo Digimon agli altri giocatori (il proprietario continua a vederlo)'}" style="${p.digimon.hiddenFromParty ? 'color:var(--amber);border-color:var(--amber);' : ''}">${p.digimon.hiddenFromParty ? '❔ Nascosto al gruppo' : '👁️ Visibile al gruppo'}</button>
             <button class="btn ghost small" id="btn-delete-${i}" style="color:var(--danger);border-color:rgba(255,93,93,0.4);">🗑</button>
           </div>
         </div>
         <div class="sub" style="margin-top:6px;">${isEgg ? '🥚 Digimon ancora nell\'Uovo — in attesa di approvazione' : `Digimon: ${escapeHTML(p.digimon.name || '(senza nome)')} — Ferite: ${p.digimon.currentWounds}/${p.digimon.maxWounds}${p.digimon.tempWounds>0?` (+${p.digimon.tempWounds} Shield)`:''} — MP: ${p.digimon.currentMp}/${p.digimon.maxMp}`}</div>
         <div class="sub">AGI ${p.tamer.agility} · BODY ${p.tamer.body} · CAR ${p.tamer.charisma} · INT ${p.tamer.intelligence} · WILL ${p.tamer.willpower}</div>
+        <div class="sub muted" style="font-size:10.5px;">📍 ${escapeHTML(sectorNameById(memberEffectiveSectorId(p)) || 'nessun Settore attuale')}${p.tamer.currentSectorId ? ' <span style="color:var(--amber);">(separato/a dal gruppo)</span>' : ''}</div>
         <div id="suggest-box-${i}" class="suggest-box" style="${(rosterSuggestLines[p.username]||[]).length ? 'display:block;' : 'display:none;'}">${(rosterSuggestLines[p.username]||[]).map(l=>`<div class="suggest-line" data-line="${escapeAttr(l)}">${escapeHTML(l)}</div>`).join('')}</div>
         <div id="manage-panel-${i}" style="display:none;margin-top:10px;"></div>
       </div>
@@ -7027,12 +7091,28 @@
             <input type="text" data-sector-music="${selectedSector.id}" value="${escapeAttr(selectedSector.music||'')}" placeholder="🎵 URL Musica Settore (opzionale, sovrascrive quella della Macroscena)" style="width:100%;margin-top:4px;font-size:11px;" />
             <input type="text" data-sector-combat-music="${selectedSector.id}" value="${escapeAttr(selectedSector.combatMusic||'')}" placeholder="🗡️ URL Musica da Combattimento Settore (opzionale)" style="width:100%;margin-top:4px;font-size:11px;" />
             <div class="row" style="margin-top:4px;">
-              <button class="btn small" data-sector-activate="${selectedSector.id}" style="flex:1;">📍 Rendi Attuale</button>
+              <button class="btn small" data-sector-activate="${selectedSector.id}" style="flex:1;" title="Sposta qui l'intero gruppo, riunendo anche chi si era separato">📍 Sposta qui tutto il gruppo</button>
               <button class="btn ghost small" data-sector-image="${selectedSector.id}" style="flex:1;">🖼️ Immagine</button>
               <select data-sector-gridpos="${selectedSector.id}" style="flex:1;">
                 ${(()=>{ const opts=[]; for(let p=0;p<gridTotal;p++) opts.push(p); if(selectedSector.gridPos!=null && selectedSector.gridPos>=gridTotal) opts.push(selectedSector.gridPos); return opts; })().map(p=>`<option value="${p}" ${selectedSector.gridPos===p?'selected':''}>Casella ${p+1}${p>=gridTotal?' (fuori griglia)':''}${usedPositions.includes(p) && selectedSector.gridPos!==p?' (occupata)':''}</option>`).join('')}
               </select>
               <button class="btn ghost small" data-sector-remove="${selectedSector.id}" style="flex:1;">🗑️</button>
+            </div>
+            <div class="muted" style="margin-top:10px;margin-bottom:4px;font-size:11px;">👥 Presenze del party (per membro, indipendenti dal gruppo):</div>
+            <div style="display:flex;flex-direction:column;gap:4px;">
+              ${(cachedRoster||[]).filter(m=>m.role==='player').map(m=>{
+                const here = memberEffectiveSectorId(m) === selectedSector.id;
+                const separated = !!m.tamer.currentSectorId;
+                const label = isDigimonHiddenFromViewer(m) ? '❔ (Digimon nascosto)' : (m.digimon.name || '(senza nome)');
+                return `
+                <div class="flex-between" style="padding:3px 6px;background:rgba(255,255,255,0.03);border-radius:6px;">
+                  <span style="font-size:11px;">${here?'📍 ':''}<b>${escapeHTML(displayName(m))}</b> <span class="muted">(${escapeHTML(label)})</span>${separated?' <span class="tag" style="font-size:9px;color:var(--amber);border-color:var(--amber);">separato/a</span>':''}</span>
+                  <span style="display:flex;gap:4px;">
+                    ${!here ? `<button class="btn small" data-member-sector-move="${escapeAttr(m.username)}:${selectedSector.id}" style="padding:2px 6px;font-size:10px;">Sposta qui</button>` : ''}
+                    ${separated ? `<button class="btn ghost small" data-member-sector-follow="${escapeAttr(m.username)}" style="padding:2px 6px;font-size:10px;">↩️ Rientra nel gruppo</button>` : ''}
+                  </span>
+                </div>
+              `;}).join('') || '<div class="muted" style="font-size:11px;">Nessun giocatore nel roster.</div>'}
             </div>
             <div class="muted" style="margin-top:6px;font-size:11px;">Luoghi in questo Settore:</div>
             ${(selectedSector.luoghi||[]).length===0 ? '<div class="muted" style="font-size:11px;">Nessun luogo ancora.</div>' : (selectedSector.luoghi||[]).map(lg=>`
@@ -7151,6 +7231,10 @@
         const statusEl = document.getElementById('sector-status');
         if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); return; }
         if(statusEl) statusEl.textContent = '';
+        // Muovere l'intero gruppo riunisce anche chi si era separato: azzeriamo l'override di Settore
+        // di ogni membro così tornano a seguire il Settore attuale della Scena.
+        const separatedMembers = (cachedRoster||[]).filter(m=>m.role==='player' && m.tamer && m.tamer.currentSectorId);
+        for(const m of separatedMembers){ m.tamer.currentSectorId = null; await saveMember(code, m); }
         await pushLog(code, { who:'Sistema', role:'gm', text: `📍 Il gruppo si sposta a "${s?s.name:''}".` });
         renderSectorMap(code);
         refreshLiveParts();
@@ -7167,6 +7251,40 @@
         if(cachedScene.currentSectorId===id){ cachedScene.currentSectorId = null; cachedScene.currentLuogoId = null; }
         if(sectorMapSelectedId===id) sectorMapSelectedId = null;
         await saveScene(code, cachedScene);
+        renderSectorMap(code);
+        refreshLiveParts();
+      };
+    });
+    el.querySelectorAll('[data-member-sector-move]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const [username, sectorId] = btn.getAttribute('data-member-sector-move').split(':');
+        const member = (cachedRoster||[]).find(m=>m.username===username);
+        if(!member) return;
+        btn.disabled = true;
+        member.tamer.currentSectorId = sectorId;
+        const ok = await saveMember(code, member);
+        const statusEl = document.getElementById('sector-status');
+        if(!ok){ member.tamer.currentSectorId = null; if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); btn.disabled = false; return; }
+        if(statusEl) statusEl.textContent = '';
+        const s = sectorNameById(sectorId);
+        await pushLog(code, { who:'Sistema', role:'gm', text: `📍 ${username} si separa dal gruppo e si sposta a "${s||''}".` });
+        renderSectorMap(code);
+        refreshLiveParts();
+      };
+    });
+    el.querySelectorAll('[data-member-sector-follow]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const username = btn.getAttribute('data-member-sector-follow');
+        const member = (cachedRoster||[]).find(m=>m.username===username);
+        if(!member) return;
+        btn.disabled = true;
+        const prevSectorId = member.tamer.currentSectorId;
+        member.tamer.currentSectorId = null;
+        const ok = await saveMember(code, member);
+        const statusEl = document.getElementById('sector-status');
+        if(!ok){ member.tamer.currentSectorId = prevSectorId; if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); btn.disabled = false; return; }
+        if(statusEl) statusEl.textContent = '';
+        await pushLog(code, { who:'Sistema', role:'gm', text: `↩️ ${username} rientra nel gruppo.` });
         renderSectorMap(code);
         refreshLiveParts();
       };
@@ -7407,10 +7525,11 @@
     };
   }
 
-  // La musica può arrivare da tre livelli, in ordine di priorità: il campo manuale
-  // "URL Musica" in Scena (sempre vince se compilato), la traccia del Settore attuale,
-  // la traccia della Macroscena attuale. Così il Master può impostare una musica di
-  // default per zona/stanza, ma può sempre forzarne una diversa a mano per la singola Scena.
+  // La musica può arrivare da quattro livelli, in ordine di priorità: il campo manuale
+  // "URL Musica" in Scena (sempre vince se compilato), la traccia del Luogo attuale (il più
+  // specifico), la traccia del Settore attuale, la traccia della Macroscena attuale. Così il
+  // Master può impostare una musica di default per zona/stanza/singolo luogo, ma può sempre
+  // forzarne una diversa a mano per la singola Scena.
   function getEffectiveMusic(scene){
     if(!scene) return '';
     if(scene.music) return scene.music;
@@ -7418,15 +7537,17 @@
     const activeMacro = scene.currentMacroSceneId ? macroScenes.find(m=>m.id===scene.currentMacroSceneId) : null;
     const sectors = activeMacro ? (activeMacro.sectors||[]) : [];
     const current = scene.currentSectorId ? sectors.find(s=>s.id===scene.currentSectorId) : null;
+    const currentLuogo = (current && scene.currentLuogoId) ? (current.luoghi||[]).find(l=>l.id===scene.currentLuogoId) : null;
+    if(currentLuogo && currentLuogo.music) return currentLuogo.music;
     if(current && current.music) return current.music;
     if(activeMacro && activeMacro.music) return activeMacro.music;
     return '';
   }
 
   // Stessa identica cascata di getEffectiveMusic, ma per la Musica da Combattimento
-  // (scene.combatMusic → settore.combatMusic → macroscena.combatMusic). Se nessuno dei tre
-  // livelli ne ha una impostata, torna stringa vuota: in quel caso il combattimento NON
-  // interrompe la musica normale, che continua a suonare così com'è.
+  // (scene.combatMusic → luogo.combatMusic → settore.combatMusic → macroscena.combatMusic).
+  // Se nessuno dei quattro livelli ne ha una impostata, torna stringa vuota: in quel caso il
+  // combattimento NON interrompe la musica normale, che continua a suonare così com'è.
   function getEffectiveCombatMusic(scene){
     if(!scene) return '';
     if(scene.combatMusic) return scene.combatMusic;
@@ -7434,6 +7555,8 @@
     const activeMacro = scene.currentMacroSceneId ? macroScenes.find(m=>m.id===scene.currentMacroSceneId) : null;
     const sectors = activeMacro ? (activeMacro.sectors||[]) : [];
     const current = scene.currentSectorId ? sectors.find(s=>s.id===scene.currentSectorId) : null;
+    const currentLuogo = (current && scene.currentLuogoId) ? (current.luoghi||[]).find(l=>l.id===scene.currentLuogoId) : null;
+    if(currentLuogo && currentLuogo.combatMusic) return currentLuogo.combatMusic;
     if(current && current.combatMusic) return current.combatMusic;
     if(activeMacro && activeMacro.combatMusic) return activeMacro.combatMusic;
     return '';
@@ -7976,7 +8099,7 @@
           }
         }
         if(text){
-          await pushLog(code, { who: session.username, role:'roll', text, meta: rollMeta });
+          await pushLog(code, { who: displayName(me), role:'roll', text, meta: rollMeta });
           refreshLiveParts();
         }
       }
@@ -8449,7 +8572,7 @@
           </div>
         ` : ''}
         ${m.rewards ? `<div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin-top:10px;">Ricompense</div><div style="font-size:13px;margin-top:2px;">${escapeHTML(m.rewards)}</div>` : ''}
-        ${assigned.length>0 ? `<div class="muted" style="font-size:11px;margin-top:8px;">👥 Assegnata a: ${assigned.map(escapeHTML).join(', ')}</div>` : `<div class="muted" style="font-size:11px;margin-top:8px;">Nessun Tamer assegnato</div>`}
+        ${assigned.length>0 ? `<div class="muted" style="font-size:11px;margin-top:8px;">👥 Assegnata a: ${assigned.map(u=>escapeHTML(displayNameFor(u))).join(', ')}</div>` : `<div class="muted" style="font-size:11px;margin-top:8px;">Nessun Tamer assegnato</div>`}
         <div class="row" style="margin-top:10px;gap:8px;align-items:center;">
           <select data-mission-status="${m.id}" style="flex:1;">
             ${Object.keys(MISSION_STATUS_LABEL).map(s=>`<option value="${s}" ${m.status===s?'selected':''}>${MISSION_STATUS_LABEL[s]}</option>`).join('')}
@@ -8506,7 +8629,7 @@
       ${players.length>0 ? `
         <label style="font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;">Assegna a</label>
         <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;">
-          ${players.map(p=>`<label style="display:flex;align-items:center;gap:4px;font-size:13px;"><input type="checkbox" class="mission-assign-cb" value="${escapeAttr(p.username)}" style="width:auto;" />${escapeHTML(p.username)}</label>`).join('')}
+          ${players.map(p=>`<label style="display:flex;align-items:center;gap:4px;font-size:13px;"><input type="checkbox" class="mission-assign-cb" value="${escapeAttr(p.username)}" style="width:auto;" />${escapeHTML(displayName(p))}</label>`).join('')}
         </div>
       ` : '<div class="muted" style="font-size:11px;">Nessun giocatore ancora presente nel roster.</div>'}
       <button class="btn solid" id="mission-create-btn" style="width:100%;padding:10px;margin-top:14px;">Crea Missione</button>
