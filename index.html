@@ -80,6 +80,9 @@
   .field{margin-bottom:12px;}
   .row{display:flex;gap:12px;}
   .row > *{flex:1;}
+  .checkbox-row{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-mute);margin:8px 0;}
+  .checkbox-row input{width:auto;flex:none;}
+  .checkbox-row label{display:inline;margin:0;text-transform:none;font-size:12px;color:var(--text);cursor:pointer;}
   .section-title{font-size:12px;text-transform:uppercase;color:var(--cyan);letter-spacing:0.08em;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);}
   .section-title::before{ font-family:'Digicode',monospace; content:'ABC '; opacity:0.35; margin-right:4px; font-size:13px; letter-spacing:0.1em; }
   .card{padding:16px;margin-bottom:16px;}
@@ -4553,13 +4556,13 @@
             </div>
             <div class="field"><label>TN (opzionale, solo per Skill)</label><input type="number" id="req-tn" placeholder="es. 15" /></div>
             <div class="muted" style="margin:2px 0 6px;font-size:11px;">Dove mostrare la richiesta (almeno una):</div>
-            <div class="row" style="align-items:center;gap:8px;margin-bottom:4px;">
-              <input type="checkbox" id="req-chan-general" checked style="width:auto;" />
-              <label for="req-chan-general" style="margin:0;text-transform:none;font-size:12px;color:var(--text);cursor:pointer;">📣 Chat Generale (visibile a tutti)</label>
+            <div class="checkbox-row">
+              <input type="checkbox" id="req-chan-general" checked />
+              <label for="req-chan-general">📣 Chat Generale (visibile a tutti)</label>
             </div>
-            <div class="row" style="align-items:center;gap:8px;margin-bottom:8px;">
-              <input type="checkbox" id="req-chan-private" style="width:auto;" />
-              <label for="req-chan-private" style="margin:0;text-transform:none;font-size:12px;color:var(--text);cursor:pointer;">✉️ Chat Privata (solo col giocatore selezionato sopra, invisibile agli altri)</label>
+            <div class="checkbox-row">
+              <input type="checkbox" id="req-chan-private" />
+              <label for="req-chan-private">✉️ Chat Privata (solo col giocatore selezionato sopra, invisibile agli altri)</label>
             </div>
             <button class="btn amber" id="btn-request-roll" style="width:100%;">Richiedi Tiro</button>
             <div class="muted" id="req-roll-status" style="margin-top:6px;"></div>
@@ -7153,9 +7156,9 @@
         <div class="field" style="margin-bottom:8px;"><label>🗡️ Musica da Combattimento Macroscena (opzionale)</label>
           <input type="text" id="macro-combat-music" value="${escapeAttr(activeMacro.combatMusic||'')}" placeholder="https://.../boss-theme.mp3" style="width:100%;" />
         </div>
-        <div class="row" style="align-items:center;gap:8px;margin-bottom:8px;">
-          <input type="checkbox" id="macro-allow-move" ${activeMacro.allowPlayerMovement?'checked':''} style="width:auto;" />
-          <label for="macro-allow-move" style="margin:0;text-transform:none;font-size:11px;color:var(--text);cursor:pointer;">🧭 Permetti ai giocatori di spostarsi da soli in <b>map.html</b> (solo verso Settori collegati a quello in cui si trovano)</label>
+        <div class="checkbox-row">
+          <input type="checkbox" id="macro-allow-move" ${activeMacro.allowPlayerMovement?'checked':''} />
+          <label for="macro-allow-move">🧭 Permetti ai giocatori di spostarsi da soli in <b>map.html</b> (solo verso Settori collegati a quello in cui si trovano)</label>
         </div>
         <div class="row" style="margin-bottom:8px;">
           <button class="btn ghost small" id="btn-remove-macro" style="width:100%;">🗑️ Elimina Macroscena "${escapeHTML(activeMacro.name)}"</button>
@@ -7188,11 +7191,17 @@
               </select>
               <button class="btn ghost small" data-sector-remove="${selectedSector.id}" style="flex:1;">🗑️</button>
             </div>
-            <div class="row" style="align-items:center;gap:6px;margin-top:6px;">
-              <input type="checkbox" id="sector-player-movable" ${selectedSector.playerMovable?'checked':''} style="width:auto;" />
-              <label for="sector-player-movable" style="margin:0;text-transform:none;font-size:11px;color:var(--text);cursor:pointer;">🚦 I giocatori possono raggiungere da soli questo Settore (in <b>map.html</b>, con "spostamento libero" attivo e se collegato — di default chiuso)</label>
+            <div class="checkbox-row">
+              <input type="checkbox" id="sector-player-movable" ${selectedSector.playerMovable?'checked':''} />
+              <label for="sector-player-movable">🚦 I giocatori possono raggiungere da soli questo Settore (in <b>map.html</b>, con "spostamento libero" attivo e se collegato — di default chiuso)</label>
             </div>
-            <button class="btn ghost small" data-sector-chat-invite="${selectedSector.id}" style="width:100%;margin-top:6px;" title="Manda in chat generale un messaggio con un pulsante: ogni giocatore che clicca si sposta da solo qui">💬 Proponi in chat "Vuoi andare qui?"</button>
+            <div class="field" style="margin-top:8px;margin-bottom:4px;"><label>💬 Invito in chat "Vuoi andare qui?" — destinatario</label>
+              <select id="invite-target-select">
+                <option value="">📣 Chat Generale (visibile a tutti)</option>
+                ${(cachedRoster||[]).filter(m=>m.role==='player').map(m=>`<option value="${escapeAttr(m.username)}">✉️ Privata: ${escapeHTML(displayName(m))} (invisibile agli altri)</option>`).join('')}
+              </select>
+            </div>
+            <button class="btn ghost small" data-sector-chat-invite="${selectedSector.id}" style="width:100%;">💬 Proponi qui il Settore</button>
             <div class="muted" style="margin-top:10px;margin-bottom:4px;font-size:11px;">👥 Presenze del party (per membro, indipendenti dal gruppo):</div>
             <div style="display:flex;flex-direction:column;gap:4px;">
               ${(cachedRoster||[]).filter(m=>m.role==='player').map(m=>{
@@ -7229,7 +7238,7 @@
                 <span style="font-size:12px;display:flex;align-items:center;gap:5px;">${lg.image?`<img src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" style="width:18px;height:18px;object-fit:cover;border-radius:3px;" />`:''}${escapeHTML(lg.name)} ${cachedScene.currentLuogoId===lg.id?'<span class="tag" style="color:var(--cyan);border-color:var(--cyan);font-size:9px;">📍</span>':''}${lg.description?`<span class="muted" style="font-size:10px;"> — ${escapeHTML(lg.description)}</span>`:''}</span>
                 <span>
                   <button class="btn small" data-luogo-activate="${selectedSector.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">📍</button>
-                  <button class="btn ghost small" data-luogo-chat-invite="${selectedSector.id}:${lg.id}" style="padding:2px 6px;font-size:10px;" title="Manda in chat generale un messaggio con un pulsante: ogni giocatore che clicca si sposta da solo qui">💬</button>
+                  <button class="btn ghost small" data-luogo-chat-invite="${selectedSector.id}:${lg.id}" style="padding:2px 6px;font-size:10px;" title="Manda l'invito 'Vuoi andare qui?' al destinatario scelto sopra (Generale o Privata)">💬</button>
                   <button class="btn ghost small" data-luogo-image="${selectedSector.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">🖼️</button>
                   <button class="btn ghost small" data-luogo-remove="${selectedSector.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">🗑️</button>
                 </span>
@@ -7494,9 +7503,16 @@
       renderSectorMap(code);
       refreshLiveParts();
     };
-    // "Proponi in chat": manda un messaggio in chat generale con un pulsante "🚶 Sì, andiamo!" —
-    // ogni giocatore che lo clicca si sposta DA SOLO (non tutto il gruppo) a quel Settore/Luogo,
-    // bypassando lo spostamento libero/le connessioni: è il Master stesso a proporlo esplicitamente.
+    // "Proponi in chat": manda un messaggio con un pulsante "🚶 Sì, andiamo!" — in Generale (tutti)
+    // o in Privata a un solo giocatore, a scelta nel menu "destinatario" qui sopra. Chi lo clicca si
+    // sposta DA SOLO (non tutto il gruppo) a quel Settore/Luogo, bypassando lo spostamento libero/le
+    // connessioni: è il Master stesso a proporlo esplicitamente, quindi vale sempre.
+    async function sendMoveInvite(text){
+      const targetEl = document.getElementById('invite-target-select');
+      const target = targetEl ? targetEl.value : '';
+      if(target) await pushPrivateLog(code, target, { who:'Master', role:'moverequest', text });
+      else await pushLog(code, { who:'Master', role:'moverequest', text });
+    }
     el.querySelectorAll('[data-sector-chat-invite]').forEach(btn=>{
       btn.onclick = async ()=>{
         const liveMacro = liveActiveMacro();
@@ -7509,7 +7525,7 @@
         const statusEl = document.getElementById('sector-status');
         if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); return; }
         if(statusEl) statusEl.textContent = '';
-        await pushLog(code, { who:'Master', role:'moverequest', text: `Vuoi andare a "${s.name}"?::MOVEREQ::${sectorId}|` });
+        await sendMoveInvite(`Vuoi andare a "${s.name}"?::MOVEREQ::${sectorId}|`);
         renderSectorMap(code);
         refreshLiveParts();
       };
@@ -7528,7 +7544,7 @@
         const statusEl = document.getElementById('sector-status');
         if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); return; }
         if(statusEl) statusEl.textContent = '';
-        await pushLog(code, { who:'Master', role:'moverequest', text: `Vuoi andare a "${lg.name}"?::MOVEREQ::${sectorId}|${luogoId}` });
+        await sendMoveInvite(`Vuoi andare a "${lg.name}"?::MOVEREQ::${sectorId}|${luogoId}`);
         renderSectorMap(code);
         refreshLiveParts();
       };
