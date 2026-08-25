@@ -1694,7 +1694,8 @@
 
     const sceneLive = document.getElementById('scene-live');
     if(sceneLive){
-      sceneLive.innerHTML = `<div class="muted mono" style="margin-bottom:8px;">${onlineSummary(cachedRoster)}</div>` + sceneHTML(cachedScene);
+      const sceneViewer = session.role==='player' ? (cachedRoster.find(m=>m.username===session.username) || cachedMe) : null;
+      sceneLive.innerHTML = `<div class="muted mono" style="margin-bottom:8px;">${onlineSummary(cachedRoster)}</div>` + sceneHTML(cachedScene, sceneViewer);
     }
     bindSceneAudio(cachedScene);
     if(missionsModalOpen) refreshMissionsModal();
@@ -2227,7 +2228,7 @@
           <div class="hud-frame card">
             <div class="section-title">Scena Attuale</div>
             <div class="muted mono" style="margin-bottom:8px;">Milestone ${cachedProgression?cachedProgression.milestone:0} · Ispirazione ${cachedProgression?cachedProgression.inspiration:0}</div>
-            <div id="scene-live">${sceneHTML(cachedScene)}</div>
+            <div id="scene-live">${sceneHTML(cachedScene, me)}</div>
             ${sceneAudioWidgetHTML()}
           </div>
 
@@ -7729,17 +7730,25 @@
     };
   }
 
-  function sceneHTML(scene){
+  // Se viene passato viewerMember (il membro del roster di chi sta guardando), la scena mostra
+  // il SUO Settore/Luogo effettivo (memberEffectiveSectorId/LuogoId) invece di quello del gruppo —
+  // così un giocatore separato dal gruppo vede davvero l'immagine e la descrizione di dove si
+  // trova lui, non quelle del resto del party. Senza viewerMember (vista Master) mostra il gruppo.
+  function sceneHTML(scene, viewerMember){
     const macroScenes = (scene && Array.isArray(scene.macroScenes)) ? scene.macroScenes : [];
     const activeMacro = scene && scene.currentMacroSceneId ? macroScenes.find(m=>m.id===scene.currentMacroSceneId) : null;
     const sectors = activeMacro ? (activeMacro.sectors||[]) : [];
-    const current = scene && scene.currentSectorId ? sectors.find(s=>s.id===scene.currentSectorId) : null;
-    const currentLuogo = current && scene.currentLuogoId ? (current.luoghi||[]).find(l=>l.id===scene.currentLuogoId) : null;
+    const effSectorId = viewerMember ? memberEffectiveSectorId(viewerMember) : (scene && scene.currentSectorId);
+    const effLuogoId = viewerMember ? memberEffectiveLuogoId(viewerMember) : (scene && scene.currentLuogoId);
+    const isSeparated = !!(viewerMember && (effSectorId !== (scene && scene.currentSectorId) || effLuogoId !== (scene && scene.currentLuogoId)));
+    const current = effSectorId ? sectors.find(s=>s.id===effSectorId) : null;
+    const currentLuogo = current && effLuogoId ? (current.luoghi||[]).find(l=>l.id===effLuogoId) : null;
     const sectorBadge = current ? `<span class="tag">${current.terrain==='Dangerous'?'☠':(current.terrain==='Difficult'?'⚠':'')} ${escapeHTML(current.terrain)}</span>` : '';
+    const separatedBadge = isSeparated ? `<span class="tag" style="color:var(--amber);border-color:var(--amber);">🧭 Ti sei separato dal gruppo</span>` : '';
     const breadcrumb = [activeMacro?activeMacro.name:null, current?current.name:null, currentLuogo?currentLuogo.name:null].filter(Boolean).map(escapeHTML).join(' → ');
     const sectorHTML = current ? `
       <div class="hud-frame card" style="margin-top:8px;padding:8px 10px;">
-        <div class="flex-between"><span class="mono" style="color:var(--cyan);">📍 ${breadcrumb}</span>${sectorBadge}</div>
+        <div class="flex-between"><span class="mono" style="color:var(--cyan);">📍 ${breadcrumb}</span><span>${sectorBadge}${separatedBadge}</span></div>
         ${currentLuogo && currentLuogo.description ? `<div class="sub" style="margin-top:4px;">${escapeHTML(currentLuogo.description)}</div>` : (current.description ? `<div class="sub" style="margin-top:4px;">${escapeHTML(current.description)}</div>` : '')}
         ${!currentLuogo && (current.luoghi||[]).length>0 ? `<div class="muted" style="margin-top:4px;font-size:11px;">Luoghi qui: ${(current.luoghi||[]).map(l=>escapeHTML(l.name)).join(', ')}</div>` : ''}
         <div class="muted" style="margin-top:4px;font-size:11px;">Puoi raggiungere: ${(current.connections||[]).map(cid=>{ const c=sectors.find(x=>x.id===cid); return c?escapeHTML(c.name):''; }).filter(Boolean).join(', ') || 'nessun altro settore collegato'}</div>
@@ -8498,7 +8507,8 @@
   function rerenderSceneLive(){
     const el = document.getElementById('scene-live');
     if(!el) return;
-    el.innerHTML = `<div class="muted mono" style="margin-bottom:8px;">${onlineSummary(cachedRoster)}</div>` + sceneHTML(cachedScene);
+    const sceneViewer = (session && session.role==='player') ? (cachedRoster.find(m=>m.username===session.username) || cachedMe) : null;
+    el.innerHTML = `<div class="muted mono" style="margin-bottom:8px;">${onlineSummary(cachedRoster)}</div>` + sceneHTML(cachedScene, sceneViewer);
   }
 
   // Global delegation: works no matter which render function last drew the scene box
