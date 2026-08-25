@@ -807,6 +807,21 @@
     return m;
   }
 
+  // Nome da mostrare in UI per un membro del roster: il nome del personaggio (tamer.characterName,
+  // impostato in player.html) se presente, altrimenti lo username di login (fallback per schede
+  // esistenti che non l'hanno mai compilato). Lo username resta SEMPRE la chiave di login/sessione/
+  // query — questa pagina non tocca m.tamer (se ne occupa player.html), quindi lo leggiamo così
+  // com'è arrivato dal roster, con controlli difensivi.
+  function displayName(member){
+    const cn = member && member.tamer && member.tamer.characterName;
+    return (cn && String(cn).trim()) ? String(cn).trim() : ((member && member.username) || '');
+  }
+  function displayNameFor(username){
+    if(!username) return '';
+    const member = (cachedRoster||[]).find(m=>m.username===username);
+    return member ? displayName(member) : username;
+  }
+
   function saveSession(s){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }catch(e){} }
   function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
   function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
@@ -1071,7 +1086,7 @@
         <div class="field"><label>Personalità</label><textarea id="d-personality" placeholder="descrivi la personalità...">${escapeHTML(d.personality||'')}</textarea></div>
         ` : `
         <div class="pixel-title" style="font-size:22px;color:var(--dchroma);text-shadow:0 0 10px rgba(200,150,255,0.4);">${escapeHTML(d.name || '— nessun Digimon —')}</div>
-        <div class="muted" style="margin-top:2px;">${escapeHTML(d.stage||'')}${d.attribute ? ` · ${attributeIconHTML(d.attribute, 15)} ${escapeHTML(d.attribute)}` : ''} · Partner di ${escapeHTML(m.username)}</div>
+        <div class="muted" style="margin-top:2px;">${escapeHTML(d.stage||'')}${d.attribute ? ` · ${attributeIconHTML(d.attribute, 15)} ${escapeHTML(d.attribute)}` : ''} · Partner di ${escapeHTML(displayName(m))}</div>
         ${d.personality ? `<div class="muted" style="margin-top:6px;">${escapeHTML(d.personality)}</div>` : ''}
         ${stageSwitchInnerHTML(m, isMaster)}
         `}
@@ -2031,7 +2046,7 @@
         st.textContent = 'Salvataggio...';
         const ok = await saveMember(session.code, target);
         if(ok){
-          await pushLog(session.code, { who: session.username, role:'player', text: `${target.username} ha completato la Creazione Guidata di ${target.digimon.name||'un Digimon'} — resta nell'Uovo in attesa dell'approvazione del Master.` });
+          await pushLog(session.code, { who: displayName(target), role:'player', text: `${displayName(target)} ha completato la Creazione Guidata di ${target.digimon.name||'un Digimon'} — resta nell'Uovo in attesa dell'approvazione del Master.` });
           creationDraft = null;
           justBuiltDigimon = true;
           cachedRoster = await getRoster(session.code);
@@ -2157,7 +2172,7 @@
         <div class="muted" style="margin-bottom:6px;">DP di partenza per ${escapeHTML(draft.stage)}: <b>${cfg.dp}</b> · Stat base: <b>${cfg.startStat}</b> ciascuna prima di spendere DP.</div>
         ${hasKnownLine && isMaster ? `
         <div class="hud-frame" style="border-color:var(--dchroma);padding:10px;margin-bottom:10px;">
-          <div class="muted" style="margin-bottom:6px;">🔓 Come Master, sblocca qui le linee evolutive di ${escapeHTML(fromName)} per ${escapeHTML(m.username)} — solo quelle spuntate saranno scelte da lui/lei:</div>
+          <div class="muted" style="margin-bottom:6px;">🔓 Come Master, sblocca qui le linee evolutive di ${escapeHTML(fromName)} per ${escapeHTML(displayName(m))} — solo quelle spuntate saranno scelte da lui/lei:</div>
           <div style="display:flex;flex-wrap:wrap;gap:10px;">
             ${suggestions.map(s=>`<label style="display:flex;align-items:center;gap:5px;font-size:12px;"><input type="checkbox" data-sb-unlock-evo="${escapeAttr(s)}" ${(d.unlockedEvolutions||[]).includes(s)?'checked':''} /> ${escapeHTML(s)}</label>`).join('')}
           </div>
@@ -2253,7 +2268,7 @@
             target.digimon.unlockedEvolutions = target.digimon.unlockedEvolutions.filter(n=>n!==name);
           }
           await saveMember(session.code, target);
-          await pushLog(session.code, { who:'Master', role:'gm', text: `Il Master ha ${chk.checked?'sbloccato':'bloccato'} la linea evolutiva "${name}" per ${target.username}.` });
+          await pushLog(session.code, { who:'Master', role:'gm', text: `Il Master ha ${chk.checked?'sbloccato':'bloccato'} la linea evolutiva "${name}" per ${displayName(target)}.` });
           renderPage();
         };
       });
@@ -2286,7 +2301,7 @@
           st.textContent = 'Salvataggio...';
           const ok = await saveMember(session.code, target);
           if(ok){
-            await pushLog(session.code, { who: session.username, role:'player', text: `${target.username} ha costruito lo Stage ${draft.stage} per ${target.digimon.name||'il proprio Digimon'} — ora è disponibile per l'Evoluzione.` });
+            await pushLog(session.code, { who: displayName(target), role:'player', text: `${displayName(target)} ha costruito lo Stage ${draft.stage} per ${target.digimon.name||'il proprio Digimon'} — ora è disponibile per l'Evoluzione.` });
             stageBuildDraft = null;
             cachedRoster = await getRoster(session.code);
             renderPage();
@@ -2432,7 +2447,7 @@
       <div class="hud-frame card">
         <div class="section-title"><span>Seleziona Giocatore</span></div>
         <select id="d-select-player">
-          ${players.length===0 ? '<option>— nessun giocatore —</option>' : players.map(p=>`<option value="${escapeAttr(p.username)}" ${target && target.username===p.username?'selected':''}>${escapeHTML(p.username)} — ${escapeHTML(p.digimon.name||'(senza Digimon)')}</option>`).join('')}
+          ${players.length===0 ? '<option>— nessun giocatore —</option>' : players.map(p=>`<option value="${escapeAttr(p.username)}" ${target && target.username===p.username?'selected':''}>${escapeHTML(displayName(p))} — ${escapeHTML(p.digimon.name||'(senza Digimon)')}</option>`).join('')}
         </select>
         <div class="muted" style="margin-top:8px;">Come Master puoi modificare direttamente la scheda selezionata.</div>
         <div style="border-top:1px dashed var(--line);margin:10px 0;"></div>
@@ -2472,7 +2487,7 @@
       bodyHTML = `
         <div class="hud-frame card muted">
           ${isMaster ? (target ? `
-            <div style="margin-bottom:10px;">${escapeHTML(target.username)} non ha ancora un Digimon.</div>
+            <div style="margin-bottom:10px;">${escapeHTML(displayName(target))} non ha ancora un Digimon.</div>
             <button class="btn ghost small" id="btn-start-wizard">🧙 Apri Creazione Guidata manualmente (bypassa lo Scan)</button>
           ` : 'Nessuna scheda trovata. Seleziona un giocatore.') : `
             <div style="margin-bottom:10px;">Non hai ancora un Digimon. Il primo passo è la Bio-Resonance Scan, che ti assegna il tuo Digimon partner — dopo lo Scan potrai completare i punteggi con la Creazione Guidata.</div>
@@ -2599,7 +2614,7 @@
         if(statusEl){
           statusEl.textContent = results.length===0
             ? 'Nessuna correzione trovata: tutti i Fresh/Baby già combaciano con la catena attuale nel Digidex.'
-            : `Corretti ${results.length}: ` + results.map(r=>`${r.username} (Fresh: ${r.before.fresh||'—'}→${r.after.fresh||'—'}, Baby: ${r.before.baby||'—'}→${r.after.baby||'—'})`).join(' · ');
+            : `Corretti ${results.length}: ` + results.map(r=>`${displayNameFor(r.username)} (Fresh: ${r.before.fresh||'—'}→${r.after.fresh||'—'}, Baby: ${r.before.baby||'—'}→${r.after.baby||'—'})`).join(' · ');
         }
         refixBtn.disabled = false;
         renderPage();
@@ -2626,9 +2641,9 @@
             const wasWrongVersion = !!member.digimon.personality;
             member.digimon.personality = why;
             await saveMember(session.code, member);
-            (wasWrongVersion ? corrected : filled).push(member.username);
+            (wasWrongVersion ? corrected : filled).push(displayName(member));
           } else {
-            notFound.push(`${member.username} (${member.digimon.name})`);
+            notFound.push(`${displayName(member)} (${member.digimon.name})`);
           }
         }
         cachedRoster = await getRoster(session.code);
@@ -2655,7 +2670,7 @@
         if(statusEl) statusEl.textContent = 'Salvataggio...';
         for(const member of affected){ await saveMember(session.code, member); }
         cachedRoster = await getRoster(session.code);
-        if(statusEl) statusEl.textContent = `Sincronizzati: ${affected.map(m=>m.username).join(', ')}.`;
+        if(statusEl) statusEl.textContent = `Sincronizzati: ${affected.map(m=>displayName(m)).join(', ')}.`;
         syncNwBtn.disabled = false;
         renderPage();
       };
@@ -2793,8 +2808,8 @@
       const resetBtn = document.getElementById('d-reset');
       if(resetBtn){
         resetBtn.onclick = async ()=>{
-          if(!window.confirm(`Azzerare il Digimon di ${target.username} (${target.digimon.name||'senza nome'})? Nome, Stage, Qualities, Attacchi e tutti i punteggi torneranno ai valori iniziali e potrà rifare la Creazione Guidata. L'azione non è reversibile.`)) return;
-          if(!window.confirm(`Sei sicuro? Questa è l'ultima conferma prima di azzerare definitivamente il Digimon di ${target.username}.`)) return;
+          if(!window.confirm(`Azzerare il Digimon di ${displayName(target)} (${target.digimon.name||'senza nome'})? Nome, Stage, Qualities, Attacchi e tutti i punteggi torneranno ai valori iniziali e potrà rifare la Creazione Guidata. L'azione non è reversibile.`)) return;
+          if(!window.confirm(`Sei sicuro? Questa è l'ultima conferma prima di azzerare definitivamente il Digimon di ${displayName(target)}.`)) return;
           target.digimon = defaultDigimon();
           const ok = await saveMember(session.code, target);
           if(ok) cachedRoster = await getRoster(session.code);
@@ -2804,7 +2819,7 @@
       const closeEggBtn = document.getElementById('d-close-egg');
       if(closeEggBtn){
         closeEggBtn.onclick = async ()=>{
-          if(!window.confirm(`Richiudere nell'Uovo il Digimon di ${target.username} (${target.digimon.name||'senza nome'})? Il giocatore lo vedrà come Uovo finché non lo riapprovi — Stat/Qualities/Attacchi restano quelli attuali, nulla viene azzerato.`)) return;
+          if(!window.confirm(`Richiudere nell'Uovo il Digimon di ${displayName(target)} (${target.digimon.name||'senza nome'})? Il giocatore lo vedrà come Uovo finché non lo riapprovi — Stat/Qualities/Attacchi restano quelli attuali, nulla viene azzerato.`)) return;
           target.digimon.approved = false;
           const ok = await saveMember(session.code, target);
           if(ok) cachedRoster = await getRoster(session.code);

@@ -287,6 +287,24 @@
   let cachedRoster = [];
   let cachedScene = { title:'', background:'', music:'' };
   let cachedLog = [];
+  // Tracciamento "ultimo messaggio già notificato" per le notifiche desktop — SEPARATO dal
+  // tracciamento "letto/non letto" (che usa localStorage e persiste tra sessioni): qui basta la
+  // memoria della scheda corrente, perché vogliamo solo evitare di notificare più volte lo stesso
+  // messaggio ad ogni ciclo di polling (4s) mentre resta non letto.
+  let __lastNotifiedPublicId; // undefined finché non facciamo il primo controllo (evita di notificare tutta la cronologia al caricamento)
+  let __lastNotifiedPrivateIds = {}; // per thread (username) -> id dell'ultimo messaggio già notificato
+  // entry = ultimo messaggio del log (pubblico o del thread privato indicato da key); myName = nome
+  // mostrato per l'utente corrente (per non auto-notificarsi dei propri messaggi). kind è 'public' o 'private'.
+  function maybeNotifyNew(kind, key, entry, myName){
+    if(!entry) return;
+    const already = kind==='public' ? __lastNotifiedPublicId : __lastNotifiedPrivateIds[key];
+    const firstCheck = already===undefined;
+    if(kind==='public') __lastNotifiedPublicId = entry.id; else __lastNotifiedPrivateIds[key] = entry.id;
+    if(firstCheck) return;
+    if(String(entry.id)===String(already)) return;
+    if(entry.who===myName) return;
+    if(typeof window.__dvosNotify==='function') window.__dvosNotify(kind==='public' ? `💬 ${entry.who}` : `✉️ ${entry.who} (privato)`, entry.text||'');
+  }
   let cachedDex = [];
   let dexActiveFilters = [];
   let dexAddEvolutions = [];
@@ -1218,13 +1236,13 @@
   function sceneLog(){ const sid = cachedScene && cachedScene.id; return (cachedLog||[]).filter(l=> !sid || !l.sceneId || l.sceneId===sid); }
   async function saveScene(code, scene){ const d = await apiPost('/api/state', { resource:'scene', code, ...scene }); return !!(d && d.ok); }
   async function getLog(code){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code)); return d ? (d.log||[]) : []; }
-  async function pushLog(code, entry){ return apiPost('/api/log', { code, ...entry, sceneId: entry.sceneId || (cachedScene && cachedScene.id) || null }); }
-  async function editLogEntry(code, id, text){ return apiPut('/api/log', { code, id, text }); }
-  async function deleteLogEntry(code, id){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
+  async function pushLog(code, entry){ return apiPost('/api/log', { code, username: session && session.username, ...entry, sceneId: entry.sceneId || (cachedScene && cachedScene.id) || null }); }
+  async function editLogEntry(code, id, text, thread){ return apiPut('/api/log', thread ? { code, thread, id, text } : { code, id, text }); }
+  async function deleteLogEntry(code, id, thread){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id) + (thread ? '&thread=' + encodeURIComponent(thread) : '')); }
   async function clearLog(code){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&clearAll=1'); }
   async function heartbeat(code, username){ return apiPost('/api/roster', { resource:'heartbeat', code, username }); }
   async function getPrivateLog(code, thread){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code) + '&thread=' + encodeURIComponent(thread)); return d ? (d.log||[]) : []; }
-  async function pushPrivateLog(code, thread, entry){ return apiPost('/api/log', { code, thread, ...entry }); }
+  async function pushPrivateLog(code, thread, entry){ return apiPost('/api/log', { code, thread, username: session && session.username, ...entry }); }
   async function getDex(code){ const d = await apiGet('/api/dex?code=' + encodeURIComponent(code)); return d ? (d.entries||[]) : []; }
   async function addDexEntry(code, entry){ return apiPost('/api/dex', { code, ...entry }); }
   async function updateDexEntry(code, id, fields){ return apiPut('/api/dex', { code, id, ...fields }); }
@@ -1510,6 +1528,7 @@
       const ok = await saveMember(code, member);
       if(!ok){ errEl.textContent = 'Impossibile collegarsi al server: ' + (lastApiError || 'errore sconosciuto'); return; }
       session = { code, username, role };
+      window.__dvosSession = session;
       saveSession(session);
       editingTamer = false; editingDigimon = false; editingScene = false;
       startPolling();
@@ -1520,6 +1539,7 @@
   function logout(){
     if(pollTimer) clearInterval(pollTimer);
     session = null;
+    window.__dvosSession = null;
     clearSession();
     render();
   }
@@ -1542,6 +1562,10 @@
       const plog = await getPrivateLog(session.code, session.username);
       const unread = plog.length>0 && plog[plog.length-1].who!==session.username && isPrivateThreadUnread(session.code, session.username, plog);
       updatePlayerPrivateBadge(unread);
+      if(plog.length){
+        const myName = displayName(cachedMe || cachedRoster.find(m=>m.username===session.username) || {username:session.username});
+        maybeNotifyNew('private', session.username, plog[plog.length-1], myName);
+      }
     })();
   }
   function updatePlayerPrivateBadge(forceUnread){
@@ -1621,6 +1645,10 @@
     cachedRoster = (await getRoster(session.code)).map(normalizeMember);
     cachedScene = await getScene(session.code);
     cachedLog = await getLog(session.code);
+    if(cachedLog.length){
+      const myPublicName = session.role==='master' ? 'Master' : displayName(cachedMe || cachedRoster.find(m=>m.username===session.username) || {username:session.username});
+      maybeNotifyNew('public', null, cachedLog[cachedLog.length-1], myPublicName);
+    }
     cachedDex = await getDex(session.code);
     const freshCombat = await getCombat(session.code);
     if(freshCombat && cachedCombat && typeof cachedCombat==='object'){
@@ -1664,6 +1692,10 @@
         if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
         markPrivateThreadRead(session.code, session.username, plog);
         updatePlayerPrivateBadge();
+        if(plog.length){
+          const myName = displayName(cachedMe || cachedRoster.find(m=>m.username===session.username) || {username:session.username});
+          maybeNotifyNew('private', session.username, plog[plog.length-1], myName);
+        }
       } else if(session.role==='player'){
         const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
         logLive.innerHTML = logHTML(sceneLog(), false);
@@ -1679,8 +1711,10 @@
       const privLogLive = document.getElementById('private-log-live-master');
       if(privLogLive){
         const plog = await getPrivateLog(session.code, masterPrivateThread);
+        cachedMasterPrivateLog = plog;
         const wasAtBottom = privLogLive.scrollHeight - privLogLive.scrollTop <= privLogLive.clientHeight + 40;
-        privLogLive.innerHTML = logHTML(plog, false);
+        privLogLive.innerHTML = logHTML(plog, true);
+        attachLogModeration(privLogLive, session.code, null, true);
         if(wasAtBottom) privLogLive.scrollTop = privLogLive.scrollHeight;
         markPrivateThreadRead(session.code, masterPrivateThread, plog);
       }
@@ -1734,8 +1768,10 @@
     const privateLogLiveMaster = document.getElementById('private-log-live-master');
     if(privateLogLiveMaster && session.role==='master' && masterPrivateThread){
       const plog = await getPrivateLog(session.code, masterPrivateThread);
+      cachedMasterPrivateLog = plog;
       const wasAtBottom = privateLogLiveMaster.scrollHeight - privateLogLiveMaster.scrollTop <= privateLogLiveMaster.clientHeight + 40;
-      privateLogLiveMaster.innerHTML = logHTML(plog, false);
+      privateLogLiveMaster.innerHTML = logHTML(plog, true);
+      attachLogModeration(privateLogLiveMaster, session.code, null, true);
       if(wasAtBottom) privateLogLiveMaster.scrollTop = privateLogLiveMaster.scrollHeight;
     }
     const errBanner = document.getElementById('api-err-banner');
@@ -5233,6 +5269,10 @@
   }
 
   let masterPrivateThread = null;
+  // Ultimo log privato caricato nella vista "chat privata" del Master (aggiornato ad ogni
+  // render/refresh di quel pannello) — serve ad attachLogModeration per trovare il testo
+  // originale del messaggio da modificare, dato che il log privato non passa da cachedLog.
+  let cachedMasterPrivateLog = [];
   let masterChatMode = 'general';
   // Stato UI del Combat Manager (non salvato su DB, resettato solo al refresh pagina):
   // quali righe partecipante sono "espanse" (mostrano Azione/Muovi/Effetti), se il pannello
@@ -5674,6 +5714,7 @@
       const lastFromPlayer = log.length>0 && log[log.length-1].who !== 'Master';
       if(lastFromPlayer && isPrivateThreadUnread(code, p.username, log)) masterPrivateUnread[p.username] = true;
       else delete masterPrivateUnread[p.username];
+      if(log.length) maybeNotifyNew('private', p.username, log[log.length-1], 'Master');
     }
     const badge = document.getElementById('mchat-unread-badge');
     const count = Object.keys(masterPrivateUnread).length;
@@ -5716,11 +5757,12 @@
       return;
     }
     const log = masterPrivateThread ? await getPrivateLog(code, masterPrivateThread) : [];
+    cachedMasterPrivateLog = log;
     cardEl.innerHTML = `
       <div class="field"><label>Con chi</label>
         <select id="private-thread-select">${players.map(p=>`<option value="${escapeAttr(p.username)}" ${p.username===masterPrivateThread?'selected':''}>${masterPrivateUnread[p.username]?'🔴 ':''}${escapeHTML(displayName(p))}</option>`).join('')}</select>
       </div>
-      <div class="log" id="private-log-live-master" style="height:220px;">${logHTML(log, false)}</div>
+      <div class="log" id="private-log-live-master" style="height:220px;">${logHTML(log, true)}</div>
       <textarea id="private-text-master" rows="2" placeholder="Scrivi in privato..." style="margin-top:8px;"></textarea>
       <button class="btn amber" id="btn-private-send-master" style="width:100%;margin-top:6px;">Invia</button>
     `;
@@ -5738,6 +5780,7 @@
       renderPrivateChatMaster(code, players);
     };
     const logLive = document.getElementById('private-log-live-master');
+    attachLogModeration(logLive, code, null, true);
     if(logLive) logLive.scrollTop = logLive.scrollHeight;
   }
 
@@ -8035,26 +8078,31 @@
     }).join('');
   }
 
-  function attachLogModeration(container, code, me){
+  function attachLogModeration(container, code, me, isPrivate){
     if(!container || container.dataset.modBound) return;
     container.dataset.modBound = '1';
     container.addEventListener('click', async (e)=>{
       const editBtn = e.target.closest('[data-log-edit]');
       const delBtn = e.target.closest('[data-log-del]');
       const fulfillBtn = e.target.closest('[data-fulfill-target]');
+      // In chat privata il thread attuale può cambiare da un refresh all'altro (il Master
+      // passa da un giocatore all'altro), quindi lo leggiamo dalla variabile globale al
+      // momento del click, non lo "congeliamo" quando la funzione viene collegata.
+      const thread = isPrivate ? masterPrivateThread : null;
+      const sourceLog = isPrivate ? cachedMasterPrivateLog : cachedLog;
       if(editBtn){
         const id = editBtn.getAttribute('data-log-edit');
-        const entry = cachedLog.find(l=>String(l.id)===String(id));
+        const entry = sourceLog.find(l=>String(l.id)===String(id));
         const newText = window.prompt('Modifica messaggio:', entry ? entry.text : '');
         if(newText !== null && newText.trim()){
-          await editLogEntry(code, id, newText.trim());
+          await editLogEntry(code, id, newText.trim(), thread);
           refreshLiveParts();
         }
       }
       if(delBtn){
         const id = delBtn.getAttribute('data-log-del');
         if(window.confirm('Eliminare questo messaggio dal registro?')){
-          await deleteLogEntry(code, id);
+          await deleteLogEntry(code, id, thread);
           refreshLiveParts();
         }
       }
@@ -8886,6 +8934,7 @@
   const restored = loadSession();
   if(restored && restored.code && restored.username){
     session = restored;
+    window.__dvosSession = session;
   }
   render();
 })();
@@ -8935,6 +8984,7 @@
   <button id="dvos-music-toggle" title="Musica di sottofondo: on/off" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;">🔊</button>
   <input type="range" id="dvos-music-volume" min="0" max="100" value="50" style="width:64px;" title="Volume musica" />
   <button id="dvos-click-toggle" title="Suoni click: on/off" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;">🖱️</button>
+  <button id="dvos-notif-toggle" title="Notifiche desktop: attivale" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;">🔕</button>
 </div>
 <script>
 (function(){
@@ -8945,8 +8995,8 @@
   // stesso file (vedi guardia aggiunta dentro __playClickSfx).
   const PREFS_KEY = 'dvos_audio_prefs_v1';
   function loadPrefs(){
-    try{ return Object.assign({musicVolume:0.5, musicMuted:false, clickMuted:false}, JSON.parse(localStorage.getItem(PREFS_KEY)||'{}')); }
-    catch(e){ return {musicVolume:0.5, musicMuted:false, clickMuted:false}; }
+    try{ return Object.assign({musicVolume:0.5, musicMuted:false, clickMuted:false, notifEnabled:false}, JSON.parse(localStorage.getItem(PREFS_KEY)||'{}')); }
+    catch(e){ return {musicVolume:0.5, musicMuted:false, clickMuted:false, notifEnabled:false}; }
   }
   function savePrefs(p){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(p)); }catch(e){} }
   const prefs = loadPrefs();
@@ -8955,6 +9005,7 @@
   const musicToggleBtn = document.getElementById('dvos-music-toggle');
   const musicVolumeInp = document.getElementById('dvos-music-volume');
   const clickToggleBtn = document.getElementById('dvos-click-toggle');
+  const notifToggleBtn = document.getElementById('dvos-notif-toggle');
 
   function getMusicEl(){ return document.getElementById('scene-audio-el'); }
   function applyMusicVolume(){
@@ -8963,13 +9014,95 @@
     musicEl.volume = prefs.musicMuted ? 0 : prefs.musicVolume;
     if(prefs.musicMuted && !musicEl.paused) musicEl.pause();
   }
+  // ===== Web Push vere (funzionano anche a browser chiuso / telefono bloccato) =====
+  // IMPORTANTE: sostituisci questa stringa con la tua VAPID PUBLIC KEY (quella privata non va
+  // MAI nel frontend — resta solo nelle variabili d'ambiente di Vercel, letta da log.js).
+  const VAPID_PUBLIC_KEY = 'BEK60wRfo25vKGUWeSM8UDUVf4jTKdv1hvkq_aD9zfaNq1gLdd6GAwI0-dh9w4l4ZW2QnuGVoO5glrvnSsduQuk';
+  function urlBase64ToUint8Array(base64String){
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = atob(base64);
+    const out = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; i++) out[i] = rawData.charCodeAt(i);
+    return out;
+  }
+  // Registra il Service Worker (se non già attivo) e sottoscrive questo dispositivo/browser alla
+  // Web Push, salvando la sottoscrizione lato server (tabella push_subscriptions). Richiede che
+  // window.__dvosSession sia già valorizzato (impostato dallo script principale al login/restore) —
+  // se manca, la persona non ha ancora fatto login e non c'è nulla a cui associare la sottoscrizione.
+  // Ritorna true/false a seconda che sia andata a buon fine, così il campanello sa se può contare
+  // sulla push "vera" o deve ripiegare sulla notifica locale (solo scheda aperta).
+  async function subscribeToPush(){
+    if(!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+    if(!VAPID_PUBLIC_KEY || VAPID_PUBLIC_KEY.indexOf('INSERISCI')===0) return false;
+    const sess = window.__dvosSession;
+    if(!sess || !sess.code || !sess.username) return false;
+    try{
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if(!sub){
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        });
+      }
+      const resp = await fetch('/api/log?resource=push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: sess.code, username: sess.username, subscription: sub.toJSON() })
+      });
+      return resp.ok;
+    }catch(e){
+      return false;
+    }
+  }
+  async function unsubscribeFromPush(){
+    if(!('serviceWorker' in navigator)) return;
+    try{
+      const reg = await navigator.serviceWorker.getRegistration();
+      if(!reg) return;
+      const sub = await reg.pushManager.getSubscription();
+      if(!sub) return;
+      const endpoint = sub.endpoint;
+      await sub.unsubscribe();
+      await fetch('/api/log?resource=push&endpoint=' + encodeURIComponent(endpoint), { method: 'DELETE' });
+    }catch(e){}
+  }
+  // Notifiche Desktop: mai richieste in automatico — solo quando la persona clicca il campanello.
+  // Restano "spente" (anche col permesso del browser già concesso) finché non le si accende qui:
+  // il permesso del browser e la preferenza dell'app sono due interruttori separati.
+  function notifActive(){
+    return prefs.notifEnabled===true && typeof Notification!=='undefined' && Notification.permission==='granted';
+  }
+  function refreshNotifUI(){
+    if(!notifToggleBtn) return;
+    if(typeof Notification==='undefined'){ notifToggleBtn.style.display='none'; return; }
+    if(Notification.permission==='denied'){
+      notifToggleBtn.textContent = '🔕';
+      notifToggleBtn.title = 'Notifiche bloccate dal browser — riabilitale dalle impostazioni del sito';
+      return;
+    }
+    notifToggleBtn.textContent = notifActive() ? '🔔' : '🔕';
+    notifToggleBtn.title = notifActive()
+      ? (window.__dvosPushSubscribed ? 'Notifiche push: attive anche a browser chiuso (clicca per disattivare)' : 'Notifiche attive solo a scheda aperta (clicca per disattivare)')
+      : 'Notifiche: disattive (clicca per attivare)';
+  }
   function refreshUI(){
     if(musicToggleBtn) musicToggleBtn.textContent = prefs.musicMuted ? '🔇' : '🔊';
     if(musicVolumeInp) musicVolumeInp.value = Math.round(prefs.musicVolume*100);
     if(clickToggleBtn) clickToggleBtn.style.opacity = prefs.clickMuted ? '0.4' : '1';
     applyMusicVolume();
+    refreshNotifUI();
   }
   refreshUI();
+  // Se le notifiche erano già attive in una sessione precedente (permesso già concesso), ri-sottoscriviamo
+  // in automatico al caricamento — silenziosamente, senza chiedere di nuovo il permesso (il browser non lo
+  // richiede se è già stato concesso in passato). Se il dispositivo non supporta la Push API vera (es. Safari
+  // desktop più vecchi), semplicemente non succede nulla e restano le notifiche locali (solo scheda aperta).
+  if(typeof Notification!=='undefined' && Notification.permission==='granted' && prefs.notifEnabled===true){
+    subscribeToPush().then(ok=>{ window.__dvosPushSubscribed = ok; refreshNotifUI(); });
+  }
   // La musica di scena viene (ri)assegnata dinamicamente da bindSceneAudio() ad ogni refresh: il
   // volume va quindi riapplicato periodicamente, non solo al primo caricamento della pagina.
   setInterval(applyMusicVolume, 2000);
@@ -8991,6 +9124,42 @@
     prefs.clickMuted = !prefs.clickMuted;
     savePrefs(prefs);
     refreshUI();
+  };
+  if(notifToggleBtn) notifToggleBtn.onclick = async ()=>{
+    if(typeof Notification==='undefined') return;
+    if(Notification.permission==='denied'){ refreshNotifUI(); return; } // bloccate dal browser, nulla da fare qui
+    if(Notification.permission!=='granted'){
+      // Il permesso viene chiesto SOLO qui, dentro un click esplicito della persona — mai in automatico
+      // al caricamento della pagina.
+      const perm = await Notification.requestPermission();
+      if(perm!=='granted'){ refreshNotifUI(); return; }
+      prefs.notifEnabled = true;
+    } else {
+      prefs.notifEnabled = !prefs.notifEnabled;
+    }
+    savePrefs(prefs);
+    if(prefs.notifEnabled){
+      window.__dvosPushSubscribed = await subscribeToPush();
+    } else {
+      window.__dvosPushSubscribed = false;
+      unsubscribeFromPush();
+    }
+    refreshUI();
+  };
+  // Esposta al resto della pagina (dentro il ciclo di polling in refreshLiveParts/checkPlayerPrivateUnread/
+  // checkMasterPrivateUnread) per mostrare una notifica ISTANTANEA quando arriva un messaggio nuovo, senza
+  // aspettare il giro server→push. Se la Web Push vera è attiva (window.__dvosPushSubscribed), la saltiamo
+  // qui: altrimenti, a scheda in background, arriverebbero DUE notifiche per lo stesso messaggio — una da
+  // qui e una dal Service Worker (sw.js) quando riceve il push. A scheda chiusa questa qui non gira comunque
+  // (il codice della pagina non è in esecuzione), quindi in quel caso è solo la push a coprire l'avviso.
+  window.__dvosNotify = function(title, body){
+    if(!notifActive()) return;
+    if(window.__dvosPushSubscribed) return;
+    if(document.hasFocus() && !document.hidden) return;
+    try{
+      const n = new Notification(title, { body: String(body||'').slice(0,140), tag:'dvos-msg' });
+      n.onclick = ()=>{ window.focus(); n.close(); };
+    }catch(e){}
   };
 })();
 </script>
