@@ -1676,15 +1676,18 @@
     const override = member && member.tamer && member.tamer.currentSectorId;
     return override || (cachedScene && cachedScene.currentSectorId) || null;
   }
-  // Luogo "effettivo" di un membro: se si è separato anche solo di Settore, il Luogo di gruppo
-  // non si applica più finché non ha un proprio override — un giocatore separato non eredita
-  // il Luogo di un Settore diverso da quello in cui si trova davvero. Se invece è nello stesso
-  // Settore del gruppo, segue il Luogo di gruppo salvo un proprio override esplicito.
+  // Luogo "effettivo" di un membro: se ha un Settore proprio (spostato singolarmente col pannello
+  // "Posizione dei giocatori", ANCHE se quel Settore coincide per coincidenza con quello attuale
+  // del gruppo) non eredita mai il Luogo di gruppo in automatico — altrimenti un giocatore mandato
+  // deliberatamente "solo nel Settore, nessun Luogo" si ritroverebbe comunque nel Luogo che il
+  // gruppo sta guardando in quel momento, cosa che il Master non ha scelto. Eredita il Luogo di
+  // gruppo SOLO chi non è mai stato spostato singolarmente (nessun Settore proprio: sta seguendo
+  // il gruppo in tutto e per tutto).
   function memberEffectiveLuogoId(member){
     const luogoOverride = member && member.tamer && member.tamer.currentLuogoId;
     if(luogoOverride) return luogoOverride;
     const sectorOverride = member && member.tamer && member.tamer.currentSectorId;
-    if(sectorOverride && sectorOverride !== (cachedScene && cachedScene.currentSectorId)) return null;
+    if(sectorOverride) return null;
     return (cachedScene && cachedScene.currentLuogoId) || null;
   }
   // Un Digimon del roster segnato "hiddenFromParty" resta visibile SOLO a Master e proprietario —
