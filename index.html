@@ -335,6 +335,7 @@
   let cachedProgression = null;
   let pendingActionImageUrl = null;
   let pendingGmImageUrl = null;
+  let pendingPrivateImageUrl = null; // immagine allegata in corso di invio nella Chat Privata del Master
   let cachedMissions = [];
   let missionsModalOpen = false;
   let missionDraftObjectives = ['']; // righe obiettivo nel form "Nuova Missione"
@@ -2314,8 +2315,16 @@
       const raw = ta.value.trim();
       if(!raw) return;
       if(playerChatMode==='private'){
-        await pushPrivateLog(code, session.username, { who: displayName(me), role:'player', text: raw });
+        // Stesso trattamento dell'immagine allegata della chat pubblica qui sotto (pendingActionImageUrl
+        // è condiviso tra le due modalità, dato che usano lo stesso widget #action-img-*): senza questo
+        // l'immagine restava selezionata nel widget ma non veniva mai inviata in privato.
+        const privTextMeta = {};
+        if(pendingActionImageUrl) privTextMeta.image = pendingActionImageUrl;
+        await pushPrivateLog(code, session.username, { who: displayName(me), role:'player', text: raw, meta: Object.keys(privTextMeta).length ? privTextMeta : null });
         ta.value='';
+        pendingActionImageUrl = null;
+        const actionPreviewPriv = document.getElementById('action-img-preview');
+        if(actionPreviewPriv) actionPreviewPriv.innerHTML = '';
         await refreshPlayerLogDisplay(code, me);
         return;
       }
@@ -5860,6 +5869,7 @@
         <input type="color" id="private-speak-color" value="#ff8a3d" style="flex:1;padding:2px;height:34px;" />
       </div>
       <textarea id="private-text-master" rows="2" placeholder="Scrivi in privato..." style="margin-top:8px;"></textarea>
+      ${chatAttachHTML('private')}
       <button class="btn amber" id="btn-private-send-master" style="width:100%;margin-top:6px;">Invia</button>
     `;
     if(masterChatMode==='private') markPrivateThreadRead(code, masterPrivateThread, log);
@@ -5868,6 +5878,7 @@
       masterPrivateThread = e.target.value;
       renderPrivateChatMaster(code, players);
     };
+    bindChatAttach('private', code, 'avviso', ()=>pendingPrivateImageUrl, (url)=>{ pendingPrivateImageUrl = url; });
     const privSpeakAsSel = document.getElementById('private-speak-as');
     const privEnemyFields = document.getElementById('private-enemy-fields');
     const privColorInput = document.getElementById('private-speak-color');
@@ -5917,8 +5928,10 @@
       if(avatar) meta.avatar = avatar;
       const chosenColor = privColorInput ? privColorInput.value : color;
       if(chosenColor) meta.color = chosenColor;
+      if(pendingPrivateImageUrl) meta.image = pendingPrivateImageUrl;
       await pushPrivateLog(code, masterPrivateThread, { who, role, text, meta: Object.keys(meta).length ? meta : null });
       ta.value='';
+      pendingPrivateImageUrl = null;
       renderPrivateChatMaster(code, players);
     };
     const logLive = document.getElementById('private-log-live-master');
