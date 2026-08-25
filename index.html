@@ -132,7 +132,12 @@
   .log-entry.moverequest .who{color:var(--cyan);}
   .log-entry.moverequest{background:rgba(53,232,201,0.06);border-radius:4px;padding:8px;border-bottom:1px solid rgba(53,232,201,0.2);}
   .log-entry.enemy .who{color:var(--danger);}
-  .log-entry.enemy{background:rgba(255,93,93,0.06);border-radius:4px;padding:8px;border-bottom:1px solid rgba(255,93,93,0.2);}
+  /* Contorno invece di sfondo tinto: i messaggi da Nemico/NPC portano quasi sempre un colore
+     scelto a mano (Colore scritta in chat) — uno sfondo colorato dietro ci "sporcava" la resa.
+     Un bordo intorno al messaggio basta a segnalare la provenienza senza interferire. */
+  .log-entry.enemy{border:1px solid rgba(255,93,93,0.4);border-radius:4px;padding:8px;}
+  .log-entry.npc .who{color:#ffd76a;}
+  .log-entry.npc{border:1px solid rgba(255,215,106,0.4);border-radius:4px;padding:8px;}
   .who-avatar{width:22px;height:22px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;border:1px solid var(--line);}
   .log-entry .txt{color:var(--text);margin-top:2px;line-height:1.4;}
   .log-entry .txt .log-h{font-weight:700;margin:6px 0 3px;line-height:1.3;}
@@ -4534,11 +4539,16 @@
                 ${players.map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (displayName(p)+' — Digimon'))}</option>`).join('')}
                 ${(cachedScene.encounters||[]).map((e,i)=>`<option value="encounter:${i}">${escapeHTML(encName(e))} (in scena)</option>`).join('')}
                 <option value="enemy">Nemico personalizzato...</option>
+                <option value="npc">NPC personalizzato...</option>
               </select>
             </div>
             <div class="row" id="enemy-fields" style="display:none;margin-bottom:8px;">
               <input type="text" id="enemy-speak-name" placeholder="Nome nemico" style="flex:2;" />
               <input type="text" id="enemy-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
+            </div>
+            <div class="row" id="npc-fields" style="display:none;margin-bottom:8px;">
+              <input type="text" id="npc-speak-name" placeholder="Nome NPC" style="flex:2;" />
+              <input type="text" id="npc-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
             </div>
             <div class="row" style="margin-bottom:8px;align-items:center;">
               <label class="muted" style="flex:2;font-size:11px;">Colore scritta in chat</label>
@@ -4698,10 +4708,12 @@
     };
     const speakAsSel = document.getElementById('speak-as');
     const enemyFields = document.getElementById('enemy-fields');
+    const npcFields = document.getElementById('npc-fields');
     const colorInput = document.getElementById('speak-color');
     if(speakAsSel){
       speakAsSel.onchange = ()=>{
         enemyFields.style.display = speakAsSel.value==='enemy' ? 'flex' : 'none';
+        npcFields.style.display = speakAsSel.value==='npc' ? 'flex' : 'none';
         const mode = speakAsSel.value;
         if(mode.startsWith('digimon:')){
           const username = mode.slice('digimon:'.length);
@@ -4711,6 +4723,8 @@
           if(colorInput) colorInput.value = '#ff5d5d';
         } else if(mode==='enemy'){
           if(colorInput) colorInput.value = '#ff5d5d';
+        } else if(mode==='npc'){
+          if(colorInput) colorInput.value = '#ffd76a';
         } else {
           if(colorInput) colorInput.value = '#ff8a3d';
         }
@@ -4743,6 +4757,10 @@
         who = document.getElementById('enemy-speak-name').value.trim() || 'Nemico';
         role = 'enemy';
         avatar = document.getElementById('enemy-speak-img').value.trim() || null;
+      } else if(mode==='npc'){
+        who = document.getElementById('npc-speak-name').value.trim() || 'NPC';
+        role = 'npc';
+        avatar = document.getElementById('npc-speak-img').value.trim() || null;
       }
       const meta = {};
       if(avatar) meta.avatar = avatar;
@@ -5858,11 +5876,16 @@
           ${players.map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (displayName(p)+' — Digimon'))}</option>`).join('')}
           ${(cachedScene.encounters||[]).map((e,i)=>`<option value="encounter:${i}">${escapeHTML(encName(e))} (in scena)</option>`).join('')}
           <option value="enemy">Nemico personalizzato...</option>
+          <option value="npc">NPC personalizzato...</option>
         </select>
       </div>
       <div class="row" id="private-enemy-fields" style="display:none;margin-bottom:8px;">
         <input type="text" id="private-enemy-speak-name" placeholder="Nome nemico" style="flex:2;" />
         <input type="text" id="private-enemy-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
+      </div>
+      <div class="row" id="private-npc-fields" style="display:none;margin-bottom:8px;">
+        <input type="text" id="private-npc-speak-name" placeholder="Nome NPC" style="flex:2;" />
+        <input type="text" id="private-npc-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
       </div>
       <div class="row" style="margin-bottom:8px;align-items:center;">
         <label class="muted" style="flex:2;font-size:11px;">Colore scritta in chat</label>
@@ -5881,10 +5904,12 @@
     bindChatAttach('private', code, 'avviso', ()=>pendingPrivateImageUrl, (url)=>{ pendingPrivateImageUrl = url; });
     const privSpeakAsSel = document.getElementById('private-speak-as');
     const privEnemyFields = document.getElementById('private-enemy-fields');
+    const privNpcFields = document.getElementById('private-npc-fields');
     const privColorInput = document.getElementById('private-speak-color');
     if(privSpeakAsSel){
       privSpeakAsSel.onchange = ()=>{
         privEnemyFields.style.display = privSpeakAsSel.value==='enemy' ? 'flex' : 'none';
+        privNpcFields.style.display = privSpeakAsSel.value==='npc' ? 'flex' : 'none';
         const mode = privSpeakAsSel.value;
         if(mode.startsWith('digimon:')){
           const username = mode.slice('digimon:'.length);
@@ -5894,6 +5919,8 @@
           if(privColorInput) privColorInput.value = '#ff5d5d';
         } else if(mode==='enemy'){
           if(privColorInput) privColorInput.value = '#ff5d5d';
+        } else if(mode==='npc'){
+          if(privColorInput) privColorInput.value = '#ffd76a';
         } else {
           if(privColorInput) privColorInput.value = '#ff8a3d';
         }
@@ -5923,6 +5950,10 @@
         who = document.getElementById('private-enemy-speak-name').value.trim() || 'Nemico';
         role = 'enemy';
         avatar = document.getElementById('private-enemy-speak-img').value.trim() || null;
+      } else if(mode==='npc'){
+        who = document.getElementById('private-npc-speak-name').value.trim() || 'NPC';
+        role = 'npc';
+        avatar = document.getElementById('private-npc-speak-img').value.trim() || null;
       }
       const meta = {};
       if(avatar) meta.avatar = avatar;
