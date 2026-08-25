@@ -1707,6 +1707,18 @@
     }
     return null;
   }
+  // Come sectorNameById/luogoNameById, ma restituisce anche la Macroscena a cui il Settore
+  // appartiene — serve a "sceneHTML" per mostrare correttamente la scena di un giocatore separato
+  // in una Macroscena diversa da quella attiva per il resto del gruppo (prima si cercava il Settore
+  // SOLO dentro la Macroscena attiva, quindi un separato in un'altra Macroscena non vedeva nulla).
+  function findSectorAnywhere(scene, sectorId){
+    if(!sectorId) return null;
+    for(const m of ((scene && scene.macroScenes) || [])){
+      const s = (m.sectors||[]).find(x=>x.id===sectorId);
+      if(s) return { sector: s, macro: m };
+    }
+    return null;
+  }
   function isDigimonHiddenFromViewer(member){
     if(!member || !member.digimon || !member.digimon.hiddenFromParty) return false;
     if(session && session.role==='master') return false;
@@ -7377,6 +7389,46 @@
         <input type="text" id="macro-name" placeholder="Nome nuova Macroscena" style="flex:2;" />
         <button class="btn small" id="btn-add-macro" style="flex:1;">+ Macroscena</button>
       </div>
+      <div class="divider"></div>
+      ${(()=>{
+        const separated = (cachedRoster||[]).filter(m=>m.role==='player' && m.tamer && (m.tamer.currentSectorId || m.tamer.currentLuogoId));
+        if(separated.length===0) return '';
+        return `
+        <div class="muted" style="margin-bottom:4px;">🧭 Giocatori separati dal gruppo (${separated.length}):</div>
+        <div style="margin-bottom:10px;">
+          ${separated.map(m=>{
+            const sId = memberEffectiveSectorId(m);
+            const lId = memberEffectiveLuogoId(m);
+            const found2 = findSectorAnywhere(cachedScene, sId);
+            const crumb = [found2?found2.macro.name:null, found2?found2.sector.name:null, lId?luogoNameById(sId,lId):null].filter(Boolean).map(escapeHTML).join(' → ');
+            return `<div class="flex-between" style="padding:3px 6px;background:rgba(255,255,255,0.03);border-radius:6px;margin-bottom:3px;">
+              <span style="font-size:11px;">${escapeHTML(displayName(m))} <span class="muted">— ${crumb || 'posizione sconosciuta'}</span></span>
+              <button class="btn ghost small" data-member-sector-follow="${escapeAttr(m.username)}" style="padding:2px 6px;font-size:10px;">↩️ Rientra nel gruppo</button>
+            </div>`;
+          }).join('')}
+        </div>`;
+      })()}
+      <div class="muted" style="margin-bottom:6px;">🧭 Separa un giocatore in un'altra Macroscena <span title="A differenza di 'Sposta qui' nelle Presenze del party (che agisce solo dentro la Macroscena attiva), questo strumento assegna Settore/Luogo di QUALSIASI Macroscena senza cambiare la Macroscena attiva del gruppo — nessuno sfondo/scena condivisa viene toccato." style="cursor:help;">ⓘ</span></div>
+      <div class="field"><label>Macroscena di destinazione</label>
+        <select id="split-macro-select">
+          <option value="">— scegli una Macroscena —</option>
+          ${macroScenes.map(m=>`<option value="${m.id}">${escapeHTML(m.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" id="split-sector-field" style="display:none;"><label>Settore</label>
+        <select id="split-sector-select"></select>
+      </div>
+      <div class="field" id="split-luogo-field" style="display:none;"><label>Luogo (opzionale)</label>
+        <select id="split-luogo-select"><option value="">— nessuno, segue solo il Settore —</option></select>
+      </div>
+      <div class="field" id="split-player-field" style="display:none;"><label>Giocatore</label>
+        <select id="split-player-select">
+          ${(cachedRoster||[]).filter(m=>m.role==='player').map(m=>`<option value="${escapeAttr(m.username)}">${escapeHTML(displayName(m))}</option>`).join('')}
+        </select>
+      </div>
+      <button class="btn small" id="btn-split-assign" style="width:100%;" disabled>🧭 Separa qui</button>
+      <div class="muted" id="split-status" style="margin-top:6px;"></div>
+      <div class="divider"></div>
       ${activeMacro ? `
         <div class="muted" style="margin:8px 0 4px;">${escapeHTML(activeMacro.description||'')}</div>
         <div class="field" style="margin-bottom:8px;"><label>🎵 Musica Macroscena (mp3 diretto, opzionale)</label>
@@ -7518,6 +7570,70 @@
       renderSectorMap(code);
       refreshLiveParts();
     };
+    // Strumento "🧭 Separa in un'altra Macroscena": tre select a cascata (Macroscena -> Settore ->
+    // Luogo) che NON toccano cachedScene.currentMacroSceneId/currentSectorId/currentLuogoId — a
+    // differenza del cambio di "Macroscena attiva" sopra, che sposta lo sfondo/scena di TUTTO il
+    // gruppo, qui si scrive solo sul singolo membro (member.tamer.currentSectorId/currentLuogoId),
+    // così si può assegnare un giocatore a qualunque Macroscena senza disturbare gli altri.
+    const splitMacroSel = document.getElementById('split-macro-select');
+    const splitSectorField = document.getElementById('split-sector-field');
+    const splitSectorSel = document.getElementById('split-sector-select');
+    const splitLuogoField = document.getElementById('split-luogo-field');
+    const splitLuogoSel = document.getElementById('split-luogo-select');
+    const splitPlayerField = document.getElementById('split-player-field');
+    const splitPlayerSel = document.getElementById('split-player-select');
+    const splitBtn = document.getElementById('btn-split-assign');
+    const splitStatus = document.getElementById('split-status');
+    function refreshSplitLuogoOptions(){
+      const m = macroScenes.find(x=>x.id===splitMacroSel.value);
+      const s = m ? (m.sectors||[]).find(x=>x.id===splitSectorSel.value) : null;
+      const luoghi = s ? (s.luoghi||[]) : [];
+      splitLuogoSel.innerHTML = '<option value="">— nessuno, segue solo il Settore —</option>' + luoghi.map(lg=>`<option value="${lg.id}">${escapeHTML(lg.name)}</option>`).join('');
+      const ready = !!(m && s) && (cachedRoster||[]).some(mm=>mm.role==='player');
+      splitLuogoField.style.display = (m && s) ? '' : 'none';
+      splitPlayerField.style.display = (m && s) ? '' : 'none';
+      if(splitBtn) splitBtn.disabled = !ready;
+    }
+    function refreshSplitSectorOptions(){
+      const m = macroScenes.find(x=>x.id===splitMacroSel.value);
+      const secs = m ? (m.sectors||[]) : [];
+      splitSectorSel.innerHTML = secs.length>0
+        ? secs.map(s=>`<option value="${s.id}">${escapeHTML(s.name)}</option>`).join('')
+        : '<option value="">— nessun Settore in questa Macroscena —</option>';
+      splitSectorField.style.display = m ? '' : 'none';
+      refreshSplitLuogoOptions();
+    }
+    if(splitMacroSel){
+      splitMacroSel.onchange = refreshSplitSectorOptions;
+      splitSectorSel.onchange = refreshSplitLuogoOptions;
+      refreshSplitSectorOptions();
+      if(splitBtn) splitBtn.onclick = async ()=>{
+        const username = splitPlayerSel.value;
+        const sectorId = splitSectorSel.value;
+        const luogoId = splitLuogoSel.value || null;
+        const member = (cachedRoster||[]).find(m=>m.username===username);
+        if(!member || !sectorId) return;
+        splitBtn.disabled = true;
+        const prevSectorId = member.tamer.currentSectorId;
+        const prevLuogoId = member.tamer.currentLuogoId;
+        member.tamer.currentSectorId = sectorId;
+        member.tamer.currentLuogoId = luogoId;
+        const ok = await saveMember(code, member);
+        if(!ok){
+          member.tamer.currentSectorId = prevSectorId;
+          member.tamer.currentLuogoId = prevLuogoId;
+          if(splitStatus) splitStatus.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito');
+          splitBtn.disabled = false;
+          return;
+        }
+        const destMacro = macroScenes.find(x=>x.id===splitMacroSel.value);
+        const sectorName = (splitSectorSel.selectedOptions[0] || {}).text || '';
+        if(splitStatus) splitStatus.textContent = `✅ ${displayName(member)} separato/a in "${destMacro?destMacro.name:''}" → "${sectorName}".`;
+        await pushLog(code, { who:'Sistema', role:'gm', text: `🧭 ${displayName(member)} si separa dal gruppo verso "${sectorName}" (${destMacro?destMacro.name:''}).` });
+        renderSectorMap(code);
+        refreshLiveParts();
+      };
+    }
     const sectorSel = document.getElementById('sector-select');
     if(sectorSel) sectorSel.onchange = ()=>{
       sectorMapSelectedId = sectorSel.value;
@@ -8036,12 +8152,18 @@
   // trova lui, non quelle del resto del party. Senza viewerMember (vista Master) mostra il gruppo.
   function sceneHTML(scene, viewerMember){
     const macroScenes = (scene && Array.isArray(scene.macroScenes)) ? scene.macroScenes : [];
-    const activeMacro = scene && scene.currentMacroSceneId ? macroScenes.find(m=>m.id===scene.currentMacroSceneId) : null;
-    const sectors = activeMacro ? (activeMacro.sectors||[]) : [];
+    const groupMacro = scene && scene.currentMacroSceneId ? macroScenes.find(m=>m.id===scene.currentMacroSceneId) : null;
     const effSectorId = viewerMember ? memberEffectiveSectorId(viewerMember) : (scene && scene.currentSectorId);
     const effLuogoId = viewerMember ? memberEffectiveLuogoId(viewerMember) : (scene && scene.currentLuogoId);
     const isSeparated = !!(viewerMember && (effSectorId !== (scene && scene.currentSectorId) || effLuogoId !== (scene && scene.currentLuogoId)));
-    const current = effSectorId ? sectors.find(s=>s.id===effSectorId) : null;
+    // Il Settore effettivo di un giocatore separato può appartenere a una Macroscena diversa da
+    // quella attiva per il resto del gruppo (vedi il pannello "🧭 Separa in un'altra Macroscena"):
+    // lo cerchiamo ovunque invece di limitarci ai Settori della sola Macroscena di gruppo, altrimenti
+    // un separato in un'altra Macroscena non vedrebbe sfondo/breadcrumb della propria posizione reale.
+    const found = effSectorId ? findSectorAnywhere(scene, effSectorId) : null;
+    const current = found ? found.sector : null;
+    const activeMacro = found ? found.macro : groupMacro;
+    const sectors = activeMacro ? (activeMacro.sectors||[]) : [];
     const currentLuogo = current && effLuogoId ? (current.luoghi||[]).find(l=>l.id===effLuogoId) : null;
     const sectorBadge = current ? `<span class="tag">${current.terrain==='Dangerous'?'☠':(current.terrain==='Difficult'?'⚠':'')} ${escapeHTML(current.terrain)}</span>` : '';
     const separatedBadge = isSeparated ? `<span class="tag" style="color:var(--amber);border-color:var(--amber);">🧭 Ti sei separato dal gruppo</span>` : '';
