@@ -51,6 +51,18 @@
   .hud-frame{border:1px solid var(--line); background:var(--panel); border-radius:var(--radius); position:relative;}
   .hud-frame::before{content:"";position:absolute;top:-1px;left:-1px;width:14px;height:14px;border-top:2px solid var(--cyan);border-left:2px solid var(--cyan);}
   .hud-frame::after{content:"";position:absolute;bottom:-1px;right:-1px;width:14px;height:14px;border-bottom:2px solid var(--cyan);border-right:2px solid var(--cyan);}
+  /* Badge "a Digivice" per gli Evolution Point (vedi epDigiviceHTML) — piccola cornice con
+     antenna/pulsante e schermo LCD, al posto del semplice testo "EP: X". */
+  .ep-digivice{display:inline-flex;align-items:center;gap:5px;background:linear-gradient(180deg, #1a232c, #0d1319);
+    border:1px solid var(--line);border-radius:9px;padding:3px 8px 3px 6px;position:relative;vertical-align:middle;}
+  .ep-digivice::before{content:"";position:absolute;top:-5px;left:14px;width:8px;height:5px;background:var(--cyan-dim);border-radius:2px 2px 0 0;}
+  .ep-digivice .ep-btn{width:6px;height:6px;border-radius:50%;background:var(--amber);box-shadow:0 0 4px var(--amber);flex-shrink:0;}
+  .ep-digivice .ep-screen{font-family:'Share Tech Mono',monospace;font-size:12px;font-weight:700;line-height:1;
+    background:#04110d;color:var(--cyan);border:1px solid var(--cyan-dim);border-radius:3px;padding:2px 6px;
+    min-width:16px;text-align:center;text-shadow:0 0 6px rgba(53,232,201,0.55);}
+  .ep-digivice .ep-screen.empty{color:var(--text-mute);text-shadow:none;}
+  .ep-digivice .ep-screen .ep-max{opacity:0.55;font-weight:400;}
+  .ep-digivice .ep-label{font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:0.1em;color:var(--text-mute);text-transform:uppercase;}
   .topbar{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;margin-bottom:18px;}
   .brand{display:flex;align-items:center;gap:10px;}
   .brand-dot{width:9px;height:9px;background:var(--cyan);box-shadow:0 0 8px var(--cyan);border-radius:50%;animation:pulse 2s infinite;}
@@ -3087,6 +3099,19 @@
     return `<span class="tag" style="color:${color};border-color:${color};display:inline-flex;align-items:center;gap:3px;">${attributeIconHTML(attribute, 12)}${escapeHTML(attribute)}</span>`;
   }
   function stageIndex(s){ const i = STAGES.indexOf(s); return i<0?0:i; }
+  // Badge "a Digivice" per gli Evolution Point disponibili (regola 8.05a): una cornice con
+  // antenna/pulsante e schermo LCD al posto del semplice testo "EP: X". Se max è noto (Milestone
+  // completate) lo mostra in tono più spento accanto al valore attuale, es. "3/5".
+  function epDigiviceHTML(current, max){
+    const cur = Math.max(0, Number(current)||0);
+    const hasMax = max!=null && max>=0;
+    const empty = cur<=0;
+    return `<span class="ep-digivice" title="Evolution Points disponibili${hasMax?` (massimo ${max}, pari alle Milestone completate)`:''}">
+      <span class="ep-btn"></span>
+      <span class="ep-screen ${empty?'empty':''}">${cur}${hasMax?`<span class="ep-max">/${max}</span>`:''}</span>
+      <span class="ep-label">EP</span>
+    </span>`;
+  }
   // Specchio di digimon.html: slot Attacco massimi per Stage (regola 3.05a — 1 Signature + 2 extra
   // agli Stage base, 4 a Mega), + i Rank di Memory Upgrade (Free Quality, +1 Attacco/Rank) se presenti.
   const ATTACK_SLOTS_BY_STAGE = { Fresh:1, Baby:1, Rookie:3, Champion:3, Ultimate:3, Mega:4 };
@@ -3556,7 +3581,11 @@
         ${!isMasterCtx && !d.evolveUnlocked ? `
         <div class="sub" style="margin-bottom:6px;">Il Master non ha ancora sbloccato l'Evoluzione (né normale né forzata) — quando lo farà, qui compariranno i controlli per evolvere.</div>
         ` : `
-        <div class="sub" style="margin-bottom:6px;">Il tuo Digimon riposa normalmente a <b>${escapeHTML(d.defaultStage)}</b> e può salire fino a <b>${STAGES[Math.min(5, stageIndex(d.defaultStage)+Number(d.defaultRange||0))]}</b> senza spendere Evolution Points (Default Range: ${d.defaultRange}). Evolution Points disponibili: ${d.evolutionPoints||0}${d.forcedEvoRoundsLeft>0?` · <span style="color:var(--danger);">Evoluzione Forzata: ${d.forcedEvoRoundsLeft} round rimasti</span>`:''}</div>
+        <div class="sub" style="margin-bottom:6px;">Il tuo Digimon riposa normalmente a <b>${escapeHTML(d.defaultStage)}</b> e può salire fino a <b>${STAGES[Math.min(5, stageIndex(d.defaultStage)+Number(d.defaultRange||0))]}</b> senza spendere Evolution Points (Default Range: ${d.defaultRange}).${d.forcedEvoRoundsLeft>0?` · <span style="color:var(--danger);">Evoluzione Forzata: ${d.forcedEvoRoundsLeft} round rimasti</span>`:''}</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          ${epDigiviceHTML(d.evolutionPoints||0, cachedProgression ? Number(cachedProgression.milestone||0) : null)}
+          <span class="muted" style="font-size:11px;">Evolution Points disponibili</span>
+        </div>
         ${d.hybridMode ? `<div class="muted" style="margin-bottom:6px;color:var(--cyan);">🔀 Hybrid/Bio-Merge attiva: 3 Azioni in combattimento invece di 2 (ancora 1 Attacco a round). Il Tamer non può Dirigere se stesso.</div>` : ''}
         <div class="row">
           <select id="evo-target-${containerId}" style="flex:2;">${STAGES.map(s=>{
@@ -5804,11 +5833,32 @@
     }
     const log = masterPrivateThread ? await getPrivateLog(code, masterPrivateThread) : [];
     cachedMasterPrivateLog = log;
+    // "Parla come" + "Colore scritta in chat" — stessa funzionalità già presente sulla Chat
+    // Generale (vedi #speak-as/#speak-color e btn-gm-post), replicata qui con id prefissati
+    // "private-" per non collidere con quella. Le opzioni (Master / Digimon di un giocatore /
+    // Incontro in scena / Nemico personalizzato) e la logica di risoluzione who/role/avatar/color
+    // sono intenzionalmente identiche, per coerenza tra le due chat.
     cardEl.innerHTML = `
       <div class="field"><label>Con chi</label>
         <select id="private-thread-select">${players.map(p=>`<option value="${escapeAttr(p.username)}" ${p.username===masterPrivateThread?'selected':''}>${masterPrivateUnread[p.username]?'🔴 ':''}${escapeHTML(displayName(p))}</option>`).join('')}</select>
       </div>
       <div class="log" id="private-log-live-master" style="height:220px;">${logHTML(log, true)}</div>
+      <div class="field" style="margin-top:10px;"><label>Parla come</label>
+        <select id="private-speak-as">
+          <option value="master">Master (narrazione)</option>
+          ${players.map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (displayName(p)+' — Digimon'))}</option>`).join('')}
+          ${(cachedScene.encounters||[]).map((e,i)=>`<option value="encounter:${i}">${escapeHTML(encName(e))} (in scena)</option>`).join('')}
+          <option value="enemy">Nemico personalizzato...</option>
+        </select>
+      </div>
+      <div class="row" id="private-enemy-fields" style="display:none;margin-bottom:8px;">
+        <input type="text" id="private-enemy-speak-name" placeholder="Nome nemico" style="flex:2;" />
+        <input type="text" id="private-enemy-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
+      </div>
+      <div class="row" style="margin-bottom:8px;align-items:center;">
+        <label class="muted" style="flex:2;font-size:11px;">Colore scritta in chat</label>
+        <input type="color" id="private-speak-color" value="#ff8a3d" style="flex:1;padding:2px;height:34px;" />
+      </div>
       <textarea id="private-text-master" rows="2" placeholder="Scrivi in privato..." style="margin-top:8px;"></textarea>
       <button class="btn amber" id="btn-private-send-master" style="width:100%;margin-top:6px;">Invia</button>
     `;
@@ -5818,10 +5868,56 @@
       masterPrivateThread = e.target.value;
       renderPrivateChatMaster(code, players);
     };
+    const privSpeakAsSel = document.getElementById('private-speak-as');
+    const privEnemyFields = document.getElementById('private-enemy-fields');
+    const privColorInput = document.getElementById('private-speak-color');
+    if(privSpeakAsSel){
+      privSpeakAsSel.onchange = ()=>{
+        privEnemyFields.style.display = privSpeakAsSel.value==='enemy' ? 'flex' : 'none';
+        const mode = privSpeakAsSel.value;
+        if(mode.startsWith('digimon:')){
+          const username = mode.slice('digimon:'.length);
+          const member = cachedRoster.find(m=>m.username===username);
+          if(privColorInput) privColorInput.value = (member && member.digimon.chatColor) || '#c896ff';
+        } else if(mode.startsWith('encounter:')){
+          if(privColorInput) privColorInput.value = '#ff5d5d';
+        } else if(mode==='enemy'){
+          if(privColorInput) privColorInput.value = '#ff5d5d';
+        } else {
+          if(privColorInput) privColorInput.value = '#ff8a3d';
+        }
+      };
+    }
     document.getElementById('btn-private-send-master').onclick = async ()=>{
       const ta = document.getElementById('private-text-master');
-      if(!ta.value.trim() || !masterPrivateThread) return;
-      await pushPrivateLog(code, masterPrivateThread, { who:'Master', role:'gm', text: ta.value.trim() });
+      const text = ta.value.trim();
+      if(!text || !masterPrivateThread) return;
+      const mode = privSpeakAsSel ? privSpeakAsSel.value : 'master';
+      let who = 'Master', role = 'gm', avatar = null, color = null;
+      if(mode.startsWith('digimon:')){
+        const username = mode.slice('digimon:'.length);
+        const member = cachedRoster.find(m=>m.username===username);
+        who = (member && member.digimon.name) ? member.digimon.name : username;
+        role = 'digimon';
+        avatar = member ? member.digimon.imageUrl : null;
+        color = member ? member.digimon.chatColor : null;
+      } else if(mode.startsWith('encounter:')){
+        const idx = Number(mode.slice('encounter:'.length));
+        const encObj = (cachedScene.encounters||[])[idx];
+        who = encName(encObj) || 'Digimon';
+        const dexMatch = cachedDex.find(e=>e.name.trim().toLowerCase()===who.trim().toLowerCase());
+        role = 'enemy';
+        avatar = (encObj && typeof encObj==='object' && encObj.image) ? encObj.image : (dexMatch ? dexMatch.image_url : null);
+      } else if(mode==='enemy'){
+        who = document.getElementById('private-enemy-speak-name').value.trim() || 'Nemico';
+        role = 'enemy';
+        avatar = document.getElementById('private-enemy-speak-img').value.trim() || null;
+      }
+      const meta = {};
+      if(avatar) meta.avatar = avatar;
+      const chosenColor = privColorInput ? privColorInput.value : color;
+      if(chosenColor) meta.color = chosenColor;
+      await pushPrivateLog(code, masterPrivateThread, { who, role, text, meta: Object.keys(meta).length ? meta : null });
       ta.value='';
       renderPrivateChatMaster(code, players);
     };
