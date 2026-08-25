@@ -1384,6 +1384,7 @@
       teamworkBonus: 0,
       built: false, // diventa true al completamento della Creazione Guidata — segnala che la scheda non è più "vuota"
       currentSectorId: null, // null = segue il Settore attuale del gruppo; un id esplicito = si è separato dal gruppo
+      currentLuogoId: null, // null = segue il Luogo attuale del gruppo (solo se nello stesso Settore); un id esplicito = si è spostato da solo a un Luogo diverso
       characterName:'' // nome del personaggio mostrato in UI, indipendente dallo username di login (fallback: username)
     };
   }
@@ -1619,6 +1620,17 @@
     const override = member && member.tamer && member.tamer.currentSectorId;
     return override || (cachedScene && cachedScene.currentSectorId) || null;
   }
+  // Luogo "effettivo" di un membro: se si è separato anche solo di Settore, il Luogo di gruppo
+  // non si applica più finché non ha un proprio override — un giocatore separato non eredita
+  // il Luogo di un Settore diverso da quello in cui si trova davvero. Se invece è nello stesso
+  // Settore del gruppo, segue il Luogo di gruppo salvo un proprio override esplicito.
+  function memberEffectiveLuogoId(member){
+    const luogoOverride = member && member.tamer && member.tamer.currentLuogoId;
+    if(luogoOverride) return luogoOverride;
+    const sectorOverride = member && member.tamer && member.tamer.currentSectorId;
+    if(sectorOverride && sectorOverride !== (cachedScene && cachedScene.currentSectorId)) return null;
+    return (cachedScene && cachedScene.currentLuogoId) || null;
+  }
   // Un Digimon del roster segnato "hiddenFromParty" resta visibile SOLO a Master e proprietario —
   // serve a coprire il tempo tra la creazione/evoluzione di un Digimon e il momento in cui il Master
   // vuole rivelarlo narrativamente al resto del gruppo (es. un Digitama che si schiude prima degli altri).
@@ -1629,6 +1641,14 @@
     for(const m of (cachedScene.macroScenes||[])){
       const s = (m.sectors||[]).find(x=>x.id===sectorId);
       if(s) return s.name;
+    }
+    return null;
+  }
+  function luogoNameById(sectorId, luogoId){
+    if(!sectorId || !luogoId) return null;
+    for(const m of (cachedScene.macroScenes||[])){
+      const s = (m.sectors||[]).find(x=>x.id===sectorId);
+      if(s){ const lg = (s.luoghi||[]).find(x=>x.id===luogoId); return lg ? lg.name : null; }
     }
     return null;
   }
@@ -7057,7 +7077,7 @@
         </div>
         <div class="sub" style="margin-top:6px;">${isEgg ? '🥚 Digimon ancora nell\'Uovo — in attesa di approvazione' : `Digimon: ${escapeHTML(p.digimon.name || '(senza nome)')} — Ferite: ${p.digimon.currentWounds}/${p.digimon.maxWounds}${p.digimon.tempWounds>0?` (+${p.digimon.tempWounds} Shield)`:''} — MP: ${p.digimon.currentMp}/${p.digimon.maxMp}`}</div>
         <div class="sub">AGI ${p.tamer.agility} · BODY ${p.tamer.body} · CAR ${p.tamer.charisma} · INT ${p.tamer.intelligence} · WILL ${p.tamer.willpower}</div>
-        <div class="sub muted" style="font-size:10.5px;">📍 ${escapeHTML(sectorNameById(memberEffectiveSectorId(p)) || 'nessun Settore attuale')}${p.tamer.currentSectorId ? ' <span style="color:var(--amber);">(separato/a dal gruppo)</span>' : ''}</div>
+        <div class="sub muted" style="font-size:10.5px;">📍 ${escapeHTML(sectorNameById(memberEffectiveSectorId(p)) || 'nessun Settore attuale')}${(()=>{ const lgId = memberEffectiveLuogoId(p); if(!lgId) return ''; const lg = luogoNameById(memberEffectiveSectorId(p), lgId); return lg ? ` — ${escapeHTML(lg)}` : ''; })()}${p.tamer.currentSectorId ? ' <span style="color:var(--amber);">(separato/a dal gruppo)</span>' : (p.tamer.currentLuogoId ? ' <span style="color:var(--amber);">(luogo separato)</span>' : '')}</div>
         <div id="suggest-box-${i}" class="suggest-box" style="${(rosterSuggestLines[p.username]||[]).length ? 'display:block;' : 'display:none;'}">${(rosterSuggestLines[p.username]||[]).map(l=>`<div class="suggest-line" data-line="${escapeAttr(l)}">${escapeHTML(l)}</div>`).join('')}</div>
         <div id="manage-panel-${i}" style="display:none;margin-top:10px;"></div>
       </div>
@@ -7110,6 +7130,10 @@
         <div class="field" style="margin-bottom:8px;"><label>🗡️ Musica da Combattimento Macroscena (opzionale)</label>
           <input type="text" id="macro-combat-music" value="${escapeAttr(activeMacro.combatMusic||'')}" placeholder="https://.../boss-theme.mp3" style="width:100%;" />
         </div>
+        <div class="row" style="align-items:center;gap:8px;margin-bottom:8px;">
+          <input type="checkbox" id="macro-allow-move" ${activeMacro.allowPlayerMovement?'checked':''} style="width:auto;" />
+          <label for="macro-allow-move" style="margin:0;text-transform:none;font-size:11px;color:var(--text);cursor:pointer;">🧭 Permetti ai giocatori di spostarsi da soli in <b>map.html</b> (solo verso Settori collegati a quello in cui si trovano)</label>
+        </div>
         <div class="row" style="margin-bottom:8px;">
           <button class="btn ghost small" id="btn-remove-macro" style="width:100%;">🗑️ Elimina Macroscena "${escapeHTML(activeMacro.name)}"</button>
         </div>
@@ -7147,13 +7171,27 @@
                 const here = memberEffectiveSectorId(m) === selectedSector.id;
                 const separated = !!m.tamer.currentSectorId;
                 const label = isDigimonHiddenFromViewer(m) ? '❔ (Digimon nascosto)' : (m.digimon.name || '(senza nome)');
+                const memberLuogoId = here ? memberEffectiveLuogoId(m) : null;
+                const luogoSeparated = here && !!m.tamer.currentLuogoId;
                 return `
-                <div class="flex-between" style="padding:3px 6px;background:rgba(255,255,255,0.03);border-radius:6px;">
-                  <span style="font-size:11px;">${here?'📍 ':''}<b>${escapeHTML(displayName(m))}</b> <span class="muted">(${escapeHTML(label)})</span>${separated?' <span class="tag" style="font-size:9px;color:var(--amber);border-color:var(--amber);">separato/a</span>':''}</span>
-                  <span style="display:flex;gap:4px;">
-                    ${!here ? `<button class="btn small" data-member-sector-move="${escapeAttr(m.username)}:${selectedSector.id}" style="padding:2px 6px;font-size:10px;">Sposta qui</button>` : ''}
-                    ${separated ? `<button class="btn ghost small" data-member-sector-follow="${escapeAttr(m.username)}" style="padding:2px 6px;font-size:10px;">↩️ Rientra nel gruppo</button>` : ''}
-                  </span>
+                <div style="padding:3px 6px;background:rgba(255,255,255,0.03);border-radius:6px;">
+                  <div class="flex-between">
+                    <span style="font-size:11px;">${here?'📍 ':''}<b>${escapeHTML(displayName(m))}</b> <span class="muted">(${escapeHTML(label)})</span>${separated?' <span class="tag" style="font-size:9px;color:var(--amber);border-color:var(--amber);">separato/a</span>':''}</span>
+                    <span style="display:flex;gap:4px;">
+                      ${!here ? `<button class="btn small" data-member-sector-move="${escapeAttr(m.username)}:${selectedSector.id}" style="padding:2px 6px;font-size:10px;">Sposta qui</button>` : ''}
+                      ${separated ? `<button class="btn ghost small" data-member-sector-follow="${escapeAttr(m.username)}" style="padding:2px 6px;font-size:10px;">↩️ Rientra nel gruppo</button>` : ''}
+                    </span>
+                  </div>
+                  ${here && (selectedSector.luoghi||[]).length>0 ? `
+                  <div class="flex-between" style="margin-top:3px;gap:6px;">
+                    <span class="muted" style="font-size:10px;">📌 Luogo:</span>
+                    <select data-member-luogo-set="${escapeAttr(m.username)}:${selectedSector.id}" style="flex:1;font-size:10px;padding:2px 4px;">
+                      <option value="">— segue il gruppo —</option>
+                      ${(selectedSector.luoghi||[]).map(lg=>`<option value="${lg.id}" ${memberLuogoId===lg.id?'selected':''}>${escapeHTML(lg.name)}</option>`).join('')}
+                    </select>
+                    ${luogoSeparated ? '<span class="tag" style="font-size:9px;color:var(--amber);border-color:var(--amber);">luogo separato</span>' : ''}
+                  </div>
+                  ` : ''}
                 </div>
               `;}).join('') || '<div class="muted" style="font-size:11px;">Nessun giocatore nel roster.</div>'}
             </div>
@@ -7225,7 +7263,7 @@
       if(!name){ statusEl.textContent = 'Inserisci un nome per la Macroscena.'; return; }
       const id = 'ms'+Date.now()+Math.random().toString(36).slice(2,6);
       if(!cachedScene.macroScenes) cachedScene.macroScenes = [];
-      cachedScene.macroScenes.push({ id, name, description:'', sectors:[] });
+      cachedScene.macroScenes.push({ id, name, description:'', sectors:[], allowPlayerMovement:false });
       cachedScene.currentMacroSceneId = id;
       cachedScene.currentSectorId = null;
       cachedScene.currentLuogoId = null;
@@ -7247,6 +7285,15 @@
       const liveMacro = liveActiveMacro();
       if(!liveMacro) return;
       liveMacro.combatMusic = macroCombatMusicEl.value.trim();
+      await saveScene(code, cachedScene);
+      renderSectorMap(code);
+      refreshLiveParts();
+    };
+    const macroAllowMoveEl = document.getElementById('macro-allow-move');
+    if(macroAllowMoveEl) macroAllowMoveEl.onchange = async ()=>{
+      const liveMacro = liveActiveMacro();
+      if(!liveMacro) return;
+      liveMacro.allowPlayerMovement = !!macroAllowMoveEl.checked;
       await saveScene(code, cachedScene);
       renderSectorMap(code);
       refreshLiveParts();
@@ -7276,8 +7323,8 @@
         if(statusEl) statusEl.textContent = '';
         // Muovere l'intero gruppo riunisce anche chi si era separato: azzeriamo l'override di Settore
         // di ogni membro così tornano a seguire il Settore attuale della Scena.
-        const separatedMembers = (cachedRoster||[]).filter(m=>m.role==='player' && m.tamer && m.tamer.currentSectorId);
-        for(const m of separatedMembers){ m.tamer.currentSectorId = null; await saveMember(code, m); }
+        const separatedMembers = (cachedRoster||[]).filter(m=>m.role==='player' && m.tamer && (m.tamer.currentSectorId || m.tamer.currentLuogoId));
+        for(const m of separatedMembers){ m.tamer.currentSectorId = null; m.tamer.currentLuogoId = null; await saveMember(code, m); }
         await pushLog(code, { who:'Sistema', role:'gm', text: `📍 Il gruppo si sposta a "${s?s.name:''}".` });
         renderSectorMap(code);
         refreshLiveParts();
@@ -7304,10 +7351,13 @@
         const member = (cachedRoster||[]).find(m=>m.username===username);
         if(!member) return;
         btn.disabled = true;
+        const prevSectorId = member.tamer.currentSectorId;
+        const prevLuogoId = member.tamer.currentLuogoId;
         member.tamer.currentSectorId = sectorId;
+        member.tamer.currentLuogoId = null; // il vecchio Luogo apparteneva (eventualmente) a un altro Settore
         const ok = await saveMember(code, member);
         const statusEl = document.getElementById('sector-status');
-        if(!ok){ member.tamer.currentSectorId = null; if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); btn.disabled = false; return; }
+        if(!ok){ member.tamer.currentSectorId = prevSectorId; member.tamer.currentLuogoId = prevLuogoId; if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); btn.disabled = false; return; }
         if(statusEl) statusEl.textContent = '';
         const s = sectorNameById(sectorId);
         await pushLog(code, { who:'Sistema', role:'gm', text: `📍 ${username} si separa dal gruppo e si sposta a "${s||''}".` });
@@ -7322,12 +7372,33 @@
         if(!member) return;
         btn.disabled = true;
         const prevSectorId = member.tamer.currentSectorId;
+        const prevLuogoId = member.tamer.currentLuogoId;
         member.tamer.currentSectorId = null;
+        member.tamer.currentLuogoId = null;
         const ok = await saveMember(code, member);
         const statusEl = document.getElementById('sector-status');
-        if(!ok){ member.tamer.currentSectorId = prevSectorId; if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); btn.disabled = false; return; }
+        if(!ok){ member.tamer.currentSectorId = prevSectorId; member.tamer.currentLuogoId = prevLuogoId; if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); btn.disabled = false; return; }
         if(statusEl) statusEl.textContent = '';
         await pushLog(code, { who:'Sistema', role:'gm', text: `↩️ ${username} rientra nel gruppo.` });
+        renderSectorMap(code);
+        refreshLiveParts();
+      };
+    });
+    el.querySelectorAll('[data-member-luogo-set]').forEach(sel=>{
+      sel.onchange = async ()=>{
+        const [username, sectorId] = sel.getAttribute('data-member-luogo-set').split(':');
+        const member = (cachedRoster||[]).find(m=>m.username===username);
+        if(!member) return;
+        const luogoId = sel.value || null;
+        sel.disabled = true;
+        const prevLuogoId = member.tamer.currentLuogoId;
+        member.tamer.currentLuogoId = luogoId;
+        const ok = await saveMember(code, member);
+        const statusEl = document.getElementById('sector-status');
+        if(!ok){ member.tamer.currentLuogoId = prevLuogoId; if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); sel.disabled = false; return; }
+        if(statusEl) statusEl.textContent = '';
+        const lgName = luogoId ? luogoNameById(sectorId, luogoId) : null;
+        await pushLog(code, { who:'Sistema', role:'gm', text: lgName ? `📌 ${username} si sposta a "${lgName}".` : `📌 ${username} torna a seguire il Luogo del gruppo.` });
         renderSectorMap(code);
         refreshLiveParts();
       };

@@ -61,6 +61,8 @@
   .btn.solid:hover{background:#4ffbe0;}
   .btn.ghost{border-color:var(--line);color:var(--text-mute);}
   .btn.small{padding:5px 10px;font-size:10px;}
+  .btn:disabled{opacity:0.4;cursor:not-allowed;}
+  .btn:disabled:hover{background:transparent;border-color:var(--line);}
 
   input[type=text], select{
     background:var(--panel-2); border:1px solid var(--line); color:var(--text);
@@ -92,6 +94,7 @@
   .map-cell.empty .lbl{color:var(--text-mute);font-size:10px;text-align:center;width:100%;padding:0;}
   .map-cell.empty{align-items:center;justify-content:center;border-color:var(--line);}
   .map-cell.current{border-color:var(--cyan);box-shadow:0 0 12px rgba(53,232,201,0.35) inset;}
+  .map-cell.reachable{border-color:var(--cyan-dim);}
   .map-cell.addable{cursor:pointer;border-style:dashed;border-color:var(--line);}
   .map-cell.addable:hover{border-color:var(--cyan);}
   .map-cell.addable .lbl{color:var(--cyan-dim);}
@@ -100,6 +103,7 @@
   .digimoji-mystery{font-family:'Digicode','Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic','Noto Sans JP','MS Gothic','Share Tech Mono',monospace;font-size:10px;color:var(--text-mute);opacity:0.7;margin-top:2px;}
   .map-cell-reveal{position:absolute;bottom:2px;right:2px;z-index:4;padding:2px 6px !important;font-size:10px !important;background:rgba(8,11,16,0.7) !important;}
   .map-cell-del{position:absolute;top:2px;right:2px;z-index:4;padding:2px 6px !important;font-size:10px !important;background:rgba(8,11,16,0.7) !important;}
+  .map-cell-here{position:absolute;top:2px;left:2px;z-index:4;font-size:14px;text-shadow:0 0 4px #000;}
 
   textarea{
     background:var(--panel-2); border:1px solid var(--line); color:var(--text);
@@ -108,19 +112,26 @@
   textarea:focus{outline:none;border-color:var(--cyan-dim);}
 
   .luogo-grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;}
-  .luogo-tile{width:110px;border:1px solid var(--line);background:var(--panel-2);cursor:pointer;overflow:hidden;}
+  .luogo-tile{width:110px;border:1px solid var(--line);background:var(--panel-2);cursor:pointer;overflow:hidden;position:relative;}
   .luogo-tile:hover{border-color:var(--cyan);}
+  .luogo-tile.current{border-color:var(--cyan);box-shadow:0 0 10px rgba(53,232,201,0.3) inset;}
   .luogo-tile .img{height:70px;background:#05070a;position:relative;overflow:hidden;}
   .luogo-tile .img img{width:100%;height:100%;object-fit:cover;}
   .luogo-tile .nm{font-size:11px;padding:5px;font-family:'Share Tech Mono',monospace;}
 
   .detail-image{width:100%;max-height:260px;object-fit:cover;border:1px solid var(--line);margin-bottom:12px;background:#05070a;}
   .connections-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+  .connections-row .btn[disabled]{opacity:0.35;}
+
+  .roster-row{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:4px 6px;margin-top:4px;background:rgba(255,255,255,0.03);border-radius:4px;font-size:11px;}
+  .roster-row .nm{display:flex;align-items:center;gap:5px;}
 
   .login-wrap{max-width:420px;margin:60px auto;padding:32px;}
   .login-wrap h1{font-family:'Pixel Digivolve','Share Tech Mono',monospace;color:var(--cyan);font-size:24px;letter-spacing:0.03em;text-align:center;text-shadow:0 0 16px rgba(53,232,201,0.5);margin-bottom:4px;}
   .role-pick{display:flex;gap:8px;}
   .role-pick .btn.active{background:var(--cyan);color:#04211c;border-color:var(--cyan);}
+  .checkbox-row{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-mute);margin:8px 0;}
+  .checkbox-row input{width:auto;}
 </style>
 </head>
 <body>
@@ -132,6 +143,7 @@
   const root = document.getElementById('root-app');
   let session = null;
   let cachedScene = null;
+  let cachedRoster = [];
   let pollTimer = null;
   let lastApiError = null;
   let lastSaveAt = 0;
@@ -338,6 +350,35 @@
     return true;
   }
 
+  async function getRoster(code){
+    const d = await apiGet('/api/roster?code=' + encodeURIComponent(code));
+    const members = d ? (d.members||[]) : [];
+    members.forEach(m=>{ m.tamer = Object.assign({ currentSectorId:null, currentLuogoId:null }, m.tamer||{}); });
+    return members;
+  }
+  async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
+
+  function myMember(){ return (cachedRoster||[]).find(m=>m.username===session.username) || null; }
+
+  // Settore/Luogo "effettivo" del giocatore che ha fatto login su questa pagina: se non si è mai
+  // separato dal gruppo (tamer.currentSectorId nullo) segue il Settore/Luogo attuale della Scena,
+  // altrimenti resta dove si è spostato da solo (stessa logica del pannello Master in index.html).
+  function myEffectiveSectorId(){
+    const m = myMember();
+    const override = m && m.tamer && m.tamer.currentSectorId;
+    return override || (cachedScene && cachedScene.currentSectorId) || null;
+  }
+  function myEffectiveLuogoId(){
+    const m = myMember();
+    if(m && m.tamer && m.tamer.currentSectorId){
+      // separato dal gruppo: il suo Luogo attuale è solo quello scelto esplicitamente da lui/dal Master
+      return m.tamer.currentLuogoId || null;
+    }
+    // segue il gruppo: usa il proprio override di Luogo se compatibile, altrimenti quello del gruppo
+    if(m && m.tamer && m.tamer.currentLuogoId) return m.tamer.currentLuogoId;
+    return (cachedScene && cachedScene.currentLuogoId) || null;
+  }
+
   function topbarHTML(){
     return `
       <div class="topbar hud-frame">
@@ -358,7 +399,7 @@
         </div>
       </div>
       ${lastApiError ? `<div class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(lastApiError)} — la modifica potrebbe non essersi salvata, riprova.</div>` : ''}
-    `;
+  `;
   }
 
   // ---------- LOGIN ----------
@@ -406,6 +447,24 @@
     const n = macro && Number(macro.gridSize);
     if(!n || isNaN(n) || n<1 || n>6) return 3;
     return n;
+  }
+
+  // Un giocatore può spostare da solo il proprio personaggio SOLO se il Master ha dato "via libera"
+  // per questa Macroscena (activeMacro.allowPlayerMovement) — di default è disattivato, e il Master
+  // continua a spostare tutti manualmente (qui o dal Tavolo) come prima.
+  function playerMovementAllowed(activeMacro){
+    return !!(activeMacro && activeMacro.allowPlayerMovement);
+  }
+
+  // Un Settore è raggiungibile dal giocatore se è quello in cui già si trova, oppure se è collegato
+  // (Settori collegati, 2.0) al suo Settore attuale — questo è ciò che rende i collegamenti utili
+  // davvero, invece che puramente decorativi.
+  function sectorReachableByMe(sector, sectors){
+    const myId = myEffectiveSectorId();
+    if(!myId) return true; // nessun Settore attuale ancora impostato: puoi scegliere dove iniziare
+    if(sector.id===myId) return true;
+    const mySector = sectors.find(x=>x.id===myId);
+    return !!(mySector && (mySector.connections||[]).includes(sector.id));
   }
 
   async function persist(){
@@ -484,6 +543,10 @@
               ${[1,2,3,4,5,6].map(n=>`<option value="${n}" ${getGridSize(activeMacro)===n?'selected':''}>${n} × ${n} (${n*n} caselle)</option>`).join('')}
             </select>
           </div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="edit-macro-allow-move" ${activeMacro.allowPlayerMovement?'checked':''} />
+            <label for="edit-macro-allow-move" style="margin:0;text-transform:none;font-size:11px;color:var(--text);cursor:pointer;">🧭 Permetti ai giocatori di spostarsi da soli (solo verso Settori collegati a quello in cui si trovano)</label>
+          </div>
           <button class="btn ghost small" id="btn-map-remove-macro">🗑️ Elimina Macroscena "${escapeHTML(activeMacro.name)}"</button>
         ` : ''}
         <div class="err" id="map-master-status" style="margin-top:6px;"></div>
@@ -500,7 +563,7 @@
       if(!name){ if(statusEl) statusEl.textContent = 'Inserisci un nome per la Macroscena.'; return; }
       const id = 'ms'+Date.now()+Math.random().toString(36).slice(2,6);
       if(!cachedScene.macroScenes) cachedScene.macroScenes = [];
-      cachedScene.macroScenes.push({ id, name, description:'', sectors:[] });
+      cachedScene.macroScenes.push({ id, name, description:'', sectors:[], allowPlayerMovement:false });
       cachedScene.currentMacroSceneId = id;
       cachedScene.currentSectorId = null; cachedScene.currentLuogoId = null;
       view = 'sectors'; selectedSectorId = null; selectedLuogoId = null; addingSectorPos = null;
@@ -547,6 +610,13 @@
         if(!ok){ gridSizeEl.value = oldSize; return; }
       }
       activeMacro.gridSize = newSize;
+      await persist();
+      renderMap();
+    };
+    const allowMoveEl = document.getElementById('edit-macro-allow-move');
+    if(allowMoveEl) allowMoveEl.onchange = async ()=>{
+      if(!activeMacro) return;
+      activeMacro.allowPlayerMovement = !!allowMoveEl.checked;
       await persist();
       renderMap();
     };
@@ -685,8 +755,80 @@
           </select>
         </div>
         <button class="btn ${s.revealed?'ghost':''} small" id="btn-toggle-sector-reveal" style="margin-top:4px;">${s.revealed?'🙈 Nascondi ai giocatori':'👁️ Rivela ai giocatori'}</button>
+        <button class="btn small" id="btn-activate-sector" style="margin-top:4px;margin-left:6px;">📍 Rendi Settore Attuale (tutto il gruppo)</button>
       </div>
     `;
+  }
+
+  // ---------- ROSTER: chi c'è in questo Settore, e controlli Master per spostare i singoli ----------
+  function sectorRosterHTML(s, master){
+    if(!master) return '';
+    const players = (cachedRoster||[]).filter(m=>m.role==='player');
+    if(players.length===0) return '';
+    const rows = players.map(m=>{
+      const override = m.tamer && m.tamer.currentSectorId;
+      const effectiveId = override || cachedScene.currentSectorId;
+      const here = effectiveId===s.id;
+      const separated = !!override;
+      const luoghi = s.luoghi || [];
+      const myLuogoId = (m.tamer && m.tamer.currentLuogoId) || (!separated ? cachedScene.currentLuogoId : null) || '';
+      return `
+        <div class="roster-row">
+          <span class="nm">${here?'📍 ':''}<b>${escapeHTML(m.tamer && m.tamer.characterName ? m.tamer.characterName : m.username)}</b>${separated?' <span class="tag" style="color:var(--amber);border-color:var(--amber);">separato/a</span>':''}</span>
+          <span style="display:flex;gap:4px;align-items:center;">
+            ${here && luoghi.length>0 ? `
+              <select class="member-luogo-select" data-member="${escapeAttr(m.username)}" style="width:auto;font-size:10px;padding:3px 6px;">
+                <option value="">(nessun Luogo specifico)</option>
+                ${luoghi.map(lg=>`<option value="${lg.id}" ${myLuogoId===lg.id?'selected':''}>${escapeHTML(lg.name)}</option>`).join('')}
+              </select>
+            ` : ''}
+            ${!here ? `<button class="btn small" data-member-sector-move="${escapeAttr(m.username)}:${s.id}" style="padding:2px 6px;font-size:10px;">Sposta qui</button>` : ''}
+            ${separated ? `<button class="btn ghost small" data-member-sector-follow="${escapeAttr(m.username)}" style="padding:2px 6px;font-size:10px;">↩️ Rientra nel gruppo</button>` : ''}
+          </span>
+        </div>
+      `;
+    }).join('');
+    return `<div class="muted" style="margin-top:14px;">Giocatori:</div>${rows}`;
+  }
+
+  function bindSectorRoster(s, activeMacro){
+    const code = session.code;
+    document.querySelectorAll('[data-member-sector-move]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const [username, sectorId] = btn.getAttribute('data-member-sector-move').split(':');
+        const member = (cachedRoster||[]).find(m=>m.username===username);
+        if(!member) return;
+        btn.disabled = true;
+        member.tamer.currentSectorId = sectorId;
+        member.tamer.currentLuogoId = null;
+        const ok = await saveMember(code, member);
+        if(!ok){ member.tamer.currentSectorId = null; btn.disabled = false; return; }
+        renderMapBody(activeMacro);
+      };
+    });
+    document.querySelectorAll('[data-member-sector-follow]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const username = btn.getAttribute('data-member-sector-follow');
+        const member = (cachedRoster||[]).find(m=>m.username===username);
+        if(!member) return;
+        btn.disabled = true;
+        const prev = member.tamer.currentSectorId;
+        member.tamer.currentSectorId = null;
+        member.tamer.currentLuogoId = null;
+        const ok = await saveMember(code, member);
+        if(!ok){ member.tamer.currentSectorId = prev; btn.disabled = false; return; }
+        renderMapBody(activeMacro);
+      };
+    });
+    document.querySelectorAll('.member-luogo-select').forEach(sel=>{
+      sel.onchange = async ()=>{
+        const username = sel.getAttribute('data-member');
+        const member = (cachedRoster||[]).find(m=>m.username===username);
+        if(!member) return;
+        member.tamer.currentLuogoId = sel.value || null;
+        await saveMember(code, member);
+      };
+    });
   }
 
   function renderMapBody(activeMacro){
@@ -701,6 +843,8 @@
     if(view==='sectors'){
       const gridSize = getGridSize(activeMacro);
       const gridTotal = gridSize*gridSize;
+      const myMoveAllowed = !master && playerMovementAllowed(activeMacro);
+      const myId = myEffectiveSectorId();
       const cells = [];
       for(let i=0;i<gridTotal;i++){
         const s = sectors.find(x=>x.gridPos===i);
@@ -714,9 +858,13 @@
               </div>
             `);
           } else {
+            const isCurrent = cachedScene.currentSectorId===s.id;
+            const isMine = myId===s.id;
+            const reachable = myMoveAllowed && sectorReachableByMe(s, sectors) && !isMine;
             cells.push(`
-              <div class="map-cell filled ${cachedScene.currentSectorId===s.id?'current':''}" data-open-sector="${s.id}" title="${escapeAttr(s.name)}" style="${master && !revealed?'opacity:0.55;':''}">
+              <div class="map-cell filled ${isCurrent?'current':''} ${reachable?'reachable':''}" data-open-sector="${s.id}" title="${escapeAttr(s.name)}" style="${master && !revealed?'opacity:0.55;':''}">
                 ${s.image ? `<img src="${escapeAttr(s.image)}" onerror="this.style.display='none'" />` : `<div class="lbl">${escapeHTML(s.name)}</div>`}
+                ${isMine ? `<span class="map-cell-here">📍</span>` : ''}
                 ${master ? `<button class="btn ghost small map-cell-del" data-quick-del-sector="${s.id}">🗑</button>` : ''}
                 ${master ? `<button class="btn ghost small map-cell-reveal" data-quick-reveal-sector="${s.id}">${revealed?'🙈':'👁️'}</button>` : ''}
               </div>
@@ -730,7 +878,7 @@
         <div class="breadcrumb">📍 ${escapeHTML(activeMacro.name)}</div>
         ${activeMacro.description ? `<div class="muted" style="margin-bottom:10px;">${escapeHTML(activeMacro.description)}</div>` : ''}
         <div class="map-grid" style="--grid-n:${gridSize};">${cells.join('')}</div>
-        <div class="muted" style="margin-top:10px;font-size:11px;">${master ? 'Clicca su un Settore per modificarlo, su una casella vuota (tratteggiata) per crearne uno nuovo. Il 👁️/🙈 su ogni Settore ne controlla la visibilità per i giocatori (i Settori più chiari non sono ancora rivelati).' : 'Clicca su un Settore per esplorarlo.'}</div>
+        <div class="muted" style="margin-top:10px;font-size:11px;">${master ? 'Clicca su un Settore per modificarlo, su una casella vuota (tratteggiata) per crearne uno nuovo. Il 👁️/🙈 su ogni Settore ne controlla la visibilità per i giocatori (i Settori più chiari non sono ancora rivelati).' : (myMoveAllowed ? 'Clicca su un Settore per esplorarlo. I Settori con bordo evidenziato sono collegati al tuo e puoi spostarti lì da solo.' : 'Clicca su un Settore per esplorarlo. Solo il Master può spostare il gruppo da un Settore all\'altro.')}</div>
         ${master && sectors.some(s=>s.gridPos!=null && s.gridPos>=gridTotal) ? `<div class="muted" style="margin-top:6px;font-size:11px;color:var(--amber);">⚠️ ${sectors.filter(s=>s.gridPos!=null && s.gridPos>=gridTotal).length} Settore/i fuori dalla griglia attuale (nascosti, non eliminati). Aumenta la dimensione della griglia per rivederli.</div>` : ''}
         ${master && sectors.some(s=>!s.revealed) ? `<button class="btn ghost small" id="btn-reveal-all-sectors" style="margin-top:8px;">👁️ Rivela tutti i Settori di questa Macroscena</button>` : ''}
         ${master && addingSectorPos!=null ? newSectorFormHTML(addingSectorPos) : ''}
@@ -787,9 +935,20 @@
       const s = sectors.find(x=>x.id===selectedSectorId);
       if(!s){ view='sectors'; renderMapBody(activeMacro); return; }
       const luoghi = s.luoghi || [];
+      const myMoveAllowed = !master && playerMovementAllowed(activeMacro);
+      const myId = myEffectiveSectorId();
+      const isMine = myId===s.id;
+      const canWalkHere = myMoveAllowed && !isMine && sectorReachableByMe(s, sectors);
+      const myLuogoId = myEffectiveLuogoId();
       bodyEl.innerHTML = `
         <div class="breadcrumb"><span data-nav-macro>📍 ${escapeHTML(activeMacro.name)}</span> → ${escapeHTML(s.name)}</div>
         ${master ? sectorEditFormHTML(s, sectors, getGridSize(activeMacro)*getGridSize(activeMacro)) : sectorReadOnlyHTML(s)}
+        ${!master ? `
+          <div style="margin-top:8px;">
+            ${isMine ? '<span class="tag" style="color:var(--cyan);border-color:var(--cyan);">📍 Sei qui</span>' : (canWalkHere ? `<button class="btn solid small" id="btn-player-move-here">🚶 Vai qui</button>` : (myMoveAllowed ? `<span class="muted">Non collegato al tuo Settore attuale — non puoi arrivarci direttamente.</span>` : `<span class="muted">Solo il Master può spostare il gruppo qui.</span>`))}
+          </div>
+        ` : ''}
+        ${sectorRosterHTML(s, master)}
         ${luoghi.length>0 || master ? `
           <div class="muted" style="margin-top:14px;">Luoghi:</div>
           <div class="luogo-grid">
@@ -801,10 +960,12 @@
                   <div class="nm digimoji-mystery" style="text-align:center;" title="Sconosciuto">${MYSTERY_LABEL}</div>
                 </div>`;
               }
+              const isCurrentLuogo = cachedScene.currentLuogoId===lg.id && cachedScene.currentSectorId===s.id;
+              const isMyLuogo = isMine && myLuogoId===lg.id;
               return `
-              <div class="luogo-tile" data-open-luogo="${lg.id}" style="${master && !revealed?'opacity:0.55;':''}">
+              <div class="luogo-tile ${isCurrentLuogo || isMyLuogo ?'current':''}" data-open-luogo="${lg.id}" style="${master && !revealed?'opacity:0.55;':''}">
                 <div class="img">${lg.image?`<img src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" />`:''}</div>
-                <div class="nm">${escapeHTML(lg.name)}</div>
+                <div class="nm">${escapeHTML(lg.name)} ${isCurrentLuogo?' 📍':''}</div>
                 ${master ? `<div class="row" style="gap:2px;padding:0 2px 2px;">
                   <button class="btn ghost small" data-quick-reveal-luogo="${s.id}:${lg.id}" style="flex:1;font-size:9px;padding:2px;">${revealed?'🙈':'👁️'}</button>
                   <button class="btn ghost small" data-quick-del-luogo="${lg.id}" style="flex:1;font-size:9px;padding:2px;">🗑</button>
@@ -864,10 +1025,22 @@
       if(navMacro) navMacro.onclick = ()=>{ view='sectors'; renderMapBody(activeMacro); };
       const navBack = bodyEl.querySelector('[data-nav-back-macro]');
       if(navBack) navBack.onclick = ()=>{ view='sectors'; renderMapBody(activeMacro); };
+      const playerMoveBtn = document.getElementById('btn-player-move-here');
+      if(playerMoveBtn) playerMoveBtn.onclick = async ()=>{
+        const me = myMember();
+        if(!me) return;
+        playerMoveBtn.disabled = true;
+        me.tamer.currentSectorId = s.id;
+        me.tamer.currentLuogoId = null;
+        const ok = await saveMember(session.code, me);
+        if(!ok){ me.tamer.currentSectorId = null; playerMoveBtn.disabled = false; return; }
+        renderMapBody(activeMacro);
+      };
       if(master){
         bindImageUpload('edit-sector-image', 'edit-sector-image-status');
         bindAudioUpload('edit-sector-music', 'edit-sector-music-status');
         bindAudioUpload('edit-sector-combat-music', 'edit-sector-combat-music-status');
+        bindSectorRoster(s, activeMacro);
         const nameEl = document.getElementById('edit-sector-name');
         if(nameEl) nameEl.onchange = async ()=>{ s.name = nameEl.value.trim() || s.name; await persist(); renderMapBody(activeMacro); };
         const terrainEl = document.getElementById('edit-sector-terrain');
@@ -884,6 +1057,20 @@
         if(gridEl) gridEl.onchange = async ()=>{ s.gridPos = Number(gridEl.value); await persist(); renderMapBody(activeMacro); };
         const revealBtn = document.getElementById('btn-toggle-sector-reveal');
         if(revealBtn) revealBtn.onclick = async ()=>{ s.revealed = !s.revealed; await persist(); renderMapBody(activeMacro); };
+        const activateBtn = document.getElementById('btn-activate-sector');
+        if(activateBtn) activateBtn.onclick = async ()=>{
+          cachedScene.currentSectorId = s.id;
+          cachedScene.currentLuogoId = null;
+          s.revealed = true;
+          // Muovere l'intero gruppo riunisce anche chi si era separato, così tornano a seguire
+          // il Settore attuale della Scena invece di restare "bloccati" dove si erano spostati.
+          (cachedRoster||[]).filter(m=>m.role==='player' && m.tamer && m.tamer.currentSectorId).forEach(m=>{ m.tamer.currentSectorId = null; m.tamer.currentLuogoId = null; });
+          const ok = await persist();
+          const statusEl = document.getElementById('sector-edit-status');
+          if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore di salvataggio, riprova.'; return; }
+          await Promise.all((cachedRoster||[]).filter(m=>m.role==='player').map(m=>saveMember(session.code, m)));
+          renderMapBody(activeMacro);
+        };
         bodyEl.querySelectorAll('.connect-toggle-chk').forEach(chk=>{
           chk.onchange = async ()=>{
             const otherId = chk.value;
@@ -937,6 +1124,11 @@
       const s = sectors.find(x=>x.id===selectedSectorId);
       const lg = s ? (s.luoghi||[]).find(x=>x.id===selectedLuogoId) : null;
       if(!s || !lg){ view='sectors'; renderMapBody(activeMacro); return; }
+      const myMoveAllowed = !master && playerMovementAllowed(activeMacro);
+      const myId = myEffectiveSectorId();
+      const isMine = myId===s.id;
+      const myLuogoId = myEffectiveLuogoId();
+      const isMyLuogo = isMine && myLuogoId===lg.id;
       bodyEl.innerHTML = `
         <div class="breadcrumb"><span data-nav-macro>📍 ${escapeHTML(activeMacro.name)}</span> → <span data-nav-sector>${escapeHTML(s.name)}</span> → ${escapeHTML(lg.name)}</div>
         ${master ? `
@@ -969,11 +1161,13 @@
               <div class="err" id="edit-luogo-combat-music-status"></div>
             </div>
             <button class="btn ${lg.revealed?'ghost':''} small" id="btn-toggle-luogo-reveal">${lg.revealed?'🙈 Nascondi ai giocatori':'👁️ Rivela ai giocatori'}</button>
+            <button class="btn small" id="btn-activate-luogo" style="margin-left:6px;">📍 Rendi Luogo Attuale (tutto il gruppo)</button>
           </div>
         ` : `
           ${lg.image ? `<img class="detail-image" src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" />` : ''}
-          <div><b>${escapeHTML(lg.name)}</b></div>
+          <div><b>${escapeHTML(lg.name)}</b>${isMyLuogo?' <span class="tag" style="color:var(--cyan);border-color:var(--cyan);">📍 Sei qui</span>':''}</div>
           ${lg.description ? `<div class="sub" style="margin-top:6px;">${escapeHTML(lg.description)}</div>` : '<div class="muted" style="margin-top:6px;">Nessuna descrizione.</div>'}
+          ${isMine && !isMyLuogo ? `<button class="btn solid small" id="btn-player-move-luogo" style="margin-top:10px;">🚶 Vai qui</button>` : ''}
         `}
         <div class="row" style="margin-top:16px;">
           <button class="btn ghost small" style="flex:1;" data-nav-back-sector>← Torna a "${escapeHTML(s.name)}"</button>
@@ -986,6 +1180,17 @@
       if(navSector) navSector.onclick = ()=>{ view='sector'; renderMapBody(activeMacro); };
       const navBack = bodyEl.querySelector('[data-nav-back-sector]');
       if(navBack) navBack.onclick = ()=>{ view='sector'; renderMapBody(activeMacro); };
+      const playerMoveLuogoBtn = document.getElementById('btn-player-move-luogo');
+      if(playerMoveLuogoBtn) playerMoveLuogoBtn.onclick = async ()=>{
+        const me = myMember();
+        if(!me) return;
+        playerMoveLuogoBtn.disabled = true;
+        const prev = me.tamer.currentLuogoId;
+        me.tamer.currentLuogoId = lg.id;
+        const ok = await saveMember(session.code, me);
+        if(!ok){ me.tamer.currentLuogoId = prev; playerMoveLuogoBtn.disabled = false; return; }
+        renderMapBody(activeMacro);
+      };
       if(master){
         bindImageUpload('edit-luogo-image', 'edit-luogo-image-status');
         const nameEl = document.getElementById('edit-luogo-name');
@@ -1002,6 +1207,18 @@
         if(combatMusicEl) combatMusicEl.onchange = async ()=>{ lg.combatMusic = combatMusicEl.value.trim(); await persist(); renderMapBody(activeMacro); };
         const luogoRevealBtn = document.getElementById('btn-toggle-luogo-reveal');
         if(luogoRevealBtn) luogoRevealBtn.onclick = async ()=>{ lg.revealed = !lg.revealed; await persist(); renderMapBody(activeMacro); };
+        const activateLuogoBtn = document.getElementById('btn-activate-luogo');
+        if(activateLuogoBtn) activateLuogoBtn.onclick = async ()=>{
+          cachedScene.currentSectorId = s.id;
+          cachedScene.currentLuogoId = lg.id;
+          s.revealed = true;
+          lg.revealed = true;
+          (cachedRoster||[]).filter(m=>m.role==='player' && m.tamer && m.tamer.currentSectorId).forEach(m=>{ m.tamer.currentSectorId = null; m.tamer.currentLuogoId = null; });
+          const ok = await persist();
+          if(!ok) return;
+          await Promise.all((cachedRoster||[]).filter(m=>m.role==='player').map(m=>saveMember(session.code, m)));
+          renderMapBody(activeMacro);
+        };
         const deleteBtn = document.getElementById('btn-delete-luogo');
         if(deleteBtn) deleteBtn.onclick = async ()=>{
           if(!window.confirm(`Eliminare il Luogo "${lg.name}"?`)) return;
@@ -1019,6 +1236,7 @@
     if(!session) return;
     const fresh = await getScene(session.code);
     cachedScene = fresh;
+    cachedRoster = await getRoster(session.code);
     view = 'sectors'; selectedSectorId = null; selectedLuogoId = null; addingSectorPos = null;
     renderMap();
   }
@@ -1040,6 +1258,7 @@
       return;
     }
     cachedScene = await getScene(session.code);
+    cachedRoster = await getRoster(session.code);
     view = 'sectors'; selectedSectorId = null; selectedLuogoId = null; addingSectorPos = null;
     renderMap();
   }
