@@ -32,6 +32,25 @@
   .hud-frame{border:1px solid var(--line); background:var(--panel); border-radius:var(--radius); position:relative;}
   .hud-frame::before{content:"";position:absolute;top:-1px;left:-1px;width:14px;height:14px;border-top:2px solid var(--dchroma);border-left:2px solid var(--dchroma);}
   .hud-frame::after{content:"";position:absolute;bottom:-1px;right:-1px;width:14px;height:14px;border-bottom:2px solid var(--dchroma);border-right:2px solid var(--dchroma);}
+  /* Cornice "a Digivice" per gli Evolution Point (vedi epDigiviceHTML in index.html — stesso
+     widget, portato qui pari pari per coerenza tra Tavolo e Scheda Digimon standalone). Non è più
+     una cornice ricostruita a CSS: è l'immagine reale del Digivice fornita dall'utente, con lo
+     schermo LCD (.ep-dv-screen) posizionato in percentuale sul foro trasparente del PNG, dentro cui
+     scorrono le "barrette" orizzontali degli EP disponibili. */
+  .ep-digivice{display:inline-flex;flex-direction:column;align-items:center;gap:4px;--dv-w:110px;vertical-align:middle;}
+  .ep-digivice.mini{--dv-w:58px;gap:2px;}
+  .ep-dv-frame{position:relative;width:var(--dv-w);aspect-ratio:33/30;flex-shrink:0;
+    background-image:url('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-images/FRONTIER1/1787672473672_rpmfhm.png');
+    background-size:100% 100%;background-repeat:no-repeat;}
+  .ep-dv-screen{position:absolute;left:37%;top:36%;width:25.8%;height:28.3%;background:#04110d;border-radius:2px;
+    overflow:hidden;display:flex;flex-direction:column-reverse;gap:6%;box-shadow:inset 0 0 4px rgba(0,0,0,0.85);}
+  .ep-dv-bar{flex:1 1 0;min-height:0;background:#16262c;border-radius:0.5px;}
+  .ep-dv-bar.filled{background:var(--cyan);box-shadow:0 0 3px rgba(53,232,201,0.85);}
+  .ep-dv-bar.dim{opacity:0.15;}
+  .ep-dv-label{font-family:'Share Tech Mono',monospace;font-size:11px;letter-spacing:0.05em;color:var(--text-mute);text-transform:uppercase;white-space:nowrap;line-height:1.2;text-align:center;}
+  .ep-digivice.mini .ep-dv-label{font-size:9px;}
+  .ep-dv-label b{color:var(--cyan);font-size:14px;}
+  .ep-digivice.mini .ep-dv-label b{font-size:11px;}
   .topbar{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
   .brand-title{font-family:'Pixel Digivolve','Share Tech Mono',monospace;font-size:15px;text-transform:uppercase;color:var(--dchroma);letter-spacing:0.05em;}
   .brand-sub{font-size:11px;color:var(--text-mute);}
@@ -231,6 +250,31 @@
     </div>`;
   }
   function stageIndex(s){ const i = STAGES.indexOf(s); return i<0?0:i; }
+  // Cornice "a Digivice" per gli Evolution Point (regola 8.05a) — stessa funzione di index.html,
+  // qui usata in sola lettura nella card "Stato di Gioco" (in questa pagina gli EP si modificano
+  // solo dal campo numerico avanzato del Master, non si spendono: quello resta al Tavolo).
+  // opts.mini = versione ridotta, per stare in una singola cella della griglia dello Stato.
+  function epDigiviceHTML(current, max, opts){
+    const mini = !!(opts && opts.mini);
+    const cur = Math.max(0, Number(current)||0);
+    const hasMax = max!=null && max>=0;
+    const SLOTS = mini ? 5 : 8;
+    const totalSlots = (hasMax && max>0 && max<SLOTS) ? max : SLOTS;
+    let filledSlots;
+    if(hasMax && max>0){
+      filledSlots = max<=SLOTS ? Math.min(cur, max) : Math.round((cur/max)*SLOTS);
+    } else {
+      filledSlots = Math.min(cur, SLOTS);
+    }
+    let bars = '';
+    for(let i=0;i<SLOTS;i++){
+      bars += i<totalSlots ? `<span class="ep-dv-bar ${i<filledSlots?'filled':''}"></span>` : `<span class="ep-dv-bar dim"></span>`;
+    }
+    return `<span class="ep-digivice${mini?' mini':''}" title="Evolution Points disponibili${hasMax?` (massimo ${max}, pari alle Milestone completate)`:''}">
+      <span class="ep-dv-frame"><span class="ep-dv-screen">${bars}</span></span>
+      <span class="ep-dv-label">EP <b>${cur}</b>${hasMax?`<span style="opacity:.6;">/${max}</span>`:''}</span>
+    </span>`;
+  }
   function maxSizeIndexForStage(stage){ return Math.min(SIZES.length-1, stageIndex(stage)+1); }
   function allowedSizes(stage){ return SIZES.slice(0, maxSizeIndexForStage(stage)+1); }
   // Regola 3.01: "il valore Base minimo è 1, il massimo è 20. Sale a 30 per i Digimon capaci
@@ -1174,6 +1218,7 @@
           <div class="field"><label>Taglia</label><div>${escapeHTML(d.size||'—')}</div></div>
           <div class="field"><label>Stance</label><div>${escapeHTML(d.stance||'—')}</div></div>
           <div class="field"><label>Budget Qualities</label><div class="mono">${qualityDpBudget(d)} DP</div></div>
+          <div class="field"><label>Evolution Points</label><div>${epDigiviceHTML(d.evolutionPoints||0, cachedProgression ? Number(cachedProgression.milestone||0) : null, {mini:true})}</div></div>
         </div>
       </div>`;
     }

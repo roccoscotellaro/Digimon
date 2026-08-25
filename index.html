@@ -51,18 +51,25 @@
   .hud-frame{border:1px solid var(--line); background:var(--panel); border-radius:var(--radius); position:relative;}
   .hud-frame::before{content:"";position:absolute;top:-1px;left:-1px;width:14px;height:14px;border-top:2px solid var(--cyan);border-left:2px solid var(--cyan);}
   .hud-frame::after{content:"";position:absolute;bottom:-1px;right:-1px;width:14px;height:14px;border-bottom:2px solid var(--cyan);border-right:2px solid var(--cyan);}
-  /* Badge "a Digivice" per gli Evolution Point (vedi epDigiviceHTML) — piccola cornice con
-     antenna/pulsante e schermo LCD, al posto del semplice testo "EP: X". */
-  .ep-digivice{display:inline-flex;align-items:center;gap:5px;background:linear-gradient(180deg, #1a232c, #0d1319);
-    border:1px solid var(--line);border-radius:9px;padding:3px 8px 3px 6px;position:relative;vertical-align:middle;}
-  .ep-digivice::before{content:"";position:absolute;top:-5px;left:14px;width:8px;height:5px;background:var(--cyan-dim);border-radius:2px 2px 0 0;}
-  .ep-digivice .ep-btn{width:6px;height:6px;border-radius:50%;background:var(--amber);box-shadow:0 0 4px var(--amber);flex-shrink:0;}
-  .ep-digivice .ep-screen{font-family:'Share Tech Mono',monospace;font-size:12px;font-weight:700;line-height:1;
-    background:#04110d;color:var(--cyan);border:1px solid var(--cyan-dim);border-radius:3px;padding:2px 6px;
-    min-width:16px;text-align:center;text-shadow:0 0 6px rgba(53,232,201,0.55);}
-  .ep-digivice .ep-screen.empty{color:var(--text-mute);text-shadow:none;}
-  .ep-digivice .ep-screen .ep-max{opacity:0.55;font-weight:400;}
-  .ep-digivice .ep-label{font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:0.1em;color:var(--text-mute);text-transform:uppercase;}
+  /* Cornice "a Digivice" per gli Evolution Point (vedi epDigiviceHTML): non più una cornice ricostruita
+     a CSS, ma l'immagine reale del Digivice fornita dall'utente, usata come sfondo/cornice. Il foro
+     trasparente al centro dell'immagine (dove nel PNG originale c'è la finestrella LCD) viene coperto
+     da .ep-dv-screen, posizionato in percentuale sulle stesse proporzioni misurate sul PNG, dentro cui
+     scorrono le "barrette" orizzontali che indicano quanti EP sono disponibili. */
+  .ep-digivice{display:inline-flex;flex-direction:column;align-items:center;gap:4px;--dv-w:110px;vertical-align:middle;}
+  .ep-digivice.mini{--dv-w:58px;gap:2px;}
+  .ep-dv-frame{position:relative;width:var(--dv-w);aspect-ratio:33/30;flex-shrink:0;
+    background-image:url('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-images/FRONTIER1/1787672473672_rpmfhm.png');
+    background-size:100% 100%;background-repeat:no-repeat;}
+  .ep-dv-screen{position:absolute;left:37%;top:36%;width:25.8%;height:28.3%;background:#04110d;border-radius:2px;
+    overflow:hidden;display:flex;flex-direction:column-reverse;gap:6%;box-shadow:inset 0 0 4px rgba(0,0,0,0.85);}
+  .ep-dv-bar{flex:1 1 0;min-height:0;background:#16262c;border-radius:0.5px;}
+  .ep-dv-bar.filled{background:var(--cyan);box-shadow:0 0 3px rgba(53,232,201,0.85);}
+  .ep-dv-bar.dim{opacity:0.15;}
+  .ep-dv-label{font-family:'Share Tech Mono',monospace;font-size:11px;letter-spacing:0.05em;color:var(--text-mute);text-transform:uppercase;white-space:nowrap;line-height:1.2;text-align:center;}
+  .ep-digivice.mini .ep-dv-label{font-size:9px;}
+  .ep-dv-label b{color:var(--cyan);font-size:14px;}
+  .ep-digivice.mini .ep-dv-label b{font-size:11px;}
   .topbar{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;margin-bottom:18px;}
   .brand{display:flex;align-items:center;gap:10px;}
   .brand-dot{width:9px;height:9px;background:var(--cyan);box-shadow:0 0 8px var(--cyan);border-radius:50%;animation:pulse 2s infinite;}
@@ -1120,6 +1127,31 @@
   function saveSession(s){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }catch(e){} }
   function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
   function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
+
+  // ---------- Memoria NPC (locale al browser del Master, per campagna) ----------
+  // Ogni volta che il Master parla come un NPC personalizzato (chat generale o privata), nome +
+  // colore (+ immagine se presente) vengono ricordati qui, così le volte successive l'NPC compare
+  // già pronto nel menu "Parla come" invece di dover riscrivere nome e ripescare il colore giusto.
+  // Vive in localStorage (non sul server): è comodo perché non richiede alcuna migrazione DB, col
+  // limite che resta legato a questo browser/dispositivo del Master.
+  function npcStorageKey(code){ return `dvos_npcs_${code}`; }
+  function loadSavedNpcs(code){
+    try{
+      const raw = localStorage.getItem(npcStorageKey(code));
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    }catch(e){ return []; }
+  }
+  function rememberNpc(code, npc){
+    if(!npc || !npc.name || !npc.name.trim()) return;
+    try{
+      const list = loadSavedNpcs(code);
+      const idx = list.findIndex(n=>n.name.toLowerCase()===npc.name.trim().toLowerCase());
+      const entry = { name: npc.name.trim(), color: npc.color||null, avatar: npc.avatar||null };
+      if(idx>=0) list[idx] = entry; else list.unshift(entry);
+      localStorage.setItem(npcStorageKey(code), JSON.stringify(list.slice(0, 30)));
+    }catch(e){}
+  }
 
   // ---------- API helpers ----------
   async function apiGet(path, silent){
@@ -3116,14 +3148,31 @@
   // Badge "a Digivice" per gli Evolution Point disponibili (regola 8.05a): una cornice con
   // antenna/pulsante e schermo LCD al posto del semplice testo "EP: X". Se max è noto (Milestone
   // completate) lo mostra in tono più spento accanto al valore attuale, es. "3/5".
-  function epDigiviceHTML(current, max){
+  // opts.mini = versione ridotta per il Roster Campagna del Master (rosterItemHTML), dove lo
+  // spazio è poco; la versione normale resta per la Scheda Digimon del giocatore. Le "barrette"
+  // sullo schermo centrale sono una griglia a celle (fino a 10, 8 in versione mini) — se il
+  // massimo reale supera quel numero di celle, il riempimento è proporzionale invece che 1:1,
+  // così la lettura resta a colpo d'occhio anche con Milestone avanzate; il valore esatto è
+  // comunque scritto sotto in cifre.
+  function epDigiviceHTML(current, max, opts){
+    const mini = !!(opts && opts.mini);
     const cur = Math.max(0, Number(current)||0);
     const hasMax = max!=null && max>=0;
-    const empty = cur<=0;
-    return `<span class="ep-digivice" title="Evolution Points disponibili${hasMax?` (massimo ${max}, pari alle Milestone completate)`:''}">
-      <span class="ep-btn"></span>
-      <span class="ep-screen ${empty?'empty':''}">${cur}${hasMax?`<span class="ep-max">/${max}</span>`:''}</span>
-      <span class="ep-label">EP</span>
+    const SLOTS = mini ? 5 : 8;
+    const totalSlots = (hasMax && max>0 && max<SLOTS) ? max : SLOTS;
+    let filledSlots;
+    if(hasMax && max>0){
+      filledSlots = max<=SLOTS ? Math.min(cur, max) : Math.round((cur/max)*SLOTS);
+    } else {
+      filledSlots = Math.min(cur, SLOTS);
+    }
+    let bars = '';
+    for(let i=0;i<SLOTS;i++){
+      bars += i<totalSlots ? `<span class="ep-dv-bar ${i<filledSlots?'filled':''}"></span>` : `<span class="ep-dv-bar dim"></span>`;
+    }
+    return `<span class="ep-digivice${mini?' mini':''}" title="Evolution Points disponibili${hasMax?` (massimo ${max}, pari alle Milestone completate)`:''}">
+      <span class="ep-dv-frame"><span class="ep-dv-screen">${bars}</span></span>
+      <span class="ep-dv-label">EP <b>${cur}</b>${hasMax?`<span style="opacity:.6;">/${max}</span>`:''}</span>
     </span>`;
   }
   // Specchio di digimon.html: slot Attacco massimi per Stage (regola 3.05a — 1 Signature + 2 extra
@@ -3596,9 +3645,8 @@
         <div class="sub" style="margin-bottom:6px;">Il Master non ha ancora sbloccato l'Evoluzione (né normale né forzata) — quando lo farà, qui compariranno i controlli per evolvere.</div>
         ` : `
         <div class="sub" style="margin-bottom:6px;">Il tuo Digimon riposa normalmente a <b>${escapeHTML(d.defaultStage)}</b> e può salire fino a <b>${STAGES[Math.min(5, stageIndex(d.defaultStage)+Number(d.defaultRange||0))]}</b> senza spendere Evolution Points (Default Range: ${d.defaultRange}).${d.forcedEvoRoundsLeft>0?` · <span style="color:var(--danger);">Evoluzione Forzata: ${d.forcedEvoRoundsLeft} round rimasti</span>`:''}</div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <div style="margin-bottom:10px;">
           ${epDigiviceHTML(d.evolutionPoints||0, cachedProgression ? Number(cachedProgression.milestone||0) : null)}
-          <span class="muted" style="font-size:11px;">Evolution Points disponibili</span>
         </div>
         ${d.hybridMode ? `<div class="muted" style="margin-bottom:6px;color:var(--cyan);">🔀 Hybrid/Bio-Merge attiva: 3 Azioni in combattimento invece di 2 (ancora 1 Attacco a round). Il Tamer non può Dirigere se stesso.</div>` : ''}
         <div class="row">
@@ -4538,8 +4586,9 @@
                 <option value="master">Master (narrazione)</option>
                 ${players.map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (displayName(p)+' — Digimon'))}</option>`).join('')}
                 ${(cachedScene.encounters||[]).map((e,i)=>`<option value="encounter:${i}">${escapeHTML(encName(e))} (in scena)</option>`).join('')}
+                ${loadSavedNpcs(code).map(n=>`<option value="npc-saved:${escapeAttr(n.name)}">${escapeHTML(n.name)} (NPC)</option>`).join('')}
                 <option value="enemy">Nemico personalizzato...</option>
-                <option value="npc">NPC personalizzato...</option>
+                <option value="npc">NPC nuovo...</option>
               </select>
             </div>
             <div class="row" id="enemy-fields" style="display:none;margin-bottom:8px;">
@@ -4725,6 +4774,11 @@
           if(colorInput) colorInput.value = '#ff5d5d';
         } else if(mode==='npc'){
           if(colorInput) colorInput.value = '#ffd76a';
+        } else if(mode.startsWith('npc-saved:')){
+          // NPC già usato in precedenza: ripristina il colore ricordato (vedi rememberNpc).
+          const name = mode.slice('npc-saved:'.length);
+          const saved = loadSavedNpcs(code).find(n=>n.name===name);
+          if(colorInput) colorInput.value = (saved && saved.color) || '#ffd76a';
         } else {
           if(colorInput) colorInput.value = '#ff8a3d';
         }
@@ -4761,6 +4815,12 @@
         who = document.getElementById('npc-speak-name').value.trim() || 'NPC';
         role = 'npc';
         avatar = document.getElementById('npc-speak-img').value.trim() || null;
+      } else if(mode.startsWith('npc-saved:')){
+        const savedName = mode.slice('npc-saved:'.length);
+        const saved = loadSavedNpcs(code).find(n=>n.name===savedName);
+        who = (saved && saved.name) || savedName;
+        role = 'npc';
+        avatar = saved ? saved.avatar : null;
       }
       const meta = {};
       if(avatar) meta.avatar = avatar;
@@ -4769,6 +4829,17 @@
       const gmDigimojiChk = document.getElementById('gm-digimoji-toggle');
       if(gmDigimojiChk && gmDigimojiChk.checked) meta.digimoji = true;
       if(pendingGmImageUrl) meta.image = pendingGmImageUrl;
+      if(role==='npc'){
+        rememberNpc(code, { name: who, color: chosenColor, avatar });
+        // Se è un NPC nuovo (non già in lista), lo aggiunge subito al menu "Parla come" senza
+        // aspettare un refresh completo — la prossima volta è già lì pronto da selezionare.
+        if(speakAsSel && !Array.from(speakAsSel.options).some(o=>o.value==='npc-saved:'+who)){
+          const opt = document.createElement('option');
+          opt.value = 'npc-saved:'+who;
+          opt.textContent = who+' (NPC)';
+          speakAsSel.insertBefore(opt, speakAsSel.querySelector('option[value="enemy"]'));
+        }
+      }
       await pushLog(code, { who, role, text, meta: Object.keys(meta).length ? meta : null });
       ta.value='';
       pendingGmImageUrl = null;
@@ -5875,8 +5946,9 @@
           <option value="master">Master (narrazione)</option>
           ${players.map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (displayName(p)+' — Digimon'))}</option>`).join('')}
           ${(cachedScene.encounters||[]).map((e,i)=>`<option value="encounter:${i}">${escapeHTML(encName(e))} (in scena)</option>`).join('')}
+          ${loadSavedNpcs(code).map(n=>`<option value="npc-saved:${escapeAttr(n.name)}">${escapeHTML(n.name)} (NPC)</option>`).join('')}
           <option value="enemy">Nemico personalizzato...</option>
-          <option value="npc">NPC personalizzato...</option>
+          <option value="npc">NPC nuovo...</option>
         </select>
       </div>
       <div class="row" id="private-enemy-fields" style="display:none;margin-bottom:8px;">
@@ -5921,6 +5993,10 @@
           if(privColorInput) privColorInput.value = '#ff5d5d';
         } else if(mode==='npc'){
           if(privColorInput) privColorInput.value = '#ffd76a';
+        } else if(mode.startsWith('npc-saved:')){
+          const name = mode.slice('npc-saved:'.length);
+          const saved = loadSavedNpcs(code).find(n=>n.name===name);
+          if(privColorInput) privColorInput.value = (saved && saved.color) || '#ffd76a';
         } else {
           if(privColorInput) privColorInput.value = '#ff8a3d';
         }
@@ -5954,15 +6030,25 @@
         who = document.getElementById('private-npc-speak-name').value.trim() || 'NPC';
         role = 'npc';
         avatar = document.getElementById('private-npc-speak-img').value.trim() || null;
+      } else if(mode.startsWith('npc-saved:')){
+        const savedName = mode.slice('npc-saved:'.length);
+        const saved = loadSavedNpcs(code).find(n=>n.name===savedName);
+        who = (saved && saved.name) || savedName;
+        role = 'npc';
+        avatar = saved ? saved.avatar : null;
       }
       const meta = {};
       if(avatar) meta.avatar = avatar;
       const chosenColor = privColorInput ? privColorInput.value : color;
       if(chosenColor) meta.color = chosenColor;
       if(pendingPrivateImageUrl) meta.image = pendingPrivateImageUrl;
+      if(role==='npc') rememberNpc(code, { name: who, color: chosenColor, avatar });
       await pushPrivateLog(code, masterPrivateThread, { who, role, text, meta: Object.keys(meta).length ? meta : null });
       ta.value='';
       pendingPrivateImageUrl = null;
+      // renderPrivateChatMaster ricostruisce anche la select "Parla come" da loadSavedNpcs(code),
+      // quindi un NPC nuovo qui compare già pronto per la prossima volta senza bisogno di un patch
+      // manuale del DOM come nella chat generale (questa vista si ridisegna comunque per intero).
       renderPrivateChatMaster(code, players);
     };
     const logLive = document.getElementById('private-log-live-master');
@@ -7234,11 +7320,14 @@
               <span class="tag" style="margin-left:6px;color:${onlineColor};border-color:${online?'var(--cyan-dim)':'var(--line)'};">${online?'online':'offline'}</span>
             </div>
           </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            ${!isEgg ? epDigiviceHTML(p.digimon.evolutionPoints||0, cachedProgression ? Number(cachedProgression.milestone||0) : null, {mini:true}) : ''}
           <div style="display:flex;gap:6px;">
             <button class="btn ghost small" id="btn-manage-${i}">Gestisci Scheda</button>
             <button class="btn small" id="btn-suggest-${i}">Suggerisci Battuta</button>
             <button class="btn ghost small" id="btn-toggle-hidden-${i}" title="${p.digimon.hiddenFromParty ? 'Il Digimon è nascosto agli altri giocatori — clicca per rivelarlo al gruppo' : 'Nascondi questo Digimon agli altri giocatori (il proprietario continua a vederlo)'}" style="${p.digimon.hiddenFromParty ? 'color:var(--amber);border-color:var(--amber);' : ''}">${p.digimon.hiddenFromParty ? '❔ Nascosto al gruppo' : '👁️ Visibile al gruppo'}</button>
             <button class="btn ghost small" id="btn-delete-${i}" style="color:var(--danger);border-color:rgba(255,93,93,0.4);">🗑</button>
+          </div>
           </div>
         </div>
         <div class="sub" style="margin-top:6px;">${isEgg ? '🥚 Digimon ancora nell\'Uovo — in attesa di approvazione' : `Digimon: ${escapeHTML(p.digimon.name || '(senza nome)')} — Ferite: ${p.digimon.currentWounds}/${p.digimon.maxWounds}${p.digimon.tempWounds>0?` (+${p.digimon.tempWounds} Shield)`:''} — MP: ${p.digimon.currentMp}/${p.digimon.maxMp}`}</div>
