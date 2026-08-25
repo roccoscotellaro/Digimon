@@ -339,6 +339,7 @@
   let dexAddEvolutions = [];
   let dexCanEditGlobal = false;
   let sectorMapSelectedId = null; // which Settore is expanded in the compact Mappa panel
+  let moveOpenUsername = null; // quale giocatore ha aperto il modulo "Sposta" nel pannello unico "Posizione dei giocatori"
   let encounterDraft = null; // pending Digimon (from Dex or homebrew) being reviewed before adding to the scene
   let cachedMe = null;
   const ACTION_HINT_DEFAULT_TEXT = 'Scorciatoia: scrivi <code>/tira NomeSkill [TN] [major|minor]</code> (es. <code>/tira awareness 15 major</code>) per tirare in chat, opzionalmente usando un Aspect.';
@@ -7390,44 +7391,39 @@
         <button class="btn small" id="btn-add-macro" style="flex:1;">+ Macroscena</button>
       </div>
       <div class="divider"></div>
-      ${(()=>{
-        const separated = (cachedRoster||[]).filter(m=>m.role==='player' && m.tamer && (m.tamer.currentSectorId || m.tamer.currentLuogoId));
-        if(separated.length===0) return '';
-        return `
-        <div class="muted" style="margin-bottom:4px;">🧭 Giocatori separati dal gruppo (${separated.length}):</div>
-        <div style="margin-bottom:10px;">
-          ${separated.map(m=>{
-            const sId = memberEffectiveSectorId(m);
-            const lId = memberEffectiveLuogoId(m);
-            const found2 = findSectorAnywhere(cachedScene, sId);
-            const crumb = [found2?found2.macro.name:null, found2?found2.sector.name:null, lId?luogoNameById(sId,lId):null].filter(Boolean).map(escapeHTML).join(' → ');
-            return `<div class="flex-between" style="padding:3px 6px;background:rgba(255,255,255,0.03);border-radius:6px;margin-bottom:3px;">
-              <span style="font-size:11px;">${escapeHTML(displayName(m))} <span class="muted">— ${crumb || 'posizione sconosciuta'}</span></span>
-              <button class="btn ghost small" data-member-sector-follow="${escapeAttr(m.username)}" style="padding:2px 6px;font-size:10px;">↩️ Rientra nel gruppo</button>
-            </div>`;
-          }).join('')}
-        </div>`;
-      })()}
-      <div class="muted" style="margin-bottom:6px;">🧭 Separa un giocatore in un'altra Macroscena <span title="A differenza di 'Sposta qui' nelle Presenze del party (che agisce solo dentro la Macroscena attiva), questo strumento assegna Settore/Luogo di QUALSIASI Macroscena senza cambiare la Macroscena attiva del gruppo — nessuno sfondo/scena condivisa viene toccato." style="cursor:help;">ⓘ</span></div>
-      <div class="field"><label>Macroscena di destinazione</label>
-        <select id="split-macro-select">
-          <option value="">— scegli una Macroscena —</option>
-          ${macroScenes.map(m=>`<option value="${m.id}">${escapeHTML(m.name)}</option>`).join('')}
-        </select>
+      <div class="muted" style="margin-bottom:6px;">👥 Posizione dei giocatori <span title="Chi non è mai stato spostato singolarmente segue in automatico la posizione condivisa del gruppo (quella impostata più sotto con '📍 Sposta qui tutto il gruppo'). 'Sposta' invece manda UN SOLO giocatore in una Macroscena/Settore/Luogo qualsiasi senza cambiare cosa vede il resto del gruppo." style="cursor:help;">ⓘ</span></div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px;">
+        ${(cachedRoster||[]).filter(m=>m.role==='player').map(m=>{
+          const sId = memberEffectiveSectorId(m);
+          const lId = memberEffectiveLuogoId(m);
+          const found2 = sId ? findSectorAnywhere(cachedScene, sId) : null;
+          const crumb = [found2?found2.macro.name:null, found2?found2.sector.name:null, lId?luogoNameById(sId,lId):null].filter(Boolean).map(escapeHTML).join(' → ');
+          const separated = !!(m.tamer && (m.tamer.currentSectorId || m.tamer.currentLuogoId));
+          const isOpen = moveOpenUsername === m.username;
+          const label = isDigimonHiddenFromViewer(m) ? '❔' : (m.digimon && m.digimon.name ? m.digimon.name : '(senza nome)');
+          return `
+          <div class="roster-item" style="padding:6px 8px;">
+            <div class="flex-between">
+              <span style="font-size:11px;">${separated?'🧭':'📍'} <b>${escapeHTML(displayName(m))}</b> <span class="muted">(${escapeHTML(label)}) — ${crumb || 'nessuna posizione'}</span></span>
+              <span style="display:flex;gap:4px;">
+                <button class="btn ${isOpen?'':'ghost'} small" data-move-toggle="${escapeAttr(m.username)}" style="padding:2px 6px;font-size:10px;">${isOpen?'✕ Chiudi':'Sposta'}</button>
+                ${separated ? `<button class="btn ghost small" data-position-follow="${escapeAttr(m.username)}" style="padding:2px 6px;font-size:10px;">↩️ Rientra</button>` : ''}
+              </span>
+            </div>
+            ${isOpen ? `
+            <div style="margin-top:6px;display:flex;flex-direction:column;gap:4px;padding:6px;background:rgba(255,255,255,0.03);border-radius:6px;">
+              <select id="move-macro-${escapeAttr(m.username)}">
+                <option value="">— scegli Macroscena —</option>
+                ${macroScenes.map(mm=>`<option value="${mm.id}">${escapeHTML(mm.name)}</option>`).join('')}
+              </select>
+              <select id="move-sector-${escapeAttr(m.username)}" disabled><option value="">— prima scegli la Macroscena —</option></select>
+              <select id="move-luogo-${escapeAttr(m.username)}" disabled><option value="">— nessuno, segue solo il Settore —</option></select>
+              <button class="btn small" data-move-confirm="${escapeAttr(m.username)}" disabled>🧭 Conferma spostamento</button>
+            </div>
+            ` : ''}
+          </div>`;
+        }).join('') || '<div class="muted" style="font-size:11px;">Nessun giocatore nel roster.</div>'}
       </div>
-      <div class="field" id="split-sector-field" style="display:none;"><label>Settore</label>
-        <select id="split-sector-select"></select>
-      </div>
-      <div class="field" id="split-luogo-field" style="display:none;"><label>Luogo (opzionale)</label>
-        <select id="split-luogo-select"><option value="">— nessuno, segue solo il Settore —</option></select>
-      </div>
-      <div class="field" id="split-player-field" style="display:none;"><label>Giocatore</label>
-        <select id="split-player-select">
-          ${(cachedRoster||[]).filter(m=>m.role==='player').map(m=>`<option value="${escapeAttr(m.username)}">${escapeHTML(displayName(m))}</option>`).join('')}
-        </select>
-      </div>
-      <button class="btn small" id="btn-split-assign" style="width:100%;" disabled>🧭 Separa qui</button>
-      <div class="muted" id="split-status" style="margin-top:6px;"></div>
       <div class="divider"></div>
       ${activeMacro ? `
         <div class="muted" style="margin:8px 0 4px;">${escapeHTML(activeMacro.description||'')}</div>
@@ -7483,36 +7479,6 @@
               </select>
             </div>
             <button class="btn ghost small" data-sector-chat-invite="${selectedSector.id}" style="width:100%;">💬 Proponi qui il Settore</button>
-            <div class="muted" style="margin-top:10px;margin-bottom:4px;font-size:11px;">👥 Presenze del party (per membro, indipendenti dal gruppo):</div>
-            <div style="display:flex;flex-direction:column;gap:4px;">
-              ${(cachedRoster||[]).filter(m=>m.role==='player').map(m=>{
-                const here = memberEffectiveSectorId(m) === selectedSector.id;
-                const separated = !!m.tamer.currentSectorId;
-                const label = isDigimonHiddenFromViewer(m) ? '❔ (Digimon nascosto)' : (m.digimon.name || '(senza nome)');
-                const memberLuogoId = here ? memberEffectiveLuogoId(m) : null;
-                const luogoSeparated = here && !!m.tamer.currentLuogoId;
-                return `
-                <div style="padding:3px 6px;background:rgba(255,255,255,0.03);border-radius:6px;">
-                  <div class="flex-between">
-                    <span style="font-size:11px;">${here?'📍 ':''}<b>${escapeHTML(displayName(m))}</b> <span class="muted">(${escapeHTML(label)})</span>${separated?' <span class="tag" style="font-size:9px;color:var(--amber);border-color:var(--amber);">separato/a</span>':''}</span>
-                    <span style="display:flex;gap:4px;">
-                      ${!here ? `<button class="btn small" data-member-sector-move="${escapeAttr(m.username)}:${selectedSector.id}" style="padding:2px 6px;font-size:10px;">Sposta qui</button>` : ''}
-                      ${separated ? `<button class="btn ghost small" data-member-sector-follow="${escapeAttr(m.username)}" style="padding:2px 6px;font-size:10px;">↩️ Rientra nel gruppo</button>` : ''}
-                    </span>
-                  </div>
-                  ${here && (selectedSector.luoghi||[]).length>0 ? `
-                  <div class="flex-between" style="margin-top:3px;gap:6px;">
-                    <span class="muted" style="font-size:10px;">📌 Luogo:</span>
-                    <select data-member-luogo-set="${escapeAttr(m.username)}:${selectedSector.id}" style="flex:1;font-size:10px;padding:2px 4px;">
-                      <option value="">— segue il gruppo —</option>
-                      ${(selectedSector.luoghi||[]).map(lg=>`<option value="${lg.id}" ${memberLuogoId===lg.id?'selected':''}>${escapeHTML(lg.name)}</option>`).join('')}
-                    </select>
-                    ${luogoSeparated ? '<span class="tag" style="font-size:9px;color:var(--amber);border-color:var(--amber);">luogo separato</span>' : ''}
-                  </div>
-                  ` : ''}
-                </div>
-              `;}).join('') || '<div class="muted" style="font-size:11px;">Nessun giocatore nel roster.</div>'}
-            </div>
             <div class="muted" style="margin-top:6px;font-size:11px;">Luoghi in questo Settore:</div>
             ${(selectedSector.luoghi||[]).length===0 ? '<div class="muted" style="font-size:11px;">Nessun luogo ancora.</div>' : (selectedSector.luoghi||[]).map(lg=>`
               <div class="flex-between" style="margin-top:3px;padding:3px 6px;background:rgba(255,255,255,0.03);border-radius:6px;">
@@ -7570,69 +7536,83 @@
       renderSectorMap(code);
       refreshLiveParts();
     };
-    // Strumento "🧭 Separa in un'altra Macroscena": tre select a cascata (Macroscena -> Settore ->
-    // Luogo) che NON toccano cachedScene.currentMacroSceneId/currentSectorId/currentLuogoId — a
-    // differenza del cambio di "Macroscena attiva" sopra, che sposta lo sfondo/scena di TUTTO il
-    // gruppo, qui si scrive solo sul singolo membro (member.tamer.currentSectorId/currentLuogoId),
-    // così si può assegnare un giocatore a qualunque Macroscena senza disturbare gli altri.
-    const splitMacroSel = document.getElementById('split-macro-select');
-    const splitSectorField = document.getElementById('split-sector-field');
-    const splitSectorSel = document.getElementById('split-sector-select');
-    const splitLuogoField = document.getElementById('split-luogo-field');
-    const splitLuogoSel = document.getElementById('split-luogo-select');
-    const splitPlayerField = document.getElementById('split-player-field');
-    const splitPlayerSel = document.getElementById('split-player-select');
-    const splitBtn = document.getElementById('btn-split-assign');
-    const splitStatus = document.getElementById('split-status');
-    function refreshSplitLuogoOptions(){
-      const m = macroScenes.find(x=>x.id===splitMacroSel.value);
-      const s = m ? (m.sectors||[]).find(x=>x.id===splitSectorSel.value) : null;
-      const luoghi = s ? (s.luoghi||[]) : [];
-      splitLuogoSel.innerHTML = '<option value="">— nessuno, segue solo il Settore —</option>' + luoghi.map(lg=>`<option value="${lg.id}">${escapeHTML(lg.name)}</option>`).join('');
-      const ready = !!(m && s) && (cachedRoster||[]).some(mm=>mm.role==='player');
-      splitLuogoField.style.display = (m && s) ? '' : 'none';
-      splitPlayerField.style.display = (m && s) ? '' : 'none';
-      if(splitBtn) splitBtn.disabled = !ready;
-    }
-    function refreshSplitSectorOptions(){
-      const m = macroScenes.find(x=>x.id===splitMacroSel.value);
-      const secs = m ? (m.sectors||[]) : [];
-      splitSectorSel.innerHTML = secs.length>0
-        ? secs.map(s=>`<option value="${s.id}">${escapeHTML(s.name)}</option>`).join('')
-        : '<option value="">— nessun Settore in questa Macroscena —</option>';
-      splitSectorField.style.display = m ? '' : 'none';
-      refreshSplitLuogoOptions();
-    }
-    if(splitMacroSel){
-      splitMacroSel.onchange = refreshSplitSectorOptions;
-      splitSectorSel.onchange = refreshSplitLuogoOptions;
-      refreshSplitSectorOptions();
-      if(splitBtn) splitBtn.onclick = async ()=>{
-        const username = splitPlayerSel.value;
-        const sectorId = splitSectorSel.value;
-        const luogoId = splitLuogoSel.value || null;
+    // Pannello unico "👥 Posizione dei giocatori": un solo modo per spostare un giocatore (in
+    // qualunque Macroscena, senza toccare cachedScene.currentMacroSceneId/currentSectorId/
+    // currentLuogoId, quindi senza disturbare cosa vede il resto del gruppo) o farlo rientrare.
+    el.querySelectorAll('[data-move-toggle]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const username = btn.getAttribute('data-move-toggle');
+        moveOpenUsername = (moveOpenUsername===username) ? null : username;
+        renderSectorMap(code);
+      };
+    });
+    el.querySelectorAll('[data-position-follow]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const username = btn.getAttribute('data-position-follow');
         const member = (cachedRoster||[]).find(m=>m.username===username);
-        if(!member || !sectorId) return;
-        splitBtn.disabled = true;
+        if(!member) return;
+        btn.disabled = true;
         const prevSectorId = member.tamer.currentSectorId;
         const prevLuogoId = member.tamer.currentLuogoId;
-        member.tamer.currentSectorId = sectorId;
-        member.tamer.currentLuogoId = luogoId;
+        member.tamer.currentSectorId = null;
+        member.tamer.currentLuogoId = null;
         const ok = await saveMember(code, member);
-        if(!ok){
-          member.tamer.currentSectorId = prevSectorId;
-          member.tamer.currentLuogoId = prevLuogoId;
-          if(splitStatus) splitStatus.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito');
-          splitBtn.disabled = false;
-          return;
-        }
-        const destMacro = macroScenes.find(x=>x.id===splitMacroSel.value);
-        const sectorName = (splitSectorSel.selectedOptions[0] || {}).text || '';
-        if(splitStatus) splitStatus.textContent = `✅ ${displayName(member)} separato/a in "${destMacro?destMacro.name:''}" → "${sectorName}".`;
-        await pushLog(code, { who:'Sistema', role:'gm', text: `🧭 ${displayName(member)} si separa dal gruppo verso "${sectorName}" (${destMacro?destMacro.name:''}).` });
+        if(!ok){ member.tamer.currentSectorId = prevSectorId; member.tamer.currentLuogoId = prevLuogoId; btn.disabled = false; return; }
+        await pushLog(code, { who:'Sistema', role:'gm', text: `↩️ ${displayName(member)} rientra nel gruppo.` });
         renderSectorMap(code);
         refreshLiveParts();
       };
+    });
+    if(moveOpenUsername){
+      const mvMacroSel = document.getElementById('move-macro-'+moveOpenUsername);
+      const mvSectorSel = document.getElementById('move-sector-'+moveOpenUsername);
+      const mvLuogoSel = document.getElementById('move-luogo-'+moveOpenUsername);
+      const mvConfirmBtn = el.querySelector('[data-move-confirm="'+moveOpenUsername+'"]');
+      function mvRefreshLuogo(){
+        const m = macroScenes.find(x=>x.id===mvMacroSel.value);
+        const s = m ? (m.sectors||[]).find(x=>x.id===mvSectorSel.value) : null;
+        const luoghi = s ? (s.luoghi||[]) : [];
+        mvLuogoSel.innerHTML = '<option value="">— nessuno, segue solo il Settore —</option>' + luoghi.map(lg=>`<option value="${lg.id}">${escapeHTML(lg.name)}</option>`).join('');
+        mvLuogoSel.disabled = !s;
+        if(mvConfirmBtn) mvConfirmBtn.disabled = !s;
+      }
+      function mvRefreshSector(){
+        const m = macroScenes.find(x=>x.id===mvMacroSel.value);
+        const secs = m ? (m.sectors||[]) : [];
+        mvSectorSel.innerHTML = '<option value="">— scegli Settore —</option>' + secs.map(s=>`<option value="${s.id}">${escapeHTML(s.name)}</option>`).join('');
+        mvSectorSel.disabled = !m;
+        mvRefreshLuogo();
+      }
+      if(mvMacroSel){
+        mvMacroSel.onchange = mvRefreshSector;
+        mvSectorSel.onchange = mvRefreshLuogo;
+        mvRefreshSector();
+        if(mvConfirmBtn) mvConfirmBtn.onclick = async ()=>{
+          const username = moveOpenUsername;
+          const sectorId = mvSectorSel.value;
+          const luogoId = mvLuogoSel.value || null;
+          const member = (cachedRoster||[]).find(m=>m.username===username);
+          if(!member || !sectorId) return;
+          mvConfirmBtn.disabled = true;
+          const prevSectorId = member.tamer.currentSectorId;
+          const prevLuogoId = member.tamer.currentLuogoId;
+          member.tamer.currentSectorId = sectorId;
+          member.tamer.currentLuogoId = luogoId;
+          const ok = await saveMember(code, member);
+          if(!ok){
+            member.tamer.currentSectorId = prevSectorId;
+            member.tamer.currentLuogoId = prevLuogoId;
+            mvConfirmBtn.disabled = false;
+            return;
+          }
+          const destMacro = macroScenes.find(x=>x.id===mvMacroSel.value);
+          const sectorName = (mvSectorSel.selectedOptions[0] || {}).text || '';
+          moveOpenUsername = null;
+          await pushLog(code, { who:'Sistema', role:'gm', text: `🧭 ${displayName(member)} si sposta in "${sectorName}" (${destMacro?destMacro.name:''}).` });
+          renderSectorMap(code);
+          refreshLiveParts();
+        };
+      }
     }
     const sectorSel = document.getElementById('sector-select');
     if(sectorSel) sectorSel.onchange = ()=>{
@@ -7728,64 +7708,8 @@
         refreshLiveParts();
       };
     });
-    el.querySelectorAll('[data-member-sector-move]').forEach(btn=>{
-      btn.onclick = async ()=>{
-        const [username, sectorId] = btn.getAttribute('data-member-sector-move').split(':');
-        const member = (cachedRoster||[]).find(m=>m.username===username);
-        if(!member) return;
-        btn.disabled = true;
-        const prevSectorId = member.tamer.currentSectorId;
-        const prevLuogoId = member.tamer.currentLuogoId;
-        member.tamer.currentSectorId = sectorId;
-        member.tamer.currentLuogoId = null; // il vecchio Luogo apparteneva (eventualmente) a un altro Settore
-        const ok = await saveMember(code, member);
-        const statusEl = document.getElementById('sector-status');
-        if(!ok){ member.tamer.currentSectorId = prevSectorId; member.tamer.currentLuogoId = prevLuogoId; if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); btn.disabled = false; return; }
-        if(statusEl) statusEl.textContent = '';
-        const s = sectorNameById(sectorId);
-        await pushLog(code, { who:'Sistema', role:'gm', text: `📍 ${username} si separa dal gruppo e si sposta a "${s||''}".` });
-        renderSectorMap(code);
-        refreshLiveParts();
-      };
-    });
-    el.querySelectorAll('[data-member-sector-follow]').forEach(btn=>{
-      btn.onclick = async ()=>{
-        const username = btn.getAttribute('data-member-sector-follow');
-        const member = (cachedRoster||[]).find(m=>m.username===username);
-        if(!member) return;
-        btn.disabled = true;
-        const prevSectorId = member.tamer.currentSectorId;
-        const prevLuogoId = member.tamer.currentLuogoId;
-        member.tamer.currentSectorId = null;
-        member.tamer.currentLuogoId = null;
-        const ok = await saveMember(code, member);
-        const statusEl = document.getElementById('sector-status');
-        if(!ok){ member.tamer.currentSectorId = prevSectorId; member.tamer.currentLuogoId = prevLuogoId; if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); btn.disabled = false; return; }
-        if(statusEl) statusEl.textContent = '';
-        await pushLog(code, { who:'Sistema', role:'gm', text: `↩️ ${username} rientra nel gruppo.` });
-        renderSectorMap(code);
-        refreshLiveParts();
-      };
-    });
-    el.querySelectorAll('[data-member-luogo-set]').forEach(sel=>{
-      sel.onchange = async ()=>{
-        const [username, sectorId] = sel.getAttribute('data-member-luogo-set').split(':');
-        const member = (cachedRoster||[]).find(m=>m.username===username);
-        if(!member) return;
-        const luogoId = sel.value || null;
-        sel.disabled = true;
-        const prevLuogoId = member.tamer.currentLuogoId;
-        member.tamer.currentLuogoId = luogoId;
-        const ok = await saveMember(code, member);
-        const statusEl = document.getElementById('sector-status');
-        if(!ok){ member.tamer.currentLuogoId = prevLuogoId; if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); sel.disabled = false; return; }
-        if(statusEl) statusEl.textContent = '';
-        const lgName = luogoId ? luogoNameById(sectorId, luogoId) : null;
-        await pushLog(code, { who:'Sistema', role:'gm', text: lgName ? `📌 ${username} si sposta a "${lgName}".` : `📌 ${username} torna a seguire il Luogo del gruppo.` });
-        renderSectorMap(code);
-        refreshLiveParts();
-      };
-    });
+    // (lo spostamento/rientro dei singoli giocatori è gestito dal pannello unico "👥 Posizione dei
+    // giocatori" più sopra — vedi data-move-toggle/data-position-follow/data-move-confirm)
     el.querySelectorAll('[data-sector-image]').forEach(btn=>{
       btn.onclick = async ()=>{
         const liveMacro = liveActiveMacro();
