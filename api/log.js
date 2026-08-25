@@ -36,7 +36,14 @@ if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
 // messaggio nel log, che e' l'azione principale. Se le chiavi VAPID non sono configurate su
 // Vercel, non fa nulla silenziosamente (permette di deployare senza Web Push attive).
 async function sendPushToSubscriptions(subs, payload) {
-  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY || !subs || !subs.length) return;
+  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+    console.warn('[push] VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY non configurate su Vercel: invio push saltato.');
+    return;
+  }
+  if (!subs || !subs.length) {
+    console.log('[push] nessuna sottoscrizione da notificare per questo messaggio.');
+    return;
+  }
   const body = JSON.stringify(payload);
   const staleIds = [];
   await Promise.allSettled(subs.map(async (s) => {
@@ -45,7 +52,9 @@ async function sendPushToSubscriptions(subs, payload) {
         endpoint: s.endpoint,
         keys: { p256dh: s.p256dh, auth: s.auth }
       }, body);
+      console.log('[push] inviata con successo a', s.username, s.endpoint.slice(0, 60) + '...');
     } catch (err) {
+      console.error('[push] invio FALLITO a', s.username, '- statusCode:', err && err.statusCode, '- messaggio:', err && err.message);
       if (err && (err.statusCode === 404 || err.statusCode === 410)) staleIds.push(s.id);
     }
   }));
