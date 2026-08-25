@@ -456,10 +456,13 @@
     return !!(activeMacro && activeMacro.allowPlayerMovement);
   }
 
-  // Un Settore è raggiungibile dal giocatore se è quello in cui già si trova, oppure se è collegato
-  // (Settori collegati, 2.0) al suo Settore attuale — questo è ciò che rende i collegamenti utili
-  // davvero, invece che puramente decorativi.
+  // Un Settore è raggiungibile dal giocatore SOLO se il Master lo ha esplicitamente aperto allo
+  // spostamento libero (sector.playerMovable — di default spento: il Master sceglie "alcune zone",
+  // non tutte quelle collegate) E se è quello in cui già si trova, oppure è collegato (Settori
+  // collegati, 2.0) al suo Settore attuale — questo è ciò che rende i collegamenti utili davvero,
+  // invece che puramente decorativi.
   function sectorReachableByMe(sector, sectors){
+    if(!sector.playerMovable) return false;
     const myId = myEffectiveSectorId();
     if(!myId) return true; // nessun Settore attuale ancora impostato: puoi scegliere dove iniziare
     if(sector.id===myId) return true;
@@ -691,7 +694,7 @@
       const combatMusic = document.getElementById('new-sector-combat-music').value.trim();
       const id = 's'+Date.now()+Math.random().toString(36).slice(2,6);
       if(!activeMacro.sectors) activeMacro.sectors = [];
-      activeMacro.sectors.push({ id, name, description, terrain, connections:[], luoghi:[], image, music, combatMusic, gridPos: addingSectorPos, revealed:false });
+      activeMacro.sectors.push({ id, name, description, terrain, connections:[], luoghi:[], image, music, combatMusic, gridPos: addingSectorPos, revealed:false, playerMovable:false });
       addingSectorPos = null;
       const ok = await persist();
       if(!ok){ statusEl.textContent = 'Errore di salvataggio, riprova.'; }
@@ -756,6 +759,10 @@
         </div>
         <button class="btn ${s.revealed?'ghost':''} small" id="btn-toggle-sector-reveal" style="margin-top:4px;">${s.revealed?'🙈 Nascondi ai giocatori':'👁️ Rivela ai giocatori'}</button>
         <button class="btn small" id="btn-activate-sector" style="margin-top:4px;margin-left:6px;">📍 Rendi Settore Attuale (tutto il gruppo)</button>
+        <div class="checkbox-row" style="margin-top:8px;">
+          <input type="checkbox" id="edit-sector-player-movable" ${s.playerMovable?'checked':''} />
+          <label for="edit-sector-player-movable" style="margin:0;text-transform:none;font-size:11px;color:var(--text);cursor:pointer;">🚦 I giocatori possono raggiungere da soli questo Settore (solo se collegato al loro Settore attuale e con "spostamento libero" attivo sulla Macroscena — di default un Settore nuovo è chiuso)</label>
+        </div>
       </div>
     `;
   }
@@ -881,6 +888,7 @@
         <div class="muted" style="margin-top:10px;font-size:11px;">${master ? 'Clicca su un Settore per modificarlo, su una casella vuota (tratteggiata) per crearne uno nuovo. Il 👁️/🙈 su ogni Settore ne controlla la visibilità per i giocatori (i Settori più chiari non sono ancora rivelati).' : (myMoveAllowed ? 'Clicca su un Settore per esplorarlo. I Settori con bordo evidenziato sono collegati al tuo e puoi spostarti lì da solo.' : 'Clicca su un Settore per esplorarlo. Solo il Master può spostare il gruppo da un Settore all\'altro.')}</div>
         ${master && sectors.some(s=>s.gridPos!=null && s.gridPos>=gridTotal) ? `<div class="muted" style="margin-top:6px;font-size:11px;color:var(--amber);">⚠️ ${sectors.filter(s=>s.gridPos!=null && s.gridPos>=gridTotal).length} Settore/i fuori dalla griglia attuale (nascosti, non eliminati). Aumenta la dimensione della griglia per rivederli.</div>` : ''}
         ${master && sectors.some(s=>!s.revealed) ? `<button class="btn ghost small" id="btn-reveal-all-sectors" style="margin-top:8px;">👁️ Rivela tutti i Settori di questa Macroscena</button>` : ''}
+        ${master && sectors.some(s=>!s.playerMovable) ? `<button class="btn ghost small" id="btn-open-all-sectors" style="margin-top:8px;margin-left:6px;">🚦 Apri tutti i Settori allo spostamento libero</button>` : ''}
         ${master && addingSectorPos!=null ? newSectorFormHTML(addingSectorPos) : ''}
       `;
       bodyEl.querySelectorAll('[data-open-sector]').forEach(cell=>{
@@ -926,6 +934,12 @@
         const revealAllBtn = document.getElementById('btn-reveal-all-sectors');
         if(revealAllBtn) revealAllBtn.onclick = async ()=>{
           sectors.forEach(s=>{ s.revealed = true; });
+          await persist();
+          renderMapBody(activeMacro);
+        };
+        const openAllBtn = document.getElementById('btn-open-all-sectors');
+        if(openAllBtn) openAllBtn.onclick = async ()=>{
+          sectors.forEach(s=>{ s.playerMovable = true; });
           await persist();
           renderMapBody(activeMacro);
         };
@@ -1057,6 +1071,8 @@
         if(gridEl) gridEl.onchange = async ()=>{ s.gridPos = Number(gridEl.value); await persist(); renderMapBody(activeMacro); };
         const revealBtn = document.getElementById('btn-toggle-sector-reveal');
         if(revealBtn) revealBtn.onclick = async ()=>{ s.revealed = !s.revealed; await persist(); renderMapBody(activeMacro); };
+        const playerMovableEl = document.getElementById('edit-sector-player-movable');
+        if(playerMovableEl) playerMovableEl.onchange = async ()=>{ s.playerMovable = !!playerMovableEl.checked; await persist(); renderMapBody(activeMacro); };
         const activateBtn = document.getElementById('btn-activate-sector');
         if(activateBtn) activateBtn.onclick = async ()=>{
           cachedScene.currentSectorId = s.id;

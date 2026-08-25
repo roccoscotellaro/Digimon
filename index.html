@@ -114,6 +114,8 @@
   .log-entry.roll{background:rgba(126,231,135,0.05);border-radius:4px;padding:8px;border-bottom:1px solid rgba(126,231,135,0.15);}
   .log-entry.request .who{color:var(--amber);}
   .log-entry.request{background:rgba(255,138,61,0.06);border-radius:4px;padding:8px;border-bottom:1px solid rgba(255,138,61,0.2);}
+  .log-entry.moverequest .who{color:var(--cyan);}
+  .log-entry.moverequest{background:rgba(53,232,201,0.06);border-radius:4px;padding:8px;border-bottom:1px solid rgba(53,232,201,0.2);}
   .log-entry.enemy .who{color:var(--danger);}
   .log-entry.enemy{background:rgba(255,93,93,0.06);border-radius:4px;padding:8px;border-bottom:1px solid rgba(255,93,93,0.2);}
   .who-avatar{width:22px;height:22px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;border:1px solid var(--line);}
@@ -7186,6 +7188,11 @@
               </select>
               <button class="btn ghost small" data-sector-remove="${selectedSector.id}" style="flex:1;">🗑️</button>
             </div>
+            <div class="row" style="align-items:center;gap:6px;margin-top:6px;">
+              <input type="checkbox" id="sector-player-movable" ${selectedSector.playerMovable?'checked':''} style="width:auto;" />
+              <label for="sector-player-movable" style="margin:0;text-transform:none;font-size:11px;color:var(--text);cursor:pointer;">🚦 I giocatori possono raggiungere da soli questo Settore (in <b>map.html</b>, con "spostamento libero" attivo e se collegato — di default chiuso)</label>
+            </div>
+            <button class="btn ghost small" data-sector-chat-invite="${selectedSector.id}" style="width:100%;margin-top:6px;" title="Manda in chat generale un messaggio con un pulsante: ogni giocatore che clicca si sposta da solo qui">💬 Proponi in chat "Vuoi andare qui?"</button>
             <div class="muted" style="margin-top:10px;margin-bottom:4px;font-size:11px;">👥 Presenze del party (per membro, indipendenti dal gruppo):</div>
             <div style="display:flex;flex-direction:column;gap:4px;">
               ${(cachedRoster||[]).filter(m=>m.role==='player').map(m=>{
@@ -7222,6 +7229,7 @@
                 <span style="font-size:12px;display:flex;align-items:center;gap:5px;">${lg.image?`<img src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" style="width:18px;height:18px;object-fit:cover;border-radius:3px;" />`:''}${escapeHTML(lg.name)} ${cachedScene.currentLuogoId===lg.id?'<span class="tag" style="color:var(--cyan);border-color:var(--cyan);font-size:9px;">📍</span>':''}${lg.description?`<span class="muted" style="font-size:10px;"> — ${escapeHTML(lg.description)}</span>`:''}</span>
                 <span>
                   <button class="btn small" data-luogo-activate="${selectedSector.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">📍</button>
+                  <button class="btn ghost small" data-luogo-chat-invite="${selectedSector.id}:${lg.id}" style="padding:2px 6px;font-size:10px;" title="Manda in chat generale un messaggio con un pulsante: ogni giocatore che clicca si sposta da solo qui">💬</button>
                   <button class="btn ghost small" data-luogo-image="${selectedSector.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">🖼️</button>
                   <button class="btn ghost small" data-luogo-remove="${selectedSector.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">🗑️</button>
                 </span>
@@ -7478,6 +7486,53 @@
         refreshLiveParts();
       };
     });
+    const sectorPlayerMovableEl = document.getElementById('sector-player-movable');
+    if(sectorPlayerMovableEl) sectorPlayerMovableEl.onchange = async ()=>{
+      if(!selectedSector) return;
+      selectedSector.playerMovable = !!sectorPlayerMovableEl.checked;
+      await saveScene(code, cachedScene);
+      renderSectorMap(code);
+      refreshLiveParts();
+    };
+    // "Proponi in chat": manda un messaggio in chat generale con un pulsante "🚶 Sì, andiamo!" —
+    // ogni giocatore che lo clicca si sposta DA SOLO (non tutto il gruppo) a quel Settore/Luogo,
+    // bypassando lo spostamento libero/le connessioni: è il Master stesso a proporlo esplicitamente.
+    el.querySelectorAll('[data-sector-chat-invite]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
+        const sectorId = btn.getAttribute('data-sector-chat-invite');
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorId);
+        if(!s) return;
+        s.revealed = true;
+        const ok = await saveScene(code, cachedScene);
+        const statusEl = document.getElementById('sector-status');
+        if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); return; }
+        if(statusEl) statusEl.textContent = '';
+        await pushLog(code, { who:'Master', role:'moverequest', text: `Vuoi andare a "${s.name}"?::MOVEREQ::${sectorId}|` });
+        renderSectorMap(code);
+        refreshLiveParts();
+      };
+    });
+    el.querySelectorAll('[data-luogo-chat-invite]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
+        const [sectorId, luogoId] = btn.getAttribute('data-luogo-chat-invite').split(':');
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorId);
+        const lg = s ? (s.luoghi||[]).find(x=>x.id===luogoId) : null;
+        if(!s || !lg) return;
+        s.revealed = true;
+        lg.revealed = true;
+        const ok = await saveScene(code, cachedScene);
+        const statusEl = document.getElementById('sector-status');
+        if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); return; }
+        if(statusEl) statusEl.textContent = '';
+        await pushLog(code, { who:'Master', role:'moverequest', text: `Vuoi andare a "${lg.name}"?::MOVEREQ::${sectorId}|${luogoId}` });
+        renderSectorMap(code);
+        refreshLiveParts();
+      };
+    });
     el.querySelectorAll('[data-luogo-activate]').forEach(btn=>{
       btn.onclick = async ()=>{
         const liveMacro = liveActiveMacro();
@@ -7561,7 +7616,7 @@
         const connections = Array.from(el.querySelectorAll('.sector-connect-chk:checked')).map(c=>c.value);
         const id = 's'+Date.now()+Math.random().toString(36).slice(2,6);
         if(!liveMacro.sectors) liveMacro.sectors = [];
-        liveMacro.sectors.push({ id, name, description, terrain, connections, luoghi: [], image, music, gridPos, revealed:false });
+        liveMacro.sectors.push({ id, name, description, terrain, connections, luoghi: [], image, music, gridPos, revealed:false, playerMovable:false });
         connections.forEach(cid=>{
           const other = liveMacro.sectors.find(s=>s.id===cid);
           if(other){ if(!other.connections) other.connections=[]; if(!other.connections.includes(id)) other.connections.push(id); }
@@ -8152,6 +8207,17 @@
           fulfillBtn = `<button class="btn amber small" style="margin-top:6px;" data-fulfill-target="${escapeAttr(target)}" data-fulfill-skill="${escapeAttr(skillKey)}" data-fulfill-tn="${escapeAttr(tn)}">🎲 Tira ora</button>`;
         }
       }
+      // Invito del Master a spostarsi ("Vuoi andare a XXX?"): visibile a chiunque legga questo
+      // messaggio (non a un giocatore specifico come la richiesta di tiro) — ogni giocatore che
+      // clicca si sposta DA SOLO, senza muovere il resto del gruppo.
+      if(l.role==='moverequest' && l.text.includes('::MOVEREQ::')){
+        const [shown, payload] = l.text.split('::MOVEREQ::');
+        displayText = shown;
+        const [moveSectorId, moveLuogoId] = payload.split('|');
+        if(session && session.role==='player' && moveSectorId){
+          fulfillBtn = `<button class="btn small" style="margin-top:6px;background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);" data-move-accept-sector="${escapeAttr(moveSectorId)}" data-move-accept-luogo="${escapeAttr(moveLuogoId||'')}">🚶 Sì, andiamo!</button>`;
+        }
+      }
       let diceHTML = '';
       if(!hideDiceInline && l.meta && Array.isArray(l.meta.dice)){
         const alreadyAnimated = animatedLogIds.has(l.id);
@@ -8185,6 +8251,7 @@
       const editBtn = e.target.closest('[data-log-edit]');
       const delBtn = e.target.closest('[data-log-del]');
       const fulfillBtn = e.target.closest('[data-fulfill-target]');
+      const moveAcceptBtn = e.target.closest('[data-move-accept-sector]');
       // In chat privata il thread attuale può cambiare da un refresh all'altro (il Master
       // passa da un giocatore all'altro), quindi lo leggiamo dalla variabile globale al
       // momento del click, non lo "congeliamo" quando la funzione viene collegata.
@@ -8254,6 +8321,32 @@
           if(playerChatMode==='private') await pushPrivateLog(code, session.username, entry);
           else await pushLog(code, entry);
           refreshLiveParts();
+        }
+      }
+      if(moveAcceptBtn && me){
+        // Il Master ha esplicitamente proposto questa destinazione in chat: lo spostamento va a
+        // buon fine anche se lo "spostamento libero"/le connessioni non lo permetterebbero — qui
+        // non è il giocatore a decidere di muoversi da solo, è un invito diretto del Master.
+        const sectorId = moveAcceptBtn.getAttribute('data-move-accept-sector');
+        const luogoId = moveAcceptBtn.getAttribute('data-move-accept-luogo') || null;
+        if(sectorId){
+          moveAcceptBtn.disabled = true;
+          const prevSectorId = me.tamer.currentSectorId;
+          const prevLuogoId = me.tamer.currentLuogoId;
+          me.tamer.currentSectorId = sectorId;
+          me.tamer.currentLuogoId = luogoId;
+          const ok = await saveMember(code, me);
+          if(!ok){
+            me.tamer.currentSectorId = prevSectorId;
+            me.tamer.currentLuogoId = prevLuogoId;
+            moveAcceptBtn.disabled = false;
+          } else {
+            const destName = luogoId ? luogoNameById(sectorId, luogoId) : sectorNameById(sectorId);
+            const entry = { who: displayName(me), role:'player', text: `🚶 ${displayName(me)} si sposta a "${destName||''}".` };
+            if(playerChatMode==='private') await pushPrivateLog(code, session.username, entry);
+            else await pushLog(code, entry);
+            refreshLiveParts();
+          }
         }
       }
     });
@@ -8530,7 +8623,7 @@
   // Suono di notifica: parte quando compare il primo Avviso non ancora confermato e continua in
   // loop finché il giocatore non li accetta tutti (o rimuto). Non riparte da capo tra un Avviso e
   // l'altro nella stessa coda — un solo elemento riutilizzato, non un nuovo Audio() ogni volta.
-  const NOTICE_SFX_URL = 'https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787175532931_vhiiev.mpeg';
+  const NOTICE_SFX_URL = 'https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787662152805_maxffk.mpeg';
   function __startNoticeSfx(){
     if(window.__dvosAudioPrefs && (window.__dvosAudioPrefs.clickMuted || window.__dvosAudioPrefs.musicMuted)) return;
     if(__noticeAudioEl && !__noticeAudioEl.paused) return;
