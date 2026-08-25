@@ -51,7 +51,14 @@ async function sendPushToSubscriptions(subs, payload) {
       await webpush.sendNotification({
         endpoint: s.endpoint,
         keys: { p256dh: s.p256dh, auth: s.auth }
-      }, body);
+      }, body, {
+        // urgency:'high' e TTL bassa dicono al servizio push (FCM per Chrome/Edge, APNs per
+        // Safari, ecc.) di consegnare la notifica il prima possibile invece di raggrupparla
+        // con altro traffico a bassa priorità — è l'unica leva che abbiamo sui tempi di
+        // consegna: da qui in poi decide il servizio push del browser, non il nostro server.
+        urgency: 'high',
+        TTL: 60
+      });
       console.log('[push] inviata con successo a', s.username, s.endpoint.slice(0, 60) + '...');
     } catch (err) {
       console.error('[push] invio FALLITO a', s.username, '- statusCode:', err && err.statusCode, '- messaggio:', err && err.message);
