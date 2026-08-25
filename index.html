@@ -4549,7 +4549,17 @@
               </select>
             </div>
             <div class="field"><label>TN (opzionale, solo per Skill)</label><input type="number" id="req-tn" placeholder="es. 15" /></div>
+            <div class="muted" style="margin:2px 0 6px;font-size:11px;">Dove mostrare la richiesta (almeno una):</div>
+            <div class="row" style="align-items:center;gap:8px;margin-bottom:4px;">
+              <input type="checkbox" id="req-chan-general" checked style="width:auto;" />
+              <label for="req-chan-general" style="margin:0;text-transform:none;font-size:12px;color:var(--text);cursor:pointer;">📣 Chat Generale (visibile a tutti)</label>
+            </div>
+            <div class="row" style="align-items:center;gap:8px;margin-bottom:8px;">
+              <input type="checkbox" id="req-chan-private" style="width:auto;" />
+              <label for="req-chan-private" style="margin:0;text-transform:none;font-size:12px;color:var(--text);cursor:pointer;">✉️ Chat Privata (solo col giocatore selezionato sopra, invisibile agli altri)</label>
+            </div>
             <button class="btn amber" id="btn-request-roll" style="width:100%;">Richiedi Tiro</button>
+            <div class="muted" id="req-roll-status" style="margin-top:6px;"></div>
           </div>
           <div class="hud-frame card" id="notice-mgr-card"></div>
           <div class="hud-frame card" id="bugreports-card"></div>
@@ -4720,11 +4730,21 @@
         const targetPlayer = document.getElementById('req-player').value;
         const skillKey = document.getElementById('req-skill').value;
         const tn = document.getElementById('req-tn').value;
+        const sendGeneral = document.getElementById('req-chan-general').checked;
+        const sendPrivate = document.getElementById('req-chan-private').checked;
+        const statusEl = document.getElementById('req-roll-status');
+        if(!sendGeneral && !sendPrivate){
+          if(statusEl) statusEl.textContent = 'Scegli almeno un canale (Generale e/o Privata).';
+          return;
+        }
         const poolLabels = { baseAccuracy:'Accuracy (Pool)', baseDodge:'Dodge (Pool)', baseHealth:'Health (Pool)' };
         const label = poolLabels[skillKey] || (SKILL_DEFS.find(d=>d.key===skillKey)||{}).label || skillKey;
         const tnPart = (tn && !poolLabels[skillKey]) ? ` (TN ${tn})` : '';
         const payload = `${targetPlayer}|${skillKey}|${tn||''}`;
-        await pushLog(code, { who:'Master', role:'request', text: `Richiesta a ${targetPlayer}: tira ${label}${tnPart}::REQ::${payload}` });
+        const entry = { who:'Master', role:'request', text: `Richiesta a ${targetPlayer}: tira ${label}${tnPart}::REQ::${payload}` };
+        if(sendGeneral) await pushLog(code, entry);
+        if(sendPrivate) await pushPrivateLog(code, targetPlayer, entry);
+        if(statusEl) statusEl.textContent = '';
         refreshLiveParts();
       };
     }
@@ -8218,7 +8238,12 @@
           }
         }
         if(text){
-          await pushLog(code, { who: displayName(me), role:'roll', text, meta: rollMeta });
+          const entry = { who: displayName(me), role:'roll', text, meta: rollMeta };
+          // Risponde nello stesso canale in cui è arrivata la richiesta: se il giocatore la sta
+          // guardando nella sua chat privata col Master, il tiro resta privato; altrimenti va
+          // nella chat generale visibile a tutti (comportamento invariato per le richieste generali).
+          if(playerChatMode==='private') await pushPrivateLog(code, session.username, entry);
+          else await pushLog(code, entry);
           refreshLiveParts();
         }
       }
