@@ -174,7 +174,11 @@
   function syncToOldFormat(code){
     try{
       const list = loadNpcs(code);
-      const oldFormat = list.map(n=>({ name: n.name, color: n.chatColor||null, avatar: n.faceUrl || n.fullBodyUrl || null }));
+      const oldFormat = list.map(n=>({ 
+        name: n.name, 
+        color: n.chatColor||null, 
+        avatar: n.faceUrl || n.fullBodyUrl || null 
+      }));
       localStorage.setItem('dvos_npcs_' + code, JSON.stringify(oldFormat));
     }catch(e){}
   }
