@@ -156,7 +156,8 @@
   .log-entry.enemy{border:1px solid rgba(255,93,93,0.4);border-radius:4px;padding:8px;}
   .log-entry.npc .who{color:#ffd76a;}
   .log-entry.npc{border:1px solid rgba(255,215,106,0.4);border-radius:4px;padding:8px;}
-  .who-avatar{width:22px;height:22px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;border:1px solid var(--line);}
+  .who-avatar{width:24px;height:24px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;border:1px solid var(--line);flex-shrink:0;}
+  .log-entry.digimon .who-avatar{border-radius:4px;object-fit:contain;background:rgba(200,150,255,0.08);width:28px;height:28px;}
   .log-entry .txt{color:var(--text);margin-top:2px;line-height:1.4;}
   .log-entry .txt .log-h{font-weight:700;margin:6px 0 3px;line-height:1.3;}
   .log-entry .txt .log-h1{font-size:16px;color:var(--amber);}
@@ -195,7 +196,7 @@
   .role-pick .btn{flex:1;}
   .role-pick .btn.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
   #tab-scheda.active, #tab-inventario.active, #tab-dex.active, #tab-bug.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
-  #chatmode-public.active, #chatmode-private.active, #mchatmode-general.active, #mchatmode-private.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
+  #chatmode-public.active, #chatmode-private.active, #chatmode-subgroup.active, #mchatmode-general.active, #mchatmode-private.active, #mchatmode-subgroup.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
 
   .roster-item{padding:10px;border-bottom:1px solid var(--line);font-size:12px;}
   .roster-item:last-child{border-bottom:none;}
@@ -1196,7 +1197,51 @@
       return data;
     }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
   }
-  // ---------- CHAT/AVVISO IMAGE ATTACH (bucket chat-uploads, endpoint /api/upload-chat) ----------
+  // ---------- CHAT/AVVISO IMAGE ATTACH ----------
+  // Strategia a 3 livelli:
+  //   1) Tenta /api/upload-chat (endpoint serverless, se deployato)
+  //   2) Se 404 o errore, upload diretto a Supabase Storage via REST
+  //   3) Se anche quello fallisce, usa il dataUrl base64 inline (funziona sempre, ma è pesante)
+  const SUPABASE_URL  = 'https://gsquzfhxgyqrnkrqdivc.supabase.co';
+  const SUPABASE_ANON = ''; // <-- inserisci qui la tua anon key se vuoi l'upload diretto a Supabase
+  const CHAT_UPLOAD_BUCKET = 'chat-uploads';
+
+  async function uploadChatImage(code, dataUrl, folder){
+    // 1) Prova endpoint serverless
+    try{
+      const res = await apiPost('/api/upload-chat', { code, dataUrl, folder });
+      if(res && res.ok && res.url) return res.url;
+    }catch(e){}
+
+    // 2) Prova upload diretto a Supabase Storage (richiede anon key e bucket pubblico)
+    if(SUPABASE_ANON){
+      try{
+        const base64 = dataUrl.split(',')[1];
+        const mimeMatch = dataUrl.match(/^data:(image\/\w+);/);
+        const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+        const ext = mime.split('/')[1] || 'png';
+        const blob = await fetch(dataUrl).then(r=>r.blob());
+        const fileName = `${code}/${folder}/${Date.now()}_${Math.random().toString(36).slice(2,6)}.${ext}`;
+        const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${CHAT_UPLOAD_BUCKET}/${fileName}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + SUPABASE_ANON,
+            'apikey': SUPABASE_ANON,
+            'Content-Type': mime,
+            'x-upsert': 'true'
+          },
+          body: blob
+        });
+        if(uploadRes.ok){
+          return `${SUPABASE_URL}/storage/v1/object/public/${CHAT_UPLOAD_BUCKET}/${fileName}`;
+        }
+      }catch(e){}
+    }
+
+    // 3) Fallback: usa direttamente il dataUrl base64 (sempre funzionante, nessun server necessario)
+    return dataUrl;
+  }
+
   function chatAttachHTML(prefix){
     return `<div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
       <input type="file" accept="image/*" id="${prefix}-img-file" style="display:none;" />
@@ -1224,6 +1269,12 @@
     fileInput.onchange = async ()=>{
       const file = fileInput.files[0];
       if(!file) return;
+      // Limite ragionevole: 3 MB (come l'upload audio)
+      if(file.size > 3 * 1024 * 1024){
+        if(statusEl) statusEl.textContent = '⚠ Immagine troppo grande (max 3 MB).';
+        fileInput.value = '';
+        return;
+      }
       if(statusEl) statusEl.textContent = 'Caricamento in corso...';
       btn.disabled = true;
       try{
@@ -1233,13 +1284,13 @@
           reader.onerror = reject;
           reader.readAsDataURL(file);
         });
-        const res = await apiPost('/api/upload-chat', { code, dataUrl, folder });
-        if(res && res.ok && res.url){
-          setPending(res.url);
+        const url = await uploadChatImage(code, dataUrl, folder);
+        if(url){
+          setPending(url);
           renderPreview();
-          if(statusEl) statusEl.textContent = '';
+          if(statusEl) statusEl.textContent = url.startsWith('data:') ? '📎 (allegata localmente)' : '';
         } else {
-          if(statusEl) statusEl.textContent = '⚠ Caricamento fallito: ' + (lastApiError || 'errore sconosciuto');
+          if(statusEl) statusEl.textContent = '⚠ Caricamento fallito.';
         }
       }catch(e){
         if(statusEl) statusEl.textContent = '⚠ Errore durante il caricamento: ' + e.message;
@@ -1639,6 +1690,7 @@
 
   function startPolling(){
     if(pollTimer) clearInterval(pollTimer);
+    if(!session) return;
     heartbeat(session.code, session.username);
     refreshLiveParts();
     checkNoticesForMe();
@@ -1675,19 +1727,45 @@
       badge.remove();
     }
   }
+  // Sottogruppi a cui appartiene il giocatore corrente (caricati da localStorage del Master
+  // e controllati nel polling). Struttura: [{ id, name, members:[] }]
+  function getMySubgroups(code, username){
+    return loadSubgroups(code).filter(g=>g.members.includes(username));
+  }
+  let playerActiveSubgroupId = null;
+
   function updateChatModeButtons(){
     const pubBtn = document.getElementById('chatmode-public');
     const privBtn = document.getElementById('chatmode-private');
+    const subBtn = document.getElementById('chatmode-subgroup');
     if(pubBtn) pubBtn.classList.toggle('active', playerChatMode==='public');
     if(privBtn) privBtn.classList.toggle('active', playerChatMode==='private');
+    if(subBtn) subBtn.classList.toggle('active', playerChatMode==='subgroup');
     const hint = document.getElementById('action-hint');
-    if(hint) hint.style.display = playerChatMode==='private' ? 'none' : 'block';
+    if(hint) hint.style.display = (playerChatMode==='private' || playerChatMode==='subgroup') ? 'none' : 'block';
+    // Mostra/nascondi bottone sottogruppi e selettore
+    if(subBtn && session){
+      const myGroups = getMySubgroups(session.code, session.username);
+      subBtn.style.display = myGroups.length>0 ? '' : 'none';
+      const sel = document.getElementById('player-subgroup-select');
+      if(sel && playerChatMode==='subgroup'){
+        sel.style.display = '';
+      } else if(sel){
+        sel.style.display = 'none';
+      }
+    }
   }
 
   async function refreshPlayerLogDisplay(code, me){
     updateChatModeButtons();
     const logLive = document.getElementById('log-live');
     if(!logLive) return;
+    if(playerChatMode==='subgroup' && playerActiveSubgroupId){
+      const plog = await getPrivateLog(code, 'subgroup:'+playerActiveSubgroupId);
+      logLive.innerHTML = logHTML(plog, false);
+      logLive.scrollTop = logLive.scrollHeight;
+      return;
+    }
     if(playerChatMode==='private'){
       const plog = await getPrivateLog(code, session.username);
       logLive.innerHTML = logHTML(plog, false);
@@ -1813,7 +1891,12 @@
     }
     const logLive = document.getElementById('log-live');
     if(logLive){
-      if(session.role==='player' && playerChatMode==='private'){
+      if(session.role==='player' && playerChatMode==='subgroup' && playerActiveSubgroupId){
+        const plog = await getPrivateLog(session.code, 'subgroup:'+playerActiveSubgroupId);
+        const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
+        logLive.innerHTML = logHTML(plog, false);
+        if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
+      } else if(session.role==='player' && playerChatMode==='private'){
         const plog = await getPrivateLog(session.code, session.username);
         const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
         logLive.innerHTML = logHTML(plog, false);
@@ -1845,6 +1928,17 @@
         attachLogModeration(privLogLive, session.code, null, true);
         if(wasAtBottom) privLogLive.scrollTop = privLogLive.scrollHeight;
         markPrivateThreadRead(session.code, masterPrivateThread, plog);
+      }
+    }
+    if(session.role==='master' && masterChatMode==='subgroup' && activeSubgroupId){
+      const subLogLive = document.getElementById('subgroup-log-live');
+      if(subLogLive){
+        const plog = await getPrivateLog(session.code, 'subgroup:'+activeSubgroupId);
+        cachedSubgroupLog = plog;
+        const wasAtBottom = subLogLive.scrollHeight - subLogLive.scrollTop <= subLogLive.clientHeight + 40;
+        subLogLive.innerHTML = logHTML(plog, true);
+        attachLogModeration(subLogLive, session.code, null, false, ()=>'subgroup:'+activeSubgroupId);
+        if(wasAtBottom) subLogLive.scrollTop = subLogLive.scrollHeight;
       }
     }
     const rosterLive = document.getElementById('roster-live');
@@ -1881,7 +1975,7 @@
     // Blocca la chat pubblica (non quella privata col Master) fuori dal proprio turno, se in combattimento.
     if(session.role==='player'){
       const myTurnNow = isMyCombatTurn(cachedCombat, session.username);
-      const lockPublicChat = !!(cachedCombat && cachedCombat.active) && playerChatMode!=='private' && !myTurnNow;
+      const lockPublicChat = !!(cachedCombat && cachedCombat.active) && playerChatMode!=='private' && playerChatMode!=='subgroup' && !myTurnNow;
       ['action-text','btn-send-action','btn-correct','action-img-btn'].forEach(id=>{
         const el = document.getElementById(id);
         if(el) el.disabled = lockPublicChat;
@@ -2345,6 +2439,7 @@
               <div style="display:flex;gap:4px;">
                 <button class="btn small" id="chatmode-public">Pubblico</button>
                 <button class="btn small" id="chatmode-private">Privata (Master)</button>
+                <button class="btn small" id="chatmode-subgroup" style="display:none;">👥 Gruppo</button>
               </div>
             </div>
             <div class="log" id="log-live" style="height:220px;">${logHTML(sceneLog(), session.role==='master')}</div>
@@ -2404,6 +2499,17 @@
       const ta = document.getElementById('action-text');
       const raw = ta.value.trim();
       if(!raw) return;
+      if(playerChatMode==='subgroup' && playerActiveSubgroupId){
+        const subMeta = {};
+        if(pendingActionImageUrl) subMeta.image = pendingActionImageUrl;
+        await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { who: displayName(me), role:'player', text: raw, meta: Object.keys(subMeta).length ? subMeta : null });
+        ta.value='';
+        pendingActionImageUrl = null;
+        const ap = document.getElementById('action-img-preview');
+        if(ap) ap.innerHTML = '';
+        await refreshPlayerLogDisplay(code, me);
+        return;
+      }
       if(playerChatMode==='private'){
         // Stesso trattamento dell'immagine allegata della chat pubblica qui sotto (pendingActionImageUrl
         // è condiviso tra le due modalità, dato che usano lo stesso widget #action-img-*): senza questo
@@ -2446,6 +2552,39 @@
     updateChatModeButtons();
     document.getElementById('chatmode-public').onclick = async ()=>{ playerChatMode='public'; await refreshPlayerLogDisplay(code, me); };
     document.getElementById('chatmode-private').onclick = async ()=>{ playerChatMode='private'; await refreshPlayerLogDisplay(code, me); };
+    // Sottogruppi player: crea selettore dinamico se ci sono gruppi disponibili
+    const subBtnP = document.getElementById('chatmode-subgroup');
+    if(subBtnP){
+      const myGroups = getMySubgroups(code, session.username);
+      if(myGroups.length>0){
+        subBtnP.style.display = '';
+        // Inserisci selettore sottogruppo dopo il log
+        let subSel = document.getElementById('player-subgroup-select');
+        if(!subSel){
+          subSel = document.createElement('select');
+          subSel.id = 'player-subgroup-select';
+          subSel.style.cssText = 'display:none;margin-bottom:6px;font-size:12px;';
+          myGroups.forEach(g=>{
+            const opt = document.createElement('option');
+            opt.value = g.id; opt.textContent = g.name;
+            subSel.appendChild(opt);
+          });
+          const logLiveEl = document.getElementById('log-live');
+          if(logLiveEl) logLiveEl.parentElement.insertBefore(subSel, logLiveEl);
+        }
+        if(!playerActiveSubgroupId && myGroups.length>0) playerActiveSubgroupId = myGroups[0].id;
+        subSel.onchange = async ()=>{
+          playerActiveSubgroupId = subSel.value;
+          await refreshPlayerLogDisplay(code, me);
+        };
+      }
+      subBtnP.onclick = async ()=>{
+        playerChatMode='subgroup';
+        const sel = document.getElementById('player-subgroup-select');
+        if(sel) sel.style.display = '';
+        await refreshPlayerLogDisplay(code, me);
+      };
+    }
 
     startPolling();
   }
@@ -4630,6 +4769,7 @@
             <div class="row" style="margin-bottom:10px;">
               <button class="btn small" id="mchatmode-general">📣 Generale</button>
               <button class="btn small" id="mchatmode-private">✉️ Privata <span id="mchat-unread-badge"></span></button>
+              <button class="btn small" id="mchatmode-subgroup">👥 Sottogruppi <span id="mchat-subgroup-badge"></span></button>
             </div>
             <div id="mchat-general-block">
             <div class="section-title">Registro Narrativo</div>
@@ -4671,6 +4811,7 @@
             <button class="btn amber" id="btn-gm-post" style="width:100%;margin-top:8px;">Pubblica</button>
             </div>
             <div id="mchat-private-slot" style="display:none;"></div>
+            <div id="mchat-subgroup-slot" style="display:none;"></div>
           </div>
         </div>
 
@@ -4758,6 +4899,7 @@
     bindSceneCurrentSectorLuoghi(code);
     renderCombatManager(code, players);
     renderPrivateChatMaster(code, players);
+    renderSubgroupChatMaster(code, players);
     bindMasterChatMode(code, players);
     renderNoticeManager(code, players);
     renderBugReportsMaster(code);
@@ -5950,18 +6092,24 @@
   function updateMasterChatModeUI(){
     const genBlock = document.getElementById('mchat-general-block');
     const privSlot = document.getElementById('mchat-private-slot');
+    const subSlot = document.getElementById('mchat-subgroup-slot');
     const genBtn = document.getElementById('mchatmode-general');
     const privBtn = document.getElementById('mchatmode-private');
+    const subBtn = document.getElementById('mchatmode-subgroup');
     if(genBlock) genBlock.style.display = masterChatMode==='general' ? '' : 'none';
     if(privSlot) privSlot.style.display = masterChatMode==='private' ? '' : 'none';
+    if(subSlot) subSlot.style.display = masterChatMode==='subgroup' ? '' : 'none';
     if(genBtn) genBtn.classList.toggle('active', masterChatMode==='general');
     if(privBtn) privBtn.classList.toggle('active', masterChatMode==='private');
+    if(subBtn) subBtn.classList.toggle('active', masterChatMode==='subgroup');
   }
   function bindMasterChatMode(code, players){
     const genBtn = document.getElementById('mchatmode-general');
     const privBtn = document.getElementById('mchatmode-private');
+    const subBtn = document.getElementById('mchatmode-subgroup');
     if(genBtn) genBtn.onclick = ()=>{ masterChatMode='general'; updateMasterChatModeUI(); };
     if(privBtn) privBtn.onclick = async ()=>{ masterChatMode='private'; updateMasterChatModeUI(); await renderPrivateChatMaster(code, players); };
+    if(subBtn) subBtn.onclick = async ()=>{ masterChatMode='subgroup'; updateMasterChatModeUI(); await renderSubgroupChatMaster(code, players); };
     const clearBtn = document.getElementById('btn-clear-chat');
     if(clearBtn) clearBtn.onclick = async ()=>{
       if(!window.confirm('Cancellare TUTTA la chat generale? Non si può annullare. Le chat private non vengono toccate.')) return;
@@ -6109,6 +6257,150 @@
     attachLogModeration(logLive, code, null, true);
     if(logLive) logLive.scrollTop = logLive.scrollHeight;
   }
+
+  // ===== SOTTOGRUPPI DI CHAT =====
+  // Un sottogruppo è un thread privato condiviso tra più giocatori (e il Master).
+  // I thread usano la stessa API di pushPrivateLog/getPrivateLog con un nome di thread
+  // prefissato "subgroup:" per non collidere con quelli 1:1. I sottogruppi vengono salvati
+  // in localStorage (come gli NPC ricordati) per semplicità — non servono nuove tabelle DB.
+  function subgroupStorageKey(code){ return `dvos_subgroups_${code}`; }
+  function loadSubgroups(code){
+    try{ return JSON.parse(localStorage.getItem(subgroupStorageKey(code))||'[]'); }catch(e){ return []; }
+  }
+  function saveSubgroups(code, groups){
+    localStorage.setItem(subgroupStorageKey(code), JSON.stringify(groups));
+  }
+  let activeSubgroupId = null;
+  let cachedSubgroupLog = [];
+
+  async function renderSubgroupChatMaster(code, players){
+    const cardEl = document.getElementById('mchat-subgroup-slot');
+    if(!cardEl) return;
+    const groups = loadSubgroups(code);
+    if(!activeSubgroupId && groups.length>0) activeSubgroupId = groups[0].id;
+    const activeGroup = groups.find(g=>g.id===activeSubgroupId) || null;
+    const log = activeGroup ? await getPrivateLog(code, 'subgroup:'+activeGroup.id) : [];
+    cachedSubgroupLog = log;
+
+    cardEl.innerHTML = `
+      <div class="section-title" style="margin-top:0;">👥 Sottogruppi di Chat</div>
+      <div class="muted" style="font-size:11px;margin-bottom:10px;">Crea gruppi di giocatori che possono chattare tra loro. Solo i membri del gruppo (e il Master) vedono i messaggi.</div>
+      <div class="row" style="margin-bottom:10px;flex-wrap:wrap;gap:4px;">
+        ${groups.map(g=>`<button class="btn small ${g.id===activeSubgroupId?'active':''}" data-subgroup-select="${escapeAttr(g.id)}" style="${g.id===activeSubgroupId?'background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);':''}">${escapeHTML(g.name)} (${g.members.length})</button>`).join('')}
+        <button class="btn small ghost" id="btn-create-subgroup">＋ Nuovo</button>
+      </div>
+      ${activeGroup ? `
+        <div class="muted" style="font-size:11px;margin-bottom:6px;">Membri: ${activeGroup.members.map(u=>escapeHTML(displayNameFor(u))).join(', ')}
+          <button class="btn ghost small" data-subgroup-edit="${escapeAttr(activeGroup.id)}" style="margin-left:6px;">✎ Modifica</button>
+          <button class="btn ghost small danger" data-subgroup-delete="${escapeAttr(activeGroup.id)}" style="margin-left:4px;">🗑️</button>
+        </div>
+        <div class="log" id="subgroup-log-live" style="height:200px;">${logHTML(log, true)}</div>
+        <textarea id="subgroup-text" rows="2" placeholder="Scrivi nel sottogruppo..." style="margin-top:8px;"></textarea>
+        <button class="btn amber" id="btn-subgroup-send" style="width:100%;margin-top:6px;">Invia</button>
+      ` : `<div class="muted">Nessun sottogruppo creato. Clicca "＋ Nuovo" per creare il primo.</div>`}
+    `;
+
+    // Bind group selection buttons
+    cardEl.querySelectorAll('[data-subgroup-select]').forEach(btn=>{
+      btn.onclick = ()=>{
+        activeSubgroupId = btn.getAttribute('data-subgroup-select');
+        renderSubgroupChatMaster(code, players);
+      };
+    });
+
+    // Create new subgroup
+    const createBtn = document.getElementById('btn-create-subgroup');
+    if(createBtn) createBtn.onclick = ()=>{ openSubgroupModal(code, players, null); };
+
+    // Edit subgroup
+    cardEl.querySelectorAll('[data-subgroup-edit]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const gid = btn.getAttribute('data-subgroup-edit');
+        const g = loadSubgroups(code).find(x=>x.id===gid);
+        if(g) openSubgroupModal(code, players, g);
+      };
+    });
+
+    // Delete subgroup
+    cardEl.querySelectorAll('[data-subgroup-delete]').forEach(btn=>{
+      btn.onclick = ()=>{
+        if(!window.confirm('Eliminare questo sottogruppo? I messaggi resteranno salvati ma non saranno più visibili.')) return;
+        const gid = btn.getAttribute('data-subgroup-delete');
+        const gs = loadSubgroups(code).filter(x=>x.id!==gid);
+        saveSubgroups(code, gs);
+        activeSubgroupId = gs.length>0 ? gs[0].id : null;
+        renderSubgroupChatMaster(code, players);
+      };
+    });
+
+    // Send message
+    const sendBtn = document.getElementById('btn-subgroup-send');
+    if(sendBtn && activeGroup) sendBtn.onclick = async ()=>{
+      const ta = document.getElementById('subgroup-text');
+      const text = ta.value.trim();
+      if(!text) return;
+      await pushPrivateLog(code, 'subgroup:'+activeGroup.id, { who: 'Master', role: 'gm', text });
+      ta.value='';
+      renderSubgroupChatMaster(code, players);
+    };
+
+    const logLive = document.getElementById('subgroup-log-live');
+    if(logLive){
+      attachLogModeration(logLive, code, null, false, ()=>'subgroup:'+activeSubgroupId);
+      logLive.scrollTop = logLive.scrollHeight;
+    }
+  }
+
+  function openSubgroupModal(code, players, existing){
+    const old = document.getElementById('subgroup-modal');
+    if(old) old.remove();
+    const modal = document.createElement('div');
+    modal.id = 'subgroup-modal';
+    modal.className = 'enc-modal-backdrop';
+    modal.innerHTML = `
+      <div class="enc-modal-card hud-frame" style="max-width:420px;">
+        <button class="btn ghost small" id="subgroup-modal-close" style="position:absolute;top:8px;right:8px;">✕</button>
+        <div class="section-title" style="margin-top:0;">${existing?'✎ Modifica':'＋ Nuovo'} Sottogruppo</div>
+        <div class="field"><label>Nome del gruppo</label><input type="text" id="subgroup-modal-name" value="${existing?escapeAttr(existing.name):''}" placeholder="es. Squadra Alpha" /></div>
+        <div class="field" style="margin-top:10px;"><label>Membri</label>
+          ${players.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;">
+            <input type="checkbox" class="subgroup-member-chk" value="${escapeAttr(p.username)}" ${existing && existing.members.includes(p.username)?'checked':''} />
+            ${escapeHTML(displayName(p))}
+          </label>`).join('')}
+        </div>
+        <div class="err" id="subgroup-modal-status"></div>
+        <div class="row" style="margin-top:12px;">
+          <button class="btn ghost" id="subgroup-modal-cancel" style="flex:1;">Annulla</button>
+          <button class="btn solid" id="subgroup-modal-save" style="flex:1;">Salva</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    const closeIt = ()=>modal.remove();
+    document.getElementById('subgroup-modal-close').onclick = closeIt;
+    document.getElementById('subgroup-modal-cancel').onclick = closeIt;
+    modal.onclick = (ev)=>{ if(ev.target===modal) closeIt(); };
+    document.getElementById('subgroup-modal-save').onclick = ()=>{
+      const name = document.getElementById('subgroup-modal-name').value.trim();
+      const statusEl = document.getElementById('subgroup-modal-status');
+      if(!name){ statusEl.textContent = 'Inserisci un nome per il gruppo.'; return; }
+      const members = Array.from(modal.querySelectorAll('.subgroup-member-chk:checked')).map(c=>c.value);
+      if(members.length<1){ statusEl.textContent = 'Seleziona almeno un giocatore.'; return; }
+      const groups = loadSubgroups(code);
+      if(existing){
+        const g = groups.find(x=>x.id===existing.id);
+        if(g){ g.name = name; g.members = members; }
+      } else {
+        const id = 'sg_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
+        groups.push({ id, name, members });
+        activeSubgroupId = id;
+      }
+      saveSubgroups(code, groups);
+      closeIt();
+      renderSubgroupChatMaster(code, (cachedRoster||[]).filter(m=>m.role==='player'));
+    };
+  }
+  // ===== fine Sottogruppi di Chat =====
 
   // Le zone sono un'unica linea condivisa con 5 posizioni (o——o——o——o——o): ogni pallino È una zona
   // per il regolamento — niente conversioni, Melee = stessa posizione, Reach 1/2 = distanza in pallini,
@@ -8513,6 +8805,36 @@
     });
   }
 
+  // Risolve l'avatar da mostrare in chat per ogni entry del log. Per i player usa la miniatura
+  // del Tamer (imageThumbUrl → imageUrl); per i digimon usa bestDigimonImage (gif se disponibile);
+  // per NPC/enemy/gm usa l.meta.avatar (già presente). Restituisce un URL o ''.
+  function resolveLogAvatar(l){
+    // Se l'entry ha già un avatar esplicito in meta, lo usiamo (NPC/enemy/digimon parlati dal Master)
+    if(l.meta && l.meta.avatar) return l.meta.avatar;
+    // Player: cerca nel roster la miniatura del Tamer
+    if(l.role==='player' || l.role==='roll'){
+      const member = (cachedRoster||[]).find(m=>{
+        const cn = m.tamer && m.tamer.characterName;
+        const dn = (cn && String(cn).trim()) ? String(cn).trim() : m.username;
+        return dn === l.who || m.username === l.who;
+      });
+      if(member && member.tamer){
+        return member.tamer.imageThumbUrl || member.tamer.imageUrl || '';
+      }
+    }
+    // Digimon: cerca gif/immagine tramite bestDigimonImage
+    if(l.role==='digimon'){
+      const member = (cachedRoster||[]).find(m=>{
+        return m.digimon && (m.digimon.name === l.who);
+      });
+      if(member && member.digimon){
+        return bestDigimonImage(null, member.digimon.name, member.digimon.imageUrl) || '';
+      }
+    }
+    // GM (Master): nessun avatar di default
+    return '';
+  }
+
   function logHTML(log, canModerate){
     if(!log || log.length===0) return '<div class="muted">Il registro è vuoto. Le azioni appariranno qui.</div>';
     return log.map(l=>{
@@ -8562,7 +8884,7 @@
       return `
       <div class="log-entry ${l.role}">
         <div class="flex-between">
-          <div>${l.meta && l.meta.avatar ? `<img class="who-avatar" src="${escapeAttr(l.meta.avatar)}" onerror="this.style.display='none'" />` : ''}<span class="who mono" ${l.meta && l.meta.color ? `style="color:${escapeAttr(l.meta.color)};"` : ''}>${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span></div>
+          <div>${(()=>{ const __av = resolveLogAvatar(l); return __av ? `<img class="who-avatar" src="${escapeAttr(__av)}" onerror="this.style.display='none'" />` : ''; })()}<span class="who mono" ${l.meta && l.meta.color ? `style="color:${escapeAttr(l.meta.color)};"` : ''}>${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span></div>
           ${canModerate ? `<div><button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;">✎</button><button class="btn ghost small" data-log-del="${l.id}" style="padding:2px 6px;">✕</button></div>` : ''}
         </div>
         <div class="txt${l.meta && l.meta.digimoji ? ' digimoji-text' : ''}" ${l.meta && l.meta.digimoji ? `title="${escapeAttr(displayText)}"` : ''}>${formatLogText(displayText)}</div>
@@ -8619,7 +8941,7 @@
     };
   }
 
-  function attachLogModeration(container, code, me, isPrivate){
+  function attachLogModeration(container, code, me, isPrivate, subgroupThread){
     if(!container || container.dataset.modBound) return;
     container.dataset.modBound = '1';
     container.addEventListener('click', async (e)=>{
@@ -8630,8 +8952,8 @@
       // In chat privata il thread attuale può cambiare da un refresh all'altro (il Master
       // passa da un giocatore all'altro), quindi lo leggiamo dalla variabile globale al
       // momento del click, non lo "congeliamo" quando la funzione viene collegata.
-      const thread = isPrivate ? masterPrivateThread : null;
-      const sourceLog = isPrivate ? cachedMasterPrivateLog : cachedLog;
+      const thread = subgroupThread ? (typeof subgroupThread==='function'?subgroupThread():subgroupThread) : (isPrivate ? masterPrivateThread : null);
+      const sourceLog = subgroupThread ? cachedSubgroupLog : (isPrivate ? cachedMasterPrivateLog : cachedLog);
       if(editBtn){
         const id = editBtn.getAttribute('data-log-edit');
         const entry = sourceLog.find(l=>String(l.id)===String(id));
