@@ -4,6 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Digivice OS — Digimon: Digital Adventures 2E</title>
+<!-- PWA: rende il Tavolo "installabile" da Safari (Condividi → Aggiungi a Home). Su iPhone è
+     l'UNICO modo per avere notifiche push vere anche a telefono bloccato (iOS 16.4+): da scheda
+     normale del browser, window.Notification non esiste affatto — vedi il campanello 🔔 più in
+     basso in questo file, che infatti si nasconde da solo quando manca. Il pallino "💬 Registro"
+     in cima alla pagina (vedi topbar()) resta comunque il modo che funziona SEMPRE, installato o no. -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#080b10">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Digivice OS">
+<link rel="apple-touch-icon" href="https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-images/FRONTIER1/1787672473672_rpmfhm.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
@@ -322,6 +333,17 @@
   // messaggio ad ogni ciclo di polling (4s) mentre resta non letto.
   let __lastNotifiedPublicId; // undefined finché non facciamo il primo controllo (evita di notificare tutta la cronologia al caricamento)
   let __lastNotifiedPrivateIds = {}; // per thread (username) -> id dell'ultimo messaggio già notificato
+  // Pallino "nuovo messaggio" sempre visibile in cima alla pagina (vedi topbar()): a differenza del
+  // campanello 🔔, che richiede il permesso del browser e su Safari iPhone in scheda normale non è
+  // nemmeno disponibile (typeof Notification==='undefined'), questo funziona SEMPRE, su qualunque
+  // dispositivo, senza permessi — ed è anche l'unico modo di accorgersi di un nuovo messaggio quando
+  // si è su un'altra parte della pagina (es. scheda Digimon) e il Registro non è a schermo.
+  let __topbarUnreadFlag = false;
+  function setTopbarUnread(v){
+    __topbarUnreadFlag = v;
+    const el = document.getElementById('topbar-chat-badge');
+    if(el) el.style.display = v ? 'inline-block' : 'none';
+  }
   // entry = ultimo messaggio del log (pubblico o del thread privato indicato da key); myName = nome
   // mostrato per l'utente corrente (per non auto-notificarsi dei propri messaggi). kind è 'public' o 'private'.
   function maybeNotifyNew(kind, key, entry, myName){
@@ -332,6 +354,7 @@
     if(firstCheck) return;
     if(String(entry.id)===String(already)) return;
     if(entry.who===myName) return;
+    setTopbarUnread(true);
     if(typeof window.__dvosNotify==='function') window.__dvosNotify(kind==='public' ? `💬 ${entry.who}` : `✉️ ${entry.who} (privato)`, entry.text||'');
   }
   let cachedDex = [];
@@ -1535,6 +1558,7 @@
       <div class="conn-ticker mono">
         CAMPAGNA <b>${session ? session.code : '---'}</b> &nbsp;|&nbsp; UTENTE <b>${session ? session.username : '---'}</b>
         ${session && cachedProgression ? ` &nbsp;|&nbsp; MILESTONE <b style="color:var(--cyan);">${cachedProgression.milestone}</b> &nbsp;|&nbsp; INSP. <b style="color:var(--cyan);">${cachedProgression.inspiration}</b>` : ''}
+        ${session ? `&nbsp;<button class="btn ghost small" id="topbar-chat-jump" style="margin-left:10px;position:relative;">💬 Registro<span id="topbar-chat-badge" style="display:${__topbarUnreadFlag?'inline-block':'none'};position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:var(--danger);box-shadow:0 0 4px var(--danger);"></span></button>` : ''}
         ${session ? `&nbsp;<a href="dex.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">📖 Digidex</a>` : ''}
         ${session ? `&nbsp;<a href="digivice-scan.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">📡 Scan Starter</a>` : ''}
         ${session ? `&nbsp;<a href="map.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">🗺️ Mappa</a>` : ''}
@@ -1546,6 +1570,18 @@
       </div>
     </div>
     ${lastApiError ? `<div class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(lastApiError)}</div>` : ''}`;
+  }
+  // Da chiamare dopo ogni render che include topbar(): il pulsante "💬 Registro" porta al Registro
+  // ovunque ci si trovi nella pagina (utile soprattutto su mobile, dove il Registro può essere più
+  // in basso di uno schermo) e spegne il pallino rosso di "nuovo messaggio".
+  function bindTopbarChatJump(){
+    const btn = document.getElementById('topbar-chat-jump');
+    if(!btn) return;
+    btn.onclick = ()=>{
+      setTopbarUnread(false);
+      const log = document.getElementById('log-live');
+      if(log) log.scrollIntoView({ behavior:'smooth', block:'center' });
+    };
   }
 
   // ---------- LOGIN ----------
@@ -2348,6 +2384,7 @@
 
     renderSidebar(me);
     bindSceneAudio(cachedScene);
+    bindTopbarChatJump();
     document.getElementById('tab-scheda').onclick = ()=>{ sidebarTab='scheda'; renderSidebar(me); };
     document.getElementById('tab-inventario').onclick = ()=>{ sidebarTab='inventario'; renderSidebar(me); };
     document.getElementById('tab-bug').onclick = ()=>{ sidebarTab='bug'; renderSidebar(me); };
@@ -4734,6 +4771,7 @@
     bindSceneAudio(cachedScene);
     bindSceneAudioUpload(code);
     bindSceneCombatAudioUpload(code);
+    bindTopbarChatJump();
     document.getElementById('btn-logout').onclick = logout;
     document.getElementById('btn-open-missions').onclick = openMissionsModal;
     document.getElementById('btn-save-scene').onclick = async ()=>{
@@ -8538,6 +8576,49 @@
     }).join('');
   }
 
+  // Modale "Modifica messaggio": sostituisce il vecchio window.prompt(), che su mobile (e non solo)
+  // è un popup nativo minuscolo, non stilizzato, a riga singola — pessimo per correggere un
+  // messaggio di più righe. Riusa lo stesso schema visivo degli altri modali della pagina
+  // (.enc-modal-backdrop/.enc-modal-card, vedi openMissionsModal/showEncounterDetail).
+  function openEditLogModal(entry, code, thread){
+    const old = document.getElementById('edit-log-modal');
+    if(old) old.remove();
+    const modal = document.createElement('div');
+    modal.id = 'edit-log-modal';
+    modal.className = 'enc-modal-backdrop';
+    modal.innerHTML = `
+      <div class="enc-modal-card hud-frame" style="max-width:520px;">
+        <button class="btn ghost small" id="edit-log-modal-close" style="position:absolute;top:8px;right:8px;">✕</button>
+        <div class="section-title" style="margin-top:0;">✎ Modifica messaggio</div>
+        <textarea id="edit-log-modal-text" rows="5" style="width:100%;">${escapeHTML(entry ? entry.text : '')}</textarea>
+        <div class="err" id="edit-log-modal-status"></div>
+        <div class="row" style="margin-top:10px;">
+          <button class="btn ghost" id="edit-log-modal-cancel" style="flex:1;">Annulla</button>
+          <button class="btn solid" id="edit-log-modal-save" style="flex:1;">Salva</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    const closeIt = ()=>modal.remove();
+    document.getElementById('edit-log-modal-close').onclick = closeIt;
+    document.getElementById('edit-log-modal-cancel').onclick = closeIt;
+    modal.onclick = (ev)=>{ if(ev.target===modal) closeIt(); };
+    const textEl = document.getElementById('edit-log-modal-text');
+    textEl.focus();
+    textEl.setSelectionRange(textEl.value.length, textEl.value.length);
+    const saveBtn = document.getElementById('edit-log-modal-save');
+    saveBtn.onclick = async ()=>{
+      const newText = textEl.value.trim();
+      const statusEl = document.getElementById('edit-log-modal-status');
+      if(!newText){ statusEl.textContent = 'Il messaggio non può essere vuoto.'; return; }
+      saveBtn.disabled = true;
+      const ok = await editLogEntry(code, entry.id, newText, thread);
+      if(!ok){ statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); saveBtn.disabled = false; return; }
+      closeIt();
+      refreshLiveParts();
+    };
+  }
+
   function attachLogModeration(container, code, me, isPrivate){
     if(!container || container.dataset.modBound) return;
     container.dataset.modBound = '1';
@@ -8554,11 +8635,7 @@
       if(editBtn){
         const id = editBtn.getAttribute('data-log-edit');
         const entry = sourceLog.find(l=>String(l.id)===String(id));
-        const newText = window.prompt('Modifica messaggio:', entry ? entry.text : '');
-        if(newText !== null && newText.trim()){
-          await editLogEntry(code, id, newText.trim(), thread);
-          refreshLiveParts();
-        }
+        if(entry) openEditLogModal(entry, code, thread);
       }
       if(delBtn){
         const id = delBtn.getAttribute('data-log-del');

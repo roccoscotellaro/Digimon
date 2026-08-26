@@ -1,0 +1,19 @@
+{
+  "name": "Digivice OS — Digimon: Digital Adventures 2E",
+  "short_name": "Digivice OS",
+  "description": "Tavolo testuale multi-utente per Digimon: Digital Adventures 2E",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#080b10",
+  "theme_color": "#080b10",
+  "icons": [
+    {
+      "src": "https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-images/FRONTIER1/1787672473672_rpmfhm.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
