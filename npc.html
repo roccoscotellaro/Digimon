@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NPC Registry — Digimon: Digital Adventures 2E</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #080b10;
+    --panel: #0e141b;
+    --panel-2: #121a22;
+    --line: #1c2a30;
+    --cyan: #35e8c9;
+    --cyan-dim: #1f6e63;
+    --amber: #ff8a3d;
+    --npc-gold: #ffd76a;
+    --text: #dcece8;
+    --text-mute: #6d8385;
+    --danger: #ff5d5d;
+    --radius: 2px;
+    font-family: 'Manrope', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;padding:0;background:var(--bg);color:var(--text);}
+  .mono{font-family:'Share Tech Mono', monospace;}
+  .app{min-height:100vh;background:
+      radial-gradient(circle at 15% 10%, rgba(255,215,106,0.06), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(255,138,61,0.05), transparent 45%),
+      var(--bg);
+      padding:20px;}
+  .hud-frame{border:1px solid var(--line); background:var(--panel); border-radius:var(--radius); position:relative;}
+  .hud-frame::before{content:"";position:absolute;top:-1px;left:-1px;width:14px;height:14px;border-top:2px solid var(--npc-gold);border-left:2px solid var(--npc-gold);}
+  .hud-frame::after{content:"";position:absolute;bottom:-1px;right:-1px;width:14px;height:14px;border-bottom:2px solid var(--npc-gold);border-right:2px solid var(--npc-gold);}
+  .topbar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;margin-bottom:18px;flex-wrap:wrap;gap:8px;}
+  .brand-title{font-size:15px;text-transform:uppercase;color:var(--npc-gold);}
+  .brand-sub{font-size:11px;color:var(--text-mute);}
+  .btn{font-family:'Share Tech Mono',monospace;background:transparent;border:1px solid var(--cyan-dim);color:var(--cyan);
+    padding:8px 14px;cursor:pointer;text-transform:uppercase;font-size:12px;letter-spacing:0.05em;border-radius:var(--radius);}
+  .btn:hover{background:rgba(53,232,201,0.1);}
+  .btn.solid{background:var(--npc-gold);color:#1a1200;border-color:var(--npc-gold);font-weight:700;}
+  .btn.solid:hover{background:#ffe49a;}
+  .btn.ghost{border-color:var(--line);color:var(--text-mute);}
+  .btn.amber{border-color:var(--amber);color:var(--amber);}
+  .btn.danger{border-color:var(--danger);color:var(--danger);}
+  .btn.small{padding:5px 10px;font-size:10px;}
+  .btn.gold{border-color:var(--npc-gold);color:var(--npc-gold);}
+  .btn.gold:hover{background:rgba(255,215,106,0.1);}
+  input[type=text], input[type=number], textarea, select{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    padding:8px 10px; font-family:'Manrope',sans-serif; font-size:14px; border-radius:var(--radius); width:100%;
+  }
+  input[type=color]{padding:2px;height:38px;width:100%;}
+  label{font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;display:block;margin-bottom:4px;}
+  .field{margin-bottom:12px;}
+  .row{display:flex;gap:12px;}
+  .row > *{flex:1;}
+  .section-title{font-size:13px;text-transform:uppercase;color:var(--npc-gold);letter-spacing:0.08em;margin:0 0 14px;padding-bottom:10px;border-bottom:1px solid var(--line);}
+  .card{padding:18px;margin-bottom:16px;}
+  .tag{font-size:10px;padding:2px 8px;border:1px solid var(--line);color:var(--text-mute);border-radius:20px;text-transform:uppercase;}
+  .muted{color:var(--text-mute);font-size:12px;}
+  .divider{height:1px;background:var(--line);margin:16px 0;}
+  .flex-between{display:flex;justify-content:space-between;align-items:center;}
+
+  .login-wrap{max-width:420px;margin:60px auto;}
+  .login-wrap h1{font-family:'Share Tech Mono',monospace;color:var(--npc-gold);font-size:20px;text-align:center;margin-bottom:4px;}
+  .login-wrap .sub{text-align:center;color:var(--text-mute);font-size:12px;margin-bottom:24px;}
+
+  .search-bar{margin-bottom:18px;}
+  .search-bar input{background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:10px 14px;
+    font-size:14px;border-radius:var(--radius);width:100%;}
+
+  .npc-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(160px, 1fr));gap:14px;}
+  .npc-card{cursor:pointer;padding:0;overflow:hidden;transition:transform .15s;}
+  .npc-card:hover{transform:translateY(-3px);border-color:var(--npc-gold);}
+  .npc-card .thumb{width:100%;aspect-ratio:3/4;background:var(--panel-2);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
+  .npc-card .thumb img{width:100%;height:100%;object-fit:cover;}
+  .npc-card .thumb .placeholder{font-family:'Share Tech Mono',monospace;font-size:36px;color:var(--text-mute);}
+  .npc-card .info{padding:10px;display:flex;align-items:center;gap:8px;}
+  .npc-card .color-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;border:1px solid rgba(255,255,255,0.15);}
+  .npc-card .name{font-family:'Share Tech Mono',monospace;font-size:13px;color:var(--npc-gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+  .face-preview{width:48px;height:48px;border-radius:50%;object-fit:cover;border:2px solid var(--line);flex-shrink:0;}
+
+  .modal-overlay{position:fixed;inset:0;background:rgba(5,7,10,0.85);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;overflow-y:auto;}
+  .modal-box{max-width:600px;width:100%;max-height:90vh;overflow-y:auto;}
+  .portrait-lg{width:100%;max-height:450px;object-fit:contain;background:var(--panel-2);border:1px solid var(--line);margin-bottom:12px;border-radius:4px;}
+  .detail-face{width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid var(--npc-gold);margin:0 auto 12px;display:block;}
+
+  .img-upload-zone{border:2px dashed var(--line);border-radius:var(--radius);padding:16px;text-align:center;
+    cursor:pointer;transition:.15s;margin-bottom:8px;position:relative;}
+  .img-upload-zone:hover{border-color:var(--npc-gold);background:rgba(255,215,106,0.03);}
+  .img-upload-zone img{max-width:100%;max-height:160px;object-fit:contain;border-radius:4px;}
+  .img-upload-zone .hint{font-size:11px;color:var(--text-mute);}
+  .img-upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
+
+  .chat-preview{border:1px solid var(--line);border-radius:4px;padding:10px;background:var(--panel-2);margin-top:12px;}
+  .chat-preview .who{font-family:'Share Tech Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;}
+  .chat-preview .txt{color:var(--text);margin-top:2px;line-height:1.4;font-size:13px;}
+  .chat-preview .face-inline{width:28px;height:28px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;border:1px solid var(--line);}
+
+  .export-import-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+
+  @media (max-width:760px){
+    .app{padding:10px;}
+    .npc-grid{grid-template-columns:repeat(auto-fill, minmax(130px,1fr));}
+    .row{flex-wrap:wrap;}
+    .row > *{flex:1 1 100%;}
+  }
+</style>
+</head>
+<body>
+<div id="root-app" class="app"></div>
+
+<script>
+(function(){
+  const root = document.getElementById('root-app');
+  const SESSION_KEY = 'digivice_session_v1';
+  const NPC_KEY_PREFIX = 'dvos_npc_registry_';
+  let session = null;
+  let npcList = [];
+  let searchQuery = '';
+  let editingNpc = null; // null = listing, object = editing/adding
+  let viewingNpc = null; // null = no detail, object = viewing detail
+  let pendingFullBodyDataUrl = null;
+  let pendingFaceDataUrl = null;
+
+  function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
+  function npcKey(code){ return NPC_KEY_PREFIX + code; }
+
+  function loadNpcs(code){
+    try{
+      const raw = localStorage.getItem(npcKey(code));
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    }catch(e){ return []; }
+  }
+  function saveNpcs(code, list){
+    try{ localStorage.setItem(npcKey(code), JSON.stringify(list)); }catch(e){}
+  }
+
+  // Migrate old simple NPC list (dvos_npcs_CODE) into new registry if any exist
+  function migrateOldNpcs(code){
+    try{
+      const oldKey = 'dvos_npcs_' + code;
+      const raw = localStorage.getItem(oldKey);
+      if(!raw) return;
+      const oldList = JSON.parse(raw);
+      if(!Array.isArray(oldList) || oldList.length===0) return;
+      const existing = loadNpcs(code);
+      const existingNames = new Set(existing.map(n=>n.name.toLowerCase()));
+      let added = 0;
+      oldList.forEach(old=>{
+        if(!old.name || existingNames.has(old.name.toLowerCase())) return;
+        existing.push({
+          id: genId(),
+          name: old.name,
+          description: '',
+          chatColor: old.color || '#ffd76a',
+          fullBodyUrl: old.avatar || '',
+          faceUrl: '',
+          createdAt: Date.now()
+        });
+        existingNames.add(old.name.toLowerCase());
+        added++;
+      });
+      if(added>0) saveNpcs(code, existing);
+    }catch(e){}
+  }
+
+  // Also sync back to the old format so index.html picks them up in "Parla come"
+  function syncToOldFormat(code){
+    try{
+      const list = loadNpcs(code);
+      const oldFormat = list.map(n=>({ name: n.name, color: n.chatColor||null, avatar: n.faceUrl || n.fullBodyUrl || null }));
+      localStorage.setItem('dvos_npcs_' + code, JSON.stringify(oldFormat));
+    }catch(e){}
+  }
+
+  function genId(){ return 'npc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,6); }
+  function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function escapeAttr(s){ return escapeHTML(s); }
+
+  function render(){
+    if(!session){ renderLogin(); return; }
+    if(session.role!=='master'){ renderPlayerView(); return; }
+    migrateOldNpcs(session.code);
+    npcList = loadNpcs(session.code);
+
+    if(editingNpc){ renderEditor(); return; }
+    if(viewingNpc){ renderDetail(); return; }
+    renderList();
+  }
+
+  function renderLogin(){
+    root.innerHTML = `
+    <div class="login-wrap">
+      <div class="hud-frame card">
+        <h1 class="mono">NPC REGISTRY</h1>
+        <div class="sub">Accedi con il codice della campagna per gestire i tuoi NPC</div>
+        <div class="muted" style="text-align:center;margin-bottom:16px;">Usa le stesse credenziali del Tavolo principale.</div>
+        <div class="field"><label>Codice campagna</label><input type="text" id="login-code" placeholder="es. FRONTIER1" /></div>
+        <div class="field"><label>Username</label><input type="text" id="login-user" placeholder="Il tuo username" /></div>
+        <div class="field"><label>Password</label><input type="text" id="login-pass" placeholder="Password" /></div>
+        <button class="btn solid" id="btn-login" style="width:100%;margin-top:8px;">Accedi</button>
+        <div id="login-err" class="muted" style="color:var(--danger);margin-top:8px;text-align:center;"></div>
+      </div>
+    </div>`;
+    document.getElementById('btn-login').onclick = async ()=>{
+      const code = document.getElementById('login-code').value.trim().toUpperCase();
+      const user = document.getElementById('login-user').value.trim();
+      const pass = document.getElementById('login-pass').value.trim();
+      if(!code||!user||!pass){ document.getElementById('login-err').textContent = 'Compila tutti i campi.'; return; }
+      try{
+        const r = await fetch('/api/roster?code='+encodeURIComponent(code));
+        const d = await r.json();
+        if(!r.ok){ document.getElementById('login-err').textContent = 'Campagna non trovata.'; return; }
+        const members = d.members || [];
+        const me = members.find(m=>m.username.toLowerCase()===user.toLowerCase() && m.password===pass);
+        if(!me){ document.getElementById('login-err').textContent = 'Credenziali errate.'; return; }
+        session = { code, username: me.username, role: me.role||'player' };
+        render();
+      }catch(e){ document.getElementById('login-err').textContent = 'Errore di rete.'; }
+    };
+  }
+
+  function renderPlayerView(){
+    migrateOldNpcs(session.code);
+    npcList = loadNpcs(session.code);
+    const filtered = npcList.filter(n=> !searchQuery || n.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    root.innerHTML = `
+    <div class="hud-frame topbar">
+      <div>
+        <div class="brand-title mono">📋 NPC REGISTRY</div>
+        <div class="brand-sub">Campagna: ${escapeHTML(session.code)} — Consultazione</div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn ghost small" onclick="location.href='/'">← Tavolo</button>
+        <button class="btn ghost small" id="btn-logout">Esci</button>
+      </div>
+    </div>
+    <div class="search-bar"><input type="text" id="npc-search" placeholder="Cerca NPC..." value="${escapeAttr(searchQuery)}" /></div>
+    ${filtered.length===0 ? '<div class="muted" style="text-align:center;padding:40px;">Nessun NPC registrato.</div>' : ''}
+    <div class="npc-grid">${filtered.map(n=>`
+      <div class="hud-frame npc-card" data-npc-id="${n.id}">
+        <div class="thumb">${n.fullBodyUrl ? `<img src="${escapeAttr(n.fullBodyUrl)}" onerror="this.parentNode.innerHTML='<span class=\\'placeholder\\'>${escapeHTML((n.name||'?').charAt(0))}</span>'" />` : `<span class="placeholder">${escapeHTML((n.name||'?').charAt(0))}</span>`}</div>
+        <div class="info">
+          <span class="color-dot" style="background:${escapeAttr(n.chatColor||'#ffd76a')};"></span>
+          <span class="name">${escapeHTML(n.name)}</span>
+        </div>
+      </div>
+    `).join('')}</div>`;
+
+    document.getElementById('btn-logout').onclick = ()=>{ session=null; render(); };
+    document.getElementById('npc-search').oninput = (e)=>{ searchQuery=e.target.value; renderPlayerView(); };
+    root.querySelectorAll('.npc-card').forEach(card=>{
+      card.onclick = ()=>{
+        viewingNpc = npcList.find(n=>n.id===card.dataset.npcId) || null;
+        renderPlayerDetail();
+      };
+    });
+  }
+
+  function renderPlayerDetail(){
+    if(!viewingNpc){ renderPlayerView(); return; }
+    const n = viewingNpc;
+    root.innerHTML = `
+    <div class="modal-overlay" id="npc-modal">
+      <div class="modal-box hud-frame card">
+        <div class="flex-between" style="margin-bottom:12px;">
+          <div class="section-title" style="margin:0;border:none;padding:0;">${escapeHTML(n.name)}</div>
+          <button class="btn ghost small" id="btn-close-detail">✕ Chiudi</button>
+        </div>
+        ${n.faceUrl ? `<img class="detail-face" src="${escapeAttr(n.faceUrl)}" onerror="this.style.display='none'" />` : ''}
+        ${n.fullBodyUrl ? `<img class="portrait-lg" src="${escapeAttr(n.fullBodyUrl)}" onerror="this.style.display='none'" />` : ''}
+        ${n.description ? `<div style="margin-bottom:12px;line-height:1.5;">${escapeHTML(n.description).replace(/\n/g,'<br>')}</div>` : '<div class="muted">Nessuna descrizione.</div>'}
+        <div class="chat-preview">
+          <div class="muted" style="font-size:9px;margin-bottom:6px;">ANTEPRIMA CHAT</div>
+          <div>${n.faceUrl ? `<img class="face-inline" src="${escapeAttr(n.faceUrl)}" onerror="this.style.display='none'" />` : ''}<span class="who" style="color:${escapeAttr(n.chatColor||'#ffd76a')};">${escapeHTML(n.name)}</span></div>
+          <div class="txt">"Benvenuto, avventuriero. Ti stavo aspettando..."</div>
+        </div>
+      </div>
+    </div>`;
+    document.getElementById('btn-close-detail').onclick = ()=>{ viewingNpc=null; renderPlayerView(); };
+    document.getElementById('npc-modal').onclick = (e)=>{ if(e.target.id==='npc-modal'){ viewingNpc=null; renderPlayerView(); } };
+  }
+
+  function renderList(){
+    const filtered = npcList.filter(n=> !searchQuery || n.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    root.innerHTML = `
+    <div class="hud-frame topbar">
+      <div>
+        <div class="brand-title mono">📋 NPC REGISTRY</div>
+        <div class="brand-sub">Campagna: ${escapeHTML(session.code)} — ${npcList.length} NPC registrati</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn gold small" id="btn-add-npc">+ Nuovo NPC</button>
+        <button class="btn ghost small" onclick="location.href='/'">← Tavolo</button>
+        <button class="btn ghost small" id="btn-logout">Esci</button>
+      </div>
+    </div>
+    <div class="search-bar"><input type="text" id="npc-search" placeholder="Cerca NPC per nome..." value="${escapeAttr(searchQuery)}" /></div>
+    <div class="export-import-row" style="margin-bottom:14px;">
+      <button class="btn ghost small" id="btn-export">⬇ Esporta JSON</button>
+      <button class="btn ghost small" id="btn-import">⬆ Importa JSON</button>
+      <input type="file" id="import-file" accept=".json" style="display:none;" />
+    </div>
+    ${filtered.length===0 ? '<div class="muted" style="text-align:center;padding:40px;">Nessun NPC ancora. Crea il primo!</div>' : ''}
+    <div class="npc-grid">${filtered.map(n=>`
+      <div class="hud-frame npc-card" data-npc-id="${n.id}">
+        <div class="thumb">${n.fullBodyUrl ? `<img src="${escapeAttr(n.fullBodyUrl)}" onerror="this.parentNode.innerHTML='<span class=\\'placeholder\\'>${escapeHTML((n.name||'?').charAt(0))}</span>'" />` : `<span class="placeholder">${escapeHTML((n.name||'?').charAt(0))}</span>`}</div>
+        <div class="info">
+          <span class="color-dot" style="background:${escapeAttr(n.chatColor||'#ffd76a')};"></span>
+          <span class="name">${escapeHTML(n.name)}</span>
+        </div>
+      </div>
+    `).join('')}</div>`;
+
+    document.getElementById('btn-logout').onclick = ()=>{ session=null; render(); };
+    document.getElementById('btn-add-npc').onclick = ()=>{
+      editingNpc = { id: genId(), name:'', description:'', chatColor:'#ffd76a', fullBodyUrl:'', faceUrl:'', createdAt: Date.now() };
+      pendingFullBodyDataUrl = null; pendingFaceDataUrl = null;
+      render();
+    };
+    document.getElementById('npc-search').oninput = (e)=>{ searchQuery=e.target.value; render(); };
+
+    // Export
+    document.getElementById('btn-export').onclick = ()=>{
+      const blob = new Blob([JSON.stringify(npcList, null, 2)], {type:'application/json'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `npc_registry_${session.code}.json`;
+      a.click();
+    };
+    document.getElementById('btn-import').onclick = ()=>{ document.getElementById('import-file').click(); };
+    document.getElementById('import-file').onchange = (e)=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev)=>{
+        try{
+          const imported = JSON.parse(ev.target.result);
+          if(!Array.isArray(imported)){ alert('File non valido.'); return; }
+          const existingNames = new Set(npcList.map(n=>n.name.toLowerCase()));
+          let added = 0;
+          imported.forEach(imp=>{
+            if(!imp.name) return;
+            if(existingNames.has(imp.name.toLowerCase())) return;
+            npcList.push({
+              id: imp.id || genId(),
+              name: imp.name,
+              description: imp.description || '',
+              chatColor: imp.chatColor || '#ffd76a',
+              fullBodyUrl: imp.fullBodyUrl || '',
+              faceUrl: imp.faceUrl || '',
+              createdAt: imp.createdAt || Date.now()
+            });
+            existingNames.add(imp.name.toLowerCase());
+            added++;
+          });
+          saveNpcs(session.code, npcList);
+          syncToOldFormat(session.code);
+          alert(`Importati ${added} NPC (duplicati saltati).`);
+          render();
+        }catch(err){ alert('Errore nel file JSON.'); }
+      };
+      reader.readAsText(file);
+    };
+
+    // Card clicks
+    root.querySelectorAll('.npc-card').forEach(card=>{
+      card.onclick = ()=>{
+        viewingNpc = npcList.find(n=>n.id===card.dataset.npcId) || null;
+        render();
+      };
+    });
+  }
+
+  function renderDetail(){
+    const n = viewingNpc;
+    if(!n){ viewingNpc=null; render(); return; }
+    root.innerHTML = `
+    <div class="modal-overlay" id="npc-modal">
+      <div class="modal-box hud-frame card">
+        <div class="flex-between" style="margin-bottom:12px;">
+          <div class="section-title" style="margin:0;border:none;padding:0;">${escapeHTML(n.name)}</div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn gold small" id="btn-edit">✎ Modifica</button>
+            <button class="btn danger small" id="btn-delete">🗑 Elimina</button>
+            <button class="btn ghost small" id="btn-close-detail">✕</button>
+          </div>
+        </div>
+        ${n.faceUrl ? `<img class="detail-face" src="${escapeAttr(n.faceUrl)}" onerror="this.style.display='none'" />` : ''}
+        ${n.fullBodyUrl ? `<img class="portrait-lg" src="${escapeAttr(n.fullBodyUrl)}" style="cursor:zoom-in;" onerror="this.style.display='none'" onclick="window.open('${escapeAttr(n.fullBodyUrl)}','_blank')" />` : ''}
+        ${n.description ? `<div style="margin-bottom:12px;line-height:1.5;">${escapeHTML(n.description).replace(/\n/g,'<br>')}</div>` : '<div class="muted">Nessuna descrizione.</div>'}
+        <div class="divider"></div>
+        <div class="chat-preview">
+          <div class="muted" style="font-size:9px;margin-bottom:6px;">ANTEPRIMA CHAT</div>
+          <div>${n.faceUrl ? `<img class="face-inline" src="${escapeAttr(n.faceUrl)}" onerror="this.style.display='none'" />` : ''}<span class="who" style="color:${escapeAttr(n.chatColor||'#ffd76a')};">${escapeHTML(n.name)}</span></div>
+          <div class="txt">"Benvenuto, avventuriero. Ti stavo aspettando..."</div>
+        </div>
+      </div>
+    </div>`;
+
+    document.getElementById('btn-close-detail').onclick = ()=>{ viewingNpc=null; render(); };
+    document.getElementById('npc-modal').onclick = (e)=>{ if(e.target.id==='npc-modal'){ viewingNpc=null; render(); } };
+    document.getElementById('btn-edit').onclick = ()=>{
+      editingNpc = { ...n };
+      pendingFullBodyDataUrl = null; pendingFaceDataUrl = null;
+      viewingNpc = null;
+      render();
+    };
+    document.getElementById('btn-delete').onclick = ()=>{
+      if(!confirm(`Eliminare "${n.name}"? L'azione è irreversibile.`)) return;
+      npcList = npcList.filter(x=>x.id!==n.id);
+      saveNpcs(session.code, npcList);
+      syncToOldFormat(session.code);
+      viewingNpc = null;
+      render();
+    };
+  }
+
+  function renderEditor(){
+    const isNew = !npcList.some(n=>n.id===editingNpc.id);
+    const draft = editingNpc;
+
+    root.innerHTML = `
+    <div class="hud-frame card" style="max-width:650px;margin:0 auto;">
+      <div class="flex-between" style="margin-bottom:16px;">
+        <div class="section-title" style="margin:0;border:none;padding:0;">${isNew ? 'Nuovo NPC' : 'Modifica NPC'}</div>
+        <button class="btn ghost small" id="btn-cancel">✕ Annulla</button>
+      </div>
+
+      <div class="field"><label>Nome *</label><input type="text" id="ed-name" value="${escapeAttr(draft.name)}" placeholder="Nome dell'NPC" /></div>
+
+      <div class="field"><label>Descrizione</label><textarea id="ed-desc" rows="4" placeholder="Chi è questo NPC? Background, personalità, ruolo nella storia...">${escapeHTML(draft.description)}</textarea></div>
+
+      <div class="row">
+        <div class="field" style="max-width:100px;"><label>Colore Chat</label><input type="color" id="ed-color" value="${draft.chatColor||'#ffd76a'}" /></div>
+        <div class="field"><label>URL Immagine corpo intero</label><input type="text" id="ed-fullbody" value="${escapeAttr(draft.fullBodyUrl)}" placeholder="https://... .png/.jpg" /></div>
+      </div>
+
+      <div class="field">
+        <label>Oppure carica immagine corpo intero</label>
+        <div class="img-upload-zone" id="zone-fullbody">
+          ${draft.fullBodyUrl ? `<img src="${escapeAttr(draft.fullBodyUrl)}" />` : '<div class="hint">📷 Clicca o trascina per caricare</div>'}
+          <input type="file" accept="image/*" id="file-fullbody" />
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="row">
+        <div class="field"><label>URL Immagine volto</label><input type="text" id="ed-face" value="${escapeAttr(draft.faceUrl)}" placeholder="https://... .png/.jpg" /></div>
+      </div>
+
+      <div class="field">
+        <label>Oppure carica immagine volto</label>
+        <div class="img-upload-zone" id="zone-face">
+          ${draft.faceUrl ? `<img src="${escapeAttr(draft.faceUrl)}" style="max-height:100px;" />` : '<div class="hint">🖼 Clicca o trascina per caricare il volto</div>'}
+          <input type="file" accept="image/*" id="file-face" />
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="chat-preview" id="live-preview">
+        <div class="muted" style="font-size:9px;margin-bottom:6px;">ANTEPRIMA CHAT IN TEMPO REALE</div>
+        <div id="preview-content"></div>
+      </div>
+
+      <div style="margin-top:16px;display:flex;gap:8px;">
+        <button class="btn solid" id="btn-save" style="flex:1;">${isNew ? '+ Crea NPC' : '💾 Salva modifiche'}</button>
+        <button class="btn ghost" id="btn-cancel2">Annulla</button>
+      </div>
+      <div id="ed-err" class="muted" style="color:var(--danger);margin-top:8px;"></div>
+    </div>`;
+
+    const nameInput = document.getElementById('ed-name');
+    const descInput = document.getElementById('ed-desc');
+    const colorInput = document.getElementById('ed-color');
+    const fullbodyInput = document.getElementById('ed-fullbody');
+    const faceInput = document.getElementById('ed-face');
+
+    function updatePreview(){
+      const name = nameInput.value.trim() || 'NPC';
+      const color = colorInput.value || '#ffd76a';
+      const face = faceInput.value.trim();
+      const prev = document.getElementById('preview-content');
+      if(prev){
+        prev.innerHTML = `
+          <div>${face ? `<img class="face-inline" src="${escapeAttr(face)}" onerror="this.style.display='none'" />` : ''}<span class="who" style="color:${escapeAttr(color)};">${escapeHTML(name)}</span><span class="muted" style="margin-left:6px;font-size:10px;">14:32:05</span></div>
+          <div class="txt">"Questa è un'anteprima di come appare in chat."</div>
+        `;
+      }
+    }
+    [nameInput, colorInput, faceInput].forEach(el=>el.addEventListener('input', updatePreview));
+    updatePreview();
+
+    // File upload handlers
+    function setupUpload(fileInputId, urlInputId, zoneId, isPending){
+      const fileInput = document.getElementById(fileInputId);
+      fileInput.onchange = async (e)=>{
+        const file = e.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = async (ev)=>{
+          const dataUrl = ev.target.result;
+          // Try to upload to Supabase via API
+          try{
+            const res = await fetch('/api/upload-chat', {
+              method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body: JSON.stringify({ code: session.code, dataUrl, folder: 'npc-images' })
+            });
+            const data = await res.json();
+            if(data && data.url){
+              document.getElementById(urlInputId).value = data.url;
+              const zone = document.getElementById(zoneId);
+              zone.innerHTML = `<img src="${data.url}" /><input type="file" accept="image/*" id="${fileInputId}" />`;
+              setupUpload(fileInputId, urlInputId, zoneId, isPending);
+              updatePreview();
+              return;
+            }
+          }catch(err){}
+          // Fallback: use dataUrl locally
+          document.getElementById(urlInputId).value = dataUrl;
+          const zone = document.getElementById(zoneId);
+          zone.innerHTML = `<img src="${dataUrl}" ${isPending==='face'?'style="max-height:100px;"':''} /><input type="file" accept="image/*" id="${fileInputId}" />`;
+          setupUpload(fileInputId, urlInputId, zoneId, isPending);
+          updatePreview();
+        };
+        reader.readAsDataURL(file);
+      };
+    }
+    setupUpload('file-fullbody', 'ed-fullbody', 'zone-fullbody', 'body');
+    setupUpload('file-face', 'ed-face', 'zone-face', 'face');
+
+    // Sync URL input to preview zone when typing
+    fullbodyInput.addEventListener('input', ()=>{
+      const zone = document.getElementById('zone-fullbody');
+      const val = fullbodyInput.value.trim();
+      if(val && val.startsWith('http')){
+        zone.innerHTML = `<img src="${escapeAttr(val)}" onerror="this.outerHTML='<div class=\\'hint\\'>⚠ Immagine non caricabile</div>'" /><input type="file" accept="image/*" id="file-fullbody" />`;
+        setupUpload('file-fullbody', 'ed-fullbody', 'zone-fullbody', 'body');
+      }
+    });
+    faceInput.addEventListener('input', ()=>{
+      const zone = document.getElementById('zone-face');
+      const val = faceInput.value.trim();
+      if(val && val.startsWith('http')){
+        zone.innerHTML = `<img src="${escapeAttr(val)}" style="max-height:100px;" onerror="this.outerHTML='<div class=\\'hint\\'>⚠ Immagine non caricabile</div>'" /><input type="file" accept="image/*" id="file-face" />`;
+        setupUpload('file-face', 'ed-face', 'zone-face', 'face');
+      }
+    });
+
+    // Save
+    document.getElementById('btn-save').onclick = ()=>{
+      const name = nameInput.value.trim();
+      if(!name){ document.getElementById('ed-err').textContent = 'Il nome è obbligatorio.'; return; }
+      const updated = {
+        id: draft.id,
+        name,
+        description: descInput.value.trim(),
+        chatColor: colorInput.value || '#ffd76a',
+        fullBodyUrl: fullbodyInput.value.trim(),
+        faceUrl: faceInput.value.trim(),
+        createdAt: draft.createdAt || Date.now()
+      };
+      if(isNew){
+        npcList.push(updated);
+      } else {
+        const idx = npcList.findIndex(n=>n.id===draft.id);
+        if(idx>=0) npcList[idx] = updated;
+      }
+      saveNpcs(session.code, npcList);
+      syncToOldFormat(session.code);
+      editingNpc = null;
+      viewingNpc = updated;
+      render();
+    };
+
+    document.getElementById('btn-cancel').onclick = ()=>{ editingNpc=null; render(); };
+    document.getElementById('btn-cancel2').onclick = ()=>{ editingNpc=null; render(); };
+  }
+
+  session = loadSession();
+  render();
+})();
+</script>
+
+<!-- ===== Widget Audio Persistente (replicato per coerenza) ===== -->
+<audio id="dvos-bg-music" loop preload="none" style="display:none;"></audio>
+<div id="dvos-audio-widget" style="position:fixed;bottom:10px;right:10px;z-index:9999;background:var(--panel,#0f1115);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:6px 10px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text,#cfd6e4);box-shadow:0 2px 10px rgba(0,0,0,0.5);">
+  <button id="dvos-music-toggle" title="Musica di sottofondo: on/off" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;">🔊</button>
+  <input type="range" id="dvos-music-volume" min="0" max="100" value="50" style="width:64px;" title="Volume musica" />
+  <button id="dvos-click-toggle" title="Suoni click: on/off" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;">🖱️</button>
+</div>
+<script>
+(function(){
+  const FIXED_BG_MUSIC_URL = 'https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787069260083_hho28k.mpeg';
+  const musicEl = document.getElementById('dvos-bg-music');
+  const PREFS_KEY = 'dvos_audio_prefs_v1';
+  function loadPrefs(){
+    try{ return Object.assign({musicVolume:0.5, musicMuted:false, clickMuted:false}, JSON.parse(localStorage.getItem(PREFS_KEY)||'{}')); }
+    catch(e){ return {musicVolume:0.5, musicMuted:false, clickMuted:false}; }
+  }
+  function savePrefs(p){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(p)); }catch(e){} }
+  const prefs = loadPrefs();
+  if(musicEl && FIXED_BG_MUSIC_URL){
+    fetch(FIXED_BG_MUSIC_URL).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.blob(); })
+      .then(blob=>{
+        musicEl.src = URL.createObjectURL(blob);
+        if(!prefs.musicMuted && window.__dvosUnlocked) musicEl.play().catch(()=>{});
+      }).catch(e=>{});
+  }
+  const musicToggleBtn = document.getElementById('dvos-music-toggle');
+  const musicVolumeInp = document.getElementById('dvos-music-volume');
+  const clickToggleBtn = document.getElementById('dvos-click-toggle');
+  function applyMusicVolume(){
+    if(!musicEl) return;
+    musicEl.volume = prefs.musicMuted ? 0 : prefs.musicVolume;
+    if(prefs.musicMuted && !musicEl.paused) musicEl.pause();
+  }
+  function refreshUI(){
+    if(musicToggleBtn) musicToggleBtn.textContent = prefs.musicMuted ? '🔇' : '🔊';
+    if(musicVolumeInp) musicVolumeInp.value = Math.round(prefs.musicVolume*100);
+    if(clickToggleBtn) clickToggleBtn.style.opacity = prefs.clickMuted ? '0.4' : '1';
+    applyMusicVolume();
+  }
+  refreshUI();
+  if(musicToggleBtn) musicToggleBtn.onclick = ()=>{ prefs.musicMuted = !prefs.musicMuted; savePrefs(prefs); refreshUI(); if(!prefs.musicMuted && musicEl && musicEl.paused && musicEl.src) musicEl.play().catch(()=>{}); };
+  if(musicVolumeInp) musicVolumeInp.oninput = ()=>{ prefs.musicVolume = Number(musicVolumeInp.value)/100; if(prefs.musicVolume>0) prefs.musicMuted = false; savePrefs(prefs); refreshUI(); };
+  if(clickToggleBtn) clickToggleBtn.onclick = ()=>{ prefs.clickMuted = !prefs.clickMuted; savePrefs(prefs); refreshUI(); };
+  let unlocked = false;
+  function unlock(){ if(unlocked) return; unlocked = true; window.__dvosUnlocked = true; if(!prefs.musicMuted && musicEl && musicEl.src) musicEl.play().catch(()=>{}); ['click','keydown','touchend'].forEach(ev=>document.removeEventListener(ev, unlock, true)); }
+  ['click','keydown','touchend'].forEach(ev=>document.addEventListener(ev, unlock, { capture:true }));
+  const CLICK_SFX_URL = "https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787070670792_1jktvp.mpeg";
+  function __playClickSfx(){ if(prefs.clickMuted) return; try{ const a = new Audio(CLICK_SFX_URL); a.volume = 0.5; a.play().catch(()=>{}); }catch(e){} }
+  document.addEventListener('click', function(e){ if(e.target.closest('input, textarea, select')) return; __playClickSfx(); }, true);
+})();
+</script>
+</body>
+</html>
