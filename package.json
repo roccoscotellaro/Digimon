@@ -5,6 +5,7 @@
   "description": "Digimon: Digital Adventures 2E — tavolo testuale multi-utente con backend Supabase e assistenza IA via Claude API",
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
+    "@vercel/analytics": "^2.0.1",
     "web-push": "^3.6.7"
   }
 }
