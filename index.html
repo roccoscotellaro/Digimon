@@ -216,33 +216,120 @@
   ::-webkit-scrollbar-thumb{background:var(--cyan-dim);}
 
   @media (max-width: 760px){
-    .app{padding:8px;}
-    .topbar{flex-direction:column;align-items:flex-start;gap:8px;padding:10px;}
+    .app{padding:6px;padding-bottom:66px;}
+    .topbar{flex-direction:column;align-items:flex-start;gap:6px;padding:8px 10px;margin-bottom:10px;}
     .conn-ticker{font-size:10px;}
     .brand-title{font-size:12px;}
-    .grid2{grid-template-columns:1fr;gap:12px;}
-    .card{padding:12px;}
+    .grid2{grid-template-columns:1fr;gap:10px;}
+    .card{padding:10px;margin-bottom:10px;}
     .row{flex-wrap:wrap;}
     .row > *{flex:1 1 100%;min-width:0;}
-    .grid-stats{grid-template-columns:repeat(3,1fr);}
+    .grid-stats{grid-template-columns:repeat(3,1fr);gap:6px;}
     .stat-box{padding:6px 3px;}
-    /* Schede pieghevoli: tocca il titolo di una scheda per aprirla/chiuderla */
-    .hud-frame.card .section-title{cursor:pointer;user-select:none;}
-    .hud-frame.card.collapsed{padding-bottom:14px;}
     .stat-box .v{font-size:16px;}
     .moves-grid{grid-template-columns:1fr;}
     .role-pick{flex-direction:column;}
     .login-wrap{margin:24px auto;max-width:100%;padding:20px !important;}
-    .scene-box{height:160px;}
+    .scene-box{height:140px;}
     .sheet-head{flex-wrap:wrap;}
     .die3d, .die3d-static{font-size:20px !important;}
     .roster-item .sub{font-size:11px;}
     input[type=text], input[type=number], textarea, select{font-size:16px;}
-    .btn{font-size:11px;padding:8px 10px;}
+    .btn{font-size:11px;padding:8px 10px;-webkit-tap-highlight-color:transparent;}
     .btn.small{padding:6px 8px;font-size:10px;}
     #sidebar-content, .hud-frame.card{width:100%;}
     div[style*="display:flex;gap:14px"]{flex-direction:column;}
     div[style*="display:grid;grid-template-columns:1fr 1fr;gap:14px"]{grid-template-columns:1fr;}
+
+    /* ===== CHAT MOBILE: il log occupa quasi tutto lo schermo ===== */
+    .mobile-section[data-mobile-tab="chat"] .log{
+      height:calc(100svh - 230px) !important;min-height:200px;max-height:calc(100svh - 180px);
+      font-size:14px;
+    }
+    .mobile-section[data-mobile-tab="chat"] .section-title{margin-bottom:4px !important;padding-bottom:4px !important;}
+    /* Input area compatta */
+    .mobile-section[data-mobile-tab="chat"] textarea{rows:1;font-size:15px;padding:10px;border-radius:8px;margin-top:6px;}
+    .mobile-section[data-mobile-tab="chat"] .row{gap:6px;margin-top:6px !important;}
+    /* Nascondi "Correggi italiano" su mobile per risparmiare spazio, accessibile dal menu */
+    .mobile-section[data-mobile-tab="chat"] #btn-correct{display:none;}
+    /* Master: nascondi controlli "parla come" dietro un details/summary */
+    .mobile-section[data-mobile-tab="chat"] .gm-speak-controls{margin-top:6px;}
+    .mobile-section[data-mobile-tab="chat"] .gm-speak-controls summary{
+      font-size:11px;color:var(--text-mute);cursor:pointer;padding:6px 0;
+      -webkit-tap-highlight-color:transparent;
+    }
+    /* Log entry avatar più grandi su mobile */
+    .who-avatar{width:28px;height:28px;}
+    .log-entry.digimon .who-avatar{width:32px;height:32px;}
+    .log-entry .who{font-size:12px;}
+    .log-entry .txt{font-size:13.5px;line-height:1.5;}
+    .log-image{max-width:180px;max-height:180px;}
+
+    /* ===== BOTTOM NAV (mobile only) ===== */
+    .mobile-nav{
+      position:fixed;bottom:0;left:0;right:0;z-index:9000;
+      display:flex;align-items:stretch;
+      background:var(--panel);border-top:1px solid var(--line);
+      box-shadow:0 -2px 12px rgba(0,0,0,0.5);
+      padding:0;height:56px;
+      padding-bottom:env(safe-area-inset-bottom, 0);
+      -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    }
+    .mobile-nav-btn{
+      flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+      gap:2px;background:none;border:none;color:var(--text-mute);font-size:9px;
+      font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:0.04em;
+      cursor:pointer;padding:4px 2px;position:relative;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .mobile-nav-btn .nav-icon{font-size:18px;line-height:1;}
+    .mobile-nav-btn.active{color:var(--cyan);}
+    .mobile-nav-btn.active::after{
+      content:'';position:absolute;top:0;left:25%;right:25%;height:2px;
+      background:var(--cyan);border-radius:0 0 2px 2px;
+    }
+    .mobile-nav-btn .nav-badge{
+      position:absolute;top:4px;right:calc(50% - 16px);width:7px;height:7px;
+      border-radius:50%;background:var(--danger);box-shadow:0 0 4px var(--danger);
+    }
+
+    /* Sezioni mobile: solo quella attiva è visibile */
+    .mobile-section{display:none !important;}
+    .mobile-section.mobile-active{display:block !important;}
+
+    /* Chat: segmented control */
+    .chat-seg{
+      display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:8px;
+    }
+    .chat-seg-btn{
+      flex:1;padding:10px 4px;font-family:'Share Tech Mono',monospace;font-size:11px;
+      text-align:center;background:var(--panel-2);color:var(--text-mute);border:none;cursor:pointer;
+      border-right:1px solid var(--line);text-transform:uppercase;letter-spacing:0.03em;
+      position:relative;-webkit-tap-highlight-color:transparent;
+    }
+    .chat-seg-btn:last-child{border-right:none;}
+    .chat-seg-btn.active{background:rgba(53,232,201,0.15);color:var(--cyan);font-weight:700;}
+    .chat-seg-btn .seg-dot{
+      display:inline-block;width:6px;height:6px;border-radius:50%;
+      background:var(--danger);margin-left:4px;vertical-align:middle;
+    }
+
+    /* Schede pieghevoli mobile: card con section-title cliccabile per espandere/comprimere */
+    .hud-frame.card .section-title{cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;}
+    .hud-frame.card.collapsed{padding-bottom:12px;}
+
+    /* Chat send bar: textarea + bottone inline su mobile */
+    .mobile-send-bar{display:flex;gap:6px;align-items:flex-end;margin-top:6px;}
+    .mobile-send-bar textarea{flex:1;min-height:38px;max-height:100px;resize:none;border-radius:8px;padding:10px;font-size:15px;margin:0 !important;}
+    .mobile-send-bar .btn{height:38px;border-radius:8px;padding:0 16px;flex-shrink:0;}
+    /* Hint su mobile: molto compatto */
+    .mobile-section[data-mobile-tab="chat"] #action-hint{font-size:10px;margin-top:2px !important;line-height:1.3;}
+  }
+
+  /* Desktop: nasconde la nav e ignora le classi mobile */
+  @media (min-width: 761px){
+    .mobile-nav{display:none !important;}
+    .mobile-section{display:block !important;}
   }
 
   .portrait{width:56px;height:56px;border-radius:8px;object-fit:cover;flex-shrink:0;}
@@ -1735,24 +1822,19 @@
   let playerActiveSubgroupId = null;
 
   function updateChatModeButtons(){
-    const pubBtn = document.getElementById('chatmode-public');
-    const privBtn = document.getElementById('chatmode-private');
-    const subBtn = document.getElementById('chatmode-subgroup');
-    if(pubBtn) pubBtn.classList.toggle('active', playerChatMode==='public');
-    if(privBtn) privBtn.classList.toggle('active', playerChatMode==='private');
-    if(subBtn) subBtn.classList.toggle('active', playerChatMode==='subgroup');
+    // Sync segmented control
+    document.querySelectorAll('#player-chat-seg .chat-seg-btn').forEach(b=>{
+      b.classList.toggle('active', b.dataset.chatmode===playerChatMode);
+    });
     const hint = document.getElementById('action-hint');
     if(hint) hint.style.display = (playerChatMode==='private' || playerChatMode==='subgroup') ? 'none' : 'block';
-    // Mostra/nascondi bottone sottogruppi e selettore
-    if(subBtn && session){
+    // Mostra/nascondi bottone sottogruppi
+    if(session){
       const myGroups = getMySubgroups(session.code, session.username);
-      subBtn.style.display = myGroups.length>0 ? '' : 'none';
-      const sel = document.getElementById('player-subgroup-select');
-      if(sel && playerChatMode==='subgroup'){
-        sel.style.display = '';
-      } else if(sel){
-        sel.style.display = 'none';
-      }
+      const segSubBtn = document.getElementById('seg-subgroup-btn');
+      if(segSubBtn) segSubBtn.style.display = myGroups.length>0 ? '' : 'none';
+      const subWrap = document.getElementById('player-subgroup-select-wrap');
+      if(subWrap) subWrap.style.display = playerChatMode==='subgroup' ? '' : 'none';
     }
   }
 
@@ -2426,34 +2508,40 @@
       ${topbar('Vista Giocatore')}
       <div class="grid2">
         <div>
+          <div class="mobile-section" data-mobile-tab="scena">
           <div class="hud-frame card">
             <div class="section-title">Scena Attuale</div>
             <div class="muted mono" style="margin-bottom:8px;">Milestone ${cachedProgression?cachedProgression.milestone:0} · Ispirazione ${cachedProgression?cachedProgression.inspiration:0}</div>
             <div id="scene-live">${sceneHTML(cachedScene, me)}</div>
             ${sceneAudioWidgetHTML()}
           </div>
-
-          <div class="hud-frame card">
-            <div class="flex-between" style="margin-bottom:8px;">
-              <div class="section-title" style="margin:0;border:none;padding:0;">Registro</div>
-              <div style="display:flex;gap:4px;">
-                <button class="btn small" id="chatmode-public">Pubblico</button>
-                <button class="btn small" id="chatmode-private">Privata (Master)</button>
-                <button class="btn small" id="chatmode-subgroup" style="display:none;">👥 Gruppo</button>
-              </div>
-            </div>
-            <div class="log" id="log-live" style="height:220px;">${logHTML(sceneLog(), session.role==='master')}</div>
-            <textarea id="action-text" rows="3" placeholder="Scrivi cosa fa il tuo Tamer o il tuo Digimon..." style="margin-top:10px;"></textarea>
-            <div class="muted" id="action-hint" style="margin-top:4px;">${ACTION_HINT_DEFAULT_TEXT}</div>
-            <div id="action-roll-result" style="margin-top:8px;"></div>
-            ${chatAttachHTML('action')}
-            <div class="row" style="margin-top:8px;">
-              <button class="btn" id="btn-correct">Correggi Italiano</button>
-              <button class="btn solid" id="btn-send-action">Invia</button>
-            </div>
-            <div class="muted" id="correct-status" style="margin-top:6px;"></div>
           </div>
 
+          <div class="mobile-section" data-mobile-tab="chat">
+          <div class="hud-frame card">
+            <div class="section-title" style="margin:0;border:none;padding:0;margin-bottom:8px;">Chat</div>
+            <div class="chat-seg" id="player-chat-seg">
+              <button class="chat-seg-btn active" data-chatmode="public">📣 Generale</button>
+              <button class="chat-seg-btn" data-chatmode="private">✉️ Privata</button>
+              <button class="chat-seg-btn" data-chatmode="subgroup" id="seg-subgroup-btn" style="display:none;">👥 Gruppo</button>
+            </div>
+            <div id="player-subgroup-select-wrap" style="display:none;margin-bottom:6px;"></div>
+            <div class="log" id="log-live" style="height:220px;">${logHTML(sceneLog(), session.role==='master')}</div>
+            <div class="mobile-send-bar">
+              <textarea id="action-text" rows="1" placeholder="Scrivi..." style="margin-top:8px;"></textarea>
+              <button class="btn solid" id="btn-send-action">Invia</button>
+            </div>
+            <div class="muted" id="action-hint" style="margin-top:4px;font-size:11px;">${ACTION_HINT_DEFAULT_TEXT}</div>
+            <div id="action-roll-result" style="margin-top:6px;"></div>
+            ${chatAttachHTML('action')}
+            <div class="row" style="margin-top:6px;">
+              <button class="btn" id="btn-correct">Correggi Italiano</button>
+            </div>
+            <div class="muted" id="correct-status" style="margin-top:4px;"></div>
+          </div>
+          </div>
+
+          <div class="mobile-section" data-mobile-tab="combattimento">
           <div class="hud-frame card" id="attacks-card" style="${(cachedCombat && cachedCombat.active) ? '' : 'display:none;'}">
             <div class="section-title">Attacchi di ${escapeHTML(me.digimon.name || 'Digimon')}</div>
             <div id="attacks-card-inner">${attacksCardHTML(me, cachedCombat, session.username)}</div>
@@ -2464,9 +2552,10 @@
             <div id="combat-live">${combatDisplayHTML(cachedCombat, false)}</div>
             <div id="combat-self-actions">${combatSelfActionHTML(cachedCombat, session.username)}</div>
           </div>
+          </div>
         </div>
 
-        <div>
+        <div class="mobile-section" data-mobile-tab="scheda">
           <div class="hud-frame" style="padding:6px;margin-bottom:16px;display:flex;gap:6px;">
             <button class="btn small" id="tab-scheda" style="flex:1;">Scheda</button>
             <button class="btn small" id="tab-inventario" style="flex:1;">Inventario</button>
@@ -2475,6 +2564,7 @@
           <div id="sidebar-content"></div>
         </div>
       </div>
+      ${playerMobileNavHTML()}
     `;
 
     renderSidebar(me);
@@ -2550,41 +2640,44 @@
     attachLogModeration(document.getElementById('log-live'), code, me);
     bindCombatSelfActions(code, session.username);
     updateChatModeButtons();
-    document.getElementById('chatmode-public').onclick = async ()=>{ playerChatMode='public'; await refreshPlayerLogDisplay(code, me); };
-    document.getElementById('chatmode-private').onclick = async ()=>{ playerChatMode='private'; await refreshPlayerLogDisplay(code, me); };
+    // Chat segmented control (mobile-friendly, works on desktop too)
+    document.querySelectorAll('#player-chat-seg .chat-seg-btn').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const mode = btn.dataset.chatmode;
+        playerChatMode = mode;
+        document.querySelectorAll('#player-chat-seg .chat-seg-btn').forEach(b=>b.classList.toggle('active', b.dataset.chatmode===mode));
+        const subWrap = document.getElementById('player-subgroup-select-wrap');
+        if(subWrap) subWrap.style.display = mode==='subgroup' ? '' : 'none';
+        await refreshPlayerLogDisplay(code, me);
+      };
+    });
     // Sottogruppi player: crea selettore dinamico se ci sono gruppi disponibili
-    const subBtnP = document.getElementById('chatmode-subgroup');
-    if(subBtnP){
+    const segSubBtn = document.getElementById('seg-subgroup-btn');
+    if(segSubBtn){
       const myGroups = getMySubgroups(code, session.username);
       if(myGroups.length>0){
-        subBtnP.style.display = '';
-        // Inserisci selettore sottogruppo dopo il log
-        let subSel = document.getElementById('player-subgroup-select');
-        if(!subSel){
-          subSel = document.createElement('select');
+        segSubBtn.style.display = '';
+        const subWrap = document.getElementById('player-subgroup-select-wrap');
+        if(subWrap && !document.getElementById('player-subgroup-select')){
+          const subSel = document.createElement('select');
           subSel.id = 'player-subgroup-select';
-          subSel.style.cssText = 'display:none;margin-bottom:6px;font-size:12px;';
+          subSel.style.cssText = 'width:100%;font-size:12px;';
           myGroups.forEach(g=>{
             const opt = document.createElement('option');
             opt.value = g.id; opt.textContent = g.name;
             subSel.appendChild(opt);
           });
-          const logLiveEl = document.getElementById('log-live');
-          if(logLiveEl) logLiveEl.parentElement.insertBefore(subSel, logLiveEl);
+          subWrap.appendChild(subSel);
+          if(!playerActiveSubgroupId && myGroups.length>0) playerActiveSubgroupId = myGroups[0].id;
+          subSel.onchange = async ()=>{
+            playerActiveSubgroupId = subSel.value;
+            await refreshPlayerLogDisplay(code, me);
+          };
         }
-        if(!playerActiveSubgroupId && myGroups.length>0) playerActiveSubgroupId = myGroups[0].id;
-        subSel.onchange = async ()=>{
-          playerActiveSubgroupId = subSel.value;
-          await refreshPlayerLogDisplay(code, me);
-        };
       }
-      subBtnP.onclick = async ()=>{
-        playerChatMode='subgroup';
-        const sel = document.getElementById('player-subgroup-select');
-        if(sel) sel.style.display = '';
-        await refreshPlayerLogDisplay(code, me);
-      };
     }
+    updateChatModeButtons();
+    initMobileNav();
 
     startPolling();
   }
@@ -4715,6 +4808,7 @@
       ${topbar('Vista Master')}
       <div class="grid2">
         <div>
+          <div class="mobile-section" data-mobile-tab="scena">
           <div class="hud-frame card">
             <div class="section-title">Composizione Scena</div>
             <div id="scene-live">${sceneHTML(cachedScene)}</div>
@@ -4760,21 +4854,25 @@
           </div>
 
           <div class="hud-frame card" id="sector-map-card"></div>
+          </div>
 
+          <div class="mobile-section" data-mobile-tab="chat">
           <div class="hud-frame card">
             <div class="flex-between" style="margin-bottom:8px;">
               <div class="section-title" style="margin-bottom:0;">Chat</div>
               <button class="btn ghost small" id="btn-clear-chat" title="Cancella per sempre tutta la chat generale (non tocca le chat private)">🗑️ Pulisci Chat Generale</button>
             </div>
-            <div class="row" style="margin-bottom:10px;">
-              <button class="btn small" id="mchatmode-general">📣 Generale</button>
-              <button class="btn small" id="mchatmode-private">✉️ Privata <span id="mchat-unread-badge"></span></button>
-              <button class="btn small" id="mchatmode-subgroup">👥 Sottogruppi <span id="mchat-subgroup-badge"></span></button>
+            <div class="chat-seg" id="master-chat-seg">
+              <button class="chat-seg-btn active" id="mchatmode-general" data-mchatmode="general">📣 Generale</button>
+              <button class="chat-seg-btn" id="mchatmode-private" data-mchatmode="private">✉️ Privata <span id="mchat-unread-badge"></span></button>
+              <button class="chat-seg-btn" id="mchatmode-subgroup" data-mchatmode="subgroup">👥 Gruppi</button>
             </div>
             <div id="mchat-general-block">
-            <div class="section-title">Registro Narrativo</div>
             <div class="log" id="log-live">${logHTML(sceneLog(), session.role==='master')}</div>
-            <div class="field" style="margin-top:10px;"><label>Parla come</label>
+            <details class="gm-speak-controls" style="margin-top:8px;">
+              <summary>🎭 Parla come... · 🎨 Colore · ✍️ Digimoji</summary>
+              <div style="margin-top:8px;">
+            <div class="field"><label>Parla come</label>
               <select id="speak-as">
                 <option value="master">Master (narrazione)</option>
                 ${players.map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (displayName(p)+' — Digimon'))}</option>`).join('')}
@@ -4796,26 +4894,32 @@
               <label class="muted" style="flex:2;font-size:11px;">Colore scritta in chat</label>
               <input type="color" id="speak-color" value="#ff8a3d" style="flex:1;padding:2px;height:34px;" />
             </div>
-            <textarea id="gm-text" rows="2" placeholder="Narrazione del Master..."></textarea>
-            ${chatAttachHTML('gm')}
             <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--text-mute);">
-              <input type="checkbox" id="gm-digimoji-toggle" /> ✍️ Scrivi in Digimoji (scrivi in italiano fonetico, es. "kaze", "shiro", "montana" — viene convertito in automatico in Hiragana mentre scrivi)
+              <input type="checkbox" id="gm-digimoji-toggle" /> ✍️ Scrivi in Digimoji
             </label>
             <details style="margin-top:4px;">
-              <summary style="cursor:pointer;font-size:11px;color:var(--text-mute);">⌨️ Tastiera Hiragana (clic per inserire)</summary>
+              <summary style="cursor:pointer;font-size:11px;color:var(--text-mute);">⌨️ Tastiera Hiragana</summary>
               <div id="hiragana-palette" style="display:flex;flex-wrap:wrap;gap:2px;margin-top:6px;max-width:420px;">
                 ${'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんがぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽ、。'.split('').map(ch=>`<button type="button" class="btn ghost small hira-key" style="padding:3px 6px;font-family:'Digicode',monospace;font-size:14px;">${ch}</button>`).join('')}
                 <button type="button" class="btn ghost small" id="hira-clear" style="padding:3px 6px;">✕ Pulisci</button>
               </div>
             </details>
-            <button class="btn amber" id="btn-gm-post" style="width:100%;margin-top:8px;">Pubblica</button>
+              </div>
+            </details>
+            <div class="mobile-send-bar">
+              <textarea id="gm-text" rows="1" placeholder="Narrazione del Master..."></textarea>
+              <button class="btn amber" id="btn-gm-post">Pubblica</button>
+            </div>
+            ${chatAttachHTML('gm')}
             </div>
             <div id="mchat-private-slot" style="display:none;"></div>
             <div id="mchat-subgroup-slot" style="display:none;"></div>
           </div>
+          </div>
         </div>
 
         <div>
+          <div class="mobile-section" data-mobile-tab="combattimento">
           <div class="hud-frame card">
             <div class="section-title">Combattimento</div>
             <div id="combat-live">${combatDisplayHTML(cachedCombat, true)}</div>
@@ -4825,9 +4929,10 @@
             </div>
           </div>
           <div class="hud-frame card" id="combat-mgr-card"></div>
-
           <div class="hud-frame card" id="encounter-balance-card"></div>
+          </div>
 
+          <div class="mobile-section" data-mobile-tab="roster">
           <div class="hud-frame card">
             <div class="section-title">Roster Campagna</div>
             <div id="roster-live">${players.length===0 ? '<div class="muted">Nessun giocatore ha ancora effettuato l\'accesso a questa campagna.</div>' : players.map((p,i)=>rosterItemHTML(p,i)).join('')}</div>
@@ -4858,6 +4963,9 @@
             <button class="btn amber" id="btn-request-roll" style="width:100%;">Richiedi Tiro</button>
             <div class="muted" id="req-roll-status" style="margin-top:6px;"></div>
           </div>
+          </div>
+
+          <div class="mobile-section" data-mobile-tab="strumenti">
           <div class="hud-frame card" id="notice-mgr-card"></div>
           <div class="hud-frame card" id="bugreports-card"></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;">
@@ -4868,14 +4976,14 @@
                 <div class="flex-between" style="margin-bottom:6px;">
                   <div class="section-title" style="margin:0;border:none;padding:0;">Digidex</div>
                 </div>
-                <div class="muted" style="margin-bottom:10px;">Registra rapidamente un Digimon incontrato dal bottone "+Dex" sugli Incontri della Scena. Per la gestione completa (modifica, Qualities, evoluzioni, Attributo/Famiglia, import) usa la pagina dedicata.</div>
+                <div class="muted" style="margin-bottom:10px;">Registra rapidamente un Digimon incontrato dal bottone "+Dex" sugli Incontri della Scena. Per la gestione completa usa la pagina dedicata.</div>
                 <a href="dex.html" target="_blank" class="btn solid" style="display:inline-block;text-decoration:none;padding:10px 18px;">📖 Apri il Digidex Completo →</a>
               </div>
               <div class="hud-frame card">
                 <div class="flex-between" style="margin-bottom:6px;">
                   <div class="section-title" style="margin:0;border:none;padding:0;">Mappa</div>
                 </div>
-                <div class="muted" style="margin-bottom:10px;">Gestisci Macroscene, Settori e Luoghi dal pannello "🗺️ Mappa" qui sopra. Per la vista esplorabile a griglia 3×3 (immagini cliccabili, navigazione per i giocatori) usa la pagina dedicata.</div>
+                <div class="muted" style="margin-bottom:10px;">Gestisci Macroscene, Settori e Luoghi dal pannello Mappa. Per la vista esplorabile usa la pagina dedicata.</div>
                 <a href="map.html" target="_blank" class="btn solid" style="display:inline-block;text-decoration:none;padding:10px 18px;">🗺️ Apri la Mappa Completa →</a>
               </div>
             </div>
@@ -4883,8 +4991,11 @@
             <div class="hud-frame card" id="gm-reference-card" style="grid-column:1 / -1;"></div>
           </div>
           </div>
+
+          </div>
         </div>
       </div>
+      ${masterMobileNavHTML()}
     `;
 
     document.getElementById('btn-combat-next-turn-top').onclick = ()=> advanceCombatTurn(code, players);
@@ -9412,6 +9523,71 @@
       showNextNotice();
     };
   }
+
+  // ---------- MOBILE BOTTOM NAV ----------
+  // Su mobile, mostra una barra di navigazione fissa in basso. Ogni tab attiva una sezione
+  // diversa (le card vengono wrappate in div.mobile-section con data-mobile-tab).
+  // Su desktop (>760px) il sistema non fa nulla — le sezioni restano tutte visibili nel grid2.
+  let __currentMobileTab = null;
+
+  function isMobile(){ return window.innerWidth <= 760; }
+
+  function initMobileNav(){
+    if(!isMobile()) return;
+    const nav = document.querySelector('.mobile-nav');
+    if(!nav) return;
+    const btns = nav.querySelectorAll('.mobile-nav-btn');
+    btns.forEach(btn=>{
+      btn.onclick = ()=>{
+        const tab = btn.dataset.tab;
+        if(!tab) return;
+        switchMobileTab(tab);
+      };
+    });
+    // Attiva il primo tab se non c'è nessuno attivo
+    if(!__currentMobileTab){
+      const first = nav.querySelector('.mobile-nav-btn');
+      if(first && first.dataset.tab) switchMobileTab(first.dataset.tab);
+    } else {
+      switchMobileTab(__currentMobileTab);
+    }
+  }
+
+  function switchMobileTab(tab){
+    __currentMobileTab = tab;
+    // Aggiorna bottoni
+    document.querySelectorAll('.mobile-nav-btn').forEach(b=>{
+      b.classList.toggle('active', b.dataset.tab===tab);
+    });
+    // Mostra/nascondi sezioni
+    document.querySelectorAll('.mobile-section').forEach(sec=>{
+      sec.classList.toggle('mobile-active', sec.dataset.mobileTab===tab);
+    });
+    // Scroll to top quando si cambia tab
+    window.scrollTo({ top: 0 });
+  }
+
+  // Crea la barra bottom nav per il Player
+  function playerMobileNavHTML(){
+    return `<nav class="mobile-nav">
+      <button class="mobile-nav-btn active" data-tab="scena"><span class="nav-icon">🌐</span>Scena</button>
+      <button class="mobile-nav-btn" data-tab="chat"><span class="nav-icon">💬</span>Chat</button>
+      <button class="mobile-nav-btn" data-tab="scheda"><span class="nav-icon">📋</span>Scheda</button>
+      <button class="mobile-nav-btn" data-tab="combattimento"><span class="nav-icon">⚔️</span>Battle</button>
+    </nav>`;
+  }
+
+  // Crea la barra bottom nav per il Master
+  function masterMobileNavHTML(){
+    return `<nav class="mobile-nav">
+      <button class="mobile-nav-btn active" data-tab="scena"><span class="nav-icon">🌐</span>Scena</button>
+      <button class="mobile-nav-btn" data-tab="chat"><span class="nav-icon">💬</span>Chat</button>
+      <button class="mobile-nav-btn" data-tab="combattimento"><span class="nav-icon">⚔️</span>Battle</button>
+      <button class="mobile-nav-btn" data-tab="roster"><span class="nav-icon">👥</span>Roster</button>
+      <button class="mobile-nav-btn" data-tab="strumenti"><span class="nav-icon">🔧</span>Tools</button>
+    </nav>`;
+  }
+  // ---------- fine MOBILE BOTTOM NAV ----------
 
   function openImageLightbox(url){
     if(!url) return;
