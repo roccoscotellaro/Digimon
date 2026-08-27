@@ -1795,6 +1795,7 @@
     render();
   }
 
+  let __pollTick = 0;
   function startPolling(){
     if(pollTimer) clearInterval(pollTimer);
     if(!session) return;
@@ -1804,11 +1805,13 @@
     // last_seen aggiornati, quindi non mostrano più nessuno online (comportamento innocuo).
     // Per riattivarlo: de-commentare le due righe `heartbeat(...)` qui sotto.
     // heartbeat(session.code, session.username);
-    refreshLiveParts();
+    __pollTick = 0;
+    refreshLiveParts(__pollTick);
     checkNoticesForMe();
     pollTimer = setInterval(async ()=>{
       // if(session) await heartbeat(session.code, session.username);
-      refreshLiveParts();
+      __pollTick++;
+      refreshLiveParts(__pollTick);
       checkNoticesForMe();
     }, 15000);
   }
@@ -1954,8 +1957,17 @@
   }
 
   // ---------- LIVE PARTS (updated by polling, never touch forms) ----------
-  async function refreshLiveParts(){
+  // `tick` = numero del ciclo di polling (incrementa ogni 15s, vedi startPolling). Roster/Scena/
+  // Log/Avvisi restano aggiornati OGNI ciclo perché sono ciò che rende il gioco "in tempo reale"
+  // (posizioni, HP, chat). Digidex/Progressione/Sottogruppi cambiano raramente (il Master li
+  // tocca ogni tanto, non ogni pochi secondi): rileggerli ogni 15s per OGNI client connesso era
+  // pura banda sprecata sul Fast Origin Transfer di Vercel. Ora si aggiornano ogni 4 cicli (~1
+  // minuto) — restano comunque "quasi in tempo reale" per dati che nella pratica non cambiano
+  // a quella velocità. Il Combattimento fa eccezione: se è già attivo resta ad ogni ciclo (serve
+  // reattività in scontro), altrimenti anche lui scende a 1 su 4.
+  async function refreshLiveParts(tick){
     if(!session) return;
+    const slowCycle = (typeof tick!=='number') || (tick % 4 === 0); // sempre true al primo giro
     cachedRoster = (await getRoster(session.code)).map(normalizeMember);
     cachedScene = await getScene(session.code);
     cachedLog = await getLog(session.code);
@@ -1963,21 +1975,25 @@
       const myPublicName = session.role==='master' ? 'Master' : displayName(cachedMe || cachedRoster.find(m=>m.username===session.username) || {username:session.username});
       maybeNotifyNew('public', null, cachedLog[cachedLog.length-1], myPublicName);
     }
-    cachedDex = await getDex(session.code);
-    const freshCombat = await getCombat(session.code);
-    if(freshCombat && cachedCombat && typeof cachedCombat==='object'){
-      // Muta l'oggetto esistente invece di sostituirlo: il Combat Manager del Master
-      // tiene riferimenti a cachedCombat dentro le closure dei bottoni (+ Aggiungi, ecc.);
-      // se qui lo rimpiazzassimo con un nuovo oggetto, quei bottoni scriverebbero
-      // su una copia "orfana" e le modifiche andrebbero perse al salvataggio.
-      Object.keys(cachedCombat).forEach(k=>{ delete cachedCombat[k]; });
-      Object.assign(cachedCombat, freshCombat);
-    } else {
-      cachedCombat = freshCombat;
+    if(slowCycle) cachedDex = await getDex(session.code);
+    if(slowCycle || (cachedCombat && cachedCombat.active)){
+      const freshCombat = await getCombat(session.code);
+      if(freshCombat && cachedCombat && typeof cachedCombat==='object'){
+        // Muta l'oggetto esistente invece di sostituirlo: il Combat Manager del Master
+        // tiene riferimenti a cachedCombat dentro le closure dei bottoni (+ Aggiungi, ecc.);
+        // se qui lo rimpiazzassimo con un nuovo oggetto, quei bottoni scriverebbero
+        // su una copia "orfana" e le modifiche andrebbero perse al salvataggio.
+        Object.keys(cachedCombat).forEach(k=>{ delete cachedCombat[k]; });
+        Object.assign(cachedCombat, freshCombat);
+      } else {
+        cachedCombat = freshCombat;
+      }
     }
-    cachedProgression = await getProgression(session.code);
-    cachedSubgroups = await getSubgroups(session.code);
-    if(session.role==='player') updateChatModeButtons(); // mostra/nasconde il bottone "👥 Gruppo" appena arrivano sottogruppi nuovi
+    if(slowCycle) cachedProgression = await getProgression(session.code);
+    if(slowCycle){
+      cachedSubgroups = await getSubgroups(session.code);
+      if(session.role==='player') updateChatModeButtons(); // mostra/nasconde il bottone "👥 Gruppo" appena arrivano sottogruppi nuovi
+    }
 
     // Musica da Combattimento: rilevata qui (non solo nel click di "Inizia Combattimento") perché
     // questa funzione gira per TUTTI i client via polling — così la musica parte anche sui browser
