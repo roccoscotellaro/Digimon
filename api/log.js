@@ -96,6 +96,23 @@ async function subsForUsername(campaignCode, username) {
   return data || [];
 }
 
+// Recupera le sottoscrizioni dei destinatari di un SOTTOGRUPPO di chat (thread nel formato
+// "subgroup:<id>"): i membri del gruppo (tabella `subgroups`, gestita da api/notice.js) più
+// tutti i Master della campagna, esclusa la persona che ha appena scritto — altrimenti nessuno
+// veniva mai avvisato di un nuovo messaggio nel gruppo (il vecchio codice cercava per errore un
+// "username" letterale uguale al thread, che non esiste mai).
+async function subsForSubgroup(campaignCode, threadValue, excludeUsername) {
+  const groupId = String(threadValue).slice('subgroup:'.length);
+  const { data: group } = await supabase.from('subgroups').select('members').eq('code', campaignCode).eq('id', groupId).maybeSingle();
+  const memberUsernames = Array.isArray(group && group.members) ? group.members : [];
+  const { data: masters } = await supabase.from('members').select('username').eq('campaign_code', campaignCode).eq('role', 'master');
+  const masterUsernames = (masters || []).map(m => m.username);
+  const usernames = Array.from(new Set([...memberUsernames, ...masterUsernames])).filter(u => u !== excludeUsername);
+  if (!usernames.length) return [];
+  const { data } = await supabase.from('push_subscriptions').select('*').eq('campaign_code', campaignCode).in('username', usernames);
+  return data || [];
+}
+
 module.exports = async (req, res) => {
   try {
     // ===== Sottoscrizioni Web Push (risorsa separata, stesso file per restare sotto il limite
@@ -173,15 +190,20 @@ module.exports = async (req, res) => {
           meta: meta || null
         }).select().single();
         if (error) return res.status(500).json({ error: error.message });
-        // Il destinatario del push e' l'ALTRA parte del thread: se a scrivere e' il giocatore
-        // (username === thread) il push va al Master, altrimenti (scrive il Master) va al giocatore.
+        // Il destinatario del push dipende dal tipo di thread:
+        //  - "subgroup:<id>"  -> tutti i membri del gruppo + i Master, tranne chi ha scritto
+        //  - altrimenti (1:1) -> l'ALTRA parte del thread: se a scrivere e' il giocatore
+        //    (username === thread) il push va al Master, altrimenti (scrive il Master) va al giocatore.
         // Aspettiamo l'invio prima di rispondere (invece di "spara e dimentica") perche' Vercel puo'
         // congelare la funzione non appena la risposta parte, interrompendo un invio ancora in corso.
-        const recipientSubs = (username && username === thread)
-          ? await subsForMasters(campaignCode)
-          : await subsForUsername(campaignCode, thread);
+        const isSubgroupThread = String(thread).startsWith('subgroup:');
+        const recipientSubs = isSubgroupThread
+          ? await subsForSubgroup(campaignCode, thread, username)
+          : (username && username === thread)
+            ? await subsForMasters(campaignCode)
+            : await subsForUsername(campaignCode, thread);
         await sendPushToSubscriptions(recipientSubs, {
-          title: `✉️ ${String(who).slice(0, 60)} (privato)`,
+          title: isSubgroupThread ? `👥 ${String(who).slice(0, 60)} (gruppo)` : `✉️ ${String(who).slice(0, 60)} (privato)`,
           body: String(text).slice(0, 140),
           url: '/index.html',
           tag: 'dvos-push'

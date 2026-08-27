@@ -1884,15 +1884,40 @@
     (async ()=>{
       const plog = await getPrivateLog(session.code, session.username);
       const unread = plog.length>0 && plog[plog.length-1].who!==session.username && isPrivateThreadUnread(session.code, session.username, plog);
-      updatePlayerPrivateBadge(unread);
+      updateChatBadge('chatmode-private', unread);
       if(plog.length){
         const myName = displayName(cachedMe || cachedRoster.find(m=>m.username===session.username) || {username:session.username});
         maybeNotifyNew('private', session.username, plog[plog.length-1], myName);
       }
     })();
   }
-  function updatePlayerPrivateBadge(forceUnread){
-    const btn = document.getElementById('chatmode-private');
+  // Come sopra ma per i Sottogruppi: un giocatore può appartenere a più gruppi contemporaneamente,
+  // quindi controlliamo TUTTI quelli a cui appartiene (anche se non è quello aperto in questo
+  // momento) e accendiamo il pallino sul bottone "👥 Gruppo" se anche uno solo ha messaggi non
+  // letti. Prima non esisteva alcun controllo qui: un messaggio in un sottogruppo non aperto
+  // passava completamente inosservato (niente pallino, niente notifica push — vedi log.js).
+  function checkPlayerSubgroupsUnread(){
+    if(!session) return;
+    (async ()=>{
+      const myGroups = getMySubgroups(session.code, session.username);
+      if(!myGroups.length){ updateChatBadge('seg-subgroup-btn', false); return; }
+      let anyUnread = false;
+      const myName = displayName(cachedMe || cachedRoster.find(m=>m.username===session.username) || {username:session.username});
+      for(const g of myGroups){
+        const thread = 'subgroup:'+g.id;
+        const plog = await getPrivateLog(session.code, thread);
+        if(plog.length>0 && plog[plog.length-1].who!==myName){
+          if(isPrivateThreadUnread(session.code, thread, plog)) anyUnread = true;
+          maybeNotifyNew('private', thread, plog[plog.length-1], myName);
+        }
+      }
+      updateChatBadge('seg-subgroup-btn', anyUnread);
+    })();
+  }
+  // Pallino "non letto" generico su un bottone della segmented control (usato sia per la Chat
+  // Privata sia per i Sottogruppi).
+  function updateChatBadge(btnId, forceUnread){
+    const btn = document.getElementById(btnId);
     if(!btn) return;
     let badge = btn.querySelector('.unread-dot');
     const show = forceUnread===true;
@@ -1942,8 +1967,11 @@
     const logLive = document.getElementById('log-live');
     if(!logLive) return;
     if(playerChatMode==='subgroup' && playerActiveSubgroupId){
-      const plog = await getPrivateLog(code, 'subgroup:'+playerActiveSubgroupId);
+      const thread = 'subgroup:'+playerActiveSubgroupId;
+      const plog = await getPrivateLog(code, thread);
       logLive.innerHTML = logHTML(plog, false);
+      markPrivateThreadRead(code, thread, plog);
+      checkPlayerSubgroupsUnread();
       logLive.scrollTop = logLive.scrollHeight;
       return;
     }
@@ -1951,7 +1979,7 @@
       const plog = await getPrivateLog(code, session.username);
       logLive.innerHTML = logHTML(plog, false);
       markPrivateThreadRead(code, session.username, plog);
-      updatePlayerPrivateBadge(false);
+      updateChatBadge('chatmode-private', false);
     } else {
       logLive.innerHTML = logHTML(sceneLog(), false);
     }
@@ -2094,17 +2122,19 @@
     const logLive = document.getElementById('log-live');
     if(logLive){
       if(session.role==='player' && playerChatMode==='subgroup' && playerActiveSubgroupId){
-        const plog = await getPrivateLog(session.code, 'subgroup:'+playerActiveSubgroupId);
+        const thread = 'subgroup:'+playerActiveSubgroupId;
+        const plog = await getPrivateLog(session.code, thread);
         const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
         logLive.innerHTML = logHTML(plog, false);
         if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
+        markPrivateThreadRead(session.code, thread, plog); // il gruppo aperto ora si considera letto man mano che arrivano messaggi
       } else if(session.role==='player' && playerChatMode==='private'){
         const plog = await getPrivateLog(session.code, session.username);
         const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
         logLive.innerHTML = logHTML(plog, false);
         if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
         markPrivateThreadRead(session.code, session.username, plog);
-        updatePlayerPrivateBadge();
+        updateChatBadge('chatmode-private', false);
         if(plog.length){
           const myName = displayName(cachedMe || cachedRoster.find(m=>m.username===session.username) || {username:session.username});
           maybeNotifyNew('private', session.username, plog[plog.length-1], myName);
@@ -2113,12 +2143,18 @@
         const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
         logLive.innerHTML = logHTML(sceneLog(), false);
         if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
-        checkPlayerPrivateUnread();
       } else {
         const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
         logLive.innerHTML = logHTML(sceneLog(), session && session.role==='master');
         if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
       }
+    }
+    // Controlla in ogni ciclo di polling — indipendentemente da quale chat è aperta in questo
+    // momento — se ci sono messaggi privati o di sottogruppo non letti altrove, per accendere
+    // i pallini sui bottoni "Privata"/"Gruppo" anche mentre si sta guardando la Chat Generale.
+    if(session.role==='player'){
+      checkPlayerPrivateUnread();
+      checkPlayerSubgroupsUnread();
     }
     if(session.role==='master' && masterChatMode==='private' && masterPrivateThread){
       const privLogLive = document.getElementById('private-log-live-master');
@@ -2642,7 +2678,7 @@
             <div class="section-title" style="margin:0;border:none;padding:0;margin-bottom:8px;">Chat</div>
             <div class="chat-seg" id="player-chat-seg">
               <button class="chat-seg-btn active" data-chatmode="public">📣 Generale</button>
-              <button class="chat-seg-btn" data-chatmode="private">✉️ Privata</button>
+              <button class="chat-seg-btn" data-chatmode="private" id="chatmode-private">✉️ Privata</button>
               <button class="chat-seg-btn" data-chatmode="subgroup" id="seg-subgroup-btn" style="display:none;">👥 Gruppo</button>
             </div>
             <div id="player-subgroup-select-wrap" style="display:none;margin-bottom:6px;"></div>
