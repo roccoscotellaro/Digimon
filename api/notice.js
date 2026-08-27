@@ -9,6 +9,10 @@
 //   resource: 'mission'            -> Report Missioni (obiettivi, ricompense, PG assegnati,
 //                                      stato avanzamento). Master e giocatori possono entrambi
 //                                      aggiornare lo stato/obiettivi.
+//   resource: 'subgroup'           -> Sottogruppi di chat (lista gruppi + membri). Prima erano
+//                                      in localStorage lato client, quindi visibili solo sul
+//                                      dispositivo del Master; ora condivisi via DB come tutto
+//                                      il resto (richiede la tabella `subgroups`, vedi sotto).
 //
 // Usa lo stesso client Supabase condiviso di lib/db.js (SUPABASE_SERVICE_KEY) di tutto il resto
 // del progetto — la versione precedente si creava un client a sé con SUPABASE_SERVICE_ROLE_KEY,
@@ -127,6 +131,72 @@ async function handleNoticeDelete(req, res) {
     .eq('code', code);
   if (error) return res.status(500).json({ error: error.message });
 
+  return res.status(200).json({ ok: true });
+}
+
+// ---------------- SOTTOGRUPPI DI CHAT ----------------
+// Prima erano salvati in localStorage lato client (solo sul dispositivo del Master), quindi
+// i giocatori non li vedevano mai. Tabella `subgroups`: code, id (testo, generato qui),
+// name, members (jsonb, array di username), created_at.
+//
+// Migrazione SQL da eseguire una volta sul SQL Editor di Supabase:
+//
+//   create table if not exists subgroups (
+//     id text primary key,
+//     code text not null,
+//     name text not null,
+//     members jsonb not null default '[]',
+//     created_at timestamptz not null default now()
+//   );
+//   create index if not exists subgroups_code_idx on subgroups (code);
+async function handleSubgroupGet(req, res) {
+  const { code } = req.query;
+  if (!code) return res.status(400).json({ error: 'code mancante' });
+  const { data, error } = await supabase
+    .from('subgroups')
+    .select('*')
+    .eq('code', code)
+    .order('created_at', { ascending: true });
+  if (error) return res.status(500).json({ error: error.message });
+  const groups = (data || []).map(g => ({
+    id: g.id,
+    name: g.name,
+    members: Array.isArray(g.members) ? g.members : []
+  }));
+  return res.status(200).json({ groups });
+}
+
+async function handleSubgroupPost(req, res) {
+  const { code, id, name, members } = req.body || {};
+  if (!code || !name || !String(name).trim()) return res.status(400).json({ error: 'code e name sono obbligatori' });
+  const cleanMembers = Array.isArray(members) ? members.filter(m => typeof m === 'string' && m.trim()) : [];
+  if (cleanMembers.length < 1) return res.status(400).json({ error: 'seleziona almeno un membro' });
+
+  const groupId = id || ('sg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8));
+  const { data, error } = await supabase
+    .from('subgroups')
+    .upsert({
+      id: groupId,
+      code,
+      name: String(name).trim(),
+      members: cleanMembers
+    }, { onConflict: 'id' })
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+
+  return res.status(200).json({ ok: true, group: { id: data.id, name: data.name, members: data.members } });
+}
+
+async function handleSubgroupDelete(req, res) {
+  const { code, id } = req.query;
+  if (!code || !id) return res.status(400).json({ error: 'code e id sono obbligatori' });
+  const { error } = await supabase
+    .from('subgroups')
+    .delete()
+    .eq('id', id)
+    .eq('code', code);
+  if (error) return res.status(500).json({ error: error.message });
   return res.status(200).json({ ok: true });
 }
 
@@ -252,6 +322,14 @@ module.exports = async (req, res) => {
     const resource = req.method === 'GET' || req.method === 'DELETE'
       ? req.query.resource
       : (req.body && req.body.resource);
+
+    if (resource === 'subgroup') {
+      if (req.method === 'GET') return await handleSubgroupGet(req, res);
+      if (req.method === 'POST') return await handleSubgroupPost(req, res);
+      if (req.method === 'DELETE') return await handleSubgroupDelete(req, res);
+      res.setHeader('Allow', ['GET', 'POST', 'DELETE']);
+      return res.status(405).json({ error: 'Metodo non permesso' });
+    }
 
     if (resource === 'bugreport') {
       if (req.method === 'GET') return await handleBugReportGet(req, res);
