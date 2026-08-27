@@ -196,12 +196,32 @@
   .role-pick .btn{flex:1;}
   .role-pick .btn.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
   #tab-scheda.active, #tab-inventario.active, #tab-dex.active, #tab-bug.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
-  #chatmode-public.active, #chatmode-private.active, #chatmode-subgroup.active, #mchatmode-general.active, #mchatmode-private.active, #mchatmode-subgroup.active{background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);}
 
   .roster-item{padding:10px;border-bottom:1px solid var(--line);font-size:12px;}
   .roster-item:last-child{border-bottom:none;}
   .roster-item .name{color:var(--cyan);font-family:'Share Tech Mono',monospace;}
   .roster-item .sub{color:var(--text-mute);}
+
+  /* Selettore Chat (Generale/Privata/Gruppo) — prima era stilizzato SOLO dentro il media query
+     mobile (sotto 760px): su desktop restava con l'aspetto grezzo di default del browser,
+     stonando col resto dell'interfaccia. Questa è la versione "sempre attiva", coerente con
+     .btn; il media query più sotto aggiunge solo aggiustamenti di misura per il touch. */
+  .chat-seg{
+    display:flex;gap:0;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin-bottom:8px;
+  }
+  .chat-seg-btn{
+    flex:1;padding:8px 4px;font-family:'Share Tech Mono',monospace;font-size:11px;
+    text-align:center;background:var(--panel-2);color:var(--text-mute);border:none;cursor:pointer;
+    border-right:1px solid var(--line);text-transform:uppercase;letter-spacing:0.03em;
+    position:relative;transition:.15s;
+  }
+  .chat-seg-btn:last-child{border-right:none;}
+  .chat-seg-btn:hover{color:var(--text);}
+  .chat-seg-btn.active{background:rgba(53,232,201,0.12);color:var(--cyan);font-weight:700;}
+  .chat-seg-btn .seg-dot{
+    display:inline-block;width:6px;height:6px;border-radius:50%;
+    background:var(--danger);margin-left:4px;vertical-align:middle;
+  }
 
   .suggest-box{background:var(--panel-2);border:1px solid var(--cyan-dim);padding:10px;margin-top:8px;font-size:12px;}
   .suggest-line{padding:6px 8px;margin-bottom:4px;background:rgba(53,232,201,0.05);cursor:pointer;border-radius:var(--radius);}
@@ -309,21 +329,10 @@
     .mobile-section{display:none !important;}
     .mobile-section.mobile-active{display:block !important;}
 
-    /* Chat: segmented control */
-    .chat-seg{
-      display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:8px;
-    }
+    /* Chat: segmented control — solo aggiustamenti di misura per touch, lo stile base è
+       nella regola .chat-seg/.chat-seg-btn fuori dal media query (sempre attiva). */
     .chat-seg-btn{
-      flex:1;padding:10px 4px;font-family:'Share Tech Mono',monospace;font-size:11px;
-      text-align:center;background:var(--panel-2);color:var(--text-mute);border:none;cursor:pointer;
-      border-right:1px solid var(--line);text-transform:uppercase;letter-spacing:0.03em;
-      position:relative;-webkit-tap-highlight-color:transparent;
-    }
-    .chat-seg-btn:last-child{border-right:none;}
-    .chat-seg-btn.active{background:rgba(53,232,201,0.15);color:var(--cyan);font-weight:700;}
-    .chat-seg-btn .seg-dot{
-      display:inline-block;width:6px;height:6px;border-radius:50%;
-      background:var(--danger);margin-left:4px;vertical-align:middle;
+      padding:10px 4px;-webkit-tap-highlight-color:transparent;
     }
 
     /* Schede pieghevoli mobile: card con section-title cliccabile per espandere/comprimere */
@@ -473,6 +482,7 @@
   let pendingActionImageUrl = null;
   let pendingGmImageUrl = null;
   let pendingPrivateImageUrl = null; // immagine allegata in corso di invio nella Chat Privata del Master
+  let pendingSubgroupImageUrl = null; // immagine allegata in corso di invio nei Sottogruppi di Chat del Master
   let cachedMissions = [];
   let missionsModalOpen = false;
   let missionDraftObjectives = ['']; // righe obiettivo nel form "Nuova Missione"
@@ -6329,6 +6339,9 @@
         <input type="color" id="private-speak-color" value="#ff8a3d" style="flex:1;padding:2px;height:34px;" />
       </div>
       <textarea id="private-text-master" rows="2" placeholder="Scrivi in privato..." style="margin-top:8px;"></textarea>
+      <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--text-mute);">
+        <input type="checkbox" id="private-digimoji-toggle" /> ✍️ Scrivi in Digimoji
+      </label>
       ${chatAttachHTML('private')}
       <button class="btn amber" id="btn-private-send-master" style="width:100%;margin-top:6px;">Invia</button>
     `;
@@ -6369,6 +6382,8 @@
     }
     document.getElementById('btn-private-send-master').onclick = async ()=>{
       const ta = document.getElementById('private-text-master');
+      const privDigimojiChkPre = document.getElementById('private-digimoji-toggle');
+      if(privDigimojiChkPre && privDigimojiChkPre.checked){ ta.value = italianToHiragana(ta.value); }
       const text = ta.value.trim();
       if(!text || !masterPrivateThread) return;
       const mode = privSpeakAsSel ? privSpeakAsSel.value : 'master';
@@ -6407,6 +6422,8 @@
       const chosenColor = privColorInput ? privColorInput.value : color;
       if(chosenColor) meta.color = chosenColor;
       if(pendingPrivateImageUrl) meta.image = pendingPrivateImageUrl;
+      const privDigimojiChk = document.getElementById('private-digimoji-toggle');
+      if(privDigimojiChk && privDigimojiChk.checked) meta.digimoji = true;
       if(role==='npc') rememberNpc(code, { name: who, color: chosenColor, avatar });
       await pushPrivateLog(code, masterPrivateThread, { who, role, text, meta: Object.keys(meta).length ? meta : null });
       ta.value='';
@@ -6419,6 +6436,7 @@
     const logLive = document.getElementById('private-log-live-master');
     attachLogModeration(logLive, code, null, true);
     if(logLive) logLive.scrollTop = logLive.scrollHeight;
+    attachDigimojiInput('private-text-master', 'private-digimoji-toggle');
   }
 
   // ===== SOTTOGRUPPI DI CHAT =====
@@ -6455,6 +6473,10 @@
         </div>
         <div class="log" id="subgroup-log-live" style="height:200px;">${logHTML(log, true)}</div>
         <textarea id="subgroup-text" rows="2" placeholder="Scrivi nel sottogruppo..." style="margin-top:8px;"></textarea>
+        <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--text-mute);">
+          <input type="checkbox" id="subgroup-digimoji-toggle" /> ✍️ Scrivi in Digimoji
+        </label>
+        ${chatAttachHTML('subgroup')}
         <button class="btn amber" id="btn-subgroup-send" style="width:100%;margin-top:6px;">Invia</button>
       ` : `<div class="muted">Nessun sottogruppo creato. Clicca "＋ Nuovo" per creare il primo.</div>`}
     `;
@@ -6494,12 +6516,19 @@
 
     // Send message
     const sendBtn = document.getElementById('btn-subgroup-send');
+    if(activeGroup) bindChatAttach('subgroup', code, 'chat', ()=>pendingSubgroupImageUrl, (url)=>{ pendingSubgroupImageUrl = url; });
     if(sendBtn && activeGroup) sendBtn.onclick = async ()=>{
       const ta = document.getElementById('subgroup-text');
+      const subDigimojiChkPre = document.getElementById('subgroup-digimoji-toggle');
+      if(subDigimojiChkPre && subDigimojiChkPre.checked){ ta.value = italianToHiragana(ta.value); }
       const text = ta.value.trim();
       if(!text) return;
-      await pushPrivateLog(code, 'subgroup:'+activeGroup.id, { who: 'Master', role: 'gm', text });
+      const meta = {};
+      if(pendingSubgroupImageUrl) meta.image = pendingSubgroupImageUrl;
+      if(subDigimojiChkPre && subDigimojiChkPre.checked) meta.digimoji = true;
+      await pushPrivateLog(code, 'subgroup:'+activeGroup.id, { who: 'Master', role: 'gm', text, meta: Object.keys(meta).length ? meta : null });
       ta.value='';
+      pendingSubgroupImageUrl = null;
       renderSubgroupChatMaster(code, players);
     };
 
@@ -6508,6 +6537,7 @@
       attachLogModeration(logLive, code, null, false, ()=>'subgroup:'+activeSubgroupId);
       logLive.scrollTop = logLive.scrollHeight;
     }
+    if(activeGroup) attachDigimojiInput('subgroup-text', 'subgroup-digimoji-toggle');
   }
 
   function openSubgroupModal(code, players, existing){
