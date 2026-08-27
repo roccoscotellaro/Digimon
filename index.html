@@ -10332,7 +10332,28 @@
     while(headerChild.parentElement && headerChild.parentElement !== card) headerChild = headerChild.parentElement;
     Array.from(card.children).forEach(child=>{
       if(child === headerChild) return;
-      child.style.display = shouldCollapse ? 'none' : '';
+      if(shouldCollapse){
+        // Ricordiamo il display che il child aveva PRIMA di essere piegato (spesso non è la
+        // stringa vuota: es. #mchat-private-slot/#mchat-subgroup-slot partono da "display:none"
+        // finché non è la loro scheda ad essere attiva, o #player-subgroup-select-wrap fuori
+        // dalla modalità Sottogruppi) — solo così possiamo ripristinarlo esattamente quando la
+        // card si riapre, invece di forzare tutto a visibile.
+        if(child.dataset.prevDisplay===undefined) child.dataset.prevDisplay = child.style.display || '';
+        child.style.display = 'none';
+      } else if(child.dataset.prevDisplay!==undefined){
+        // La card era stata chiusa da questa stessa funzione: la riapriamo ripristinando
+        // esattamente il display precedente (che potrebbe essere "none", se quel child era
+        // già nascosto per altri motivi, es. la chat privata quando non è la scheda attiva).
+        child.style.display = child.dataset.prevDisplay;
+        delete child.dataset.prevDisplay;
+      }
+      // Se la card non è mai stata chiusa da questa funzione (caso normale, la stragrande
+      // maggioranza dei render), NON tocchiamo affatto lo style dei figli: prima invece questa
+      // funzione girava ad ogni ri-render (il MutationObserver più sotto la richiama continuamente
+      // durante il polling) e resettava incondizionatamente OGNI figlio a "display: ''" — il che
+      // cancellava il display:none con cui updateMasterChatModeUI()/updateChatModeButtons()
+      // tenevano nascoste Chat Privata e Sottogruppi quando non erano la scheda attiva. Risultato:
+      // su mobile (dove questa funzione è attiva) le tre chat restavano sempre tutte aperte insieme.
     });
     card.classList.toggle('collapsed', !!shouldCollapse);
     if(!titleEl.querySelector('.fold-icon')){
