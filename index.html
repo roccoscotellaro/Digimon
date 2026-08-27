@@ -166,6 +166,11 @@
   .log-entry .txt .log-h:first-child{margin-top:0;}
   .log-entry .meta{font-size:10px;color:var(--text-mute);margin-left:8px;}
   .log-image{max-width:220px;max-height:220px;border-radius:6px;border:1px solid var(--line);margin-top:6px;display:block;cursor:zoom-in;object-fit:cover;}
+  /* "Menziona" in chat: mostra chi si sta citando (una voce del Digidex o un NPC) come un
+     piccolo badge cliccabile dentro il testo del messaggio, invece di un semplice nome scritto. */
+  .mention-chip{display:inline-flex;align-items:center;gap:4px;background:rgba(53,232,201,0.12);border:1px solid var(--cyan-dim);color:var(--cyan);border-radius:12px;padding:1px 8px 1px 2px;font-size:12px;cursor:pointer;vertical-align:middle;line-height:1.6;}
+  .mention-chip img{width:18px;height:18px;border-radius:50%;object-fit:cover;flex-shrink:0;}
+  .mention-chip:hover{border-color:var(--cyan);background:rgba(53,232,201,0.22);}
 
   .dice-perspective{perspective:400px;display:inline-flex;gap:6px;vertical-align:middle;}
   .die3d{display:inline-block;font-size:26px;line-height:1;color:var(--cyan);animation:diceroll 0.7s cubic-bezier(.3,1.4,.6,1);}
@@ -1366,8 +1371,13 @@
     return `<div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
       <input type="file" accept="image/*" id="${prefix}-img-file" style="display:none;" />
       <button type="button" class="btn ghost small" id="${prefix}-img-btn">📎 Allega immagine</button>
+      <button type="button" class="btn ghost small" id="${prefix}-img-link-btn">🔗 Incolla link</button>
       <span class="muted" id="${prefix}-img-status" style="font-size:11px;"></span>
       <span id="${prefix}-img-preview"></span>
+    </div>
+    <div id="${prefix}-img-link-row" style="display:none;margin-top:6px;gap:6px;">
+      <input type="text" id="${prefix}-img-link-input" placeholder="https://... (link diretto a un'immagine)" style="flex:1;" />
+      <button type="button" class="btn ghost small" id="${prefix}-img-link-confirm">OK</button>
     </div>`;
   }
   function bindChatAttach(prefix, code, folder, getPending, setPending){
@@ -1375,6 +1385,10 @@
     const btn = document.getElementById(prefix+'-img-btn');
     const statusEl = document.getElementById(prefix+'-img-status');
     const previewEl = document.getElementById(prefix+'-img-preview');
+    const linkBtn = document.getElementById(prefix+'-img-link-btn');
+    const linkRow = document.getElementById(prefix+'-img-link-row');
+    const linkInput = document.getElementById(prefix+'-img-link-input');
+    const linkConfirm = document.getElementById(prefix+'-img-link-confirm');
     if(!fileInput || !btn) return;
     function renderPreview(){
       const url = getPending();
@@ -1386,6 +1400,24 @@
     }
     renderPreview();
     btn.onclick = ()=> fileInput.click();
+    // Incollare un link diretto invece di caricare il file: nessuna chiamata di upload, nessun
+    // byte trasferito dal nostro server — l'immagine resta ospitata dove già si trova (Imgur,
+    // Discord CDN, ecc.). Alleggerisce sia lo storage sia il traffico verso Vercel/Supabase.
+    if(linkBtn) linkBtn.onclick = ()=>{
+      if(linkRow) linkRow.style.display = linkRow.style.display==='flex' ? 'none' : 'flex';
+      if(linkInput) linkInput.focus();
+    };
+    if(linkConfirm) linkConfirm.onclick = ()=>{
+      const url = (linkInput && linkInput.value || '').trim();
+      if(!url){ if(statusEl) statusEl.textContent = 'Incolla un link valido.'; return; }
+      if(!/^https?:\/\//i.test(url)){ if(statusEl) statusEl.textContent = '⚠ Deve iniziare con http:// o https://'; return; }
+      setPending(url);
+      renderPreview();
+      if(statusEl) statusEl.textContent = '🔗 Immagine collegata (nessun upload).';
+      if(linkInput) linkInput.value = '';
+      if(linkRow) linkRow.style.display = 'none';
+    };
+    if(linkInput) linkInput.addEventListener('keydown', (ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); linkConfirm && linkConfirm.click(); } });
     fileInput.onchange = async ()=>{
       const file = fileInput.files[0];
       if(!file) return;
@@ -2813,6 +2845,7 @@
             <div class="muted" id="action-hint" style="margin-top:4px;font-size:11px;">${ACTION_HINT_DEFAULT_TEXT}</div>
             <div id="action-roll-result" style="margin-top:6px;"></div>
             ${chatAttachHTML('action')}
+            ${mentionButtonHTML('action')}
             <div class="row" style="margin-top:6px;">
               <button class="btn" id="btn-correct">Correggi Italiano</button>
             </div>
@@ -2856,6 +2889,7 @@
     document.getElementById('btn-logout').onclick = logout;
     document.getElementById('btn-open-missions').onclick = openMissionsModal;
     bindChatAttach('action', code, 'chat', ()=>pendingActionImageUrl, (url)=>{ pendingActionImageUrl = url; });
+    bindMentionButton('action', code, 'action-text');
     renderChatArea(code, me, { forceScrollBottom:true }); // riempie il selettore location + il Registro (vedi sopra)
     document.getElementById('btn-correct').onclick = async ()=>{
       const ta = document.getElementById('action-text');
@@ -5136,6 +5170,7 @@
                 <option value="master">Master (narrazione)</option>
                 ${players.map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (displayName(p)+' — Digimon'))}</option>`).join('')}
                 ${(cachedScene.encounters||[]).map((e,i)=>`<option value="encounter:${i}">${escapeHTML(encName(e))} (in scena)</option>`).join('')}
+                ${cachedDex.map(e=>`<option value="dex:${escapeAttr(e.id)}">${escapeHTML(e.name)} (Digidex)</option>`).join('')}
                 ${loadSavedNpcs(code).map(n=>`<option value="npc-saved:${escapeAttr(n.name)}">${escapeHTML(n.name)} (NPC)</option>`).join('')}
                 <option value="enemy">Nemico personalizzato...</option>
                 <option value="npc">NPC nuovo...</option>
@@ -5170,6 +5205,7 @@
               <button class="btn amber" id="btn-gm-post">Pubblica</button>
             </div>
             ${chatAttachHTML('gm')}
+            ${mentionButtonHTML('gm')}
             </div>
             <div id="mchat-private-slot" style="display:none;"></div>
             <div id="mchat-subgroup-slot" style="display:none;"></div>
@@ -5337,6 +5373,8 @@
           if(colorInput) colorInput.value = (member && member.digimon.chatColor) || '#c896ff';
         } else if(mode.startsWith('encounter:')){
           if(colorInput) colorInput.value = '#ff5d5d';
+        } else if(mode.startsWith('dex:')){
+          if(colorInput) colorInput.value = '#ff5d5d';
         } else if(mode==='enemy'){
           if(colorInput) colorInput.value = '#ff5d5d';
         } else if(mode==='npc'){
@@ -5352,6 +5390,7 @@
       };
     }
     bindChatAttach('gm', code, 'avviso', ()=>pendingGmImageUrl, (url)=>{ pendingGmImageUrl = url; });
+    bindMentionButton('gm', code, 'gm-text');
     document.getElementById('btn-gm-post').onclick = async ()=>{
       const ta = document.getElementById('gm-text');
       const gmDigimojiChkPre = document.getElementById('gm-digimoji-toggle');
@@ -5374,6 +5413,14 @@
         const dexMatch = cachedDex.find(e=>e.name.trim().toLowerCase()===who.trim().toLowerCase());
         role = 'enemy';
         avatar = (encObj && typeof encObj==='object' && encObj.image) ? encObj.image : (dexMatch ? dexMatch.image_url : null);
+      } else if(mode.startsWith('dex:')){
+        // Parlare direttamente come una voce del Digidex, senza doverla prima piazzare come
+        // Incontro in scena — utile per battute rapide di un Digimon "di passaggio".
+        const dexId = mode.slice('dex:'.length);
+        const dexEntry = cachedDex.find(e=>String(e.id)===dexId);
+        who = dexEntry ? dexEntry.name : 'Digimon';
+        role = 'enemy';
+        avatar = dexEntry ? dexEntry.image_url : null;
       } else if(mode==='enemy'){
         who = document.getElementById('enemy-speak-name').value.trim() || 'Nemico';
         role = 'enemy';
@@ -6540,6 +6587,7 @@
           <option value="master">Master (narrazione)</option>
           ${players.map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (displayName(p)+' — Digimon'))}</option>`).join('')}
           ${(cachedScene.encounters||[]).map((e,i)=>`<option value="encounter:${i}">${escapeHTML(encName(e))} (in scena)</option>`).join('')}
+          ${cachedDex.map(e=>`<option value="dex:${escapeAttr(e.id)}">${escapeHTML(e.name)} (Digidex)</option>`).join('')}
           ${loadSavedNpcs(code).map(n=>`<option value="npc-saved:${escapeAttr(n.name)}">${escapeHTML(n.name)} (NPC)</option>`).join('')}
           <option value="enemy">Nemico personalizzato...</option>
           <option value="npc">NPC nuovo...</option>
@@ -6562,6 +6610,7 @@
         <input type="checkbox" id="private-digimoji-toggle" /> ✍️ Scrivi in Digimoji
       </label>
       ${chatAttachHTML('private')}
+      ${mentionButtonHTML('private')}
       <button class="btn amber" id="btn-private-send-master" style="width:100%;margin-top:6px;">Invia</button>
     `;
     if(masterChatMode==='private') markPrivateThreadRead(code, masterPrivateThread, log);
@@ -6571,6 +6620,7 @@
       renderPrivateChatMaster(code, players);
     };
     bindChatAttach('private', code, 'avviso', ()=>pendingPrivateImageUrl, (url)=>{ pendingPrivateImageUrl = url; });
+    bindMentionButton('private', code, 'private-text-master');
     const privLocSelect = document.getElementById('private-location-select');
     if(privLocSelect) privLocSelect.onchange = ()=>{
       masterPrivateLocationFilter[masterPrivateThread] = privLocSelect.value;
@@ -6598,6 +6648,8 @@
           const member = cachedRoster.find(m=>m.username===username);
           if(privColorInput) privColorInput.value = (member && member.digimon.chatColor) || '#c896ff';
         } else if(mode.startsWith('encounter:')){
+          if(privColorInput) privColorInput.value = '#ff5d5d';
+        } else if(mode.startsWith('dex:')){
           if(privColorInput) privColorInput.value = '#ff5d5d';
         } else if(mode==='enemy'){
           if(privColorInput) privColorInput.value = '#ff5d5d';
@@ -6634,6 +6686,12 @@
         const dexMatch = cachedDex.find(e=>e.name.trim().toLowerCase()===who.trim().toLowerCase());
         role = 'enemy';
         avatar = (encObj && typeof encObj==='object' && encObj.image) ? encObj.image : (dexMatch ? dexMatch.image_url : null);
+      } else if(mode.startsWith('dex:')){
+        const dexId = mode.slice('dex:'.length);
+        const dexEntry = cachedDex.find(e=>String(e.id)===dexId);
+        who = dexEntry ? dexEntry.name : 'Digimon';
+        role = 'enemy';
+        avatar = dexEntry ? dexEntry.image_url : null;
       } else if(mode==='enemy'){
         who = document.getElementById('private-enemy-speak-name').value.trim() || 'Nemico';
         role = 'enemy';
@@ -6713,6 +6771,7 @@
             <option value="master">Master (narrazione)</option>
             ${players.filter(p=>activeGroup.members.includes(p.username)).map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (displayName(p)+' — Digimon'))}</option>`).join('')}
             ${(cachedScene.encounters||[]).map((e,i)=>`<option value="encounter:${i}">${escapeHTML(encName(e))} (in scena)</option>`).join('')}
+            ${cachedDex.map(e=>`<option value="dex:${escapeAttr(e.id)}">${escapeHTML(e.name)} (Digidex)</option>`).join('')}
             ${loadSavedNpcs(code).map(n=>`<option value="npc-saved:${escapeAttr(n.name)}">${escapeHTML(n.name)} (NPC)</option>`).join('')}
             <option value="enemy">Nemico personalizzato...</option>
             <option value="npc">NPC nuovo...</option>
@@ -6735,6 +6794,7 @@
           <input type="checkbox" id="subgroup-digimoji-toggle" /> ✍️ Scrivi in Digimoji
         </label>
         ${chatAttachHTML('subgroup')}
+        ${mentionButtonHTML('subgroup')}
         <button class="btn amber" id="btn-subgroup-send" style="width:100%;margin-top:6px;">Invia</button>
       ` : `<div class="muted">Nessun sottogruppo creato. Clicca "＋ Nuovo" per creare il primo.</div>`}
     `;
@@ -6775,6 +6835,7 @@
     // Send message
     const sendBtn = document.getElementById('btn-subgroup-send');
     if(activeGroup) bindChatAttach('subgroup', code, 'chat', ()=>pendingSubgroupImageUrl, (url)=>{ pendingSubgroupImageUrl = url; });
+    if(activeGroup) bindMentionButton('subgroup', code, 'subgroup-text');
     const subLocSelect = document.getElementById('subgroup-location-select');
     if(subLocSelect && activeGroup) subLocSelect.onchange = ()=>{
       masterSubgroupLocationFilter[activeGroup.id] = subLocSelect.value;
@@ -6802,6 +6863,8 @@
           const member = cachedRoster.find(m=>m.username===username);
           if(subColorInput) subColorInput.value = (member && member.digimon.chatColor) || '#c896ff';
         } else if(mode.startsWith('encounter:')){
+          if(subColorInput) subColorInput.value = '#ff5d5d';
+        } else if(mode.startsWith('dex:')){
           if(subColorInput) subColorInput.value = '#ff5d5d';
         } else if(mode==='enemy'){
           if(subColorInput) subColorInput.value = '#ff5d5d';
@@ -6838,6 +6901,12 @@
         const dexMatch = cachedDex.find(e=>e.name.trim().toLowerCase()===who.trim().toLowerCase());
         role = 'enemy';
         avatar = (encObj && typeof encObj==='object' && encObj.image) ? encObj.image : (dexMatch ? dexMatch.image_url : null);
+      } else if(mode.startsWith('dex:')){
+        const dexId = mode.slice('dex:'.length);
+        const dexEntry = cachedDex.find(e=>String(e.id)===dexId);
+        who = dexEntry ? dexEntry.name : 'Digimon';
+        role = 'enemy';
+        avatar = dexEntry ? dexEntry.image_url : null;
       } else if(mode==='enemy'){
         who = document.getElementById('subgroup-enemy-speak-name').value.trim() || 'Nemico';
         role = 'enemy';
@@ -9405,12 +9474,12 @@
       return `
       <div class="log-entry ${l.role}">
         <div class="flex-between">
-          <div>${(()=>{ const __av = resolveLogAvatar(l); return __av ? `<img class="who-avatar" src="${escapeAttr(__av)}" onerror="this.style.display='none'" />` : ''; })()}<span class="who mono" ${l.meta && l.meta.color ? `style="color:${escapeAttr(l.meta.color)};"` : ''}>${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span></div>
+          <div>${(()=>{ const __av = resolveLogAvatar(l); return __av ? `<img class="who-avatar" src="${escapeAttr(__av)}" data-avatar-expand="${escapeAttr(__av)}" style="cursor:zoom-in;" onerror="this.style.display='none'" />` : ''; })()}<span class="who mono" ${l.meta && l.meta.color ? `style="color:${escapeAttr(l.meta.color)};"` : ''}>${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span></div>
           ${canModerate ? `<div><button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;">✎</button><button class="btn ghost small" data-log-del="${l.id}" style="padding:2px 6px;">✕</button></div>` : ''}
         </div>
         <div class="txt${l.meta && l.meta.digimoji ? ' digimoji-text' : ''}" ${l.meta && l.meta.digimoji ? `title="${escapeAttr(displayText)}"` : ''}>${formatLogText(displayText)}</div>
         ${l.meta && l.meta.digimoji ? `<div class="muted" style="font-size:10px;margin-top:2px;">(scritto in Digimoji — passa il mouse per leggere in chiaro)</div>` : ''}
-        ${l.meta && l.meta.image ? `<img src="${escapeAttr(l.meta.image)}" class="log-image" onerror="this.style.display='none'" onclick="window.open('${escapeAttr(l.meta.image)}','_blank')" />` : ''}
+        ${l.meta && l.meta.image ? `<img src="${escapeAttr(l.meta.image)}" class="log-image" data-avatar-expand="${escapeAttr(l.meta.image)}" onerror="this.style.display='none'" />` : ''}
         ${diceHTML}
         ${techDetailHTML}
         ${fulfillBtn}
@@ -9589,7 +9658,119 @@
     });
     // grassetto **testo** (non a cavallo di righe già trasformate in <div>)
     html = html.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+    // "Menziona": [[dex:ID]] / [[npc:NOME_CODIFICATO]] inseriti dal bottone 🔖 nel composer
+    // diventano un badge cliccabile con mini-ritratto, invece di restare testo grezzo — mostra
+    // subito a chi legge di chi si sta parlando, con un tap per vedere la scheda completa.
+    html = html.replace(/\[\[dex:([a-zA-Z0-9_-]+)\]\]/g, (m, id)=>{
+      const e = cachedDex.find(x=>String(x.id)===id);
+      if(!e) return m;
+      return mentionChipHTML(e.image_url, e.name, 'dex:'+id);
+    });
+    html = html.replace(/\[\[npc:([^\]]+)\]\]/g, (m, encName)=>{
+      let name; try{ name = decodeURIComponent(encName); }catch(err){ name = encName; }
+      const npcs = loadSavedNpcs(session && session.code);
+      const n = npcs.find(x=>x.name===name);
+      return mentionChipHTML(n ? n.avatar : null, name, 'npc:'+encName);
+    });
     return html;
+  }
+  function mentionChipHTML(avatar, name, dataKey){
+    return `<span class="mention-chip" data-mention-open="${escapeAttr(dataKey)}">${avatar?`<img src="${escapeAttr(avatar)}" onerror="this.style.display='none'" />`:''}${escapeHTML(name)}</span>`;
+  }
+  // Bottone "🔖 Menziona" accanto a un composer: apre il selezionatore e inserisce il token
+  // scelto (Digidex o NPC salvato) al punto del cursore nella textarea indicata.
+  function mentionButtonHTML(prefix){
+    return `<button type="button" class="btn ghost small" id="${prefix}-mention-btn" style="margin-top:6px;">🔖 Menziona</button>`;
+  }
+  function bindMentionButton(prefix, code, textareaId){
+    const btn = document.getElementById(prefix+'-mention-btn');
+    if(!btn) return;
+    btn.onclick = ()=> openMentionPicker(code, (token)=>{
+      const ta = document.getElementById(textareaId);
+      if(!ta) return;
+      const pos = ta.selectionStart==null ? ta.value.length : ta.selectionStart;
+      ta.value = ta.value.slice(0,pos) + token + ' ' + ta.value.slice(pos);
+      ta.focus();
+      const newPos = pos + token.length + 1;
+      try{ ta.setSelectionRange(newPos, newPos); }catch(e){}
+    });
+  }
+  function openMentionPicker(code, onPick){
+    const old = document.getElementById('mention-picker-modal');
+    if(old) old.remove();
+    const modal = document.createElement('div');
+    modal.id = 'mention-picker-modal';
+    modal.className = 'enc-modal-backdrop';
+    const npcs = loadSavedNpcs(code);
+    modal.innerHTML = `
+      <div class="enc-modal-card hud-frame" style="max-width:420px;max-height:80vh;overflow:auto;position:relative;">
+        <button class="btn ghost small" id="mention-picker-close" style="position:absolute;top:8px;right:8px;">✕</button>
+        <div class="section-title" style="margin-top:0;">🔖 Mostra chi stai citando</div>
+        <input type="text" id="mention-picker-search" placeholder="Cerca nel Digidex o negli NPC..." style="width:100%;margin-bottom:10px;" />
+        <div id="mention-picker-list"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    const closeIt = ()=>modal.remove();
+    document.getElementById('mention-picker-close').onclick = closeIt;
+    modal.onclick = (ev)=>{ if(ev.target===modal) closeIt(); };
+    const listEl = document.getElementById('mention-picker-list');
+    const searchEl = document.getElementById('mention-picker-search');
+    function renderList(){
+      const q = (searchEl.value||'').trim().toLowerCase();
+      const dexMatches = cachedDex.filter(e=>!q || e.name.toLowerCase().includes(q)).slice(0,25);
+      const npcMatches = npcs.filter(n=>!q || n.name.toLowerCase().includes(q)).slice(0,25);
+      listEl.innerHTML = `
+        ${dexMatches.length ? `<div class="muted" style="font-size:10px;text-transform:uppercase;margin:6px 0 4px;">Digidex</div>` + dexMatches.map(e=>`<div class="roster-item" data-mention-pick="dex:${escapeAttr(e.id)}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 8px;">${e.image_url?`<img src="${escapeAttr(e.image_url)}" style="width:26px;height:26px;object-fit:cover;border-radius:4px;" />`:''}<span>${escapeHTML(e.name)}</span></div>`).join('') : ''}
+        ${npcMatches.length ? `<div class="muted" style="font-size:10px;text-transform:uppercase;margin:10px 0 4px;">NPC</div>` + npcMatches.map(n=>`<div class="roster-item" data-mention-pick="npc:${escapeAttr(encodeURIComponent(n.name))}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 8px;">${n.avatar?`<img src="${escapeAttr(n.avatar)}" style="width:26px;height:26px;object-fit:cover;border-radius:4px;" />`:''}<span>${escapeHTML(n.name)}</span></div>`).join('') : ''}
+        ${(!dexMatches.length && !npcMatches.length) ? '<div class="muted">Nessun risultato.</div>' : ''}
+      `;
+      listEl.querySelectorAll('[data-mention-pick]').forEach(item=>{
+        item.onclick = ()=>{
+          const val = item.getAttribute('data-mention-pick');
+          onPick(`[[${val}]]`);
+          closeIt();
+        };
+      });
+    }
+    searchEl.oninput = renderList;
+    renderList();
+    searchEl.focus();
+  }
+  function openMentionDetail(key){
+    if(key.startsWith('dex:')){
+      const e = cachedDex.find(x=>String(x.id)===key.slice(4));
+      if(!e) return;
+      showMentionDetailModal({ name:e.name, image:e.image_url, description:e.description, stage:e.stage, categories:e.categories });
+    } else if(key.startsWith('npc:')){
+      const encName = key.slice(4);
+      let name; try{ name = decodeURIComponent(encName); }catch(err){ name = encName; }
+      const npcs = loadSavedNpcs(session && session.code);
+      const n = npcs.find(x=>x.name===name);
+      showMentionDetailModal({ name, image: n ? n.avatar : null, description:'', stage:null, categories:[] });
+    }
+  }
+  function showMentionDetailModal({ name, image, description, stage, categories }){
+    const old = document.getElementById('mention-detail-modal');
+    if(old) old.remove();
+    const modal = document.createElement('div');
+    modal.id = 'mention-detail-modal';
+    modal.className = 'enc-modal-backdrop';
+    modal.innerHTML = `
+      <div class="enc-modal-card hud-frame" style="max-width:380px;position:relative;">
+        <button class="btn ghost small" id="mention-detail-close" style="position:absolute;top:8px;right:8px;">✕</button>
+        ${image ? `<div class="enc-modal-img-wrap"><img src="${escapeAttr(image)}" onerror="this.style.display='none'" class="enc-modal-img" /></div>` : ''}
+        <div style="margin-top:10px;">
+          <b style="font-size:16px;">${escapeHTML(name)}</b>
+          ${stage ? `<span class="tag" style="margin-left:6px;">${escapeHTML(stage)}</span>` : ''}
+        </div>
+        ${categories && categories.length ? `<div class="muted" style="font-size:11px;margin-top:4px;">${categories.map(c=>escapeHTML(c)).join(' · ')}</div>` : ''}
+        ${description ? `<div style="margin-top:10px;font-size:13px;white-space:pre-wrap;">${escapeHTML(description)}</div>` : ''}
+      </div>
+    `;
+    document.body.appendChild(modal);
+    document.getElementById('mention-detail-close').onclick = ()=>modal.remove();
+    modal.onclick = (ev)=>{ if(ev.target===modal) modal.remove(); };
   }
   // Le "evolutions" di una voce Digidex sono oggetti { name, imageUrl, ... }, non semplici stringhe.
   // Estrae sempre il nome in modo sicuro, altrimenti finisce per stampare "[object Object]" a video
@@ -9828,6 +10009,13 @@
     if(sizeBtn){ setEncImgLarge(!getEncImgLarge()); rerenderSceneLive(); return; }
     const sceneImg = ev.target.closest('[data-scene-img-expand]');
     if(sceneImg){ openImageLightbox(sceneImg.getAttribute('data-scene-img-expand')); return; }
+    // Avatar di chi parla e immagini allegate nel Registro (Generale/Privata/Sottogruppi): un
+    // click le ingrandisce nella stessa lightbox usata per lo sfondo della Scena, invece di
+    // aprire una nuova scheda del browser (com'era prima per le sole immagini allegate).
+    const avatarImg = ev.target.closest('[data-avatar-expand]');
+    if(avatarImg){ openImageLightbox(avatarImg.getAttribute('data-avatar-expand')); return; }
+    const mentionChip = ev.target.closest('[data-mention-open]');
+    if(mentionChip){ openMentionDetail(mentionChip.getAttribute('data-mention-open')); return; }
   });
 
   // ---------- Coda Avvisi bloccanti ----------
