@@ -469,6 +469,7 @@
   let animatedLogIds = new Set();
   let cachedCombat = null;
   let cachedProgression = null;
+  let cachedSubgroups = []; // sottogruppi della campagna, presi dal server (vedi refreshLiveParts) — non più da localStorage
   let pendingActionImageUrl = null;
   let pendingGmImageUrl = null;
   let pendingPrivateImageUrl = null; // immagine allegata in corso di invio nella Chat Privata del Master
@@ -1428,6 +1429,13 @@
   async function closeNotice(code, id){ return apiPut('/api/notice', { code, id, deactivate: true }); }
   async function deleteNotice(code, id){ return apiDelete('/api/notice?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
 
+  // ---------- Sottogruppi di Chat ----------
+  // Prima erano salvati in localStorage (solo sul dispositivo del Master, mai visti dai
+  // giocatori). Ora passano dal server come tutto il resto, condivisi tra tutti i dispositivi.
+  async function getSubgroups(code){ const d = await apiGet('/api/notice?resource=subgroup&code=' + encodeURIComponent(code), true); return d ? (d.groups||[]) : []; }
+  async function saveSubgroup(code, { id, name, members }){ return apiPost('/api/notice', { resource:'subgroup', code, id, name, members }); }
+  async function deleteSubgroup(code, id){ return apiDelete('/api/notice?resource=subgroup&code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
+
   // ---------- Segnalazioni Bug ----------
   async function getBugReports(code){ const d = await apiGet('/api/notice?resource=bugreport&code=' + encodeURIComponent(code)); return d ? (d.reports||[]) : []; }
   async function createBugReport(code, username, text){ return apiPost('/api/notice', { resource:'bugreport', code, username, text }); }
@@ -1790,11 +1798,16 @@
   function startPolling(){
     if(pollTimer) clearInterval(pollTimer);
     if(!session) return;
-    heartbeat(session.code, session.username);
+    // Heartbeat ("chi è online") disattivato: generava una POST verso /api/roster ogni 15s
+    // per OGNI client connesso, pesando sul Fast Origin Transfer di Vercel senza un reale
+    // beneficio. onlineSummary()/rosterItemHTML() restano nel codice ma ora non ricevono più
+    // last_seen aggiornati, quindi non mostrano più nessuno online (comportamento innocuo).
+    // Per riattivarlo: de-commentare le due righe `heartbeat(...)` qui sotto.
+    // heartbeat(session.code, session.username);
     refreshLiveParts();
     checkNoticesForMe();
     pollTimer = setInterval(async ()=>{
-      if(session) await heartbeat(session.code, session.username);
+      // if(session) await heartbeat(session.code, session.username);
       refreshLiveParts();
       checkNoticesForMe();
     }, 15000);
@@ -1826,10 +1839,11 @@
       badge.remove();
     }
   }
-  // Sottogruppi a cui appartiene il giocatore corrente (caricati da localStorage del Master
-  // e controllati nel polling). Struttura: [{ id, name, members:[] }]
+  // Sottogruppi a cui appartiene il giocatore corrente. Legge da cachedSubgroups (popolata dal
+  // server via refreshLiveParts ad ogni poll — vedi sotto), non più da localStorage: così
+  // funziona anche su un dispositivo diverso da quello del Master. Struttura: [{ id, name, members:[] }]
   function getMySubgroups(code, username){
-    return loadSubgroups(code).filter(g=>g.members.includes(username));
+    return (cachedSubgroups||[]).filter(g=>Array.isArray(g.members) && g.members.includes(username));
   }
   let playerActiveSubgroupId = null;
 
@@ -1872,9 +1886,10 @@
   }
 
   function onlineSummary(members){
-    const online = (members||[]).filter(m=>m.last_seen && (Date.now()-new Date(m.last_seen).getTime())<ONLINE_WINDOW_MS);
-    if(online.length===0) return 'nessun altro online';
-    return online.map(m=>`${displayName(m)}${m.role==='master'?' (Master)':''}`).join(', ') + ' online';
+    // Disattivato insieme all'heartbeat (vedi startPolling): senza last_seen aggiornati
+    // in tempo reale, questa riga mostrerebbe sempre "nessun altro online" anche a
+    // campagna piena. Ritorna stringa vuota così il contenitore resta semplicemente vuoto.
+    return '';
   }
 
   // Settore "effettivo" di un membro: se non si è mai separato dal gruppo (currentSectorId nullo)
@@ -1961,6 +1976,8 @@
       cachedCombat = freshCombat;
     }
     cachedProgression = await getProgression(session.code);
+    cachedSubgroups = await getSubgroups(session.code);
+    if(session.role==='player') updateChatModeButtons(); // mostra/nasconde il bottone "👥 Gruppo" appena arrivano sottogruppi nuovi
 
     // Musica da Combattimento: rilevata qui (non solo nel click di "Inizia Combattimento") perché
     // questa funzione gira per TUTTI i client via polling — così la musica parte anche sui browser
@@ -5827,9 +5844,7 @@
           <option value="single">Un solo giocatore</option>
         </select>
       </div>
-      <div id="notice-target-players" style="display:none;margin-bottom:10px;">
-        ${players.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;"><input type="${'checkbox'}" class="notice-target-player" value="${escapeAttr(p.username)}" /> ${escapeHTML(displayName(p))}</label>`).join('') || '<div class="muted">Nessun giocatore in roster.</div>'}
-      </div>
+      <div id="notice-target-players" style="display:none;margin-bottom:10px;"></div>
       <button class="btn solid" id="btn-send-notice" style="width:100%;">Invia Avviso</button>
       <div class="muted" id="notice-status" style="margin-top:6px;"></div>
       <div class="divider"></div>
@@ -5853,16 +5868,24 @@
     let pendingNoticeImageUrl = null;
     bindChatAttach('notice', code, 'avvisi', ()=>pendingNoticeImageUrl, (url)=>{ pendingNoticeImageUrl = url; });
 
+    // "Un solo giocatore" ora usa veri <input type="radio"> (stesso `name`, quindi il browser
+    // stesso garantisce che al massimo uno sia selezionato) invece di checkbox con un click
+    // handler in JS che provava a de-selezionare gli altri manualmente: su touchscreen quel
+    // pattern è fragile (un tap può non registrarsi come "click" in tempo, o due tap ravvicinati
+    // possono lasciare più caselle spuntate), ed era la causa più probabile del bug per cui un
+    // Avviso "a un solo giocatore" finiva selezionato per più persone di quelle volute. Con un
+    // vero radio group la cosa è semplicemente impossibile, indipendentemente dal dispositivo.
+    function noticeTargetPlayersHTML(mode){
+      const inputType = mode==='single' ? 'radio' : 'checkbox';
+      const nameAttr = mode==='single' ? ' name="notice-target-radio"' : '';
+      return players.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;"><input type="${inputType}"${nameAttr} class="notice-target-player" value="${escapeAttr(p.username)}" /> ${escapeHTML(displayName(p))}</label>`).join('') || '<div class="muted">Nessun giocatore in roster.</div>';
+    }
+
     const targetSel = document.getElementById('notice-target-type');
     targetSel.onchange = ()=>{
-      document.getElementById('notice-target-players').style.display = targetSel.value==='all' ? 'none' : 'block';
-      if(targetSel.value==='single'){
-        cardEl.querySelectorAll('.notice-target-player').forEach(cb=>{
-          cb.onclick = (ev)=>{
-            if(cb.checked){ cardEl.querySelectorAll('.notice-target-player').forEach(o=>{ if(o!==cb) o.checked=false; }); }
-          };
-        });
-      }
+      const wrap = document.getElementById('notice-target-players');
+      wrap.style.display = targetSel.value==='all' ? 'none' : 'block';
+      if(targetSel.value!=='all') wrap.innerHTML = noticeTargetPlayersHTML(targetSel.value);
     };
 
     document.getElementById('btn-send-notice').onclick = async ()=>{
@@ -6384,23 +6407,19 @@
 
   // ===== SOTTOGRUPPI DI CHAT =====
   // Un sottogruppo è un thread privato condiviso tra più giocatori (e il Master).
-  // I thread usano la stessa API di pushPrivateLog/getPrivateLog con un nome di thread
-  // prefissato "subgroup:" per non collidere con quelli 1:1. I sottogruppi vengono salvati
-  // in localStorage (come gli NPC ricordati) per semplicità — non servono nuove tabelle DB.
-  function subgroupStorageKey(code){ return `dvos_subgroups_${code}`; }
-  function loadSubgroups(code){
-    try{ return JSON.parse(localStorage.getItem(subgroupStorageKey(code))||'[]'); }catch(e){ return []; }
-  }
-  function saveSubgroups(code, groups){
-    localStorage.setItem(subgroupStorageKey(code), JSON.stringify(groups));
-  }
+  // I thread dei MESSAGGI usano la stessa API di pushPrivateLog/getPrivateLog con un nome
+  // prefissato "subgroup:" per non collidere con quelli 1:1. La LISTA dei sottogruppi (chi
+  // ne fa parte, nome) passa invece da /api/notice?resource=subgroup (tabella `subgroups` su
+  // Supabase) — prima era in localStorage, quindi visibile solo sul dispositivo del Master e
+  // mai su quello dei giocatori. Vedi getSubgroups/saveSubgroup/deleteSubgroup più sopra.
   let activeSubgroupId = null;
   let cachedSubgroupLog = [];
 
   async function renderSubgroupChatMaster(code, players){
     const cardEl = document.getElementById('mchat-subgroup-slot');
     if(!cardEl) return;
-    const groups = loadSubgroups(code);
+    const groups = await getSubgroups(code);
+    cachedSubgroups = groups;
     if(!activeSubgroupId && groups.length>0) activeSubgroupId = groups[0].id;
     const activeGroup = groups.find(g=>g.id===activeSubgroupId) || null;
     const log = activeGroup ? await getPrivateLog(code, 'subgroup:'+activeGroup.id) : [];
@@ -6440,18 +6459,18 @@
     cardEl.querySelectorAll('[data-subgroup-edit]').forEach(btn=>{
       btn.onclick = ()=>{
         const gid = btn.getAttribute('data-subgroup-edit');
-        const g = loadSubgroups(code).find(x=>x.id===gid);
+        const g = groups.find(x=>x.id===gid);
         if(g) openSubgroupModal(code, players, g);
       };
     });
 
     // Delete subgroup
     cardEl.querySelectorAll('[data-subgroup-delete]').forEach(btn=>{
-      btn.onclick = ()=>{
+      btn.onclick = async ()=>{
         if(!window.confirm('Eliminare questo sottogruppo? I messaggi resteranno salvati ma non saranno più visibili.')) return;
         const gid = btn.getAttribute('data-subgroup-delete');
-        const gs = loadSubgroups(code).filter(x=>x.id!==gid);
-        saveSubgroups(code, gs);
+        await deleteSubgroup(code, gid);
+        const gs = groups.filter(x=>x.id!==gid);
         activeSubgroupId = gs.length>0 ? gs[0].id : null;
         renderSubgroupChatMaster(code, players);
       };
@@ -6504,22 +6523,21 @@
     document.getElementById('subgroup-modal-close').onclick = closeIt;
     document.getElementById('subgroup-modal-cancel').onclick = closeIt;
     modal.onclick = (ev)=>{ if(ev.target===modal) closeIt(); };
-    document.getElementById('subgroup-modal-save').onclick = ()=>{
+    document.getElementById('subgroup-modal-save').onclick = async ()=>{
       const name = document.getElementById('subgroup-modal-name').value.trim();
       const statusEl = document.getElementById('subgroup-modal-status');
       if(!name){ statusEl.textContent = 'Inserisci un nome per il gruppo.'; return; }
       const members = Array.from(modal.querySelectorAll('.subgroup-member-chk:checked')).map(c=>c.value);
       if(members.length<1){ statusEl.textContent = 'Seleziona almeno un giocatore.'; return; }
-      const groups = loadSubgroups(code);
-      if(existing){
-        const g = groups.find(x=>x.id===existing.id);
-        if(g){ g.name = name; g.members = members; }
-      } else {
-        const id = 'sg_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
-        groups.push({ id, name, members });
-        activeSubgroupId = id;
+      const saveBtn = document.getElementById('subgroup-modal-save');
+      saveBtn.disabled = true; saveBtn.textContent = 'Salvataggio...';
+      const res = await saveSubgroup(code, { id: existing ? existing.id : undefined, name, members });
+      if(!res || !res.ok){
+        statusEl.textContent = 'Errore: ' + (lastApiError||'sconosciuto');
+        saveBtn.disabled = false; saveBtn.textContent = 'Salva';
+        return;
       }
-      saveSubgroups(code, groups);
+      if(!existing) activeSubgroupId = res.group ? res.group.id : null;
       closeIt();
       renderSubgroupChatMaster(code, (cachedRoster||[]).filter(m=>m.role==='player'));
     };
@@ -7775,19 +7793,18 @@
   }
 
   function rosterItemHTML(p, i){
-    const online = p.last_seen && (Date.now() - new Date(p.last_seen).getTime()) < ONLINE_WINDOW_MS;
-    const onlineColor = online ? 'var(--cyan)' : 'var(--text-mute)';
+    // Pallino/tag online-offline rimosso: dipendeva dall'heartbeat, disattivato in
+    // startPolling() per alleggerire il Fast Origin Transfer di Vercel.
     const isEgg = !p.digimon.approved;
     return `
       <div class="roster-item">
         <div class="flex-between">
           <div style="display:flex;align-items:center;gap:8px;">
             ${tamerAvatarHTML(p.tamer, displayName(p), 'sm')}
-            <div style="position:relative;display:inline-flex;flex-shrink:0;">${digimonPortraitHTML(p.digimon, 'sm')}<span style="position:absolute;bottom:-2px;right:-2px;width:9px;height:9px;border-radius:50%;background:${onlineColor};box-shadow:${online?`0 0 5px ${onlineColor}`:'none'};border:1.5px solid var(--bg,#05070a);"></span></div>
+            <div style="position:relative;display:inline-flex;flex-shrink:0;">${digimonPortraitHTML(p.digimon, 'sm')}</div>
             <div>
               <span class="name">${escapeHTML(displayName(p))}</span>
               ${isEgg ? '' : `<span class="tag" style="margin-left:6px;">${escapeHTML(p.digimon.stage)}</span>`}
-              <span class="tag" style="margin-left:6px;color:${onlineColor};border-color:${online?'var(--cyan-dim)':'var(--line)'};">${online?'online':'offline'}</span>
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;">
