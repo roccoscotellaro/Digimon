@@ -479,6 +479,16 @@
   let cachedCombat = null;
   let cachedProgression = null;
   let cachedSubgroups = []; // sottogruppi della campagna, presi dal server (vedi refreshLiveParts) — non più da localStorage
+  // Selettore "Storico per Settore" (vedi locationFilterSelectHTML/filterByLocation): null =
+  // segue automaticamente la posizione attuale del gruppo; altrimenti una chiave location
+  // esplicita scelta dalla persona, oppure "__all__" per tutto lo storico. Una variabile per
+  // ciascuna chat perché sono superfici indipendenti (una persona potrebbe voler rivedere un
+  // Settore vecchio in Privata mentre la Generale segue quello attuale).
+  let publicLocationFilter = null;
+  let privateLocationFilter = null;
+  let subgroupLocationFilter = {}; // chiave = id del sottogruppo
+  let masterPrivateLocationFilter = {}; // chiave = username del thread privato aperto dal Master
+  let masterSubgroupLocationFilter = {}; // chiave = id del sottogruppo, lato Master
   let pendingActionImageUrl = null;
   let pendingGmImageUrl = null;
   let pendingPrivateImageUrl = null; // immagine allegata in corso di invio nella Chat Privata del Master
@@ -1481,37 +1491,96 @@
     return s;
   }
   // ---------- Chat "pulita" per Location ----------
-  // Ogni messaggio pubblico viene marcato (in meta.location, non una colonna nuova: resta
-  // tutto nello stesso log/tabella di sempre) con dove si trovava il gruppo quando è stato
-  // scritto. Il Registro mostra di default solo i messaggi della location ATTUALE — così
-  // spostandosi tra Settori/Luoghi la chat "si pulisce" da sola — con un interruttore per
-  // rivedere comunque tutto lo storico quando serve (o esportarlo). I messaggi vecchi, scritti
-  // prima di questa funzione (senza meta.location), restano sempre visibili per non perdere
-  // nulla della cronologia pregressa.
-  let showAllLocationsLog = false;
+  // Ogni messaggio (Generale, Privata e Sottogruppi) viene marcato (in meta.location, non una
+  // colonna nuova: resta tutto nello stesso log/tabella di sempre) con dove si trovava il gruppo
+  // quando è stato scritto. Ogni chat mostra di default solo i messaggi della location ATTUALE —
+  // così spostandosi tra Settori/Luoghi si "pulisce" da sola — con un selettore per rivedere lo
+  // storico di un altro Settore visitato in precedenza, o l'intero storico (o esportarlo). Il
+  // selettore si posiziona da solo sulla posizione attuale finché non viene toccato manualmente.
+  // I messaggi vecchi, scritti prima di questa funzione (senza meta.location), restano sempre
+  // visibili in qualunque filtro, per non perdere nulla della cronologia pregressa.
   function currentLocationKey(){
     if(!cachedScene) return '_|_|_';
     return `${cachedScene.currentMacroSceneId||'_'}|${cachedScene.currentSectorId||'_'}|${cachedScene.currentLuogoId||'_'}`;
   }
   function currentLocationLabel(){
-    if(!cachedScene || !cachedScene.currentSectorId) return 'Nessun Settore attuale';
-    const sName = sectorNameById(cachedScene.currentSectorId) || 'Settore';
-    if(cachedScene.currentLuogoId){
-      const lName = luogoNameById(cachedScene.currentSectorId, cachedScene.currentLuogoId);
+    return locationLabelForKey(currentLocationKey());
+  }
+  // Da una chiave "macroId|settoreId|luogoId" a un'etichetta leggibile. sectorNameById/
+  // luogoNameById cercano in TUTTE le Macroscene, quindi funzionano anche se la Macroscena
+  // registrata nella chiave non è più quella attiva. 'Settore eliminato' compare solo se
+  // l'id non si trova più da nessuna parte (Settore cancellato dopo l'invio del messaggio).
+  function locationLabelForKey(key){
+    if(!key || key==='__legacy__') return 'Storico precedente';
+    const parts = String(key).split('|');
+    const sectorId = parts[1], luogoId = parts[2];
+    if(!sectorId || sectorId==='_') return 'Nessun Settore';
+    const sName = sectorNameById(sectorId) || 'Settore eliminato';
+    if(luogoId && luogoId!=='_'){
+      const lName = luogoNameById(sectorId, luogoId);
       if(lName) return `${sName} — ${lName}`;
     }
     return sName;
   }
+  // Elenco delle location presenti in un set di messaggi (per popolare il selettore), con
+  // l'etichetta già risolta. La location attuale viene sempre inclusa anche se non ha ancora
+  // messaggi propri (così il selettore la mostra comunque, pronta per quando arriveranno) ed è
+  // sempre la prima della lista.
+  function buildLocationOptions(entries, currentKey){
+    const map = new Map();
+    (entries||[]).forEach(e=>{
+      const key = (e.meta && e.meta.location) || null;
+      if(!key) return; // i messaggi "legacy" senza tag non diventano una voce a sé: restano sempre visibili (vedi filterByLocation)
+      if(!map.has(key)) map.set(key, locationLabelForKey(key));
+    });
+    if(currentKey && !map.has(currentKey)) map.set(currentKey, locationLabelForKey(currentKey));
+    const keys = Array.from(map.keys());
+    keys.sort((a,b)=>{
+      if(a===currentKey) return -1;
+      if(b===currentKey) return 1;
+      return map.get(a).localeCompare(map.get(b));
+    });
+    return keys.map(k=>({ key:k, label: map.get(k) }));
+  }
+  // Filtra un log per location: `selected` è il valore scelto nel selettore ("__all__" = tutto
+  // lo storico, altrimenti una chiave location) oppure null/undefined per "segui la posizione
+  // attuale automaticamente". I messaggi senza tag (scritti prima di questa funzione) restano
+  // sempre visibili in qualunque filtro, per non far sparire la cronologia pregressa.
+  function filterByLocation(entries, selected, currentKey){
+    const effective = (selected===null || selected===undefined) ? currentKey : selected;
+    if(effective==='__all__') return entries||[];
+    return (entries||[]).filter(e => !(e.meta && e.meta.location) || e.meta.location===effective);
+  }
+  // Markup del selettore location, riutilizzato identico su Chat Generale/Privata/Sottogruppi,
+  // sia lato giocatore sia lato Master. `selected` è il valore attualmente scelto per QUESTA
+  // istanza (null = segue la posizione attuale in automatico).
+  function locationFilterSelectHTML(id, entries, currentKey, selected){
+    const opts = buildLocationOptions(entries, currentKey);
+    const selectedValue = (selected===null || selected===undefined) ? currentKey : selected;
+    return `<select id="${id}" style="font-family:'Share Tech Mono',monospace;font-size:10.5px;padding:2px 4px;max-width:190px;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:var(--radius);">
+      ${opts.map(o=>`<option value="${escapeAttr(o.key)}" ${o.key===selectedValue?'selected':''}>📍 ${escapeHTML(o.label)}</option>`).join('')}
+      <option value="__all__" ${selectedValue==='__all__'?'selected':''}>— Tutto lo storico —</option>
+    </select>`;
+  }
+  // Rigenera SOLO le <option> di un selettore già in pagina (senza ricreare l'elemento, per non
+  // perdere il focus se la persona lo aveva aperto) — usata durante il polling per far comparire
+  // nuove location man mano che compaiono messaggi altrove, mantenendo la selezione corrente.
+  function refreshLocationSelectOptions(selectEl, entries, currentKey, currentValue){
+    if(!selectEl) return;
+    const opts = buildLocationOptions(entries, currentKey);
+    const selectedValue = (currentValue===null || currentValue===undefined) ? currentKey : currentValue;
+    selectEl.innerHTML = opts.map(o=>`<option value="${escapeAttr(o.key)}" ${o.key===selectedValue?'selected':''}>📍 ${escapeHTML(o.label)}</option>`).join('')
+      + `<option value="__all__" ${selectedValue==='__all__'?'selected':''}>— Tutto lo storico —</option>`;
+  }
   function sceneLog(){
+    return filterByLocation(scenePublicRawLog(), publicLocationFilter, currentLocationKey());
+  }
+  function scenePublicRawLog(){
     const sid = cachedScene && cachedScene.id;
-    const bySceneDoc = (cachedLog||[]).filter(l=> !sid || !l.sceneId || l.sceneId===sid);
-    if(showAllLocationsLog) return bySceneDoc;
-    const here = currentLocationKey();
-    return bySceneDoc.filter(l => !(l.meta && l.meta.location) || l.meta.location===here);
+    return (cachedLog||[]).filter(l=> !sid || !l.sceneId || l.sceneId===sid);
   }
   // Esporta (come file .txt scaricabile, generato lato client — nessuna chiamata al server)
-  // esattamente ciò che il Registro sta mostrando in questo momento: se il filtro per location
-  // è attivo esporta solo quella, altrimenti tutto lo storico visibile.
+  // esattamente ciò che il Registro sta mostrando in questo momento.
   function exportVisibleLogAsText(entries, titleSuffix){
     const lines = (entries||[]).map(l=>{
       const when = l.created_at ? new Date(l.created_at).toLocaleString('it-IT') : '';
@@ -1542,7 +1611,13 @@
   async function clearLog(code){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&clearAll=1'); }
   async function heartbeat(code, username){ return apiPost('/api/roster', { resource:'heartbeat', code, username }); }
   async function getPrivateLog(code, thread){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code) + '&thread=' + encodeURIComponent(thread)); return d ? (d.log||[]) : []; }
-  async function pushPrivateLog(code, thread, entry){ return apiPost('/api/log', { code, thread, username: session && session.username, ...entry }); }
+  async function pushPrivateLog(code, thread, entry){
+    // Stesso tag di location della Chat Generale (vedi pushLog sopra) — prima lo storico per
+    // Settore era attivo SOLO lì; ora vale anche per Chat Privata e Sottogruppi.
+    const meta = entry.meta ? { ...entry.meta } : {};
+    if(meta.location===undefined) meta.location = currentLocationKey();
+    return apiPost('/api/log', { code, thread, username: session && session.username, ...entry, meta });
+  }
   async function getDex(code){ const d = await apiGet('/api/dex?code=' + encodeURIComponent(code)); return d ? (d.entries||[]) : []; }
   async function addDexEntry(code, entry){ return apiPost('/api/dex', { code, ...entry }); }
   async function updateDexEntry(code, id, fields){ return apiPut('/api/dex', { code, id, ...fields }); }
@@ -1952,38 +2027,107 @@
       if(segSubBtn) segSubBtn.style.display = myGroups.length>0 ? '' : 'none';
       const subWrap = document.getElementById('player-subgroup-select-wrap');
       if(subWrap) subWrap.style.display = playerChatMode==='subgroup' ? '' : 'none';
+      ensurePlayerSubgroupPicker(session.code);
     }
-    // La barra location/esporta ha senso solo sulla Chat Generale: privata e sottogruppi
-    // non vengono filtrati per location (sono già "puliti" per costruzione, essendo thread
-    // a parte).
-    const locBar = document.getElementById('chat-location-bar');
-    if(locBar) locBar.style.display = playerChatMode==='public' ? '' : 'none';
-    const locLabel = document.getElementById('chat-location-label');
-    if(locLabel) locLabel.textContent = currentLocationLabel();
+  }
+
+  // Crea/aggiorna il selettore "quale sottogruppo sto guardando" e mantiene playerActiveSubgroupId
+  // valido. PRIMA questa logica girava una volta sola, dentro il bind iniziale di renderPlayer():
+  // se in quel momento cachedSubgroups era ancora vuota (praticamente sempre, dato che si popola
+  // solo al primo giro di polling DOPO il render), playerActiveSubgroupId restava null per
+  // sempre. Risultato: aprendo "👥 Gruppo" con playerActiveSubgroupId null, renderChatArea non
+  // trovava le condizioni per il ramo "sottogruppo" e mostrava per sbaglio la Chat Generale (da
+  // qui "leggo solo gli stessi messaggi") — e siccome quel ramo non veniva mai eseguito, il
+  // thread non veniva mai segnato come letto (da qui il pallino rosso che restava acceso anche
+  // dopo aver aperto la chat). Ora questa funzione gira ad ogni updateChatModeButtons(), quindi
+  // anche ad ogni ciclo di polling: appena i sottogruppi arrivano dal server, la selezione si
+  // aggiusta da sola.
+  function ensurePlayerSubgroupPicker(code){
+    if(!session) return;
+    const wrap = document.getElementById('player-subgroup-select-wrap');
+    if(!wrap) return;
+    const myGroups = getMySubgroups(code, session.username);
+    // Se il gruppo attivo non esiste più (es. eliminato dal Master) o non è mai stato scelto,
+    // ripiega sul primo disponibile.
+    if(!playerActiveSubgroupId || !myGroups.some(g=>g.id===playerActiveSubgroupId)){
+      playerActiveSubgroupId = myGroups.length>0 ? myGroups[0].id : null;
+    }
+    if(myGroups.length===0){
+      wrap.innerHTML = '';
+      return;
+    }
+    let subSel = document.getElementById('player-subgroup-select');
+    if(!subSel){
+      wrap.innerHTML = `<select id="player-subgroup-select" style="width:100%;font-size:12px;"></select>`;
+      subSel = document.getElementById('player-subgroup-select');
+    }
+    subSel.innerHTML = myGroups.map(g=>`<option value="${escapeAttr(g.id)}" ${g.id===playerActiveSubgroupId?'selected':''}>${escapeHTML(g.name)}</option>`).join('');
+    subSel.onchange = async ()=>{
+      playerActiveSubgroupId = subSel.value;
+      await refreshPlayerLogDisplay(code, cachedMe);
+    };
+  }
+
+  // Disegna insieme il selettore "Storico per Settore" (con le opzioni ricavate dal thread
+  // attualmente aperto) e il Registro sottostante, per QUALSIASI delle tre chat del giocatore
+  // (Generale/Privata/Gruppo) — sono condivisi lo stesso #chat-location-bar e #log-live, cambia
+  // solo quale log/filtro sta guardando in quel momento in base a playerChatMode.
+  async function renderChatArea(code, me, opts){
+    opts = opts || {};
+    if(!session) return;
+    let raw, filterVal, thread = null;
+    if(playerChatMode==='subgroup' && playerActiveSubgroupId){
+      thread = 'subgroup:'+playerActiveSubgroupId;
+      raw = await getPrivateLog(code, thread);
+      filterVal = subgroupLocationFilter[playerActiveSubgroupId];
+      if(filterVal===undefined) filterVal = null;
+    } else if(playerChatMode==='private'){
+      thread = session.username;
+      raw = await getPrivateLog(code, thread);
+      filterVal = privateLocationFilter;
+    } else {
+      raw = scenePublicRawLog();
+      filterVal = publicLocationFilter;
+    }
+    const filtered = filterByLocation(raw, filterVal, currentLocationKey());
+    const logLive = document.getElementById('log-live');
+    if(logLive){
+      const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
+      logLive.innerHTML = logHTML(filtered, false);
+      if(opts.forceScrollBottom || wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
+    }
+    const barWrap = document.getElementById('chat-location-bar');
+    if(barWrap){
+      barWrap.innerHTML = `
+        ${locationFilterSelectHTML('chat-location-select', raw, currentLocationKey(), filterVal)}
+        <button class="btn ghost small" id="btn-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
+      `;
+      const sel = document.getElementById('chat-location-select');
+      if(sel) sel.onchange = ()=>{
+        const v = sel.value;
+        if(playerChatMode==='subgroup' && playerActiveSubgroupId) subgroupLocationFilter[playerActiveSubgroupId] = v;
+        else if(playerChatMode==='private') privateLocationFilter = v;
+        else publicLocationFilter = v;
+        renderChatArea(code, me, { forceScrollBottom:true });
+      };
+      const exportBtn = document.getElementById('btn-export-chat');
+      if(exportBtn) exportBtn.onclick = ()=>{
+        const label = sel ? sel.options[sel.selectedIndex].textContent.replace('📍 ','') : currentLocationLabel();
+        exportVisibleLogAsText(filtered, label);
+      };
+    }
+    if(playerChatMode==='private'){
+      markPrivateThreadRead(code, session.username, raw);
+      updateChatBadge('chatmode-private', false);
+    } else if(playerChatMode==='subgroup' && playerActiveSubgroupId){
+      markPrivateThreadRead(code, thread, raw);
+      checkPlayerSubgroupsUnread();
+    }
   }
 
   async function refreshPlayerLogDisplay(code, me){
     updateChatModeButtons();
-    const logLive = document.getElementById('log-live');
-    if(!logLive) return;
-    if(playerChatMode==='subgroup' && playerActiveSubgroupId){
-      const thread = 'subgroup:'+playerActiveSubgroupId;
-      const plog = await getPrivateLog(code, thread);
-      logLive.innerHTML = logHTML(plog, false);
-      markPrivateThreadRead(code, thread, plog);
-      checkPlayerSubgroupsUnread();
-      logLive.scrollTop = logLive.scrollHeight;
-      return;
-    }
-    if(playerChatMode==='private'){
-      const plog = await getPrivateLog(code, session.username);
-      logLive.innerHTML = logHTML(plog, false);
-      markPrivateThreadRead(code, session.username, plog);
-      updateChatBadge('chatmode-private', false);
-    } else {
-      logLive.innerHTML = logHTML(sceneLog(), false);
-    }
-    logLive.scrollTop = logLive.scrollHeight;
+    await renderChatArea(code, me, { forceScrollBottom:true });
   }
 
   function onlineSummary(members){
@@ -2107,11 +2251,6 @@
       const sceneViewer = session.role==='player' ? (cachedRoster.find(m=>m.username===session.username) || cachedMe) : null;
       sceneLive.innerHTML = `<div class="muted mono" style="margin-bottom:8px;">${onlineSummary(cachedRoster)}</div>` + sceneHTML(cachedScene, sceneViewer);
     }
-    // Etichetta location nella barra sopra il Registro (vedi sceneLog()) — si aggiorna qui ad
-    // ogni poll così segue automaticamente quando il gruppo si sposta, senza dover riaprire la chat.
-    ['chat-location-label'].forEach(id=>{ const el = document.getElementById(id); if(el) el.textContent = currentLocationLabel(); });
-    const masterLocBar = document.getElementById('master-chat-location-bar');
-    if(masterLocBar){ const span = masterLocBar.querySelector('span'); if(span) span.textContent = '📍 ' + currentLocationLabel(); }
     bindSceneAudio(cachedScene);
     if(missionsModalOpen) refreshMissionsModal();
     const sceneLuoghiLive = document.getElementById('scene-luoghi-live');
@@ -2121,32 +2260,13 @@
     }
     const logLive = document.getElementById('log-live');
     if(logLive){
-      if(session.role==='player' && playerChatMode==='subgroup' && playerActiveSubgroupId){
-        const thread = 'subgroup:'+playerActiveSubgroupId;
-        const plog = await getPrivateLog(session.code, thread);
-        const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
-        logLive.innerHTML = logHTML(plog, false);
-        if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
-        markPrivateThreadRead(session.code, thread, plog); // il gruppo aperto ora si considera letto man mano che arrivano messaggi
-      } else if(session.role==='player' && playerChatMode==='private'){
-        const plog = await getPrivateLog(session.code, session.username);
-        const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
-        logLive.innerHTML = logHTML(plog, false);
-        if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
-        markPrivateThreadRead(session.code, session.username, plog);
-        updateChatBadge('chatmode-private', false);
-        if(plog.length){
-          const myName = displayName(cachedMe || cachedRoster.find(m=>m.username===session.username) || {username:session.username});
-          maybeNotifyNew('private', session.username, plog[plog.length-1], myName);
-        }
-      } else if(session.role==='player'){
-        const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
-        logLive.innerHTML = logHTML(sceneLog(), false);
-        if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
+      if(session.role==='player'){
+        await renderChatArea(session.code, cachedMe);
       } else {
         const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
         logLive.innerHTML = logHTML(sceneLog(), session && session.role==='master');
         if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
+        refreshLocationSelectOptions(document.getElementById('master-chat-location-select'), scenePublicRawLog(), currentLocationKey(), publicLocationFilter);
       }
     }
     // Controlla in ogni ciclo di polling — indipendentemente da quale chat è aperta in questo
@@ -2162,10 +2282,11 @@
         const plog = await getPrivateLog(session.code, masterPrivateThread);
         cachedMasterPrivateLog = plog;
         const wasAtBottom = privLogLive.scrollHeight - privLogLive.scrollTop <= privLogLive.clientHeight + 40;
-        privLogLive.innerHTML = logHTML(plog, true);
+        privLogLive.innerHTML = logHTML(filterByLocation(plog, masterPrivateLocationFilter[masterPrivateThread], currentLocationKey()), true);
         attachLogModeration(privLogLive, session.code, null, true);
         if(wasAtBottom) privLogLive.scrollTop = privLogLive.scrollHeight;
         markPrivateThreadRead(session.code, masterPrivateThread, plog);
+        refreshLocationSelectOptions(document.getElementById('private-location-select'), plog, currentLocationKey(), masterPrivateLocationFilter[masterPrivateThread]);
       }
     }
     if(session.role==='master' && masterChatMode==='subgroup' && activeSubgroupId){
@@ -2174,9 +2295,10 @@
         const plog = await getPrivateLog(session.code, 'subgroup:'+activeSubgroupId);
         cachedSubgroupLog = plog;
         const wasAtBottom = subLogLive.scrollHeight - subLogLive.scrollTop <= subLogLive.clientHeight + 40;
-        subLogLive.innerHTML = logHTML(plog, true);
+        subLogLive.innerHTML = logHTML(filterByLocation(plog, masterSubgroupLocationFilter[activeSubgroupId], currentLocationKey()), true);
         attachLogModeration(subLogLive, session.code, null, false, ()=>'subgroup:'+activeSubgroupId);
         if(wasAtBottom) subLogLive.scrollTop = subLogLive.scrollHeight;
+        refreshLocationSelectOptions(document.getElementById('subgroup-location-select'), plog, currentLocationKey(), masterSubgroupLocationFilter[activeSubgroupId]);
       }
     }
     const rosterLive = document.getElementById('roster-live');
@@ -2682,14 +2804,8 @@
               <button class="chat-seg-btn" data-chatmode="subgroup" id="seg-subgroup-btn" style="display:none;">👥 Gruppo</button>
             </div>
             <div id="player-subgroup-select-wrap" style="display:none;margin-bottom:6px;"></div>
-            <div class="muted" id="chat-location-bar" style="font-size:10.5px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">
-              <span>📍 <span id="chat-location-label">${escapeHTML(currentLocationLabel())}</span></span>
-              <span style="display:flex;align-items:center;gap:8px;">
-                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="chat-show-all-toggle" ${showAllLocationsLog?'checked':''} /> Tutto lo storico</label>
-                <button class="btn ghost small" id="btn-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
-              </span>
-            </div>
-            <div class="log" id="log-live" style="height:220px;">${logHTML(sceneLog(), session.role==='master')}</div>
+            <div class="muted" id="chat-location-bar" style="font-size:10.5px;margin-bottom:6px;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;"></div>
+            <div class="log" id="log-live" style="height:220px;"></div>
             <div class="mobile-send-bar">
               <textarea id="action-text" rows="1" placeholder="Scrivi..." style="margin-top:8px;"></textarea>
               <button class="btn solid" id="btn-send-action">Invia</button>
@@ -2740,15 +2856,7 @@
     document.getElementById('btn-logout').onclick = logout;
     document.getElementById('btn-open-missions').onclick = openMissionsModal;
     bindChatAttach('action', code, 'chat', ()=>pendingActionImageUrl, (url)=>{ pendingActionImageUrl = url; });
-    const showAllToggle = document.getElementById('chat-show-all-toggle');
-    if(showAllToggle) showAllToggle.onchange = async ()=>{
-      showAllLocationsLog = showAllToggle.checked;
-      await refreshPlayerLogDisplay(code, me);
-    };
-    const exportChatBtn = document.getElementById('btn-export-chat');
-    if(exportChatBtn) exportChatBtn.onclick = ()=>{
-      exportVisibleLogAsText(sceneLog(), showAllLocationsLog ? 'Storico completo' : currentLocationLabel());
-    };
+    renderChatArea(code, me, { forceScrollBottom:true }); // riempie il selettore location + il Registro (vedi sopra)
     document.getElementById('btn-correct').onclick = async ()=>{
       const ta = document.getElementById('action-text');
       const status = document.getElementById('correct-status');
@@ -2823,31 +2931,6 @@
         await refreshPlayerLogDisplay(code, me);
       };
     });
-    // Sottogruppi player: crea selettore dinamico se ci sono gruppi disponibili
-    const segSubBtn = document.getElementById('seg-subgroup-btn');
-    if(segSubBtn){
-      const myGroups = getMySubgroups(code, session.username);
-      if(myGroups.length>0){
-        segSubBtn.style.display = '';
-        const subWrap = document.getElementById('player-subgroup-select-wrap');
-        if(subWrap && !document.getElementById('player-subgroup-select')){
-          const subSel = document.createElement('select');
-          subSel.id = 'player-subgroup-select';
-          subSel.style.cssText = 'width:100%;font-size:12px;';
-          myGroups.forEach(g=>{
-            const opt = document.createElement('option');
-            opt.value = g.id; opt.textContent = g.name;
-            subSel.appendChild(opt);
-          });
-          subWrap.appendChild(subSel);
-          if(!playerActiveSubgroupId && myGroups.length>0) playerActiveSubgroupId = myGroups[0].id;
-          subSel.onchange = async ()=>{
-            playerActiveSubgroupId = subSel.value;
-            await refreshPlayerLogDisplay(code, me);
-          };
-        }
-      }
-    }
     updateChatModeButtons();
     initMobileNav();
 
@@ -5040,12 +5123,9 @@
               <button class="chat-seg-btn" id="mchatmode-subgroup" data-mchatmode="subgroup">👥 Gruppi</button>
             </div>
             <div id="mchat-general-block">
-            <div class="muted" id="master-chat-location-bar" style="font-size:10.5px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">
-              <span>📍 ${escapeHTML(currentLocationLabel())}</span>
-              <span style="display:flex;align-items:center;gap:8px;">
-                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="master-chat-show-all-toggle" ${showAllLocationsLog?'checked':''} /> Tutto lo storico</label>
-                <button class="btn ghost small" id="btn-master-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
-              </span>
+            <div class="muted" id="master-chat-location-bar" style="font-size:10.5px;margin-bottom:6px;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;">
+              ${locationFilterSelectHTML('master-chat-location-select', cachedLog, currentLocationKey(), publicLocationFilter)}
+              <button class="btn ghost small" id="btn-master-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
             </div>
             <div class="log" id="log-live">${logHTML(sceneLog(), session.role==='master')}</div>
             <details class="gm-speak-controls" style="margin-top:8px;">
@@ -6417,15 +6497,16 @@
       if(logLive) logLive.innerHTML = logHTML(sceneLog(), true);
       clearBtn.disabled = false;
     };
-    const masterShowAllToggle = document.getElementById('master-chat-show-all-toggle');
-    if(masterShowAllToggle) masterShowAllToggle.onchange = ()=>{
-      showAllLocationsLog = masterShowAllToggle.checked;
+    const masterLocSelect = document.getElementById('master-chat-location-select');
+    if(masterLocSelect) masterLocSelect.onchange = ()=>{
+      publicLocationFilter = masterLocSelect.value;
       const logLive = document.getElementById('log-live');
       if(logLive) logLive.innerHTML = logHTML(sceneLog(), true);
     };
     const masterExportBtn = document.getElementById('btn-master-export-chat');
     if(masterExportBtn) masterExportBtn.onclick = ()=>{
-      exportVisibleLogAsText(sceneLog(), showAllLocationsLog ? 'Storico completo' : currentLocationLabel());
+      const label = masterLocSelect ? masterLocSelect.options[masterLocSelect.selectedIndex].textContent.replace('📍 ','') : currentLocationLabel();
+      exportVisibleLogAsText(sceneLog(), label);
     };
     updateMasterChatModeUI();
     checkMasterPrivateUnread(code, players);
@@ -6449,7 +6530,11 @@
       <div class="field"><label>Con chi</label>
         <select id="private-thread-select">${players.map(p=>`<option value="${escapeAttr(p.username)}" ${p.username===masterPrivateThread?'selected':''}>${masterPrivateUnread[p.username]?'🔴 ':''}${escapeHTML(displayName(p))}</option>`).join('')}</select>
       </div>
-      <div class="log" id="private-log-live-master" style="height:220px;">${logHTML(log, true)}</div>
+      <div class="log" id="private-log-live-master" style="height:220px;">${logHTML(filterByLocation(log, masterPrivateLocationFilter[masterPrivateThread], currentLocationKey()), true)}</div>
+      <div class="muted" style="font-size:10.5px;margin-bottom:8px;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;">
+        ${locationFilterSelectHTML('private-location-select', log, currentLocationKey(), masterPrivateLocationFilter[masterPrivateThread])}
+        <button class="btn ghost small" id="btn-private-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
+      </div>
       <div class="field" style="margin-top:10px;"><label>Parla come</label>
         <select id="private-speak-as">
           <option value="master">Master (narrazione)</option>
@@ -6486,6 +6571,19 @@
       renderPrivateChatMaster(code, players);
     };
     bindChatAttach('private', code, 'avviso', ()=>pendingPrivateImageUrl, (url)=>{ pendingPrivateImageUrl = url; });
+    const privLocSelect = document.getElementById('private-location-select');
+    if(privLocSelect) privLocSelect.onchange = ()=>{
+      masterPrivateLocationFilter[masterPrivateThread] = privLocSelect.value;
+      const privLogLive = document.getElementById('private-log-live-master');
+      if(privLogLive) privLogLive.innerHTML = logHTML(filterByLocation(log, privLocSelect.value, currentLocationKey()), true);
+    };
+    const privExportBtn = document.getElementById('btn-private-export-chat');
+    if(privExportBtn) privExportBtn.onclick = ()=>{
+      const filterVal = masterPrivateLocationFilter[masterPrivateThread];
+      const filtered = filterByLocation(log, filterVal, currentLocationKey());
+      const label = privLocSelect ? privLocSelect.options[privLocSelect.selectedIndex].textContent.replace('📍 ','') : currentLocationLabel();
+      exportVisibleLogAsText(filtered, label);
+    };
     const privSpeakAsSel = document.getElementById('private-speak-as');
     const privEnemyFields = document.getElementById('private-enemy-fields');
     const privNpcFields = document.getElementById('private-npc-fields');
@@ -6605,7 +6703,11 @@
           <button class="btn ghost small" data-subgroup-edit="${escapeAttr(activeGroup.id)}" style="margin-left:6px;">✎ Modifica</button>
           <button class="btn ghost small danger" data-subgroup-delete="${escapeAttr(activeGroup.id)}" style="margin-left:4px;">🗑️</button>
         </div>
-        <div class="log" id="subgroup-log-live" style="height:200px;">${logHTML(log, true)}</div>
+        <div class="log" id="subgroup-log-live" style="height:200px;">${logHTML(filterByLocation(log, masterSubgroupLocationFilter[activeGroup.id], currentLocationKey()), true)}</div>
+        <div class="muted" style="font-size:10.5px;margin-bottom:8px;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;">
+          ${locationFilterSelectHTML('subgroup-location-select', log, currentLocationKey(), masterSubgroupLocationFilter[activeGroup.id])}
+          <button class="btn ghost small" id="btn-subgroup-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
+        </div>
         <div class="field" style="margin-top:10px;"><label>Parla come</label>
           <select id="subgroup-speak-as">
             <option value="master">Master (narrazione)</option>
@@ -6673,6 +6775,19 @@
     // Send message
     const sendBtn = document.getElementById('btn-subgroup-send');
     if(activeGroup) bindChatAttach('subgroup', code, 'chat', ()=>pendingSubgroupImageUrl, (url)=>{ pendingSubgroupImageUrl = url; });
+    const subLocSelect = document.getElementById('subgroup-location-select');
+    if(subLocSelect && activeGroup) subLocSelect.onchange = ()=>{
+      masterSubgroupLocationFilter[activeGroup.id] = subLocSelect.value;
+      const subLogLive = document.getElementById('subgroup-log-live');
+      if(subLogLive) subLogLive.innerHTML = logHTML(filterByLocation(log, subLocSelect.value, currentLocationKey()), true);
+    };
+    const subExportBtn = document.getElementById('btn-subgroup-export-chat');
+    if(subExportBtn && activeGroup) subExportBtn.onclick = ()=>{
+      const filterVal = masterSubgroupLocationFilter[activeGroup.id];
+      const filtered = filterByLocation(log, filterVal, currentLocationKey());
+      const label = subLocSelect ? subLocSelect.options[subLocSelect.selectedIndex].textContent.replace('📍 ','') : currentLocationLabel();
+      exportVisibleLogAsText(filtered, label);
+    };
     const subSpeakAsSel = document.getElementById('subgroup-speak-as');
     const subEnemyFields = document.getElementById('subgroup-enemy-fields');
     const subNpcFields = document.getElementById('subgroup-npc-fields');
