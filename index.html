@@ -1480,10 +1480,63 @@
     if(s.currentLuogoId===undefined) s.currentLuogoId = null;
     return s;
   }
-  function sceneLog(){ const sid = cachedScene && cachedScene.id; return (cachedLog||[]).filter(l=> !sid || !l.sceneId || l.sceneId===sid); }
+  // ---------- Chat "pulita" per Location ----------
+  // Ogni messaggio pubblico viene marcato (in meta.location, non una colonna nuova: resta
+  // tutto nello stesso log/tabella di sempre) con dove si trovava il gruppo quando è stato
+  // scritto. Il Registro mostra di default solo i messaggi della location ATTUALE — così
+  // spostandosi tra Settori/Luoghi la chat "si pulisce" da sola — con un interruttore per
+  // rivedere comunque tutto lo storico quando serve (o esportarlo). I messaggi vecchi, scritti
+  // prima di questa funzione (senza meta.location), restano sempre visibili per non perdere
+  // nulla della cronologia pregressa.
+  let showAllLocationsLog = false;
+  function currentLocationKey(){
+    if(!cachedScene) return '_|_|_';
+    return `${cachedScene.currentMacroSceneId||'_'}|${cachedScene.currentSectorId||'_'}|${cachedScene.currentLuogoId||'_'}`;
+  }
+  function currentLocationLabel(){
+    if(!cachedScene || !cachedScene.currentSectorId) return 'Nessun Settore attuale';
+    const sName = sectorNameById(cachedScene.currentSectorId) || 'Settore';
+    if(cachedScene.currentLuogoId){
+      const lName = luogoNameById(cachedScene.currentSectorId, cachedScene.currentLuogoId);
+      if(lName) return `${sName} — ${lName}`;
+    }
+    return sName;
+  }
+  function sceneLog(){
+    const sid = cachedScene && cachedScene.id;
+    const bySceneDoc = (cachedLog||[]).filter(l=> !sid || !l.sceneId || l.sceneId===sid);
+    if(showAllLocationsLog) return bySceneDoc;
+    const here = currentLocationKey();
+    return bySceneDoc.filter(l => !(l.meta && l.meta.location) || l.meta.location===here);
+  }
+  // Esporta (come file .txt scaricabile, generato lato client — nessuna chiamata al server)
+  // esattamente ciò che il Registro sta mostrando in questo momento: se il filtro per location
+  // è attivo esporta solo quella, altrimenti tutto lo storico visibile.
+  function exportVisibleLogAsText(entries, titleSuffix){
+    const lines = (entries||[]).map(l=>{
+      const when = l.created_at ? new Date(l.created_at).toLocaleString('it-IT') : '';
+      return `[${when}] ${l.who||'?'}: ${(l.text||'').replace(/\n/g,' ')}`;
+    });
+    const header = `Digivice OS — Registro Chat${titleSuffix ? ' — ' + titleSuffix : ''}\nEsportato il ${new Date().toLocaleString('it-IT')}\n${'='.repeat(40)}\n\n`;
+    const blob = new Blob([header + lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `digivice-chat-${new Date().toISOString().slice(0,10)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
   async function saveScene(code, scene){ const d = await apiPost('/api/state', { resource:'scene', code, ...scene }); return !!(d && d.ok); }
   async function getLog(code){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code)); return d ? (d.log||[]) : []; }
-  async function pushLog(code, entry){ return apiPost('/api/log', { code, username: session && session.username, ...entry, sceneId: entry.sceneId || (cachedScene && cachedScene.id) || null }); }
+  async function pushLog(code, entry){
+    // Marca il messaggio con la location attuale (vedi sopra), a meno che chi chiama non
+    // abbia già impostato esplicitamente meta.location (nessun caso attuale, ma per sicurezza).
+    const meta = entry.meta ? { ...entry.meta } : {};
+    if(meta.location===undefined) meta.location = currentLocationKey();
+    return apiPost('/api/log', { code, username: session && session.username, ...entry, meta, sceneId: entry.sceneId || (cachedScene && cachedScene.id) || null });
+  }
   async function editLogEntry(code, id, text, thread){ return apiPut('/api/log', thread ? { code, thread, id, text } : { code, id, text }); }
   async function deleteLogEntry(code, id, thread){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id) + (thread ? '&thread=' + encodeURIComponent(thread) : '')); }
   async function clearLog(code){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&clearAll=1'); }
@@ -1875,6 +1928,13 @@
       const subWrap = document.getElementById('player-subgroup-select-wrap');
       if(subWrap) subWrap.style.display = playerChatMode==='subgroup' ? '' : 'none';
     }
+    // La barra location/esporta ha senso solo sulla Chat Generale: privata e sottogruppi
+    // non vengono filtrati per location (sono già "puliti" per costruzione, essendo thread
+    // a parte).
+    const locBar = document.getElementById('chat-location-bar');
+    if(locBar) locBar.style.display = playerChatMode==='public' ? '' : 'none';
+    const locLabel = document.getElementById('chat-location-label');
+    if(locLabel) locLabel.textContent = currentLocationLabel();
   }
 
   async function refreshPlayerLogDisplay(code, me){
@@ -2019,6 +2079,11 @@
       const sceneViewer = session.role==='player' ? (cachedRoster.find(m=>m.username===session.username) || cachedMe) : null;
       sceneLive.innerHTML = `<div class="muted mono" style="margin-bottom:8px;">${onlineSummary(cachedRoster)}</div>` + sceneHTML(cachedScene, sceneViewer);
     }
+    // Etichetta location nella barra sopra il Registro (vedi sceneLog()) — si aggiorna qui ad
+    // ogni poll così segue automaticamente quando il gruppo si sposta, senza dover riaprire la chat.
+    ['chat-location-label'].forEach(id=>{ const el = document.getElementById(id); if(el) el.textContent = currentLocationLabel(); });
+    const masterLocBar = document.getElementById('master-chat-location-bar');
+    if(masterLocBar){ const span = masterLocBar.querySelector('span'); if(span) span.textContent = '📍 ' + currentLocationLabel(); }
     bindSceneAudio(cachedScene);
     if(missionsModalOpen) refreshMissionsModal();
     const sceneLuoghiLive = document.getElementById('scene-luoghi-live');
@@ -2581,6 +2646,13 @@
               <button class="chat-seg-btn" data-chatmode="subgroup" id="seg-subgroup-btn" style="display:none;">👥 Gruppo</button>
             </div>
             <div id="player-subgroup-select-wrap" style="display:none;margin-bottom:6px;"></div>
+            <div class="muted" id="chat-location-bar" style="font-size:10.5px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">
+              <span>📍 <span id="chat-location-label">${escapeHTML(currentLocationLabel())}</span></span>
+              <span style="display:flex;align-items:center;gap:8px;">
+                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="chat-show-all-toggle" ${showAllLocationsLog?'checked':''} /> Tutto lo storico</label>
+                <button class="btn ghost small" id="btn-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
+              </span>
+            </div>
             <div class="log" id="log-live" style="height:220px;">${logHTML(sceneLog(), session.role==='master')}</div>
             <div class="mobile-send-bar">
               <textarea id="action-text" rows="1" placeholder="Scrivi..." style="margin-top:8px;"></textarea>
@@ -2632,6 +2704,15 @@
     document.getElementById('btn-logout').onclick = logout;
     document.getElementById('btn-open-missions').onclick = openMissionsModal;
     bindChatAttach('action', code, 'chat', ()=>pendingActionImageUrl, (url)=>{ pendingActionImageUrl = url; });
+    const showAllToggle = document.getElementById('chat-show-all-toggle');
+    if(showAllToggle) showAllToggle.onchange = async ()=>{
+      showAllLocationsLog = showAllToggle.checked;
+      await refreshPlayerLogDisplay(code, me);
+    };
+    const exportChatBtn = document.getElementById('btn-export-chat');
+    if(exportChatBtn) exportChatBtn.onclick = ()=>{
+      exportVisibleLogAsText(sceneLog(), showAllLocationsLog ? 'Storico completo' : currentLocationLabel());
+    };
     document.getElementById('btn-correct').onclick = async ()=>{
       const ta = document.getElementById('action-text');
       const status = document.getElementById('correct-status');
@@ -4923,6 +5004,13 @@
               <button class="chat-seg-btn" id="mchatmode-subgroup" data-mchatmode="subgroup">👥 Gruppi</button>
             </div>
             <div id="mchat-general-block">
+            <div class="muted" id="master-chat-location-bar" style="font-size:10.5px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">
+              <span>📍 ${escapeHTML(currentLocationLabel())}</span>
+              <span style="display:flex;align-items:center;gap:8px;">
+                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="master-chat-show-all-toggle" ${showAllLocationsLog?'checked':''} /> Tutto lo storico</label>
+                <button class="btn ghost small" id="btn-master-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
+              </span>
+            </div>
             <div class="log" id="log-live">${logHTML(sceneLog(), session.role==='master')}</div>
             <details class="gm-speak-controls" style="margin-top:8px;">
               <summary>🎭 Parla come... · 🎨 Colore · ✍️ Digimoji</summary>
@@ -6293,6 +6381,16 @@
       if(logLive) logLive.innerHTML = logHTML(sceneLog(), true);
       clearBtn.disabled = false;
     };
+    const masterShowAllToggle = document.getElementById('master-chat-show-all-toggle');
+    if(masterShowAllToggle) masterShowAllToggle.onchange = ()=>{
+      showAllLocationsLog = masterShowAllToggle.checked;
+      const logLive = document.getElementById('log-live');
+      if(logLive) logLive.innerHTML = logHTML(sceneLog(), true);
+    };
+    const masterExportBtn = document.getElementById('btn-master-export-chat');
+    if(masterExportBtn) masterExportBtn.onclick = ()=>{
+      exportVisibleLogAsText(sceneLog(), showAllLocationsLog ? 'Storico completo' : currentLocationLabel());
+    };
     updateMasterChatModeUI();
     checkMasterPrivateUnread(code, players);
   }
@@ -6472,6 +6570,28 @@
           <button class="btn ghost small danger" data-subgroup-delete="${escapeAttr(activeGroup.id)}" style="margin-left:4px;">🗑️</button>
         </div>
         <div class="log" id="subgroup-log-live" style="height:200px;">${logHTML(log, true)}</div>
+        <div class="field" style="margin-top:10px;"><label>Parla come</label>
+          <select id="subgroup-speak-as">
+            <option value="master">Master (narrazione)</option>
+            ${players.filter(p=>activeGroup.members.includes(p.username)).map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (displayName(p)+' — Digimon'))}</option>`).join('')}
+            ${(cachedScene.encounters||[]).map((e,i)=>`<option value="encounter:${i}">${escapeHTML(encName(e))} (in scena)</option>`).join('')}
+            ${loadSavedNpcs(code).map(n=>`<option value="npc-saved:${escapeAttr(n.name)}">${escapeHTML(n.name)} (NPC)</option>`).join('')}
+            <option value="enemy">Nemico personalizzato...</option>
+            <option value="npc">NPC nuovo...</option>
+          </select>
+        </div>
+        <div class="row" id="subgroup-enemy-fields" style="display:none;margin-bottom:8px;">
+          <input type="text" id="subgroup-enemy-speak-name" placeholder="Nome nemico" style="flex:2;" />
+          <input type="text" id="subgroup-enemy-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
+        </div>
+        <div class="row" id="subgroup-npc-fields" style="display:none;margin-bottom:8px;">
+          <input type="text" id="subgroup-npc-speak-name" placeholder="Nome NPC" style="flex:2;" />
+          <input type="text" id="subgroup-npc-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
+        </div>
+        <div class="row" style="margin-bottom:8px;align-items:center;">
+          <label class="muted" style="flex:2;font-size:11px;">Colore scritta in chat</label>
+          <input type="color" id="subgroup-speak-color" value="#ff8a3d" style="flex:1;padding:2px;height:34px;" />
+        </div>
         <textarea id="subgroup-text" rows="2" placeholder="Scrivi nel sottogruppo..." style="margin-top:8px;"></textarea>
         <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--text-mute);">
           <input type="checkbox" id="subgroup-digimoji-toggle" /> ✍️ Scrivi in Digimoji
@@ -6517,16 +6637,79 @@
     // Send message
     const sendBtn = document.getElementById('btn-subgroup-send');
     if(activeGroup) bindChatAttach('subgroup', code, 'chat', ()=>pendingSubgroupImageUrl, (url)=>{ pendingSubgroupImageUrl = url; });
+    const subSpeakAsSel = document.getElementById('subgroup-speak-as');
+    const subEnemyFields = document.getElementById('subgroup-enemy-fields');
+    const subNpcFields = document.getElementById('subgroup-npc-fields');
+    const subColorInput = document.getElementById('subgroup-speak-color');
+    if(subSpeakAsSel){
+      subSpeakAsSel.onchange = ()=>{
+        subEnemyFields.style.display = subSpeakAsSel.value==='enemy' ? 'flex' : 'none';
+        subNpcFields.style.display = subSpeakAsSel.value==='npc' ? 'flex' : 'none';
+        const mode = subSpeakAsSel.value;
+        if(mode.startsWith('digimon:')){
+          const username = mode.slice('digimon:'.length);
+          const member = cachedRoster.find(m=>m.username===username);
+          if(subColorInput) subColorInput.value = (member && member.digimon.chatColor) || '#c896ff';
+        } else if(mode.startsWith('encounter:')){
+          if(subColorInput) subColorInput.value = '#ff5d5d';
+        } else if(mode==='enemy'){
+          if(subColorInput) subColorInput.value = '#ff5d5d';
+        } else if(mode==='npc'){
+          if(subColorInput) subColorInput.value = '#ffd76a';
+        } else if(mode.startsWith('npc-saved:')){
+          const name = mode.slice('npc-saved:'.length);
+          const saved = loadSavedNpcs(code).find(n=>n.name===name);
+          if(subColorInput) subColorInput.value = (saved && saved.color) || '#ffd76a';
+        } else {
+          if(subColorInput) subColorInput.value = '#ff8a3d';
+        }
+      };
+    }
     if(sendBtn && activeGroup) sendBtn.onclick = async ()=>{
       const ta = document.getElementById('subgroup-text');
       const subDigimojiChkPre = document.getElementById('subgroup-digimoji-toggle');
       if(subDigimojiChkPre && subDigimojiChkPre.checked){ ta.value = italianToHiragana(ta.value); }
       const text = ta.value.trim();
       if(!text) return;
+      const mode = subSpeakAsSel ? subSpeakAsSel.value : 'master';
+      let who = 'Master', role = 'gm', avatar = null, color = null;
+      if(mode.startsWith('digimon:')){
+        const username = mode.slice('digimon:'.length);
+        const member = cachedRoster.find(m=>m.username===username);
+        who = (member && member.digimon.name) ? member.digimon.name : username;
+        role = 'digimon';
+        avatar = member ? member.digimon.imageUrl : null;
+        color = member ? member.digimon.chatColor : null;
+      } else if(mode.startsWith('encounter:')){
+        const idx = Number(mode.slice('encounter:'.length));
+        const encObj = (cachedScene.encounters||[])[idx];
+        who = encName(encObj) || 'Digimon';
+        const dexMatch = cachedDex.find(e=>e.name.trim().toLowerCase()===who.trim().toLowerCase());
+        role = 'enemy';
+        avatar = (encObj && typeof encObj==='object' && encObj.image) ? encObj.image : (dexMatch ? dexMatch.image_url : null);
+      } else if(mode==='enemy'){
+        who = document.getElementById('subgroup-enemy-speak-name').value.trim() || 'Nemico';
+        role = 'enemy';
+        avatar = document.getElementById('subgroup-enemy-speak-img').value.trim() || null;
+      } else if(mode==='npc'){
+        who = document.getElementById('subgroup-npc-speak-name').value.trim() || 'NPC';
+        role = 'npc';
+        avatar = document.getElementById('subgroup-npc-speak-img').value.trim() || null;
+      } else if(mode.startsWith('npc-saved:')){
+        const savedName = mode.slice('npc-saved:'.length);
+        const saved = loadSavedNpcs(code).find(n=>n.name===savedName);
+        who = (saved && saved.name) || savedName;
+        role = 'npc';
+        avatar = saved ? saved.avatar : null;
+      }
       const meta = {};
+      if(avatar) meta.avatar = avatar;
+      const chosenColor = subColorInput ? subColorInput.value : color;
+      if(chosenColor) meta.color = chosenColor;
       if(pendingSubgroupImageUrl) meta.image = pendingSubgroupImageUrl;
       if(subDigimojiChkPre && subDigimojiChkPre.checked) meta.digimoji = true;
-      await pushPrivateLog(code, 'subgroup:'+activeGroup.id, { who: 'Master', role: 'gm', text, meta: Object.keys(meta).length ? meta : null });
+      if(role==='npc') rememberNpc(code, { name: who, color: chosenColor, avatar });
+      await pushPrivateLog(code, 'subgroup:'+activeGroup.id, { who, role, text, meta: Object.keys(meta).length ? meta : null });
       ta.value='';
       pendingSubgroupImageUrl = null;
       renderSubgroupChatMaster(code, players);
