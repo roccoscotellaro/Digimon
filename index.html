@@ -2592,7 +2592,12 @@
       if(EGG_IMAGE_URL) return `<img class="${cls}" src="${escapeAttr(EGG_IMAGE_URL)}" />`;
       return `<div class="${cls}" style="display:flex;align-items:center;justify-content:center;font-size:${size==='sm'?'20px':'32px'};background:radial-gradient(circle at 35% 30%, #fff8e6, #f0d9a0 60%, #d9b976);border-radius:50%;">🥚</div>`;
     }
-    return portraitHTML(bestDigimonImage(null, d.name, d.imageUrl), d.name, size);
+    const cls = size==='sm' ? 'portrait-sm' : 'portrait';
+    const imgUrl = bestDigimonImage(null, d.name, d.imageUrl);
+    if(imgUrl){
+      return `<img class="${cls}" style="object-fit:contain;background:rgba(200,150,255,0.08);" src="${escapeAttr(imgUrl)}" onerror="this.style.visibility='hidden'" />`;
+    }
+    return portraitHTML('', d.name, size);
   }
 
   function dexFilterBarHTML(entries){
