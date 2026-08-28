@@ -211,6 +211,14 @@
   .roster-item:last-child{border-bottom:none;}
   .roster-item .name{color:var(--cyan);font-family:'Share Tech Mono',monospace;}
   .roster-item .sub{color:var(--text-mute);}
+  /* Struttura esplicita della riga di testa (avatar+nome a sinistra, EP+azioni a destra),
+     invece dei soli div inline di prima: serve ad avere qualcosa di preciso da bersagliare nel
+     media query mobile, dove la riga va spezzata su più righe (vedi sotto) invece di restare
+     stretta orizzontalmente e "tagliata" fuori dallo schermo. */
+  .roster-item-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+  .roster-item-left{display:flex;align-items:center;gap:8px;min-width:0;}
+  .roster-item-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .roster-item-actions{display:flex;gap:6px;flex-wrap:wrap;}
 
   /* Selettore Chat (Generale/Privata/Gruppo) — prima era stilizzato SOLO dentro il media query
      mobile (sotto 760px): su desktop restava con l'aspetto grezzo di default del browser,
@@ -264,6 +272,15 @@
     .sheet-head{flex-wrap:wrap;}
     .die3d, .die3d-static{font-size:20px !important;}
     .roster-item .sub{font-size:11px;}
+    /* Su schermi stretti la riga di testa del Roster (avatar+nome a sinistra, EP+4 bottoni a
+       destra) non ci sta più affiancata: va in colonna, e il blocco EP+azioni passa a piena
+       larghezza sotto nome/avatar invece di restare compresso/tagliato accanto ad essi. I
+       bottoni delle azioni si dispongono su una griglia 2 colonne invece di una riga unica che
+       sfora lo schermo. */
+    .roster-item-head{flex-direction:column;align-items:stretch;gap:8px;}
+    .roster-item-right{width:100%;justify-content:flex-start;}
+    .roster-item-actions{width:100%;}
+    .roster-item-actions .btn{flex:1 1 calc(50% - 6px);text-align:center;}
     input[type=text], input[type=number], textarea, select{font-size:16px;}
     .btn{font-size:11px;padding:8px 10px;-webkit-tap-highlight-color:transparent;}
     .btn.small{padding:6px 8px;font-size:10px;}
@@ -1650,7 +1667,13 @@
     if(meta.location===undefined) meta.location = currentLocationKey();
     return apiPost('/api/log', { code, username: session && session.username, ...entry, meta, sceneId: entry.sceneId || (cachedScene && cachedScene.id) || null });
   }
-  async function editLogEntry(code, id, text, thread){ return apiPut('/api/log', thread ? { code, thread, id, text } : { code, id, text }); }
+  // whoUpdate (opzionale) = { who, role, meta } per riassegnare anche il "mittente" di un
+  // messaggio già inviato (vedi openEditLogModal), non solo correggerne il testo.
+  async function editLogEntry(code, id, text, thread, whoUpdate){
+    const body = thread ? { code, thread, id, text } : { code, id, text };
+    if(whoUpdate){ Object.assign(body, whoUpdate); }
+    return apiPut('/api/log', body);
+  }
   async function deleteLogEntry(code, id, thread){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id) + (thread ? '&thread=' + encodeURIComponent(thread) : '')); }
   async function clearLog(code){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&clearAll=1'); }
   async function heartbeat(code, username){ return apiPost('/api/roster', { resource:'heartbeat', code, username }); }
@@ -5245,17 +5268,7 @@
             <details class="gm-speak-controls" style="margin-top:8px;">
               <summary>🎭 Parla come... · 🎨 Colore · ✍️ Digimoji</summary>
               <div style="margin-top:8px;">
-            <div class="field"><label>Parla come</label>
-              <select id="speak-as">
-                <option value="master">Master (narrazione)</option>
-                ${players.map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (displayName(p)+' — Digimon'))}</option>`).join('')}
-                ${(cachedScene.encounters||[]).map((e,i)=>`<option value="encounter:${i}">${escapeHTML(encName(e))} (in scena)</option>`).join('')}
-                ${cachedDex.map(e=>`<option value="dex:${escapeAttr(e.id)}">${escapeHTML(e.name)} (Digidex)</option>`).join('')}
-                ${loadSavedNpcs(code).map(n=>`<option value="npc-saved:${escapeAttr(n.name)}">${escapeHTML(n.name)} (NPC)</option>`).join('')}
-                <option value="enemy">Nemico personalizzato...</option>
-                <option value="npc">NPC nuovo...</option>
-              </select>
-            </div>
+            ${speakAsFieldHTML('speak-as', 'speak-as-btn')}
             <div class="row" id="enemy-fields" style="display:none;margin-bottom:8px;">
               <input type="text" id="enemy-speak-name" placeholder="Nome nemico" style="flex:2;" />
               <input type="text" id="enemy-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
@@ -5314,8 +5327,9 @@
           </div>
           <div class="hud-frame card">
             <div class="section-title">Richiedi un Tiro</div>
-            <div class="field"><label>Giocatore</label>
-              <select id="req-player">${players.map(p=>`<option value="${escapeAttr(p.username)}">${escapeHTML(displayName(p))}</option>`).join('')}</select>
+            <div class="muted" style="font-size:11px;margin-bottom:4px;">A chi (una o più persone):</div>
+            <div style="margin-bottom:8px;">
+              ${players.map(p=>`<div class="checkbox-row"><input type="checkbox" class="req-player-chk" value="${escapeAttr(p.username)}" /><label>${escapeHTML(displayName(p))}</label></div>`).join('')}
             </div>
             <div class="field"><label>Skill o Stat</label>
               <select id="req-skill">
@@ -5333,7 +5347,14 @@
             </div>
             <div class="checkbox-row">
               <input type="checkbox" id="req-chan-private" />
-              <label for="req-chan-private">✉️ Chat Privata (solo col giocatore selezionato sopra, invisibile agli altri)</label>
+              <label for="req-chan-private">✉️ Chat Privata (una per ciascun giocatore selezionato sopra, invisibile agli altri)</label>
+            </div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="req-chan-subgroup" />
+              <label for="req-chan-subgroup">👥 Sottogruppo</label>
+            </div>
+            <div class="field" id="req-subgroup-field" style="display:none;"><label>Quale sottogruppo</label>
+              <select id="req-subgroup-select"><option value="">Caricamento...</option></select>
             </div>
             <button class="btn amber" id="btn-request-roll" style="width:100%;">Richiedi Tiro</button>
             <div class="muted" id="req-roll-status" style="margin-top:6px;"></div>
@@ -5442,33 +5463,31 @@
     const enemyFields = document.getElementById('enemy-fields');
     const npcFields = document.getElementById('npc-fields');
     const colorInput = document.getElementById('speak-color');
-    if(speakAsSel){
-      speakAsSel.onchange = ()=>{
-        enemyFields.style.display = speakAsSel.value==='enemy' ? 'flex' : 'none';
-        npcFields.style.display = speakAsSel.value==='npc' ? 'flex' : 'none';
-        const mode = speakAsSel.value;
-        if(mode.startsWith('digimon:')){
-          const username = mode.slice('digimon:'.length);
-          const member = cachedRoster.find(m=>m.username===username);
-          if(colorInput) colorInput.value = (member && member.digimon.chatColor) || '#c896ff';
-        } else if(mode.startsWith('encounter:')){
-          if(colorInput) colorInput.value = '#ff5d5d';
-        } else if(mode.startsWith('dex:')){
-          if(colorInput) colorInput.value = '#ff5d5d';
-        } else if(mode==='enemy'){
-          if(colorInput) colorInput.value = '#ff5d5d';
-        } else if(mode==='npc'){
-          if(colorInput) colorInput.value = '#ffd76a';
-        } else if(mode.startsWith('npc-saved:')){
-          // NPC già usato in precedenza: ripristina il colore ricordato (vedi rememberNpc).
-          const name = mode.slice('npc-saved:'.length);
-          const saved = loadSavedNpcs(code).find(n=>n.name===name);
-          if(colorInput) colorInput.value = (saved && saved.color) || '#ffd76a';
-        } else {
-          if(colorInput) colorInput.value = '#ff8a3d';
-        }
-      };
+    function applySpeakAsMode(mode){
+      enemyFields.style.display = mode==='enemy' ? 'flex' : 'none';
+      npcFields.style.display = mode==='npc' ? 'flex' : 'none';
+      if(mode.startsWith('digimon:')){
+        const username = mode.slice('digimon:'.length);
+        const member = cachedRoster.find(m=>m.username===username);
+        if(colorInput) colorInput.value = (member && member.digimon.chatColor) || '#c896ff';
+      } else if(mode.startsWith('encounter:')){
+        if(colorInput) colorInput.value = '#ff5d5d';
+      } else if(mode.startsWith('dex:')){
+        if(colorInput) colorInput.value = '#ff5d5d';
+      } else if(mode==='enemy'){
+        if(colorInput) colorInput.value = '#ff5d5d';
+      } else if(mode==='npc'){
+        if(colorInput) colorInput.value = '#ffd76a';
+      } else if(mode.startsWith('npc-saved:')){
+        // NPC già usato in precedenza: ripristina il colore ricordato (vedi rememberNpc).
+        const name = mode.slice('npc-saved:'.length);
+        const saved = loadSavedNpcs(code).find(n=>n.name===name);
+        if(colorInput) colorInput.value = (saved && saved.color) || '#ffd76a';
+      } else {
+        if(colorInput) colorInput.value = '#ff8a3d';
+      }
     }
+    attachSpeakAsButton('speak-as', 'speak-as-btn', code, null, applySpeakAsMode);
     bindChatAttach('gm', code, 'avviso', ()=>pendingGmImageUrl, (url)=>{ pendingGmImageUrl = url; });
     bindMentionButton('gm', code, 'gm-text');
     document.getElementById('btn-gm-post').onclick = async ()=>{
@@ -5524,15 +5543,10 @@
       if(gmDigimojiChk && gmDigimojiChk.checked) meta.digimoji = true;
       if(pendingGmImageUrl) meta.image = pendingGmImageUrl;
       if(role==='npc'){
+        // Se è un NPC nuovo, lo salva subito: la prossima apertura del picker "Parla come" lo
+        // rilegge da loadSavedNpcs(code), quindi comparirà già pronto senza bisogno di un patch
+        // manuale del DOM (il picker non è più un <select> con opzioni fisse da aggiornare).
         rememberNpc(code, { name: who, color: chosenColor, avatar });
-        // Se è un NPC nuovo (non già in lista), lo aggiunge subito al menu "Parla come" senza
-        // aspettare un refresh completo — la prossima volta è già lì pronto da selezionare.
-        if(speakAsSel && !Array.from(speakAsSel.options).some(o=>o.value==='npc-saved:'+who)){
-          const opt = document.createElement('option');
-          opt.value = 'npc-saved:'+who;
-          opt.textContent = who+' (NPC)';
-          speakAsSel.insertBefore(opt, speakAsSel.querySelector('option[value="enemy"]'));
-        }
       }
       await pushLog(code, { who, role, text, meta: Object.keys(meta).length ? meta : null });
       ta.value='';
@@ -5551,26 +5565,60 @@
     const hiraClearBtn = document.getElementById('hira-clear');
     if(hiraClearBtn) hiraClearBtn.onclick = ()=>{ const gmTa = document.getElementById('gm-text'); if(gmTa) gmTa.value=''; };
     attachDigimojiInput('gm-text', 'gm-digimoji-toggle');
+    // "Quale sottogruppo" viene popolato al volo (getSubgroups fresco, non cachedSubgroups) solo
+    // quando serve, perché in questo punto del render iniziale la cache potrebbe non essere
+    // ancora stata riempita dal primo giro di polling.
+    const reqSubChk = document.getElementById('req-chan-subgroup');
+    const reqSubField = document.getElementById('req-subgroup-field');
+    if(reqSubChk){
+      reqSubChk.onchange = async ()=>{
+        reqSubField.style.display = reqSubChk.checked ? 'block' : 'none';
+        if(reqSubChk.checked){
+          const groups = await getSubgroups(code);
+          cachedSubgroups = groups;
+          const sel = document.getElementById('req-subgroup-select');
+          if(sel) sel.innerHTML = groups.length ? groups.map(g=>`<option value="${escapeAttr(g.id)}">${escapeHTML(g.name)}</option>`).join('') : '<option value="">Nessun sottogruppo creato</option>';
+        }
+      };
+    }
     const reqBtn = document.getElementById('btn-request-roll');
     if(reqBtn){
       reqBtn.onclick = async ()=>{
-        const targetPlayer = document.getElementById('req-player').value;
+        const targetUsernames = Array.from(document.querySelectorAll('.req-player-chk:checked')).map(el=>el.value);
         const skillKey = document.getElementById('req-skill').value;
         const tn = document.getElementById('req-tn').value;
         const sendGeneral = document.getElementById('req-chan-general').checked;
         const sendPrivate = document.getElementById('req-chan-private').checked;
+        const sendSubgroup = reqSubChk ? reqSubChk.checked : false;
+        const subSel = document.getElementById('req-subgroup-select');
+        const subgroupId = subSel ? subSel.value : '';
         const statusEl = document.getElementById('req-roll-status');
-        if(!sendGeneral && !sendPrivate){
-          if(statusEl) statusEl.textContent = 'Scegli almeno un canale (Generale e/o Privata).';
+        if(!targetUsernames.length){
+          if(statusEl) statusEl.textContent = 'Scegli almeno un giocatore.';
+          return;
+        }
+        if(!sendGeneral && !sendPrivate && !sendSubgroup){
+          if(statusEl) statusEl.textContent = 'Scegli almeno un canale (Generale, Privata e/o Sottogruppo).';
+          return;
+        }
+        if(sendSubgroup && !subgroupId){
+          if(statusEl) statusEl.textContent = 'Scegli un sottogruppo.';
           return;
         }
         const poolLabels = { baseAccuracy:'Accuracy (Pool)', baseDodge:'Dodge (Pool)', baseHealth:'Health (Pool)' };
         const label = poolLabels[skillKey] || (SKILL_DEFS.find(d=>d.key===skillKey)||{}).label || skillKey;
         const tnPart = (tn && !poolLabels[skillKey]) ? ` (TN ${tn})` : '';
-        const payload = `${targetPlayer}|${skillKey}|${tn||''}`;
-        const entry = { who:'Master', role:'request', text: `Richiesta a ${targetPlayer}: tira ${label}${tnPart}::REQ::${payload}` };
+        // Più destinatari nello stesso payload, separati da virgola: ogni giocatore in lista
+        // vede il proprio bottone "🎲 Tira ora" sullo stesso messaggio (vedi logHTML), invece di
+        // dover creare una richiesta separata per ciascuno.
+        const namesLabel = targetUsernames.map(u=>{ const p = players.find(x=>x.username===u); return p ? displayName(p) : u; }).join(', ');
+        const payload = `${targetUsernames.join(',')}|${skillKey}|${tn||''}`;
+        const entry = { who:'Master', role:'request', text: `Richiesta a ${namesLabel}: tira ${label}${tnPart}::REQ::${payload}` };
         if(sendGeneral) await pushLog(code, entry);
-        if(sendPrivate) await pushPrivateLog(code, targetPlayer, entry);
+        if(sendPrivate){
+          for(const u of targetUsernames){ await pushPrivateLog(code, u, entry); }
+        }
+        if(sendSubgroup) await pushPrivateLog(code, 'subgroup:'+subgroupId, entry);
         if(statusEl) statusEl.textContent = '';
         refreshLiveParts();
       };
@@ -6665,17 +6713,7 @@
         ${locationFilterSelectHTML('private-location-select', log, privKey, masterPrivateLocationFilter[masterPrivateThread])}
         <button class="btn ghost small" id="btn-private-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
       </div>
-      <div class="field" style="margin-top:10px;"><label>Parla come</label>
-        <select id="private-speak-as">
-          <option value="master">Master (narrazione)</option>
-          ${players.map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (displayName(p)+' — Digimon'))}</option>`).join('')}
-          ${(cachedScene.encounters||[]).map((e,i)=>`<option value="encounter:${i}">${escapeHTML(encName(e))} (in scena)</option>`).join('')}
-          ${cachedDex.map(e=>`<option value="dex:${escapeAttr(e.id)}">${escapeHTML(e.name)} (Digidex)</option>`).join('')}
-          ${loadSavedNpcs(code).map(n=>`<option value="npc-saved:${escapeAttr(n.name)}">${escapeHTML(n.name)} (NPC)</option>`).join('')}
-          <option value="enemy">Nemico personalizzato...</option>
-          <option value="npc">NPC nuovo...</option>
-        </select>
-      </div>
+      <div style="margin-top:10px;">${speakAsFieldHTML('private-speak-as', 'private-speak-as-btn')}</div>
       <div class="row" id="private-enemy-fields" style="display:none;margin-bottom:8px;">
         <input type="text" id="private-enemy-speak-name" placeholder="Nome nemico" style="flex:2;" />
         <input type="text" id="private-enemy-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
@@ -6736,32 +6774,30 @@
     const privEnemyFields = document.getElementById('private-enemy-fields');
     const privNpcFields = document.getElementById('private-npc-fields');
     const privColorInput = document.getElementById('private-speak-color');
-    if(privSpeakAsSel){
-      privSpeakAsSel.onchange = ()=>{
-        privEnemyFields.style.display = privSpeakAsSel.value==='enemy' ? 'flex' : 'none';
-        privNpcFields.style.display = privSpeakAsSel.value==='npc' ? 'flex' : 'none';
-        const mode = privSpeakAsSel.value;
-        if(mode.startsWith('digimon:')){
-          const username = mode.slice('digimon:'.length);
-          const member = cachedRoster.find(m=>m.username===username);
-          if(privColorInput) privColorInput.value = (member && member.digimon.chatColor) || '#c896ff';
-        } else if(mode.startsWith('encounter:')){
-          if(privColorInput) privColorInput.value = '#ff5d5d';
-        } else if(mode.startsWith('dex:')){
-          if(privColorInput) privColorInput.value = '#ff5d5d';
-        } else if(mode==='enemy'){
-          if(privColorInput) privColorInput.value = '#ff5d5d';
-        } else if(mode==='npc'){
-          if(privColorInput) privColorInput.value = '#ffd76a';
-        } else if(mode.startsWith('npc-saved:')){
-          const name = mode.slice('npc-saved:'.length);
-          const saved = loadSavedNpcs(code).find(n=>n.name===name);
-          if(privColorInput) privColorInput.value = (saved && saved.color) || '#ffd76a';
-        } else {
-          if(privColorInput) privColorInput.value = '#ff8a3d';
-        }
-      };
+    function applyPrivSpeakAsMode(mode){
+      privEnemyFields.style.display = mode==='enemy' ? 'flex' : 'none';
+      privNpcFields.style.display = mode==='npc' ? 'flex' : 'none';
+      if(mode.startsWith('digimon:')){
+        const username = mode.slice('digimon:'.length);
+        const member = cachedRoster.find(m=>m.username===username);
+        if(privColorInput) privColorInput.value = (member && member.digimon.chatColor) || '#c896ff';
+      } else if(mode.startsWith('encounter:')){
+        if(privColorInput) privColorInput.value = '#ff5d5d';
+      } else if(mode.startsWith('dex:')){
+        if(privColorInput) privColorInput.value = '#ff5d5d';
+      } else if(mode==='enemy'){
+        if(privColorInput) privColorInput.value = '#ff5d5d';
+      } else if(mode==='npc'){
+        if(privColorInput) privColorInput.value = '#ffd76a';
+      } else if(mode.startsWith('npc-saved:')){
+        const name = mode.slice('npc-saved:'.length);
+        const saved = loadSavedNpcs(code).find(n=>n.name===name);
+        if(privColorInput) privColorInput.value = (saved && saved.color) || '#ffd76a';
+      } else {
+        if(privColorInput) privColorInput.value = '#ff8a3d';
+      }
     }
+    attachSpeakAsButton('private-speak-as', 'private-speak-as-btn', code, null, applyPrivSpeakAsMode);
     document.getElementById('btn-private-send-master').onclick = async ()=>{
       const ta = document.getElementById('private-text-master');
       const privDigimojiChkPre = document.getElementById('private-digimoji-toggle');
@@ -6870,17 +6906,7 @@
           ${locationFilterSelectHTML('subgroup-location-select', log, subKey, masterSubgroupLocationFilter[activeGroup.id])}
           <button class="btn ghost small" id="btn-subgroup-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
         </div>
-        <div class="field" style="margin-top:10px;"><label>Parla come</label>
-          <select id="subgroup-speak-as">
-            <option value="master">Master (narrazione)</option>
-            ${players.filter(p=>activeGroup.members.includes(p.username)).map(p=>`<option value="digimon:${escapeAttr(p.username)}">${escapeHTML(p.digimon.name || (displayName(p)+' — Digimon'))}</option>`).join('')}
-            ${(cachedScene.encounters||[]).map((e,i)=>`<option value="encounter:${i}">${escapeHTML(encName(e))} (in scena)</option>`).join('')}
-            ${cachedDex.map(e=>`<option value="dex:${escapeAttr(e.id)}">${escapeHTML(e.name)} (Digidex)</option>`).join('')}
-            ${loadSavedNpcs(code).map(n=>`<option value="npc-saved:${escapeAttr(n.name)}">${escapeHTML(n.name)} (NPC)</option>`).join('')}
-            <option value="enemy">Nemico personalizzato...</option>
-            <option value="npc">NPC nuovo...</option>
-          </select>
-        </div>
+        <div style="margin-top:10px;">${speakAsFieldHTML('subgroup-speak-as', 'subgroup-speak-as-btn')}</div>
         <div class="row" id="subgroup-enemy-fields" style="display:none;margin-bottom:8px;">
           <input type="text" id="subgroup-enemy-speak-name" placeholder="Nome nemico" style="flex:2;" />
           <input type="text" id="subgroup-enemy-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
@@ -6973,10 +6999,9 @@
     const subNpcFields = document.getElementById('subgroup-npc-fields');
     const subColorInput = document.getElementById('subgroup-speak-color');
     if(subSpeakAsSel){
-      subSpeakAsSel.onchange = ()=>{
-        subEnemyFields.style.display = subSpeakAsSel.value==='enemy' ? 'flex' : 'none';
-        subNpcFields.style.display = subSpeakAsSel.value==='npc' ? 'flex' : 'none';
-        const mode = subSpeakAsSel.value;
+      const applySubSpeakAsMode = (mode)=>{
+        subEnemyFields.style.display = mode==='enemy' ? 'flex' : 'none';
+        subNpcFields.style.display = mode==='npc' ? 'flex' : 'none';
         if(mode.startsWith('digimon:')){
           const username = mode.slice('digimon:'.length);
           const member = cachedRoster.find(m=>m.username===username);
@@ -6997,6 +7022,9 @@
           if(subColorInput) subColorInput.value = '#ff8a3d';
         }
       };
+      // Solo i Digimon dei membri di QUESTO sottogruppo, non di tutta la campagna — stesso
+      // filtro che c'era prima nelle <option> generate lato server.
+      attachSpeakAsButton('subgroup-speak-as', 'subgroup-speak-as-btn', code, activeGroup ? activeGroup.members : null, applySubSpeakAsMode);
     }
     if(sendBtn && activeGroup) sendBtn.onclick = async ()=>{
       const ta = document.getElementById('subgroup-text');
@@ -8369,8 +8397,8 @@
     const isEgg = !p.digimon.approved;
     return `
       <div class="roster-item">
-        <div class="flex-between">
-          <div style="display:flex;align-items:center;gap:8px;">
+        <div class="roster-item-head">
+          <div class="roster-item-left">
             ${tamerAvatarHTML(p.tamer, displayName(p), 'sm')}
             <div style="position:relative;display:inline-flex;flex-shrink:0;">${digimonPortraitHTML(p.digimon, 'sm')}</div>
             <div>
@@ -8378,14 +8406,14 @@
               ${isEgg ? '' : `<span class="tag" style="margin-left:6px;">${escapeHTML(p.digimon.stage)}</span>`}
             </div>
           </div>
-          <div style="display:flex;align-items:center;gap:10px;">
+          <div class="roster-item-right">
             ${!isEgg ? epDigiviceHTML(p.digimon.evolutionPoints||0, cachedProgression ? Number(cachedProgression.milestone||0) : null, {mini:true}) : ''}
-          <div style="display:flex;gap:6px;">
-            <button class="btn ghost small" id="btn-manage-${i}">Gestisci Scheda</button>
-            <button class="btn small" id="btn-suggest-${i}">Suggerisci Battuta</button>
-            <button class="btn ghost small" id="btn-toggle-hidden-${i}" title="${p.digimon.hiddenFromParty ? 'Il Digimon è nascosto agli altri giocatori — clicca per rivelarlo al gruppo' : 'Nascondi questo Digimon agli altri giocatori (il proprietario continua a vederlo)'}" style="${p.digimon.hiddenFromParty ? 'color:var(--amber);border-color:var(--amber);' : ''}">${p.digimon.hiddenFromParty ? '❔ Nascosto al gruppo' : '👁️ Visibile al gruppo'}</button>
-            <button class="btn ghost small" id="btn-delete-${i}" style="color:var(--danger);border-color:rgba(255,93,93,0.4);">🗑</button>
-          </div>
+            <div class="roster-item-actions">
+              <button class="btn ghost small" id="btn-manage-${i}">Gestisci Scheda</button>
+              <button class="btn small" id="btn-suggest-${i}">Suggerisci Battuta</button>
+              <button class="btn ghost small" id="btn-toggle-hidden-${i}" title="${p.digimon.hiddenFromParty ? 'Il Digimon è nascosto agli altri giocatori — clicca per rivelarlo al gruppo' : 'Nascondi questo Digimon agli altri giocatori (il proprietario continua a vederlo)'}" style="${p.digimon.hiddenFromParty ? 'color:var(--amber);border-color:var(--amber);' : ''}">${p.digimon.hiddenFromParty ? '❔ Nascosto al gruppo' : '👁️ Visibile al gruppo'}</button>
+              <button class="btn ghost small" id="btn-delete-${i}" style="color:var(--danger);border-color:rgba(255,93,93,0.4);">🗑</button>
+            </div>
           </div>
         </div>
         <div class="sub" style="margin-top:6px;">${isEgg ? '🥚 Digimon ancora nell\'Uovo — in attesa di approvazione' : `Digimon: ${escapeHTML(p.digimon.name || '(senza nome)')} — Ferite: ${p.digimon.currentWounds}/${p.digimon.maxWounds}${p.digimon.tempWounds>0?` (+${p.digimon.tempWounds} Shield)`:''} — MP: ${p.digimon.currentMp}/${p.digimon.maxMp}`}</div>
@@ -9568,9 +9596,12 @@
         const [shown, payload] = l.text.split('::REQ::');
         displayText = shown;
         const parts = payload.split('|');
-        const target = parts[0], skillKey = parts[1], tn = parts[2]||'';
-        if(session && session.role==='player' && session.username===target){
-          fulfillBtn = `<button class="btn amber small" style="margin-top:6px;" data-fulfill-target="${escapeAttr(target)}" data-fulfill-skill="${escapeAttr(skillKey)}" data-fulfill-tn="${escapeAttr(tn)}">🎲 Tira ora</button>`;
+        // Il primo campo può contenere più username separati da virgola (richiesta a più
+        // giocatori contemporaneamente) — ognuno vede il proprio bottone sullo stesso messaggio.
+        const targets = (parts[0]||'').split(',').filter(Boolean);
+        const skillKey = parts[1], tn = parts[2]||'';
+        if(session && session.role==='player' && targets.includes(session.username)){
+          fulfillBtn = `<button class="btn amber small" style="margin-top:6px;" data-fulfill-target="${escapeAttr(parts[0])}" data-fulfill-skill="${escapeAttr(skillKey)}" data-fulfill-tn="${escapeAttr(tn)}">🎲 Tira ora</button>`;
         }
       }
       // Invito del Master a spostarsi ("Vuoi andare a XXX?"): visibile a chiunque legga questo
@@ -9620,11 +9651,34 @@
     const modal = document.createElement('div');
     modal.id = 'edit-log-modal';
     modal.className = 'enc-modal-backdrop';
+    const currentAvatar = entry ? resolveLogAvatar(entry) : '';
     modal.innerHTML = `
       <div class="enc-modal-card hud-frame" style="max-width:520px;">
         <button class="btn ghost small" id="edit-log-modal-close" style="position:absolute;top:8px;right:8px;">✕</button>
         <div class="section-title" style="margin-top:0;">✎ Modifica messaggio</div>
         <textarea id="edit-log-modal-text" rows="5" style="width:100%;">${escapeHTML(entry ? entry.text : '')}</textarea>
+        <div class="muted" style="font-size:11px;margin-top:10px;display:flex;align-items:center;gap:6px;">
+          ${currentAvatar?`<img src="${escapeAttr(currentAvatar)}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;" onerror="this.style.display='none'" />`:''}
+          Attualmente: <b>${escapeHTML(entry ? entry.who : '')}</b>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;">
+          <input type="checkbox" id="edit-log-modal-change-who" /> Cambia anche chi ha "parlato"
+        </label>
+        <div id="edit-log-modal-who-fields" style="display:none;margin-top:8px;">
+          ${speakAsFieldHTML('edit-log-modal-speak-as', 'edit-log-modal-speak-as-btn')}
+          <div class="row" id="edit-log-modal-enemy-fields" style="display:none;margin-bottom:8px;">
+            <input type="text" id="edit-log-modal-enemy-name" placeholder="Nome nemico" style="flex:2;" />
+            <input type="text" id="edit-log-modal-enemy-img" placeholder="URL immagine (opz.)" style="flex:2;" />
+          </div>
+          <div class="row" id="edit-log-modal-npc-fields" style="display:none;margin-bottom:8px;">
+            <input type="text" id="edit-log-modal-npc-name" placeholder="Nome NPC" style="flex:2;" />
+            <input type="text" id="edit-log-modal-npc-img" placeholder="URL immagine (opz.)" style="flex:2;" />
+          </div>
+          <div class="row" style="margin-bottom:4px;align-items:center;">
+            <label class="muted" style="flex:2;font-size:11px;">Colore scritta in chat</label>
+            <input type="color" id="edit-log-modal-color" value="${escapeAttr((entry&&entry.meta&&entry.meta.color)||'#ff8a3d')}" style="flex:1;padding:2px;height:34px;" />
+          </div>
+        </div>
         <div class="err" id="edit-log-modal-status"></div>
         <div class="row" style="margin-top:10px;">
           <button class="btn ghost" id="edit-log-modal-cancel" style="flex:1;">Annulla</button>
@@ -9640,13 +9694,80 @@
     const textEl = document.getElementById('edit-log-modal-text');
     textEl.focus();
     textEl.setSelectionRange(textEl.value.length, textEl.value.length);
+    const changeWhoChk = document.getElementById('edit-log-modal-change-who');
+    const whoFields = document.getElementById('edit-log-modal-who-fields');
+    changeWhoChk.onchange = ()=>{ whoFields.style.display = changeWhoChk.checked ? 'block' : 'none'; };
+    const speakSel = document.getElementById('edit-log-modal-speak-as');
+    const enemyFields = document.getElementById('edit-log-modal-enemy-fields');
+    const npcFields = document.getElementById('edit-log-modal-npc-fields');
+    const colorInput = document.getElementById('edit-log-modal-color');
+    attachSpeakAsButton('edit-log-modal-speak-as', 'edit-log-modal-speak-as-btn', code, null, (mode)=>{
+      enemyFields.style.display = mode==='enemy' ? 'flex' : 'none';
+      npcFields.style.display = mode==='npc' ? 'flex' : 'none';
+      if(mode.startsWith('npc-saved:')){
+        const name = mode.slice('npc-saved:'.length);
+        const saved = loadSavedNpcs(code).find(n=>n.name===name);
+        colorInput.value = (saved && saved.color) || '#ffd76a';
+      } else if(mode==='enemy'){
+        colorInput.value = '#ff8a3d';
+      }
+    });
     const saveBtn = document.getElementById('edit-log-modal-save');
     saveBtn.onclick = async ()=>{
       const newText = textEl.value.trim();
       const statusEl = document.getElementById('edit-log-modal-status');
       if(!newText){ statusEl.textContent = 'Il messaggio non può essere vuoto.'; return; }
+      let whoUpdate = null;
+      // Stessa logica di risoluzione who/role/avatar già usata dai bottoni "Invia" delle 3 chat
+      // (vedi btn-gm-post / private / subgroup), applicata qui a un messaggio già esistente.
+      if(changeWhoChk.checked){
+        const mode = speakSel.value;
+        let who = 'Master', role = 'gm', avatar = null;
+        if(mode.startsWith('digimon:')){
+          const username = mode.slice('digimon:'.length);
+          const member = cachedRoster.find(m=>m.username===username);
+          who = (member && member.digimon.name) ? member.digimon.name : username;
+          role = 'digimon';
+          avatar = member ? member.digimon.imageUrl : null;
+        } else if(mode.startsWith('encounter:')){
+          const idx = Number(mode.slice('encounter:'.length));
+          const encObj = (cachedScene.encounters||[])[idx];
+          who = encName(encObj) || 'Digimon';
+          const dexMatch = cachedDex.find(e=>e.name.trim().toLowerCase()===who.trim().toLowerCase());
+          role = 'enemy';
+          avatar = (encObj && typeof encObj==='object' && encObj.image) ? encObj.image : (dexMatch ? dexMatch.image_url : null);
+        } else if(mode.startsWith('dex:')){
+          const dexId = mode.slice('dex:'.length);
+          const dexEntry = cachedDex.find(e=>String(e.id)===dexId);
+          who = dexEntry ? dexEntry.name : 'Digimon';
+          role = 'enemy';
+          avatar = dexEntry ? dexEntry.image_url : null;
+        } else if(mode==='enemy'){
+          who = document.getElementById('edit-log-modal-enemy-name').value.trim() || 'Nemico';
+          role = 'enemy';
+          avatar = document.getElementById('edit-log-modal-enemy-img').value.trim() || null;
+        } else if(mode==='npc'){
+          who = document.getElementById('edit-log-modal-npc-name').value.trim() || 'NPC';
+          role = 'npc';
+          avatar = document.getElementById('edit-log-modal-npc-img').value.trim() || null;
+        } else if(mode.startsWith('npc-saved:')){
+          const savedName = mode.slice('npc-saved:'.length);
+          const saved = loadSavedNpcs(code).find(n=>n.name===savedName);
+          who = (saved && saved.name) || savedName;
+          role = 'npc';
+          avatar = saved ? saved.avatar : null;
+        }
+        // meta: preserva eventuali chiavi già presenti sull'entry (es. image di un allegato,
+        // digimoji) e aggiorna solo avatar/color, invece di sovrascrivere tutto il meta.
+        const meta = Object.assign({}, entry.meta || {});
+        if(avatar) meta.avatar = avatar; else delete meta.avatar;
+        const chosenColor = colorInput.value;
+        if(chosenColor) meta.color = chosenColor;
+        if(role==='npc') rememberNpc(code, { name: who, color: chosenColor, avatar });
+        whoUpdate = { who, role, meta };
+      }
       saveBtn.disabled = true;
-      const ok = await editLogEntry(code, entry.id, newText, thread);
+      const ok = await editLogEntry(code, entry.id, newText, thread, whoUpdate);
       if(!ok){ statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); saveBtn.disabled = false; return; }
       closeIt();
       refreshLiveParts();
@@ -9720,10 +9841,11 @@
         }
         if(text){
           const entry = { who: displayName(me), role:'roll', text, meta: rollMeta };
-          // Risponde nello stesso canale in cui è arrivata la richiesta: se il giocatore la sta
-          // guardando nella sua chat privata col Master, il tiro resta privato; altrimenti va
-          // nella chat generale visibile a tutti (comportamento invariato per le richieste generali).
+          // Risponde nello stesso canale in cui il giocatore sta leggendo la richiesta: privato
+          // col Master, il sottogruppo aperto, o generale — altrimenti (bug corretto) un tiro
+          // fatto da dentro un sottogruppo finiva nella Chat Generale invece che nel sottogruppo.
           if(playerChatMode==='private') await pushPrivateLog(code, session.username, entry);
+          else if(playerChatMode==='subgroup' && playerActiveSubgroupId) await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, entry);
           else await pushLog(code, entry);
           refreshLiveParts();
         }
@@ -9749,6 +9871,7 @@
             const destName = luogoId ? luogoNameById(sectorId, luogoId) : sectorNameById(sectorId);
             const entry = { who: displayName(me), role:'player', text: `🚶 ${displayName(me)} si sposta a "${destName||''}".` };
             if(playerChatMode==='private') await pushPrivateLog(code, session.username, entry);
+            else if(playerChatMode==='subgroup' && playerActiveSubgroupId) await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, entry);
             else await pushLog(code, entry);
             refreshLiveParts();
           }
@@ -9794,6 +9917,24 @@
     // "Menziona": [[dex:ID]] / [[npc:NOME_CODIFICATO]] inseriti dal bottone 🔖 nel composer
     // diventano un badge cliccabile con mini-ritratto, invece di restare testo grezzo — mostra
     // subito a chi legge di chi si sta parlando, con un tap per vedere la scheda completa.
+    // Varianti "solo immagine": [[dex-img:ID]] / [[npc-img:NOME_CODIFICATO]], inserite dal
+    // picker scegliendo 🖼️ invece della riga intera — mostrano solo il ritratto (nessun nome/
+    // chip), e un click ingrandisce l'immagine (stessa lightbox degli avatar/allegati) invece di
+    // aprire la scheda completa. Vanno sostituite PRIMA delle varianti "chip" qui sotto, perché
+    // altrimenti "dex-img:ID" non farebbe match di "dex:ID" (i due prefissi non si sovrappongono,
+    // ma teniamole comunque in quest'ordine per chiarezza).
+    html = html.replace(/\[\[dex-img:([a-zA-Z0-9_-]+)\]\]/g, (m, id)=>{
+      const e = cachedDex.find(x=>String(x.id)===id);
+      if(!e || !e.image_url) return m;
+      return mentionImageOnlyHTML(e.image_url, e.name);
+    });
+    html = html.replace(/\[\[npc-img:([^\]]+)\]\]/g, (m, encName)=>{
+      let name; try{ name = decodeURIComponent(encName); }catch(err){ name = encName; }
+      const npcs = loadSavedNpcs(session && session.code);
+      const n = npcs.find(x=>x.name===name);
+      if(!n || !n.avatar) return m;
+      return mentionImageOnlyHTML(n.avatar, name);
+    });
     html = html.replace(/\[\[dex:([a-zA-Z0-9_-]+)\]\]/g, (m, id)=>{
       const e = cachedDex.find(x=>String(x.id)===id);
       if(!e) return m;
@@ -9809,6 +9950,12 @@
   }
   function mentionChipHTML(avatar, name, dataKey){
     return `<span class="mention-chip" data-mention-open="${escapeAttr(dataKey)}">${avatar?`<img src="${escapeAttr(avatar)}" onerror="this.style.display='none'" />`:''}${escapeHTML(name)}</span>`;
+  }
+  // "Solo immagine": stesso data-avatar-expand già gestito dalla delegation globale (riga
+  // ~10148) per avatar e allegati del Registro, quindi il click apre direttamente la lightbox
+  // sull'immagine — niente scheda con nome/descrizione, come richiesto per questa modalità.
+  function mentionImageOnlyHTML(avatar, name){
+    return `<img class="who-avatar" src="${escapeAttr(avatar)}" alt="${escapeAttr(name)}" data-avatar-expand="${escapeAttr(avatar)}" style="width:22px;height:22px;border-radius:4px;object-fit:cover;cursor:zoom-in;vertical-align:middle;" onerror="this.style.display='none'" />`;
   }
   // Bottone "🔖 Menziona" accanto a un composer: apre il selezionatore e inserisce il token
   // scelto (Digidex o NPC salvato) al punto del cursore nella textarea indicata.
@@ -9849,13 +9996,24 @@
     modal.onclick = (ev)=>{ if(ev.target===modal) closeIt(); };
     const listEl = document.getElementById('mention-picker-list');
     const searchEl = document.getElementById('mention-picker-search');
+    // Ogni riga ha due modi per essere scelta: un tap sulla riga (nome+ritratto) inserisce la
+    // menzione "completa" (chip col nome, scheda con descrizione al click — comportamento
+    // invariato), il pulsante 🖼️ a destra (solo se c'è un'immagine) inserisce la variante "solo
+    // immagine" invece. Le due azioni sono su elementi separati per non doversi chiedere ogni
+    // volta "che tipo di menzione vuoi" in un secondo passaggio.
     function renderList(){
       const q = (searchEl.value||'').trim().toLowerCase();
       const dexMatches = cachedDex.filter(e=>!q || e.name.toLowerCase().includes(q)).slice(0,25);
       const npcMatches = npcs.filter(n=>!q || n.name.toLowerCase().includes(q)).slice(0,25);
       listEl.innerHTML = `
-        ${dexMatches.length ? `<div class="muted" style="font-size:10px;text-transform:uppercase;margin:6px 0 4px;">Digidex</div>` + dexMatches.map(e=>`<div class="roster-item" data-mention-pick="dex:${escapeAttr(e.id)}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 8px;">${e.image_url?`<img src="${escapeAttr(e.image_url)}" style="width:26px;height:26px;object-fit:cover;border-radius:4px;" />`:''}<span>${escapeHTML(e.name)}</span></div>`).join('') : ''}
-        ${npcMatches.length ? `<div class="muted" style="font-size:10px;text-transform:uppercase;margin:10px 0 4px;">NPC</div>` + npcMatches.map(n=>`<div class="roster-item" data-mention-pick="npc:${escapeAttr(encodeURIComponent(n.name))}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 8px;">${n.avatar?`<img src="${escapeAttr(n.avatar)}" style="width:26px;height:26px;object-fit:cover;border-radius:4px;" />`:''}<span>${escapeHTML(n.name)}</span></div>`).join('') : ''}
+        ${dexMatches.length ? `<div class="muted" style="font-size:10px;text-transform:uppercase;margin:6px 0 4px;">Digidex</div>` + dexMatches.map(e=>`<div class="roster-item" style="display:flex;align-items:center;gap:8px;padding:6px 8px;">
+          <span data-mention-pick="dex:${escapeAttr(e.id)}" style="flex:1;cursor:pointer;display:flex;align-items:center;gap:8px;">${e.image_url?`<img src="${escapeAttr(e.image_url)}" style="width:26px;height:26px;object-fit:cover;border-radius:4px;" />`:''}<span>${escapeHTML(e.name)}</span></span>
+          ${e.image_url?`<button type="button" class="btn ghost small" data-mention-pick-img="dex:${escapeAttr(e.id)}" title="Inserisci solo l'immagine" style="padding:2px 6px;">🖼️</button>`:''}
+        </div>`).join('') : ''}
+        ${npcMatches.length ? `<div class="muted" style="font-size:10px;text-transform:uppercase;margin:10px 0 4px;">NPC</div>` + npcMatches.map(n=>`<div class="roster-item" style="display:flex;align-items:center;gap:8px;padding:6px 8px;">
+          <span data-mention-pick="npc:${escapeAttr(encodeURIComponent(n.name))}" style="flex:1;cursor:pointer;display:flex;align-items:center;gap:8px;">${n.avatar?`<img src="${escapeAttr(n.avatar)}" style="width:26px;height:26px;object-fit:cover;border-radius:4px;" />`:''}<span>${escapeHTML(n.name)}</span></span>
+          ${n.avatar?`<button type="button" class="btn ghost small" data-mention-pick-img="npc:${escapeAttr(encodeURIComponent(n.name))}" title="Inserisci solo l'immagine" style="padding:2px 6px;">🖼️</button>`:''}
+        </div>`).join('') : ''}
         ${(!dexMatches.length && !npcMatches.length) ? '<div class="muted">Nessun risultato.</div>' : ''}
       `;
       listEl.querySelectorAll('[data-mention-pick]').forEach(item=>{
@@ -9865,6 +10023,101 @@
           closeIt();
         };
       });
+      listEl.querySelectorAll('[data-mention-pick-img]').forEach(btn=>{
+        btn.onclick = (ev)=>{
+          ev.stopPropagation();
+          const val = btn.getAttribute('data-mention-pick-img');
+          const sep = val.indexOf(':');
+          const kind = val.slice(0, sep); // "dex" o "npc"
+          const rest = val.slice(sep+1);
+          onPick(`[[${kind}-img:${rest}]]`);
+          closeIt();
+        };
+      });
+    }
+    searchEl.oninput = renderList;
+    renderList();
+    searchEl.focus();
+  }
+  // ===== "Parla come" — picker cercabile invece del <select> gigante =====
+  // Su mobile un <select> nativo con tutto il Digidex dentro diventa una ruota di scelta
+  // interminabile e scomodissima da scorrere. Master/Digimon dei giocatori/Incontri in scena
+  // restano in cima come lista fissa (di solito pochi elementi); Digidex e NPC salvati, che
+  // possono essere centinaia, si vedono solo cercando. Usata da Chat Generale, Privata,
+  // Sottogruppi e dalla modale di modifica messaggio, cosi' il comportamento resta identico
+  // ovunque compaia "Parla come".
+  function speakAsFieldHTML(hiddenId, btnId, initialLabel){
+    return `
+      <div class="field"><label>Parla come</label>
+        <button type="button" class="btn ghost" id="${btnId}" style="width:100%;text-align:left;">${escapeHTML(initialLabel||'🎙️ Master (narrazione)')}</button>
+        <input type="hidden" id="${hiddenId}" value="master" />
+      </div>
+    `;
+  }
+  // applyFn(mode) viene richiamata subito dopo la scelta, per riusare la stessa logica che già
+  // mostra/nasconde i campi Nemico/NPC e precompila il colore — invariata rispetto a prima,
+  // cambia solo come viene innescata (niente più .onchange su un <select>).
+  function attachSpeakAsButton(hiddenId, btnId, code, memberUsernames, applyFn){
+    const hidden = document.getElementById(hiddenId);
+    const btn = document.getElementById(btnId);
+    if(!btn || !hidden) return;
+    btn.onclick = ()=> openSpeakAsPicker(code, memberUsernames, (value, label)=>{
+      hidden.value = value;
+      btn.textContent = label;
+      if(applyFn) applyFn(value);
+    });
+  }
+  function openSpeakAsPicker(code, memberUsernames, onPick){
+    const old = document.getElementById('speak-as-picker-modal');
+    if(old) old.remove();
+    const modal = document.createElement('div');
+    modal.id = 'speak-as-picker-modal';
+    modal.className = 'enc-modal-backdrop';
+    const npcs = loadSavedNpcs(code);
+    const rosterPool = memberUsernames ? (cachedRoster||[]).filter(p=>memberUsernames.includes(p.username)) : (cachedRoster||[]);
+    modal.innerHTML = `
+      <div class="enc-modal-card hud-frame" style="max-width:420px;max-height:80vh;overflow:auto;position:relative;">
+        <button class="btn ghost small" id="speak-as-picker-close" style="position:absolute;top:8px;right:8px;">✕</button>
+        <div class="section-title" style="margin-top:0;">🎭 Parla come</div>
+        <div id="speak-as-picker-fixed"></div>
+        <input type="text" id="speak-as-picker-search" placeholder="Cerca nel Digidex o negli NPC..." style="width:100%;margin:10px 0;" />
+        <div id="speak-as-picker-list"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    const closeIt = ()=>modal.remove();
+    document.getElementById('speak-as-picker-close').onclick = closeIt;
+    modal.onclick = (ev)=>{ if(ev.target===modal) closeIt(); };
+    const pick = (value, label)=>{ onPick(value, label); closeIt(); };
+    const fixedEl = document.getElementById('speak-as-picker-fixed');
+    fixedEl.innerHTML = `
+      <div class="roster-item" data-pick="master" data-pick-label="🎙️ Master (narrazione)" style="cursor:pointer;padding:6px 8px;">🎙️ Master (narrazione)</div>
+      ${rosterPool.map(p=>{ const label = (p.digimon&&p.digimon.name) || (displayName(p)+' — Digimon'); return `<div class="roster-item" data-pick="digimon:${escapeAttr(p.username)}" data-pick-label="${escapeAttr(label)}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 8px;">${(p.digimon&&p.digimon.imageUrl)?`<img src="${escapeAttr(p.digimon.imageUrl)}" style="width:22px;height:22px;object-fit:cover;border-radius:4px;" />`:''}<span>${escapeHTML(label)}</span></div>`; }).join('')}
+      ${((cachedScene&&cachedScene.encounters)||[]).map((e,i)=>{ const label = encName(e)||'Digimon'; return `<div class="roster-item" data-pick="encounter:${i}" data-pick-label="${escapeAttr(label)}" style="cursor:pointer;padding:6px 8px;">⚔️ ${escapeHTML(label)} (in scena)</div>`; }).join('')}
+    `;
+    const bindPickables = (root)=>{
+      root.querySelectorAll('[data-pick]').forEach(item=>{
+        item.onclick = ()=> pick(item.getAttribute('data-pick'), item.getAttribute('data-pick-label'));
+      });
+    };
+    bindPickables(fixedEl);
+    const listEl = document.getElementById('speak-as-picker-list');
+    const searchEl = document.getElementById('speak-as-picker-search');
+    function renderList(){
+      const q = (searchEl.value||'').trim().toLowerCase();
+      // Digidex/NPC compaiono solo cercando (sono le liste potenzialmente lunghissime); senza
+      // testo digitato mostriamo solo un assaggio degli NPC recenti, così la lista non parte
+      // già enorme.
+      const dexMatches = q ? cachedDex.filter(e=>e.name.toLowerCase().includes(q)).slice(0,25) : [];
+      const npcMatches = q ? npcs.filter(n=>n.name.toLowerCase().includes(q)).slice(0,25) : npcs.slice(0,10);
+      listEl.innerHTML = `
+        ${dexMatches.length ? `<div class="muted" style="font-size:10px;text-transform:uppercase;margin:6px 0 4px;">Digidex</div>` + dexMatches.map(e=>`<div class="roster-item" data-pick="dex:${escapeAttr(e.id)}" data-pick-label="${escapeAttr(e.name)}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 8px;">${e.image_url?`<img src="${escapeAttr(e.image_url)}" style="width:22px;height:22px;object-fit:cover;border-radius:4px;" />`:''}<span>${escapeHTML(e.name)}</span></div>`).join('') : ''}
+        ${npcMatches.length ? `<div class="muted" style="font-size:10px;text-transform:uppercase;margin:10px 0 4px;">NPC salvati</div>` + npcMatches.map(n=>`<div class="roster-item" data-pick="npc-saved:${escapeAttr(n.name)}" data-pick-label="${escapeAttr(n.name)}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 8px;">${n.avatar?`<img src="${escapeAttr(n.avatar)}" style="width:22px;height:22px;object-fit:cover;border-radius:4px;" />`:''}<span>${escapeHTML(n.name)}</span></div>`).join('') : ''}
+        <div class="roster-item" data-pick="enemy" data-pick-label="💀 Nemico personalizzato..." style="cursor:pointer;padding:6px 8px;">💀 Nemico personalizzato...</div>
+        <div class="roster-item" data-pick="npc" data-pick-label="👤 NPC nuovo..." style="cursor:pointer;padding:6px 8px;">👤 NPC nuovo...</div>
+        ${(q && !dexMatches.length && !npcMatches.length) ? '<div class="muted">Nessun risultato nel Digidex/NPC.</div>' : ''}
+      `;
+      bindPickables(listEl);
     }
     searchEl.oninput = renderList;
     renderList();
