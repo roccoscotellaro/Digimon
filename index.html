@@ -164,6 +164,11 @@
   .log-entry .txt .log-h2{font-size:14.5px;color:var(--amber);}
   .log-entry .txt .log-h3{font-size:13.5px;color:var(--cyan);}
   .log-entry .txt .log-h:first-child{margin-top:0;}
+  /* Discorso diretto ("...") distinto dalla narrazione/azione circostante: colore caldo +
+     corsivo, così a colpo d'occhio si separa il "detto/pronunciato" dal resto del testo —
+     vedi formatLogText(). Riconosce sia le virgolette dritte "..." sia quelle tipografiche
+     "..."/«...». */
+  .log-entry .txt .log-speech{color:var(--amber);font-style:italic;}
   .log-entry .meta{font-size:10px;color:var(--text-mute);margin-left:8px;}
   .log-image{max-width:220px;max-height:220px;border-radius:6px;border:1px solid var(--line);margin-top:6px;display:block;cursor:zoom-in;object-fit:cover;}
   /* "Menziona" in chat: mostra chi si sta citando (una voce del Digidex o un NPC) come un
@@ -2197,6 +2202,26 @@
     if(sectorOverride) return null;
     return (cachedScene && cachedScene.currentLuogoId) || null;
   }
+  // DIAGNOSI 28/08/2026: Chat Privata e Sottogruppi taggavano SEMPRE i messaggi con
+  // currentLocationKey() (la posizione dell'INTERO gruppo sulla Scena), anche quando il
+  // destinatario/i membri del sottogruppo si erano separati dal gruppo verso un altro Settore.
+  // Risultato: due giocatori realmente nella stessa zona in un sottogruppo non venivano mai
+  // "riconosciuti" come tali dal filtro "Storico per Settore", che restava ancorato alla
+  // posizione del gruppo principale. Queste due funzioni calcolano la chiave usando invece la
+  // posizione EFFETTIVA (memberEffectiveSectorId/LuogoId) di chi partecipa alla conversazione.
+  function memberLocationKey(member){
+    if(!cachedScene) return '_|_|_';
+    return `${cachedScene.currentMacroSceneId||'_'}|${memberEffectiveSectorId(member)||'_'}|${memberEffectiveLuogoId(member)||'_'}`;
+  }
+  // Per un Sottogruppo usiamo la posizione effettiva del primo membro come riferimento: un
+  // Sottogruppo esiste per far parlare tra loro persone che si presume trovarsi nello stesso
+  // posto, quindi non gestiamo il caso limite (raro, e comunque non peggiore di prima) di membri
+  // finiti in Settori diversi tra loro.
+  function subgroupLocationKey(group){
+    const firstUsername = group && Array.isArray(group.members) && group.members[0];
+    const member = firstUsername ? (cachedRoster||[]).find(m=>m.username===firstUsername) : null;
+    return member ? memberLocationKey(member) : currentLocationKey();
+  }
   // Un Digimon del roster segnato "hiddenFromParty" resta visibile SOLO a Master e proprietario —
   // serve a coprire il tempo tra la creazione/evoluzione di un Digimon e il momento in cui il Master
   // vuole rivelarlo narrativamente al resto del gruppo (es. un Digitama che si schiude prima degli altri).
@@ -2925,7 +2950,10 @@
       if(playerChatMode==='subgroup' && playerActiveSubgroupId){
         const subMeta = {};
         if(pendingActionImageUrl) subMeta.image = pendingActionImageUrl;
-        await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { who: displayName(me), role:'player', text: raw, meta: Object.keys(subMeta).length ? subMeta : null });
+        // Vedi subgroupLocationKey: tagga con la posizione effettiva del sottogruppo, non quella
+        // del gruppo intero, altrimenti un sottogruppo separato non viene mai "riconosciuto".
+        subMeta.location = subgroupLocationKey((cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId));
+        await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { who: displayName(me), role:'player', text: raw, meta: subMeta });
         ta.value='';
         pendingActionImageUrl = null;
         const ap = document.getElementById('action-img-preview');
@@ -2939,7 +2967,10 @@
         // l'immagine restava selezionata nel widget ma non veniva mai inviata in privato.
         const privTextMeta = {};
         if(pendingActionImageUrl) privTextMeta.image = pendingActionImageUrl;
-        await pushPrivateLog(code, session.username, { who: displayName(me), role:'player', text: raw, meta: Object.keys(privTextMeta).length ? privTextMeta : null });
+        // Vedi memberLocationKey: tagga con la posizione effettiva del giocatore (se separato
+        // dal gruppo), non quella del gruppo intero.
+        privTextMeta.location = memberLocationKey(me);
+        await pushPrivateLog(code, session.username, { who: displayName(me), role:'player', text: raw, meta: privTextMeta });
         ta.value='';
         pendingActionImageUrl = null;
         const actionPreviewPriv = document.getElementById('action-img-preview');
@@ -3496,21 +3527,22 @@
       <button class="btn solid" id="btn-inv-add" style="width:100%;">Aggiungi Oggetto</button>
     `;
     cardEl.querySelectorAll('[data-remove-item]').forEach(btn=>{
-      btn.onclick = async ()=>{
+      btn.onclick = ()=>{
         const idx = Number(btn.getAttribute('data-remove-item'));
         me.tamer.inventory.splice(idx,1);
-        await saveMember(session.code, me);
+        // Ridisegna subito, salva in background (vedi p-inv-add in player.html per lo stesso fix).
         renderInventoryCard(me, containerId);
+        saveMember(session.code, me).then(ok=>{ if(!ok) renderInventoryCard(me, containerId); });
       };
     });
-    document.getElementById('btn-inv-add').onclick = async ()=>{
+    document.getElementById('btn-inv-add').onclick = ()=>{
       const name = document.getElementById('inv-name').value.trim();
       if(!name) return;
       const qty = Number(document.getElementById('inv-qty').value)||1;
       const desc = document.getElementById('inv-desc').value.trim();
       me.tamer.inventory.push({ name, qty, desc });
-      await saveMember(session.code, me);
       renderInventoryCard(me, containerId);
+      saveMember(session.code, me).then(ok=>{ if(!ok) renderInventoryCard(me, containerId); });
     };
   }
 
@@ -6628,6 +6660,10 @@
       <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--text-mute);">
         <input type="checkbox" id="private-digimoji-toggle" /> ✍️ Scrivi in Digimoji
       </label>
+      <div class="row" style="margin-top:6px;">
+        <button class="btn ghost small" id="private-btn-correct">Correggi Italiano</button>
+      </div>
+      <div class="muted" id="private-correct-status" style="margin-top:2px;font-size:10.5px;"></div>
       ${chatAttachHTML('private')}
       ${mentionButtonHTML('private')}
       <button class="btn amber" id="btn-private-send-master" style="width:100%;margin-top:6px;">Invia</button>
@@ -6640,6 +6676,17 @@
     };
     bindChatAttach('private', code, 'avviso', ()=>pendingPrivateImageUrl, (url)=>{ pendingPrivateImageUrl = url; });
     bindMentionButton('private', code, 'private-text-master');
+    // Correzione IT via AI: stessa funzione già usata in Chat Generale (Player) — mancava qui,
+    // costringendo il Master a correggere a mano i messaggi di Chat Privata.
+    const privCorrectBtn = document.getElementById('private-btn-correct');
+    if(privCorrectBtn) privCorrectBtn.onclick = async ()=>{
+      const ta = document.getElementById('private-text-master');
+      const status = document.getElementById('private-correct-status');
+      status.textContent = 'Correzione in corso...';
+      const corrected = await correggiItaliano(ta.value);
+      ta.value = corrected;
+      status.textContent = lastApiError ? ('Errore: ' + lastApiError) : 'Testo corretto.';
+    };
     const privLocSelect = document.getElementById('private-location-select');
     if(privLocSelect) privLocSelect.onchange = ()=>{
       masterPrivateLocationFilter[masterPrivateThread] = privLocSelect.value;
@@ -6733,8 +6780,11 @@
       if(pendingPrivateImageUrl) meta.image = pendingPrivateImageUrl;
       const privDigimojiChk = document.getElementById('private-digimoji-toggle');
       if(privDigimojiChk && privDigimojiChk.checked) meta.digimoji = true;
+      // Stessa correzione della Chat Privata/Sottogruppi: tagga con la posizione effettiva del
+      // giocatore destinatario, non quella del gruppo intero (vedi memberLocationKey sopra).
+      meta.location = memberLocationKey(cachedRoster.find(m=>m.username===masterPrivateThread));
       if(role==='npc') rememberNpc(code, { name: who, color: chosenColor, avatar });
-      await pushPrivateLog(code, masterPrivateThread, { who, role, text, meta: Object.keys(meta).length ? meta : null });
+      await pushPrivateLog(code, masterPrivateThread, { who, role, text, meta });
       ta.value='';
       pendingPrivateImageUrl = null;
       // renderPrivateChatMaster ricostruisce anche la select "Parla come" da loadSavedNpcs(code),
@@ -6812,6 +6862,10 @@
         <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--text-mute);">
           <input type="checkbox" id="subgroup-digimoji-toggle" /> ✍️ Scrivi in Digimoji
         </label>
+        <div class="row" style="margin-top:6px;">
+          <button class="btn ghost small" id="subgroup-btn-correct">Correggi Italiano</button>
+        </div>
+        <div class="muted" id="subgroup-correct-status" style="margin-top:2px;font-size:10.5px;"></div>
         ${chatAttachHTML('subgroup')}
         ${mentionButtonHTML('subgroup')}
         <button class="btn amber" id="btn-subgroup-send" style="width:100%;margin-top:6px;">Invia</button>
@@ -6855,6 +6909,17 @@
     const sendBtn = document.getElementById('btn-subgroup-send');
     if(activeGroup) bindChatAttach('subgroup', code, 'chat', ()=>pendingSubgroupImageUrl, (url)=>{ pendingSubgroupImageUrl = url; });
     if(activeGroup) bindMentionButton('subgroup', code, 'subgroup-text');
+    // Correzione IT via AI: stessa funzione già usata in Chat Generale (Player) e ora anche in
+    // Chat Privata (Master) — mancava qui, unica sezione rimasta senza.
+    const subCorrectBtn = document.getElementById('subgroup-btn-correct');
+    if(subCorrectBtn) subCorrectBtn.onclick = async ()=>{
+      const ta = document.getElementById('subgroup-text');
+      const status = document.getElementById('subgroup-correct-status');
+      status.textContent = 'Correzione in corso...';
+      const corrected = await correggiItaliano(ta.value);
+      ta.value = corrected;
+      status.textContent = lastApiError ? ('Errore: ' + lastApiError) : 'Testo corretto.';
+    };
     const subLocSelect = document.getElementById('subgroup-location-select');
     if(subLocSelect && activeGroup) subLocSelect.onchange = ()=>{
       masterSubgroupLocationFilter[activeGroup.id] = subLocSelect.value;
@@ -6947,8 +7012,11 @@
       if(chosenColor) meta.color = chosenColor;
       if(pendingSubgroupImageUrl) meta.image = pendingSubgroupImageUrl;
       if(subDigimojiChkPre && subDigimojiChkPre.checked) meta.digimoji = true;
+      // Tagga con la posizione EFFETTIVA del sottogruppo (vedi subgroupLocationKey), non quella
+      // del gruppo intero — così un sottogruppo separato viene "riconosciuto" nel Settore giusto.
+      meta.location = subgroupLocationKey(activeGroup);
       if(role==='npc') rememberNpc(code, { name: who, color: chosenColor, avatar });
-      await pushPrivateLog(code, 'subgroup:'+activeGroup.id, { who, role, text, meta: Object.keys(meta).length ? meta : null });
+      await pushPrivateLog(code, 'subgroup:'+activeGroup.id, { who, role, text, meta });
       ta.value='';
       pendingSubgroupImageUrl = null;
       renderSubgroupChatMaster(code, players);
@@ -9675,6 +9743,17 @@
         if(i < lines.length-1) html += '<br>';
       }
     });
+    // Discorso diretto: il testo tra virgolette viene evidenziato (colore + corsivo, vedi CSS
+    // .log-speech) per distinguere a colpo d'occhio ciò che il personaggio DICE dal resto del
+    // messaggio (narrazione/azione) — richiesto per rendere più leggibili i messaggi lunghi dove
+    // si mescolano descrizione e battute. Riconosce le virgolette dritte "..." (diventate &quot;
+    // dopo l'escaping HTML sopra) e quelle tipografiche “...”/«...» (non toccate dall'escaping).
+    // Non greedy e senza attraversare <br>/<div> (escluso "<" dal contenuto): resta dentro una
+    // singola riga, quindi non scatta per una virgoletta "aperta" dimenticata a fine messaggio.
+    html = html
+      .replace(/(&quot;)([^<]+?)(&quot;)/g, '$1<span class="log-speech">$2</span>$3')
+      .replace(/(“)([^<]+?)(”)/g, '$1<span class="log-speech">$2</span>$3')
+      .replace(/(«)([^<]+?)(»)/g, '$1<span class="log-speech">$2</span>$3');
     // grassetto **testo** (non a cavallo di righe già trasformate in <div>)
     html = html.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
     // "Menziona": [[dex:ID]] / [[npc:NOME_CODIFICATO]] inseriti dal bottone 🔖 nel composer

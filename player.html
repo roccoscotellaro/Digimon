@@ -1170,23 +1170,28 @@
 
   function bindListEditors(target){
     root.querySelectorAll('[data-inv-remove]').forEach(btn=>{
-      btn.onclick = async ()=>{
+      btn.onclick = ()=>{
         collectFormValues(target);
         target.tamer.inventory.splice(Number(btn.getAttribute('data-inv-remove')),1);
-        await saveMember(session.code, target);
-        renderPage();
+        renderPage(); // vedi commento su p-inv-add: non aspettare il salvataggio prima di ridisegnare
+        saveMember(session.code, target).then(ok=>{ if(!ok) renderPage(); });
       };
     });
     const invAdd = document.getElementById('p-inv-add');
-    if(invAdd) invAdd.onclick = async ()=>{
+    if(invAdd) invAdd.onclick = ()=>{
       const name = document.getElementById('p-inv-name').value.trim();
       if(!name) return;
       const qty = Number(document.getElementById('p-inv-qty').value)||1;
       const desc = document.getElementById('p-inv-desc').value.trim();
       collectFormValues(target);
       target.tamer.inventory.push({ name, qty, desc });
-      await saveMember(session.code, target);
+      // Aggiornamento ottimistico: ridisegna SUBITO con l'oggetto già in lista, senza aspettare
+      // la risposta del server (che comunque salva l'intera riga member — tamer+digimon — quindi
+      // può richiedere qualche centinaio di ms). Prima si aspettava saveMember() prima di ridisegnare,
+      // e ogni "+ Aggiungi Oggetto" sembrava andare a rilento. Se il salvataggio fallisce, un secondo
+      // render mostra il banner d'errore (lastApiError) senza far perdere l'oggetto già inserito.
       renderPage();
+      saveMember(session.code, target).then(ok=>{ if(!ok) renderPage(); });
     };
     root.querySelectorAll('[data-torment-remove]').forEach(btn=>{
       btn.onclick = async ()=>{
