@@ -1324,17 +1324,24 @@
   }
   // ---------- CHAT/AVVISO IMAGE ATTACH ----------
   // Strategia a 3 livelli:
-  //   1) Tenta /api/upload-chat (endpoint serverless, se deployato)
+  //   1) Tenta /api/upload (endpoint serverless già esistente, target:'chat' -> bucket chat-uploads)
   //   2) Se 404 o errore, upload diretto a Supabase Storage via REST
   //   3) Se anche quello fallisce, usa il dataUrl base64 inline (funziona sempre, ma è pesante)
+  //
+  // NOTA STORICA: prima questo chiamava '/api/upload-chat', un endpoint che non è MAI esistito
+  // nel progetto (le funzioni serverless sono solo state/notice/log/ai/roster/dex/upload). Quindi
+  // il passo 1 falliva SEMPRE, il passo 2 era disattivato (SUPABASE_ANON vuota), e ogni immagine
+  // di chat/avviso finiva incorporata come base64 (fino a qualche MB) direttamente nella riga di
+  // `logs`/`notices` — scaricata per intero a ogni polling da ogni giocatore. Era una delle cause
+  // principali dei consumi eccessivi di egress Supabase e Fast Origin Transfer Vercel.
   const SUPABASE_URL  = 'https://gsquzfhxgyqrnkrqdivc.supabase.co';
   const SUPABASE_ANON = ''; // <-- inserisci qui la tua anon key se vuoi l'upload diretto a Supabase
   const CHAT_UPLOAD_BUCKET = 'chat-uploads';
 
   async function uploadChatImage(code, dataUrl, folder){
-    // 1) Prova endpoint serverless
+    // 1) Prova endpoint serverless (upload.js, target 'chat' -> bucket chat-uploads su Supabase Storage)
     try{
-      const res = await apiPost('/api/upload-chat', { code, dataUrl, folder });
+      const res = await apiPost('/api/upload', { code, dataUrl, folder, target: 'chat' });
       if(res && res.ok && res.url) return res.url;
     }catch(e){}
 
@@ -2239,9 +2246,21 @@
   // minuto) — restano comunque "quasi in tempo reale" per dati che nella pratica non cambiano
   // a quella velocità. Il Combattimento fa eccezione: se è già attivo resta ad ogni ciclo (serve
   // reattività in scontro), altrimenti anche lui scende a 1 su 4.
+  //
+  // DIAGNOSI 28/08/2026: il Digidex (/api/dex) è però un caso a parte — non un semplice record,
+  // ma l'INTERO elenco specie della campagna (~700 righe, oltre 1 MB di JSON). Rileggerlo ogni
+  // "slowCycle" (~60s) per OGNI client con index.html aperto (Master + Giocatori) significava
+  // ​~1 MB al minuto per client: con più persone connesse durante una sessione, bastavano poche
+  // ore per generare diversi GB di traffico — probabilmente la causa principale, più dei bug già
+  // risolti sopra, dei consumi eccessivi di egress Supabase e Fast Origin Transfer Vercel. Il
+  // Digidex cambia solo quando qualcuno aggiunge/modifica una voce (azione già riflessa subito in
+  // cachedDex lato client, vedi addDexEntry/updateDexEntry), quindi non serve rileggerlo spesso:
+  // ora si aggiorna ogni 40 cicli (~10 minuti) invece che ogni 4 (~1 minuto), un taglio di banda
+  // di circa 10 volte su questa singola voce.
   async function refreshLiveParts(tick){
     if(!session) return;
     const slowCycle = (typeof tick!=='number') || (tick % 4 === 0); // sempre true al primo giro
+    const dexCycle = (typeof tick!=='number') || (tick % 40 === 0); // ~10 minuti (era ogni 60s)
     cachedRoster = (await getRoster(session.code)).map(normalizeMember);
     cachedScene = await getScene(session.code);
     cachedLog = await getLog(session.code);
@@ -2249,7 +2268,7 @@
       const myPublicName = session.role==='master' ? 'Master' : displayName(cachedMe || cachedRoster.find(m=>m.username===session.username) || {username:session.username});
       maybeNotifyNew('public', null, cachedLog[cachedLog.length-1], myPublicName);
     }
-    if(slowCycle) cachedDex = await getDex(session.code);
+    if(dexCycle) cachedDex = await getDex(session.code);
     if(slowCycle || (cachedCombat && cachedCombat.active)){
       const freshCombat = await getCombat(session.code);
       if(freshCombat && cachedCombat && typeof cachedCombat==='object'){

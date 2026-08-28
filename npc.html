@@ -174,10 +174,10 @@
   function syncToOldFormat(code){
     try{
       const list = loadNpcs(code);
-      const oldFormat = list.map(n=>({ 
-        name: n.name, 
-        color: n.chatColor||null, 
-        avatar: n.faceUrl || n.fullBodyUrl || null 
+      const oldFormat = list.map(n=>({
+        name: n.name,
+        color: n.chatColor||null,
+        avatar: n.faceUrl || n.fullBodyUrl || null
       }));
       localStorage.setItem('dvos_npcs_' + code, JSON.stringify(oldFormat));
     }catch(e){}
@@ -505,6 +505,13 @@
     updatePreview();
 
     // File upload handlers
+    //
+    // NOTA STORICA: qui sotto si chiamava '/api/upload-chat', un endpoint che non è MAI esistito
+    // nel progetto (le uniche funzioni serverless sono state/notice/log/ai/roster/dex/upload).
+    // Il fetch falliva sempre (404) e ogni immagine caricata finiva salvata come dataUrl base64
+    // (anche diversi MB) direttamente dentro il record dell'NPC in localStorage/DB — riscaricata
+    // per intero ad ogni apertura. Ora usa /api/upload (già esistente in upload.js) con
+    // target:'chat', che carica davvero il file su Supabase Storage e restituisce un URL leggero.
     function setupUpload(fileInputId, urlInputId, zoneId, isPending){
       const fileInput = document.getElementById(fileInputId);
       fileInput.onchange = async (e)=>{
@@ -515,10 +522,10 @@
           const dataUrl = ev.target.result;
           // Try to upload to Supabase via API
           try{
-            const res = await fetch('/api/upload-chat', {
+            const res = await fetch('/api/upload', {
               method:'POST',
               headers:{'Content-Type':'application/json'},
-              body: JSON.stringify({ code: session.code, dataUrl, folder: 'npc-images' })
+              body: JSON.stringify({ code: session.code, dataUrl, folder: 'npc-images', target: 'chat' })
             });
             const data = await res.json();
             if(data && data.url){

@@ -433,6 +433,10 @@
   function startPolling(){
     if(pollTimer) clearInterval(pollTimer);
     checkNoticesForMe();
+    // Intervallo alzato da 4s a 15s (allineato a index.html): a 4s ogni scheda aperta
+    // ri-scaricava l'intero roster (select('*') su members, con dentro tamer/digimon)
+    // 15-20 volte al minuto per client, pesando parecchio su egress Supabase e Fast
+    // Origin Transfer Vercel senza un beneficio percepibile per il giocatore.
     pollTimer = setInterval(async ()=>{
       if(!session) return;
       cachedRoster = await getRoster(session.code);
@@ -440,7 +444,7 @@
       if(isEditingFullForm) return;
       if(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
       render();
-    }, 4000);
+    }, 15000);
   }
 
   function render(){
@@ -974,8 +978,8 @@
     }
     // Il form completo (Punteggi/Skill/Inventario/ecc.) è quello con campi editabili non ancora
     // salvati — mentre è aperto in modifica, il polling non deve ridisegnare la pagina sopra le
-    // modifiche in corso, altrimenti si perdono silenziosamente ad ogni refresh di 4s. In sola
-    // lettura invece va bene continuare ad aggiornare (es. per vedere modifiche fatte altrove).
+    // modifiche in corso, altrimenti si perdono silenziosamente ad ogni refresh (ora ogni 15s).
+    // In sola lettura invece va bene continuare ad aggiornare (es. per vedere modifiche fatte altrove).
     isEditingFullForm = (bodyHTML === null && editable) || !!creationDraft;
 
     root.innerHTML = `
