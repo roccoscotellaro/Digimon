@@ -337,7 +337,7 @@
 
     /* Sezioni mobile: solo quella attiva è visibile */
     .mobile-section{display:none !important;}
-    .mobile-section.mobile-active{display:block !important;}
+    .mobile-section.mobile-active{display:block !important;padding-bottom:calc(72px + env(safe-area-inset-bottom, 0px)) !important;}
 
     /* Chat: segmented control — solo aggiustamenti di misura per touch, lo stile base è
        nella regola .chat-seg/.chat-seg-btn fuori dal media query (sempre attiva). */
