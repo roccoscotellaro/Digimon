@@ -5,8 +5,10 @@
 //   GET    /api/log?code=XXX&thread=Mario           -> log privato di quel thread (tabella private_logs)
 //   POST   { code, username, who, text, ... }        -> scrive sul log pubblico
 //   POST   { code, thread, username, who, text, ... } -> scrive sul log privato
-//   PUT    { code, id, text }                        -> modifica un messaggio del log pubblico
-//   PUT    { code, thread, id, text }                 -> modifica un messaggio del log privato di quel thread
+//   PUT    { code, id, text, who?, role?, meta? }      -> modifica un messaggio del log pubblico
+//                                                          (who/role/meta opzionali: riassegnano
+//                                                          anche il mittente, non solo il testo)
+//   PUT    { code, thread, id, text, who?, role?, meta? } -> come sopra, sul log privato del thread
 //   DELETE ?code=XXX&id=YYY                           -> elimina un messaggio dal log pubblico
 //   DELETE ?code=XXX&clearAll=1                       -> svuota TUTTO il log pubblico della campagna
 //   DELETE ?code=XXX&thread=Mario&id=YYY              -> elimina un messaggio dal log privato di quel thread
@@ -234,14 +236,22 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'PUT') {
-      const { code, thread, id, text } = req.body || {};
+      const { code, thread, id, text, who, role, meta } = req.body || {};
       const campaignCode = cleanCode(code);
       if (!campaignCode || !id || !text) return res.status(400).json({ error: 'missing code, id or text' });
+
+      // who/role/meta sono opzionali: se assenti si modifica solo il testo (comportamento
+      // invariato). Se presenti (dal Master, che riassegna "chi ha parlato" su un messaggio già
+      // inviato), aggiornano anche mittente/ruolo/avatar-colore, in entrambe le tabelle.
+      const updatePayload = { text: String(text).slice(0, 8000) };
+      if (who !== undefined) updatePayload.who = String(who).slice(0, 60);
+      if (role !== undefined) updatePayload.role = role;
+      if (meta !== undefined) updatePayload.meta = meta;
 
       if (thread) {
         const { error } = await supabase
           .from('private_logs')
-          .update({ text: String(text).slice(0, 8000) })
+          .update(updatePayload)
           .eq('campaign_code', campaignCode)
           .eq('thread_username', thread)
           .eq('id', id);
@@ -251,7 +261,7 @@ module.exports = async (req, res) => {
 
       const { error } = await supabase
         .from('logs')
-        .update({ text: String(text).slice(0, 8000) })
+        .update(updatePayload)
         .eq('campaign_code', campaignCode)
         .eq('id', id);
       if (error) return res.status(500).json({ error: error.message });
