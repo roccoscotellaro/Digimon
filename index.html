@@ -2120,20 +2120,27 @@
     opts = opts || {};
     if(!session) return;
     let raw, filterVal, thread = null;
+    // "Chiave attuale" da usare per il filtro/tag: per Privata/Sottogruppo NON è la posizione
+    // del gruppo intero (currentLocationKey), ma quella effettiva di chi partecipa — altrimenti
+    // il filtro "Storico per Settore" restava ancorato al gruppo anche per chi si era separato.
+    let effectiveKey;
     if(playerChatMode==='subgroup' && playerActiveSubgroupId){
       thread = 'subgroup:'+playerActiveSubgroupId;
       raw = await getPrivateLog(code, thread);
       filterVal = subgroupLocationFilter[playerActiveSubgroupId];
       if(filterVal===undefined) filterVal = null;
+      effectiveKey = subgroupLocationKey((cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId));
     } else if(playerChatMode==='private'){
       thread = session.username;
       raw = await getPrivateLog(code, thread);
       filterVal = privateLocationFilter;
+      effectiveKey = memberLocationKey(me);
     } else {
       raw = scenePublicRawLog();
       filterVal = publicLocationFilter;
+      effectiveKey = currentLocationKey();
     }
-    const filtered = filterByLocation(raw, filterVal, currentLocationKey());
+    const filtered = filterByLocation(raw, filterVal, effectiveKey);
     const logLive = document.getElementById('log-live');
     if(logLive){
       const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
@@ -2143,7 +2150,7 @@
     const barWrap = document.getElementById('chat-location-bar');
     if(barWrap){
       barWrap.innerHTML = `
-        ${locationFilterSelectHTML('chat-location-select', raw, currentLocationKey(), filterVal)}
+        ${locationFilterSelectHTML('chat-location-select', raw, effectiveKey, filterVal)}
         <button class="btn ghost small" id="btn-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
       `;
       const sel = document.getElementById('chat-location-select');
@@ -2358,11 +2365,14 @@
         const plog = await getPrivateLog(session.code, masterPrivateThread);
         cachedMasterPrivateLog = plog;
         const wasAtBottom = privLogLive.scrollHeight - privLogLive.scrollTop <= privLogLive.clientHeight + 40;
-        privLogLive.innerHTML = logHTML(filterByLocation(plog, masterPrivateLocationFilter[masterPrivateThread], currentLocationKey()), true);
+        // Vedi memberLocationKey: la chiave "attuale" per la Chat Privata è quella effettiva del
+        // giocatore del thread, non quella del gruppo intero.
+        const privKey = memberLocationKey(cachedRoster.find(m=>m.username===masterPrivateThread));
+        privLogLive.innerHTML = logHTML(filterByLocation(plog, masterPrivateLocationFilter[masterPrivateThread], privKey), true);
         attachLogModeration(privLogLive, session.code, null, true);
         if(wasAtBottom) privLogLive.scrollTop = privLogLive.scrollHeight;
         markPrivateThreadRead(session.code, masterPrivateThread, plog);
-        refreshLocationSelectOptions(document.getElementById('private-location-select'), plog, currentLocationKey(), masterPrivateLocationFilter[masterPrivateThread]);
+        refreshLocationSelectOptions(document.getElementById('private-location-select'), plog, privKey, masterPrivateLocationFilter[masterPrivateThread]);
       }
     }
     if(session.role==='master' && masterChatMode==='subgroup' && activeSubgroupId){
@@ -2371,10 +2381,14 @@
         const plog = await getPrivateLog(session.code, 'subgroup:'+activeSubgroupId);
         cachedSubgroupLog = plog;
         const wasAtBottom = subLogLive.scrollHeight - subLogLive.scrollTop <= subLogLive.clientHeight + 40;
-        subLogLive.innerHTML = logHTML(filterByLocation(plog, masterSubgroupLocationFilter[activeSubgroupId], currentLocationKey()), true);
+        // Vedi subgroupLocationKey: la chiave "attuale" per il Sottogruppo è quella effettiva dei
+        // suoi membri, non quella del gruppo intero.
+        const activeGroupForKey = (await getSubgroups(session.code)).find(g=>g.id===activeSubgroupId);
+        const subKey = subgroupLocationKey(activeGroupForKey);
+        subLogLive.innerHTML = logHTML(filterByLocation(plog, masterSubgroupLocationFilter[activeSubgroupId], subKey), true);
         attachLogModeration(subLogLive, session.code, null, false, ()=>'subgroup:'+activeSubgroupId);
         if(wasAtBottom) subLogLive.scrollTop = subLogLive.scrollHeight;
-        refreshLocationSelectOptions(document.getElementById('subgroup-location-select'), plog, currentLocationKey(), masterSubgroupLocationFilter[activeSubgroupId]);
+        refreshLocationSelectOptions(document.getElementById('subgroup-location-select'), plog, subKey, masterSubgroupLocationFilter[activeSubgroupId]);
       }
     }
     const rosterLive = document.getElementById('roster-live');
@@ -6624,13 +6638,16 @@
     // "private-" per non collidere con quella. Le opzioni (Master / Digimon di un giocatore /
     // Incontro in scena / Nemico personalizzato) e la logica di risoluzione who/role/avatar/color
     // sono intenzionalmente identiche, per coerenza tra le due chat.
+    // Vedi memberLocationKey: la chiave "attuale" per la Chat Privata è quella effettiva del
+    // giocatore del thread aperto, non quella del gruppo intero (currentLocationKey).
+    const privKey = memberLocationKey(players.find(p=>p.username===masterPrivateThread));
     cardEl.innerHTML = `
       <div class="field"><label>Con chi</label>
         <select id="private-thread-select">${players.map(p=>`<option value="${escapeAttr(p.username)}" ${p.username===masterPrivateThread?'selected':''}>${masterPrivateUnread[p.username]?'🔴 ':''}${escapeHTML(displayName(p))}</option>`).join('')}</select>
       </div>
-      <div class="log" id="private-log-live-master" style="height:220px;">${logHTML(filterByLocation(log, masterPrivateLocationFilter[masterPrivateThread], currentLocationKey()), true)}</div>
+      <div class="log" id="private-log-live-master" style="height:220px;">${logHTML(filterByLocation(log, masterPrivateLocationFilter[masterPrivateThread], privKey), true)}</div>
       <div class="muted" style="font-size:10.5px;margin-bottom:8px;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;">
-        ${locationFilterSelectHTML('private-location-select', log, currentLocationKey(), masterPrivateLocationFilter[masterPrivateThread])}
+        ${locationFilterSelectHTML('private-location-select', log, privKey, masterPrivateLocationFilter[masterPrivateThread])}
         <button class="btn ghost small" id="btn-private-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
       </div>
       <div class="field" style="margin-top:10px;"><label>Parla come</label>
@@ -6691,12 +6708,12 @@
     if(privLocSelect) privLocSelect.onchange = ()=>{
       masterPrivateLocationFilter[masterPrivateThread] = privLocSelect.value;
       const privLogLive = document.getElementById('private-log-live-master');
-      if(privLogLive) privLogLive.innerHTML = logHTML(filterByLocation(log, privLocSelect.value, currentLocationKey()), true);
+      if(privLogLive) privLogLive.innerHTML = logHTML(filterByLocation(log, privLocSelect.value, privKey), true);
     };
     const privExportBtn = document.getElementById('btn-private-export-chat');
     if(privExportBtn) privExportBtn.onclick = ()=>{
       const filterVal = masterPrivateLocationFilter[masterPrivateThread];
-      const filtered = filterByLocation(log, filterVal, currentLocationKey());
+      const filtered = filterByLocation(log, filterVal, privKey);
       const label = privLocSelect ? privLocSelect.options[privLocSelect.selectedIndex].textContent.replace('📍 ','') : currentLocationLabel();
       exportVisibleLogAsText(filtered, label);
     };
@@ -6815,6 +6832,9 @@
     cachedSubgroups = groups;
     if(!activeSubgroupId && groups.length>0) activeSubgroupId = groups[0].id;
     const activeGroup = groups.find(g=>g.id===activeSubgroupId) || null;
+    // Vedi subgroupLocationKey: la chiave "attuale" per il Sottogruppo è quella effettiva dei
+    // suoi membri, non quella del gruppo intero (currentLocationKey).
+    const subKey = subgroupLocationKey(activeGroup);
     const log = activeGroup ? await getPrivateLog(code, 'subgroup:'+activeGroup.id) : [];
     cachedSubgroupLog = log;
 
@@ -6830,9 +6850,9 @@
           <button class="btn ghost small" data-subgroup-edit="${escapeAttr(activeGroup.id)}" style="margin-left:6px;">✎ Modifica</button>
           <button class="btn ghost small danger" data-subgroup-delete="${escapeAttr(activeGroup.id)}" style="margin-left:4px;">🗑️</button>
         </div>
-        <div class="log" id="subgroup-log-live" style="height:200px;">${logHTML(filterByLocation(log, masterSubgroupLocationFilter[activeGroup.id], currentLocationKey()), true)}</div>
+        <div class="log" id="subgroup-log-live" style="height:200px;">${logHTML(filterByLocation(log, masterSubgroupLocationFilter[activeGroup.id], subKey), true)}</div>
         <div class="muted" style="font-size:10.5px;margin-bottom:8px;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;">
-          ${locationFilterSelectHTML('subgroup-location-select', log, currentLocationKey(), masterSubgroupLocationFilter[activeGroup.id])}
+          ${locationFilterSelectHTML('subgroup-location-select', log, subKey, masterSubgroupLocationFilter[activeGroup.id])}
           <button class="btn ghost small" id="btn-subgroup-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
         </div>
         <div class="field" style="margin-top:10px;"><label>Parla come</label>
@@ -6924,12 +6944,12 @@
     if(subLocSelect && activeGroup) subLocSelect.onchange = ()=>{
       masterSubgroupLocationFilter[activeGroup.id] = subLocSelect.value;
       const subLogLive = document.getElementById('subgroup-log-live');
-      if(subLogLive) subLogLive.innerHTML = logHTML(filterByLocation(log, subLocSelect.value, currentLocationKey()), true);
+      if(subLogLive) subLogLive.innerHTML = logHTML(filterByLocation(log, subLocSelect.value, subKey), true);
     };
     const subExportBtn = document.getElementById('btn-subgroup-export-chat');
     if(subExportBtn && activeGroup) subExportBtn.onclick = ()=>{
       const filterVal = masterSubgroupLocationFilter[activeGroup.id];
-      const filtered = filterByLocation(log, filterVal, currentLocationKey());
+      const filtered = filterByLocation(log, filterVal, subKey);
       const label = subLocSelect ? subLocSelect.options[subLocSelect.selectedIndex].textContent.replace('📍 ','') : currentLocationLabel();
       exportVisibleLogAsText(filtered, label);
     };
