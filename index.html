@@ -2595,7 +2595,7 @@
     const cls = size==='sm' ? 'portrait-sm' : 'portrait';
     const imgUrl = bestDigimonImage(null, d.name, d.imageUrl);
     if(imgUrl){
-      return `<img class="${cls}" style="object-fit:contain;background:rgba(200,150,255,0.08);" src="${escapeAttr(imgUrl)}" onerror="this.style.visibility='hidden'" />`;
+      return `<img class="${cls}" style="object-fit:contain;" src="${escapeAttr(imgUrl)}" onerror="this.style.visibility='hidden'" />`;
     }
     return portraitHTML('', d.name, size);
   }
