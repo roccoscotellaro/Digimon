@@ -38,6 +38,9 @@
      schermo LCD (.ep-dv-screen) posizionato in percentuale sul foro trasparente del PNG, dentro cui
      scorrono le "barrette" orizzontali degli EP disponibili. */
   .ep-digivice{display:inline-flex;flex-direction:column;align-items:center;gap:4px;--dv-w:110px;vertical-align:middle;}
+  .dv-hero .ep-digivice{--dv-w:150px;}
+  .dv-hero .ep-dv-label{font-size:13px;}
+  .dv-hero .ep-dv-label b{font-size:18px;}
   .ep-digivice.mini{--dv-w:58px;gap:2px;}
   .ep-dv-frame{position:relative;width:var(--dv-w);aspect-ratio:33/30;flex-shrink:0;
     background-image:url('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-images/FRONTIER1/1787672473672_rpmfhm.png');
@@ -105,6 +108,10 @@
     .grid-stats{grid-template-columns:repeat(3,1fr);}
     .grid-3{grid-template-columns:1fr 1fr;}
     .app{padding:10px;}
+    .topbar{flex-direction:column;align-items:flex-start;gap:6px;padding:8px 10px;}
+    .conn-ticker{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;font-size:10px;}
+    .portrait-wrap{flex-direction:column;align-items:stretch;}
+    .portrait-wrap .portrait, .portrait-wrap .portrait-placeholder{width:100%;height:auto;max-height:280px;aspect-ratio:1;}
     .hud-frame.card > .section-title{cursor:pointer;user-select:none;}
     .hud-frame.card > .section-title .fold-icon{transition:transform .15s;display:inline-block;}
     .hud-frame.card.collapsed > .section-title .fold-icon{transform:rotate(-90deg);}
@@ -1133,10 +1140,15 @@
         </div>
         <div class="field"><label>Personalità</label><textarea id="d-personality" placeholder="descrivi la personalità...">${escapeHTML(d.personality||'')}</textarea></div>
         ` : `
-        <div class="pixel-title" style="font-size:22px;color:var(--dchroma);text-shadow:0 0 10px rgba(200,150,255,0.4);">${escapeHTML(d.name || '— nessun Digimon —')}</div>
-        <div class="muted" style="margin-top:2px;">${escapeHTML(d.stage||'')}${d.attribute ? ` · ${attributeIconHTML(d.attribute, 15)} ${escapeHTML(d.attribute)}` : ''} · Partner di ${escapeHTML(displayName(m))}</div>
-        ${d.personality ? `<div class="muted" style="margin-top:6px;">${escapeHTML(d.personality)}</div>` : ''}
-        ${stageSwitchInnerHTML(m, isMaster)}
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:160px;">
+            <div class="pixel-title" style="font-size:22px;color:var(--dchroma);text-shadow:0 0 10px rgba(200,150,255,0.4);">${escapeHTML(d.name || '— nessun Digimon —')}</div>
+            <div class="muted" style="margin-top:2px;">${escapeHTML(d.stage||'')}${d.attribute ? ` · ${attributeIconHTML(d.attribute, 15)} ${escapeHTML(d.attribute)}` : ''} · Partner di ${escapeHTML(displayName(m))}</div>
+            ${d.personality ? `<div class="muted" style="margin-top:8px;font-style:italic;line-height:1.5;">${escapeHTML(d.personality)}</div>` : ''}
+            ${stageSwitchInnerHTML(m, isMaster)}
+          </div>
+          <div class="dv-hero">${epDigiviceHTML(d.evolutionPoints||0, cachedProgression ? Number(cachedProgression.milestone||0) : null, {})}</div>
+        </div>
         `}
         ${editable ? `
         <div class="field" style="margin-top:12px;">

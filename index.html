@@ -87,7 +87,7 @@
   @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
   .brand-title{font-family:'Pixel Digivolve','Share Tech Mono',monospace;font-size:15px;text-transform:uppercase;color:var(--cyan);letter-spacing:0.05em;}
   .brand-sub{font-size:11px;color:var(--text-mute);}
-  .conn-ticker{font-size:11px;color:var(--text-mute);}
+  .conn-ticker{font-size:11px;color:var(--text-mute);display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;}
   .conn-ticker b{color:var(--cyan);}
 
   .btn{font-family:'Share Tech Mono',monospace;background:transparent;border:1px solid var(--cyan-dim);color:var(--cyan);
@@ -246,7 +246,7 @@
   ::-webkit-scrollbar-thumb{background:var(--cyan-dim);}
 
   @media (max-width: 760px){
-    .app{padding:6px;padding-bottom:66px;}
+    .app{padding:6px;padding-bottom:calc(66px + env(safe-area-inset-bottom, 0px));}
     .topbar{flex-direction:column;align-items:flex-start;gap:6px;padding:8px 10px;margin-bottom:10px;}
     .conn-ticker{font-size:10px;}
     .brand-title{font-size:12px;}
@@ -1896,17 +1896,17 @@
         </div>
       </div>
       <div class="conn-ticker mono">
-        CAMPAGNA <b>${session ? session.code : '---'}</b> &nbsp;|&nbsp; UTENTE <b>${session ? session.username : '---'}</b>
-        ${session && cachedProgression ? ` &nbsp;|&nbsp; MILESTONE <b style="color:var(--cyan);">${cachedProgression.milestone}</b> &nbsp;|&nbsp; INSP. <b style="color:var(--cyan);">${cachedProgression.inspiration}</b>` : ''}
-        ${session ? `&nbsp;<button class="btn ghost small" id="topbar-chat-jump" style="margin-left:10px;position:relative;">💬 Registro<span id="topbar-chat-badge" style="display:${__topbarUnreadFlag?'inline-block':'none'};position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:var(--danger);box-shadow:0 0 4px var(--danger);"></span></button>` : ''}
-        ${session ? `&nbsp;<a href="dex.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">📖 Digidex</a>` : ''}
-        ${session ? `&nbsp;<a href="digivice-scan.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">📡 Scan Starter</a>` : ''}
-        ${session ? `&nbsp;<a href="map.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">🗺️ Mappa</a>` : ''}
-        ${session ? `&nbsp;<a href="player.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">👤 Giocatore</a>` : ''}
-        ${session ? `&nbsp;<a href="digimon.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">👾 Digimon</a>` : ''}
-        ${session ? `&nbsp;<a href="DDA2E_Indice_Regole.html" target="_blank" class="btn ghost small" style="margin-left:10px;text-decoration:none;">📜 Regole</a>` : ''}
-        ${session ? `&nbsp;<button class="btn ghost small" id="btn-open-missions" style="margin-left:10px;">📋 Missioni</button>` : ''}
-        ${session ? `&nbsp;<button class="btn ghost small" id="btn-logout" style="margin-left:10px;">Esci</button>` : ''}
+        <span>CAMPAGNA <b>${session ? session.code : '---'}</b></span> <span>|</span> <span>UTENTE <b>${session ? session.username : '---'}</b></span>
+        ${session && cachedProgression ? `<span>|</span> <span>MILESTONE <b style="color:var(--cyan);">${cachedProgression.milestone}</b></span> <span>|</span> <span>INSP. <b style="color:var(--cyan);">${cachedProgression.inspiration}</b></span>` : ''}
+        ${session ? `<button class="btn ghost small" id="topbar-chat-jump" style="position:relative;">💬 Registro<span id="topbar-chat-badge" style="display:${__topbarUnreadFlag?'inline-block':'none'};position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:var(--danger);box-shadow:0 0 4px var(--danger);"></span></button>` : ''}
+        ${session ? `<a href="dex.html" target="_blank" class="btn ghost small" style="text-decoration:none;">📖 Digidex</a>` : ''}
+        ${session ? `<a href="digivice-scan.html" target="_blank" class="btn ghost small" style="text-decoration:none;">📡 Scan Starter</a>` : ''}
+        ${session ? `<a href="map.html" target="_blank" class="btn ghost small" style="text-decoration:none;">🗺️ Mappa</a>` : ''}
+        ${session ? `<a href="player.html" target="_blank" class="btn ghost small" style="text-decoration:none;">👤 Giocatore</a>` : ''}
+        ${session ? `<a href="digimon.html" target="_blank" class="btn ghost small" style="text-decoration:none;">👾 Digimon</a>` : ''}
+        ${session ? `<a href="DDA2E_Indice_Regole.html" target="_blank" class="btn ghost small" style="text-decoration:none;">📜 Regole</a>` : ''}
+        ${session ? `<button class="btn ghost small" id="btn-open-missions">📋 Missioni</button>` : ''}
+        ${session ? `<button class="btn ghost small" id="btn-logout">Esci</button>` : ''}
       </div>
     </div>
     ${lastApiError ? `<div class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(lastApiError)}</div>` : ''}`;
@@ -9134,7 +9134,7 @@
     const breadcrumb = [activeMacro?activeMacro.name:null, current?current.name:null, currentLuogo?currentLuogo.name:null].filter(Boolean).map(escapeHTML).join(' → ');
     const sectorHTML = current ? `
       <div class="hud-frame card" style="margin-top:8px;padding:8px 10px;">
-        <div class="flex-between"><span class="mono" style="color:var(--cyan);">📍 ${breadcrumb}</span><span>${sectorBadge}${separatedBadge}</span></div>
+        <div class="flex-between" style="flex-wrap:wrap;gap:6px;"><span class="mono" style="color:var(--cyan);">📍 ${breadcrumb}</span><span style="display:flex;flex-wrap:wrap;gap:4px;">${sectorBadge}${separatedBadge}</span></div>
         ${currentLuogo && currentLuogo.description ? `<div class="sub" style="margin-top:4px;">${escapeHTML(currentLuogo.description)}</div>` : (current.description ? `<div class="sub" style="margin-top:4px;">${escapeHTML(current.description)}</div>` : '')}
         ${!currentLuogo && (current.luoghi||[]).length>0 ? `<div class="muted" style="margin-top:4px;font-size:11px;">Luoghi qui: ${(current.luoghi||[]).map(l=>escapeHTML(l.name)).join(', ')}</div>` : ''}
         <div class="muted" style="margin-top:4px;font-size:11px;">Puoi raggiungere: ${(current.connections||[]).map(cid=>{ const c=sectors.find(x=>x.id===cid); return c?escapeHTML(c.name):''; }).filter(Boolean).join(', ') || 'nessun altro settore collegato'}</div>
