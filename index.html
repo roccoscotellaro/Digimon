@@ -2218,7 +2218,17 @@
   // posizione EFFETTIVA (memberEffectiveSectorId/LuogoId) di chi partecipa alla conversazione.
   function memberLocationKey(member){
     if(!cachedScene) return '_|_|_';
-    return `${cachedScene.currentMacroSceneId||'_'}|${memberEffectiveSectorId(member)||'_'}|${memberEffectiveLuogoId(member)||'_'}`;
+    const sectorId = memberEffectiveSectorId(member);
+    // Il Settore effettivo di un membro separato può appartenere a una Macroscena DIVERSA da
+    // quella che il gruppo sta guardando in quel momento (es. gruppo su "Yokohama" ma il membro,
+    // spostato singolarmente, si trova in un Settore della Macroscena "???"). Cerchiamo quindi la
+    // Macroscena che contiene DAVVERO quel Settore invece di assumere sempre quella corrente del
+    // gruppo, altrimenti la chiave mischierebbe Macroscena sbagliata + Settore/Luogo giusti e il
+    // riconoscimento "stessa zona" tra due membri separati nella stessa Macroscena continuerebbe
+    // a fallire.
+    const found = sectorId ? findSectorAnywhere(cachedScene, sectorId) : null;
+    const macroId = found ? found.macro.id : (cachedScene.currentMacroSceneId || null);
+    return `${macroId||'_'}|${sectorId||'_'}|${memberEffectiveLuogoId(member)||'_'}`;
   }
   // Per un Sottogruppo usiamo la posizione effettiva del primo membro come riferimento: un
   // Sottogruppo esiste per far parlare tra loro persone che si presume trovarsi nello stesso
