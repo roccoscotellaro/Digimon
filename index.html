@@ -443,14 +443,25 @@
 <body>
 <div class="scanline"></div>
 <div id="root-app" class="app"></div>
+<script src="js/store.js"></script>
+<script src="js/api.js"></script>
 <script src="js/util.js"></script>
 <script src="js/dice.js"></script>
+<script src="js/rules.js"></script>
+<script src="js/combat-engine.js"></script>
+<script src="js/missions.js"></script>
 <script>
 (function(){
   const root = document.getElementById('root-app');
-  let session = null;
   let pollTimer = null;
-  let lastApiError = null;
+  // session e tutte le variabili cachedXxx (roster, scena, log, dex, npc, combat,
+  // progressione, sottogruppi, missioni, log privati...) sono state spostate in js/store.js,
+  // caricato prima di questo script -- restano lette E SCRITTE esattamente come prima
+  // ovunque nel file (risalendo la catena di scope fino al globale), solo non sono piu'
+  // dichiarate qui. E' il prerequisito per poter estrarre in futuro moduli come combat.js,
+  // che hanno bisogno di leggere/scrivere questo stato da fuori questa IIFE.
+  // lastApiError e' ora dichiarata in js/api.js (caricato prima di questo script) insieme ai
+  // 4 helper apiGet/apiPost/apiPut/apiDelete che la scrivono -- qui sotto viene solo letta.
   const ONLINE_WINDOW_MS = 9000;
   const SESSION_KEY = 'digivice_session_v1';
   // Immagine dell'Uovo mostrata al posto del Digimon finché il Master non approva la scheda.
@@ -462,9 +473,6 @@
   let editingScene = false;
   let sidebarTab = 'scheda';
   let playerChatMode = 'public';
-  let cachedRoster = [];
-  let cachedScene = { title:'', background:'', music:'' };
-  let cachedLog = [];
   // Tracciamento "ultimo messaggio già notificato" per le notifiche desktop — SEPARATO dal
   // tracciamento "letto/non letto" (che usa localStorage e persiste tra sessioni): qui basta la
   // memoria della scheda corrente, perché vogliamo solo evitare di notificare più volte lo stesso
@@ -495,19 +503,14 @@
     setTopbarUnread(true);
     if(typeof window.__dvosNotify==='function') window.__dvosNotify(kind==='public' ? `💬 ${entry.who}` : `✉️ ${entry.who} (privato)`, entry.text||'');
   }
-  let cachedDex = [];
   let dexActiveFilters = [];
   let dexAddEvolutions = [];
   let dexCanEditGlobal = false;
   let sectorMapSelectedId = null; // which Settore is expanded in the compact Mappa panel
   let moveOpenUsername = null; // quale giocatore ha aperto il modulo "Sposta" nel pannello unico "Posizione dei giocatori"
   let encounterDraft = null; // pending Digimon (from Dex or homebrew) being reviewed before adding to the scene
-  let cachedMe = null;
   const ACTION_HINT_DEFAULT_TEXT = 'Scorciatoia: scrivi <code>/tira NomeSkill [TN] [major|minor]</code> (es. <code>/tira awareness 15 major</code>) per tirare in chat, opzionalmente usando un Aspect.';
   let animatedLogIds = new Set();
-  let cachedCombat = null;
-  let cachedProgression = null;
-  let cachedSubgroups = []; // sottogruppi della campagna, presi dal server (vedi refreshLiveParts) — non più da localStorage
   // Selettore "Storico per Settore" (vedi locationFilterSelectHTML/filterByLocation): null =
   // segue automaticamente la posizione attuale del gruppo; altrimenti una chiave location
   // esplicita scelta dalla persona, oppure "__all__" per tutto lo storico. Una variabile per
@@ -522,9 +525,7 @@
   let pendingGmImageUrl = null;
   let pendingPrivateImageUrl = null; // immagine allegata in corso di invio nella Chat Privata del Master
   let pendingSubgroupImageUrl = null; // immagine allegata in corso di invio nei Sottogruppi di Chat del Master
-  let cachedMissions = [];
-  let missionsModalOpen = false;
-  let missionDraftObjectives = ['']; // righe obiettivo nel form "Nuova Missione"
+  // missionsModalOpen/missionDraftObjectives spostati in js/missions.js
 
   async function getProgression(code){
     const d = await apiGet('/api/state?resource=progression&code=' + encodeURIComponent(code));
@@ -536,23 +537,7 @@
   async function getCombat(code){ const d = await apiGet('/api/state?resource=combat&code=' + encodeURIComponent(code)); return d ? d.combat : null; }
   async function saveCombat(code, data){ return apiPost('/api/state', { resource:'combat', code, data }); }
 
-  function buildInitiativeOrder(participants){
-    const sideA = participants.filter(p=>p.side==='ally').slice().sort((a,b)=>b.initiative-a.initiative);
-    const sideB = participants.filter(p=>p.side==='enemy').slice().sort((a,b)=>b.initiative-a.initiative);
-    const order = [];
-    let qA = sideA.slice(), qB = sideB.slice();
-    let currentSide = (qA[0] ? qA[0].initiative : -Infinity) >= (qB[0] ? qB[0].initiative : -Infinity) ? 'A' : 'B';
-    while(qA.length || qB.length){
-      if(currentSide==='A'){
-        if(qA.length){ order.push(qA.shift()); currentSide = 'B'; }
-        else { order.push(qB.shift()); }
-      } else {
-        if(qB.length){ order.push(qB.shift()); currentSide = 'A'; }
-        else { order.push(qA.shift()); }
-      }
-    }
-    return order.map(p=>p.id);
-  }
+  // buildInitiativeOrder spostato in js/combat-engine.js
 
   const ACTION_DEFS = [
     { key:'move', label:'Muovi', cost:1 },
@@ -602,31 +587,11 @@
     return { ok:true, def };
   }
 
-  function defaultCombat(){
-    return { active:false, round:1, currentIndex:0, participants:[], order:[], startZoneAlly:'Molto Corto', startZoneEnemy:'Molto Lungo' };
-  }
+  // defaultCombat spostato in js/combat-engine.js
 
-  // ---------- turn gating helpers (self-service player actions) ----------
-  function currentTurnParticipant(combat){
-    if(!combat || !combat.active || !combat.order || combat.order.length===0) return null;
-    const id = combat.order[combat.currentIndex];
-    return (combat.participants||[]).find(x=>x.id===id) || null;
-  }
-  function isMyCombatTurn(combat, username){
-    const p = currentTurnParticipant(combat);
-    return !!(p && p.isPC && p.username===username);
-  }
+  // currentTurnParticipant/isMyCombatTurn spostati in js/combat-engine.js
 
-  // Avanza il turno / termina il combattimento — condiviso tra il pannello "Combattimento" (in alto)
-  // e "Gestione Combattimento" più sotto, così i controlli funzionano identici da entrambi i punti.
-  function isParticipantDefeated(p){
-    if(!p) return false;
-    if(p.isPC){
-      const member = cachedRoster.find(m=>m.username===p.username);
-      return !!(member && member.digimon.defeated);
-    }
-    return !!p.defeated;
-  }
+  // isParticipantDefeated spostato in js/combat-engine.js (il commento sopra restava valido: 'Avanza il turno...' resta come nota per advanceCombatTurn qui sotto)
 
   async function advanceCombatTurn(code, players){
     const combat = cachedCombat;
@@ -808,16 +773,7 @@
     `;
   }
 
-  function recalcCombatOrder(combat){
-    combat.order = buildInitiativeOrder(combat.participants);
-    combat.currentIndex = 0;
-    combat.round = 1;
-    combat.participants.forEach(p=>{
-      const pMember = p.isPC ? cachedRoster.find(m=>m.username===p.username) : null;
-      p.actions = (pMember && pMember.digimon.hybridMode) ? 3 : 2;
-      p.attackedThisRound = false;
-    });
-  }
+  // recalcCombatOrder spostato in js/combat-engine.js
 
   // 'move' e 'attack' hanno ora un pannello dedicato (movimento relativo + attacco con Dodge automatico);
   // qui restano solo le altre Azioni narrative/di supporto.
@@ -1154,12 +1110,7 @@
     recalc();
   }
 
-  function getParticipantBattery(p){
-    if(!p.isPC) return null; // Battery è una risorsa da Partner Digimon: i Nemici normalmente non la usano
-    const member = cachedRoster.find(m=>m.username===p.username);
-    if(!member) return null;
-    return { current: Number(member.digimon.battery||0), max: batteryCap(member.digimon.stage) };
-  }
+  // getParticipantBattery spostato in js/combat-engine.js
 
   // Un Digimon ancora "nell'Uovo" (approved:false) non deve rivelare il nome agli altri Tamer nelle
   // viste di combattimento condivise — solo il Master e il proprietario stesso lo vedono per esteso.
@@ -1312,7 +1263,6 @@
   //
   // loadSavedNpcs continua a restituire il vecchio formato {name,color,avatar} così tutti i
   // picker "Parla come"/menziona (che sono diversi punti nel file) restano invariati.
-  let cachedNpcs = [];
   async function getNpcs(code){ const d = await apiGet('/api/notice?resource=npc&code=' + encodeURIComponent(code), true); return d ? (d.npcs||[]) : []; }
   function loadSavedNpcs(code){
     return cachedNpcs.map(n=>({ name: n.name, color: n.chatColor||null, avatar: n.faceUrl || n.fullBodyUrl || null }));
@@ -1337,24 +1287,13 @@
   }
 
   // ---------- API helpers ----------
-  async function apiGet(path, silent){
-    try{
-      const r = await fetch(path);
-      const data = await r.json();
-      if(!r.ok){ if(!silent) lastApiError = data.error || ('Errore ' + r.status); return null; }
-      if(!silent) lastApiError = null;
-      return data;
-    }catch(e){ if(!silent) lastApiError = 'Errore di rete: ' + e.message; return null; }
-  }
-  async function apiPost(path, body){
-    try{
-      const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-      const data = await r.json();
-      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
-      lastApiError = null;
-      return data;
-    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
-  }
+  // apiGet/apiPost/apiPut/apiDelete e la variabile lastApiError sono state spostate in
+  // js/api.js: sono le uniche 4 funzioni del vecchio blocco "API helpers" a non leggere
+  // nessuna variabile privata di questa closure (session, cachedScene, currentLocationKey...),
+  // quindi puo' viverci fuori senza problemi -- tutti i wrapper (getRoster, pushLog, ecc. qui
+  // sotto) restano invece dentro index.html perche' quelle variabili le usano davvero, e sono
+  // private a questa IIFE. lastApiError resta leggibile come prima ovunque nel file (catena
+  // di scope fino al globale dichiarato in api.js), solo non e' piu' dichiarata qui.
   // ---------- CHAT/AVVISO IMAGE ATTACH ----------
   // Strategia a 3 livelli:
   //   1) Tenta /api/upload (endpoint serverless già esistente, target:'chat' -> bucket chat-uploads)
@@ -1491,24 +1430,8 @@
       fileInput.value = '';
     };
   }
-  async function apiPut(path, body){
-    try{
-      const r = await fetch(path, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-      const data = await r.json();
-      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
-      lastApiError = null;
-      return data;
-    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
-  }
-  async function apiDelete(path){
-    try{
-      const r = await fetch(path, { method:'DELETE' });
-      const data = await r.json();
-      if(!r.ok){ lastApiError = data.error || ('Errore ' + r.status); return null; }
-      lastApiError = null;
-      return data;
-    }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
-  }
+  // apiPut/apiDelete sono state spostate in js/api.js insieme a apiGet/apiPost e lastApiError
+  // (vedi il commento sopra apiGet piu' sotto nel file).
 
   async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]) : []; }
 
@@ -1533,13 +1456,7 @@
   async function createBugReport(code, username, text){ return apiPost('/api/notice', { resource:'bugreport', code, username, text }); }
   async function resolveBugReport(code, id, resolved){ return apiPut('/api/notice', { resource:'bugreport', code, id, resolved }); }
   // ---------- Missioni (report obiettivi/ricompense/PG assegnati) ----------
-  async function getMissions(code){ const d = await apiGet('/api/notice?resource=mission&code=' + encodeURIComponent(code), true); return d ? (d.missions||[]) : []; }
-  async function createMission(code, { title, description, objectives, rewards, assignedTo, createdBy }){
-    return apiPost('/api/notice', { resource:'mission', code, title, description, objectives, rewards, assignedTo, createdBy });
-  }
-  async function updateMission(code, id, patch){ return apiPut('/api/notice', { resource:'mission', code, id, ...patch }); }
-  async function toggleMissionObjective(code, id, index){ return apiPut('/api/notice', { resource:'mission', code, id, toggleObjectiveIndex: index }); }
-  async function deleteMission(code, id){ return apiDelete('/api/notice?resource=mission&code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
+  // getMissions/createMission/updateMission/toggleMissionObjective/deleteMission spostati in js/missions.js
   async function getScanLog(code){ const d = await apiGet('/api/upload?resource=scan&code=' + encodeURIComponent(code)); return d ? (d.allLog||[]) : []; }
   async function deleteScanEntry(code, id){ return apiDelete('/api/upload?resource=scan&code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
   async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
@@ -1845,22 +1762,7 @@
     return m;
   }
 
-  // Nome da mostrare in UI per un membro del roster: il nome del personaggio (tamer.characterName)
-  // se è stato impostato, altrimenti lo username di login (fallback per schede esistenti che non
-  // l'hanno mai compilato). Lo username resta SEMPRE la chiave di login/sessione/query — questa
-  // funzione (e la variante sotto) sono solo per la visualizzazione.
-  function displayName(member){
-    const cn = member && member.tamer && member.tamer.characterName;
-    return (cn && String(cn).trim()) ? String(cn).trim() : ((member && member.username) || '');
-  }
-  // Variante comoda quando si ha solo lo username (es. record non collegati a un member completo:
-  // bug report, log di scan, thread di chat privata) — cerca il membro in cachedRoster e ricade sullo
-  // username grezzo se non lo trova o non ha un characterName impostato.
-  function displayNameFor(username){
-    if(!username) return '';
-    const member = (cachedRoster||[]).find(m=>m.username===username);
-    return member ? displayName(member) : username;
-  }
+  // displayName/displayNameFor spostati in js/util.js
 
   function render(){
     if(!session){ renderLogin(); }
@@ -3678,7 +3580,7 @@
     if(canEdit){ bindDexForm(session.code, session.username); bindDexEditButtons(session.code); }
   }
 
-  const SIZES = ['Small','Medium','Large','Huge','Gigantic','Colossal'];
+  // SIZES spostato in js/rules.js
   const SIZE_DEFS = {
     Small:    { ram:2, cpu:-1, bit:1 },
     Medium:   { ram:1, bit:1 },
@@ -3690,14 +3592,7 @@
   function maxSizeIndexForStage(stage){ return Math.min(SIZES.length-1, stageIndex(stage)+1); }
   function allowedSizes(stage){ return SIZES.slice(0, maxSizeIndexForStage(stage)+1); }
 
-  function stanceModifiers(d){
-    const sv = stageIndex(d.stage);
-    if(d.stance==='Offensive') return { accuracy: sv, dodge: -sv, damage:0, armor:0 };
-    if(d.stance==='Defensive') return { accuracy: -sv, dodge: sv, damage:0, armor:0 };
-    if(d.stance==='Fierce') return { accuracy:0, dodge:0, damage: sv, armor:0 };
-    if(d.stance==='Brave') return { accuracy:0, dodge:0, damage:0, armor: sv };
-    return { accuracy:0, dodge:0, damage:0, armor:0 };
-  }
+  // stanceModifiers spostato in js/rules.js
 
   function computeDerivedStats(d){
     const sizeMod = SIZE_DEFS[d.size] || {};
@@ -3734,7 +3629,7 @@
     `).join('');
   }
 
-  const STAGES = ['Fresh','Baby','Rookie','Champion','Ultimate','Mega'];
+  // STAGES spostato in js/rules.js
   const DEX_ATTRIBUTES = ['Vaccine','Data','Virus','Free','Variable'];
   const DEX_ATTRIBUTE_COLOR = { Vaccine:'#5aa8ff', Data:'#3ddc84', Virus:'#ff5d5d', Free:'#b8b8b8', Variable:'#ff8a3d' };
   // Icone ufficiali Attributo (set Digimon Story: Time Stranger su Wikimon — stile coerente,
@@ -3798,7 +3693,7 @@
     const color = DEX_ATTRIBUTE_COLOR[attribute] || 'var(--text-mute)';
     return `<span class="tag" style="color:${color};border-color:${color};display:inline-flex;align-items:center;gap:3px;">${attributeIconHTML(attribute, 12)}${escapeHTML(attribute)}</span>`;
   }
-  function stageIndex(s){ const i = STAGES.indexOf(s); return i<0?0:i; }
+  // stageIndex spostato in js/rules.js
   // Badge "a Digivice" per gli Evolution Point disponibili (regola 8.05a): una cornice con
   // antenna/pulsante e schermo LCD al posto del semplice testo "EP: X". Se max è noto (Milestone
   // completate) lo mostra in tono più spento accanto al valore attuale, es. "3/5".
@@ -3840,7 +3735,7 @@
     const base = ATTACK_SLOTS_BY_STAGE[d && d.stage] ?? 3;
     return base + memoryUpgradeRanks(d && d.qualities);
   }
-  function batteryCap(stage){ return stageIndex(stage)+1; }
+  // batteryCap spostato in js/rules.js
   function evolutionCost(d, targetStage){
     const comfortableMax = stageIndex(d.defaultStage) + Number(d.defaultRange||0);
     return Math.max(0, stageIndex(targetStage) - comfortableMax);
@@ -4179,29 +4074,7 @@
     { name:'[BOSS] Spatial Distortion', category:'Boss', dpPerRank:2, maxRank:1, mechanic:'', desc:'1 Azione extra per ignorare la distanza dell\'Attacco (Range senza penalità, Melee a qualsiasi distanza). Riservata al Master.' },
     { name:'[BOSS] Suppression', category:'Boss', dpPerRank:3, maxRank:1, mechanic:'', desc:'Blocca un tipo di Quality (Static/Trigger/Attack) per i nemici vicini, salvo un Check DOS (TN 10+DOS) con 2 Azioni per ignorarla. Riservata al Master.' }
   ];
-  function computeQualityMechanics(qualities){
-    const m = { certainStrike:0, weapon:0, ammoRank:0, combatMonster:0, monsterStrength:false, wrestlemania:false, resistance:0,
-      instinctDodge:0, wardenArmor:0, brawlerClash:0, supremeCode:0, absoluteEvasion:0, naturewalk:{ accuracy:0, damage:0, dodge:0, armor:0, health:0 } };
-    (qualities||[]).forEach(q=>{
-      if(q.mechanic==='certainStrike') m.certainStrike += Number(q.rank||1);
-      if(q.mechanic==='weapon') m.weapon += Number(q.rank||1);
-      if(q.mechanic==='ammo') m.ammoRank = Math.max(m.ammoRank, Number(q.rank||1));
-      if(q.mechanic==='combatMonster') m.combatMonster = Math.max(m.combatMonster, Number(q.rank||1));
-      if(q.mechanic==='monsterStrength') m.monsterStrength = true;
-      if(q.mechanic==='wrestlemania') m.wrestlemania = true;
-      if(q.mechanic==='resistance') m.resistance += Number(q.rank||1);
-      if(q.mechanic==='instinct') m.instinctDodge += Number(q.rank||1);
-      if(q.mechanic==='dataOptWarden') m.wardenArmor += Number(q.rank||1);
-      if(q.mechanic==='dataOptBrawler') m.brawlerClash += Number(q.rank||1);
-      if(q.mechanic==='supremeCode') m.supremeCode += Number(q.rank||1);
-      if(q.mechanic==='absoluteEvasion') m.absoluteEvasion += Number(q.rank||1);
-      if(q.mechanic==='naturewalk'){
-        const target = q.statTarget || 'accuracy';
-        m.naturewalk[target] = (m.naturewalk[target]||0) + Number(q.rank||1);
-      }
-    });
-    return m;
-  }
+  // computeQualityMechanics spostato in js/rules.js
 
   function qualitiesEditableHTML(qualities){
     if(!qualities || qualities.length===0) return '<div class="muted" style="margin-bottom:6px;">Nessuna Quality aggiunta.</div>';
@@ -5751,124 +5624,7 @@
       <span style="font-size:9px;max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${color};">${escapeHTML(p.name)}</span>
     </button>`;
   }
-  function getParticipantAttacks(p){
-    if(!p) return [];
-    if(p.isPC){
-      const member = cachedRoster.find(m=>m.username===p.username);
-      return (member && member.digimon.attacks) || [];
-    }
-    return p.attacks || [];
-  }
-  function getParticipantWounds(p){
-    if(p.isPC){
-      const member = cachedRoster.find(m=>m.username===p.username);
-      if(member) return { current: member.digimon.currentWounds, max: member.digimon.maxWounds, temp: Number(member.digimon.tempWounds||0) };
-    }
-    return { current: p.currentWounds||0, max: p.maxWounds||1, temp: Number(p.tempWounds||0) };
-  }
-
-  const EFFECT_ICONS = { fear:'😨', slow:'🐌', frail:'🛡️💔', dull:'⚔️💔', confuse:'💫', distract:'👀', keen:'🎯', swift:'💨', sturdy:'🛡️', sharpen:'⚔️✨', nimble:'🤸', burn:'🔥', poison:'☠️', exploit:'🔓', fury:'😡', pacify:'🕊️', debilitate:'⬇️', bastion:'🏰', daring:'🗡️', taunt:'😤', root:'🌱', pull:'⬅️', push:'➡️', cleanse:'✨', shield:'🛡', lag:'⏪', lead:'⏩', tailwind:'🌬️', vague:'❓', heavy:'⚓', freeze:'❄️', paralyze:'🚫', rattled:'😰', shaken:'😵', weak:'📉', strength:'💪', vigil:'👁️', vigor:'⚡', steady:'⚖️', regen:'💚', ruin:'🔻', doom:'💀', blind:'🙈', dot:'🔮', stun:'💥', immune:'🔰', deny:'🚫', haste:'🏃' };
-  function effectIcon(key){ return EFFECT_ICONS[key] || '❔'; }
-  // Spiegazione in linguaggio semplice generata dai dati meccanici già codificati per l'Effetto
-  // (mods/blocksMove/tick/instant) — mostrata cliccando sull'icona di stato, invece di dover
-  // ricordare a memoria cosa fa ogni singolo Tag.
-  function effectExplanationText(def){
-    if(!def) return 'Effetto sconosciuto.';
-    const modLabels = { accuracy:'Accuracy', dodge:'Dodge', damage:'Damage', armor:'Armor' };
-    const parts = Object.entries(def.mods||{}).map(([k,v])=>`${v>0?'+':''}${v} ${modLabels[k]||k}`);
-    if(def.blocksMove) parts.push('blocca il Movimento');
-    if(def.tick) parts.push('infligge il proprio effetto a inizio round (tick — gestito a mano)');
-    if(def.instant) parts.push('si risolve subito quando applicato (istantaneo)');
-    const mech = parts.length ? parts.join(', ') : 'nessun modificatore automatico alle Stat — effetto narrativo/da gestire a mano';
-    return `${def.type==='positive'?'Effetto Positivo':'Effetto Negativo'}: ${mech}. I numeri tra parentesi sono Potenza e Durata (round rimasti).`;
-  }
-
-  // Varianti di testo già presenti nel Digidex che non coincidono esattamente con l'etichetta interna.
-  const EFFECT_TAG_ALIASES = { 'CONFUSION': 'confuse' };
-
-  const EFFECT_DEFS = [
-    { key:'fear', label:'Fear', type:'negative', mods:{ accuracy:-1 } },
-    { key:'slow', label:'Slow', type:'negative', mods:{ dodge:-1 } },
-    { key:'frail', label:'Frail', type:'negative', mods:{ armor:-1 } },
-    { key:'dull', label:'Dull', type:'negative', mods:{ damage:-1 } },
-    { key:'confuse', label:'Confuse', type:'negative', mods:{ accuracy:-1, dodge:-1 } },
-    { key:'distract', label:'Distract', type:'negative', mods:{ accuracy:-1, dodge:-1 } },
-    { key:'keen', label:'Keen', type:'positive', mods:{ accuracy:1 } },
-    { key:'swift', label:'Swift', type:'positive', mods:{ dodge:1 } },
-    { key:'sturdy', label:'Sturdy', type:'positive', mods:{ armor:1 } },
-    { key:'sharpen', label:'Sharpen', type:'positive', mods:{ damage:1 } },
-    { key:'nimble', label:'Nimble', type:'positive', mods:{ accuracy:1, dodge:1 } },
-    { key:'burn', label:'Burn', type:'negative', mods:{}, tick:true },
-    { key:'poison', label:'Poison', type:'negative', mods:{}, tick:true },
-    { key:'exploit', label:'Exploit', type:'negative', mods:{ dodge:-1, armor:-1 } },
-    { key:'fury', label:'Fury', type:'positive', mods:{ accuracy:1, damage:1 } },
-    { key:'pacify', label:'Pacify', type:'negative', mods:{ accuracy:-1, damage:-1 } },
-    { key:'debilitate', label:'Debilitate', type:'negative', mods:{ accuracy:-1, damage:-1, dodge:-1, armor:-1 } },
-    { key:'bastion', label:'Bastion', type:'positive', mods:{ accuracy:1, damage:1, dodge:1, armor:1 } },
-    { key:'daring', label:'Daring', type:'positive', mods:{ accuracy:1, armor:1 } },
-    { key:'taunt', label:'Taunt', type:'negative', mods:{ accuracy:-1 } },
-    { key:'root', label:'Root', type:'negative', mods:{}, blocksMove:true },
-    { key:'pull', label:'Pull', type:'negative', mods:{}, instant:'pull' },
-    { key:'push', label:'Push', type:'negative', mods:{}, instant:'push' },
-    { key:'cleanse', label:'Cleanse', type:'positive', mods:{}, instant:'cleanse' },
-    { key:'shield', label:'Shield', type:'positive', mods:{}, instant:'shield' },
-    { key:'lag', label:'Lag', type:'negative', mods:{} },
-    { key:'lead', label:'Lead', type:'positive', mods:{} },
-    { key:'tailwind', label:'Tailwind', type:'positive', mods:{} },
-    { key:'vague', label:'Vague', type:'negative', mods:{ accuracy:-1 } },
-    { key:'heavy', label:'Heavy', type:'negative', mods:{} },
-    { key:'freeze', label:'Freeze', type:'negative', mods:{}, tick:true },
-    { key:'paralyze', label:'Paralyze', type:'negative', mods:{ dodge:-1 } },
-    { key:'rattled', label:'Rattled', type:'negative', mods:{ damage:-1, dodge:-1 } },
-    { key:'shaken', label:'Shaken', type:'negative', mods:{ accuracy:-1, armor:-1 } },
-    { key:'weak', label:'Weak', type:'negative', mods:{ damage:-1, armor:-1 } },
-    { key:'strength', label:'Strength', type:'positive', mods:{ damage:1, armor:1 } },
-    { key:'vigil', label:'Vigil', type:'positive', mods:{ dodge:1, armor:1 } },
-    { key:'vigor', label:'Vigor', type:'positive', mods:{ dodge:1 } },
-    { key:'steady', label:'Steady', type:'positive', mods:{ damage:1, dodge:1 } },
-    { key:'regen', label:'Regen', type:'positive', mods:{} },
-    { key:'ruin', label:'Ruin', type:'negative', mods:{}, tick:true },
-    { key:'doom', label:'Doom', type:'negative', mods:{} },
-    { key:'blind', label:'Blind', type:'negative', mods:{} },
-    { key:'dot', label:'Dot', type:'negative', mods:{} },
-    { key:'stun', label:'Stun', type:'negative', mods:{} },
-    { key:'immune', label:'Immune', type:'positive', mods:{} },
-    { key:'deny', label:'Deny', type:'positive', mods:{} },
-    { key:'haste', label:'Haste', type:'positive', mods:{}, instant:'' }
-  ];
-
-  const EFFECT_QUALITY_MAP = {
-    fear:'Basic Effect: Fear', slow:'Basic Effect: Slow', keen:'Basic Effect: Keen', swift:'Basic Effect: Swift',
-    cleanse:'Basic Effect: Cleanse', root:'Basic Effect: Root', taunt:'Basic Effect: Taunt', push:'Basic Effect: Push', pull:'Basic Effect: Pull',
-    lag:'Basic Effect: Lag', lead:'Basic Effect: Lead', tailwind:'Basic Effect: Tailwind', vague:'Basic Effect: Vague',
-    confuse:'Advanced Effect: Confuse', distract:'Advanced Effect: Distract', dull:'Advanced Effect: Dull', frail:'Advanced Effect: Frail',
-    sturdy:'Advanced Effect: Sturdy', sharpen:'Advanced Effect: Sharpen', nimble:'Advanced Effect: Nimble', exploit:'Advanced Effect: Exploit',
-    burn:'Advanced Effect: Burn', poison:'Advanced Effect: Poison', shield:'Advanced Effect: Shield',
-    heavy:'Advanced Effect: Heavy', freeze:'Advanced Effect: Freeze',
-    fury:'Master Effect: Fury', pacify:'Master Effect: Pacify', debilitate:'Master Effect: Debilitate', bastion:'Master Effect: Bastion', daring:'Master Effect: Daring',
-    paralyze:'Master Effect: Paralyze', rattled:'Master Effect: Rattled', shaken:'Master Effect: Shaken', weak:'Master Effect: Weak',
-    strength:'Master Effect: Strength', vigil:'Master Effect: Vigil', vigor:'Master Effect: Vigor', steady:'Master Effect: Steady',
-    regen:'Master Effect: Regen', ruin:'Master Effect: Ruin', doom:'Master Effect: Doom', blind:'Master Effect: Blind',
-    dot:'Master Effect: Dot', stun:'Master Effect: Stun', immune:'Master Effect: Immune', deny:'Master Effect: Deny', haste:'Master Effect: Haste'
-  };
-  function hasAttributeAdvantage(atkAttr, defAttr){
-    if(!atkAttr || !defAttr) return false;
-    if(atkAttr==='Free' || defAttr==='Free' || atkAttr==='Variable' || defAttr==='Variable') return false;
-    const table = { Vaccine:'Virus', Virus:'Data', Data:'Vaccine' };
-    return table[atkAttr] === defAttr;
-  }
-  function getParticipantAttribute(p){
-    if(p.isPC){
-      const member = cachedRoster.find(m=>m.username===p.username);
-      return member ? (member.digimon.attribute||'Free') : 'Free';
-    }
-    return p.attribute || 'Free';
-  }
-  function hasEffectQuality(d, effectKey){
-    const required = EFFECT_QUALITY_MAP[effectKey];
-    if(!required) return true; // no known requirement (e.g. custom/unlisted effect) — allow
-    return (d.qualities||[]).some(q=>q.name===required);
-  }
+  // (getParticipantAttacks/getParticipantWounds/EFFECT_ICONS/effectIcon/effectExplanationText/EFFECT_TAG_ALIASES/EFFECT_DEFS/EFFECT_QUALITY_MAP/hasAttributeAdvantage/getParticipantAttribute/hasEffectQuality) spostato in js/combat-engine.js
 
   async function applyInstantEffect(code, target, key, potency){
     const def = EFFECT_DEFS.find(d=>d.key===key);
@@ -5908,114 +5664,7 @@
     return null;
   }
 
-  function computeEffectModifiers(p){
-    const mod = { accuracy:0, damage:0, dodge:0, armor:0 };
-    let resistance = 0;
-    if(p.isPC){
-      const member = cachedRoster.find(m=>m.username===p.username);
-      if(member) resistance = computeQualityMechanics(member.digimon.qualities).resistance;
-    }
-    (p.effects||[]).forEach(e=>{
-      const def = EFFECT_DEFS.find(d=>d.key===e.key);
-      if(!def) return;
-      let potency = Number(e.potency||1);
-      if(def.type==='negative' && resistance>0) potency = Math.max(1, potency - resistance);
-      Object.keys(def.mods||{}).forEach(stat=>{
-        mod[stat] += def.mods[stat] * potency;
-      });
-    });
-    return mod;
-  }
-
-  function effectTagsHTML(p){
-    if(!p.effects || p.effects.length===0) return '';
-    return p.effects.map(e=>{
-      const def = EFFECT_DEFS.find(d=>d.key===e.key);
-      const color = def&&def.type==='positive'?'var(--cyan)':'var(--danger)';
-      const borderColor = def&&def.type==='positive'?'var(--cyan-dim)':'rgba(255,93,93,0.4)';
-      return `<details style="display:inline-block;margin:2px 4px 2px 0;vertical-align:top;">
-        <summary class="tag" style="cursor:pointer;color:${color};border-color:${borderColor};">${effectIcon(e.key)} ${def?def.label:e.key} ${e.potency}(${e.duration})</summary>
-        <div class="muted" style="font-size:10px;margin-top:2px;max-width:200px;">${escapeHTML(effectExplanationText(def))}</div>
-      </details>`;
-    }).join('');
-  }
-
-  async function tickEffectsForParticipant(code, combat, p){
-    if(!p.effects || p.effects.length===0) return [];
-    const logs = [];
-    let resistance = 0;
-    if(p.isPC){
-      const member = cachedRoster.find(m=>m.username===p.username);
-      if(member) resistance = computeQualityMechanics(member.digimon.qualities).resistance;
-    }
-    p.effects.forEach(e=>{
-      const def = EFFECT_DEFS.find(d=>d.key===e.key);
-      if(def && def.tick){
-        const dmg = Math.max(1, Number(e.potency||1) - resistance);
-        logs.push(`${p.name} subisce ${dmg} danno da ${def.label}${resistance>0?` (Resistance -${resistance})`:''}.`);
-        applyDamageToParticipantSync(p, dmg);
-      }
-    });
-    p.effects.forEach(e=>{ e.duration = Number(e.duration||1) - 1; });
-    const expired = p.effects.filter(e=>e.duration<=0);
-    expired.forEach(e=>{
-      const def = EFFECT_DEFS.find(d=>d.key===e.key);
-      logs.push(`${def?def.label:e.key} su ${p.name} è terminato.`);
-    });
-    p.effects = p.effects.filter(e=>e.duration>0);
-    return logs;
-  }
-
-  function applyDamageToParticipantSync(p, amount){
-    if(p.isPC){
-      const member = cachedRoster.find(m=>m.username===p.username);
-      if(member) member.digimon.currentWounds = Math.max(0, member.digimon.currentWounds - amount);
-    } else {
-      p.currentWounds = Math.max(0, (p.currentWounds||0) - amount);
-    }
-  }
-
-  function getParticipantCombatStats(p){
-    let base;
-    let stanceMod = { accuracy:0, dodge:0, damage:0, armor:0 };
-    let qMech = { certainStrike:0, weapon:0, ammoRank:0, combatMonster:0, monsterStrength:false };
-    if(p.isPC){
-      const member = cachedRoster.find(m=>m.username===p.username);
-      base = member ? { accuracy: member.digimon.baseAccuracy, damage: member.digimon.baseDamage, dodge: member.digimon.baseDodge, armor: member.digimon.baseArmor } : { accuracy:0, damage:0, dodge:0, armor:0 };
-      if(member){ stanceMod = stanceModifiers(member.digimon); qMech = computeQualityMechanics(member.digimon.qualities); }
-    } else {
-      base = { accuracy: p.accuracy||0, damage: p.damage||0, dodge: p.dodge||0, armor: p.armor||0 };
-    }
-    const mod = computeEffectModifiers(p);
-    const nw = qMech.naturewalk || { accuracy:0, damage:0, dodge:0, armor:0 };
-    const sc = qMech.supremeCode || 0;
-    return {
-      accuracy: Math.max(0, base.accuracy + mod.accuracy + stanceMod.accuracy + qMech.weapon + nw.accuracy + sc),
-      damage: Math.max(0, base.damage + mod.damage + stanceMod.damage + qMech.weapon + nw.damage + sc),
-      dodge: Math.max(0, base.dodge + mod.dodge + stanceMod.dodge + (qMech.instinctDodge||0) + nw.dodge + sc),
-      armor: Math.max(0, base.armor + mod.armor + stanceMod.armor + (qMech.wardenArmor||0) + nw.armor + sc),
-      certainStrike: qMech.certainStrike,
-      combatMonsterRank: qMech.combatMonster,
-      monsterStrength: qMech.monsterStrength,
-      absoluteEvasion: qMech.absoluteEvasion||0
-    };
-  }
-
-  function getParticipantResistance(p){
-    if(p.isPC){
-      const member = cachedRoster.find(m=>m.username===p.username);
-      if(member) return computeQualityMechanics(member.digimon.qualities).resistance;
-    }
-    return 0;
-  }
-
-  function getParticipantSizeIndex(p){
-    if(p.isPC){
-      const member = cachedRoster.find(m=>m.username===p.username);
-      if(member) return SIZES.indexOf(member.digimon.size) >=0 ? SIZES.indexOf(member.digimon.size) : 1;
-    }
-    return 1; // Medium default for enemies (Size not tracked for them)
-  }
+  // (computeEffectModifiers/effectTagsHTML/tickEffectsForParticipant/applyDamageToParticipantSync/getParticipantCombatStats/getParticipantResistance/getParticipantSizeIndex) spostato in js/combat-engine.js
 
   // Regola 9.12a — Sconfitta: un Digimon portato a 0 Wound Box scende al suo Default Stage,
   // resta a 1 Wound Box, ed è "Sconfitto" (cosciente, ma di norma ignorato per il resto del
@@ -6187,7 +5836,6 @@
   // Ultimo log privato caricato nella vista "chat privata" del Master (aggiornato ad ogni
   // render/refresh di quel pannello) — serve ad attachLogModeration per trovare il testo
   // originale del messaggio da modificare, dato che il log privato non passa da cachedLog.
-  let cachedMasterPrivateLog = [];
   let masterChatMode = 'general';
   // Stato UI del Combat Manager (non salvato su DB, resettato solo al refresh pagina):
   // quali righe partecipante sono "espanse" (mostrano Azione/Muovi/Effetti), se il pannello
@@ -6874,7 +6522,6 @@
   // Supabase) — prima era in localStorage, quindi visibile solo sul dispositivo del Master e
   // mai su quello dei giocatori. Vedi getSubgroups/saveSubgroup/deleteSubgroup più sopra.
   let activeSubgroupId = null;
-  let cachedSubgroupLog = [];
 
   async function renderSubgroupChatMaster(code, players){
     const cardEl = document.getElementById('mchat-subgroup-slot');
@@ -7143,52 +6790,7 @@
   }
   // ===== fine Sottogruppi di Chat =====
 
-  // Le zone sono un'unica linea condivisa con 5 posizioni (o——o——o——o——o): ogni pallino È una zona
-  // per il regolamento — niente conversioni, Melee = stessa posizione, Reach 1/2 = distanza in pallini,
-  // penalità -2/-4 dirette sulla distanza. Un "Muovi" sposta di 1 pallino = 1 zona.
-  // "Medio" resta il centro esatto (indice 2 su 5), quindi i fallback "||'Medio'" restano validi.
-  const ZONES = ['Molto Corto','Corto','Medio','Lungo','Molto Lungo'];
-  function zoneIndex(z){ const i = ZONES.indexOf(z); return i<0?2:i; }
-  function zoneDistance(a,b){ return Math.abs(zoneIndex(a)-zoneIndex(b)); }
-  function zonePenalty(distance){ if(distance<=0) return 0; if(distance===1) return -2; return -4; }
-  // Etichetta numerica per la UI ("Range 3") invece del nome assoluto ("Medio") — i nomi sono relativi
-  // e da soli non dicono nulla; il numero di posizione è più chiaro e coerente con "distanza in zone".
-  function zoneLabel(z){ return 'Range ' + (zoneIndex(z)+1); }
-  // Muovi di un solo pallino lungo la linea, in riferimento a un altro partecipante.
-  function zoneStepToward(fromZone, refZone){
-    const fi = zoneIndex(fromZone), ri = zoneIndex(refZone);
-    if(fi===ri) return null; // già alla stessa posizione, "avvicinati" non ha effetto
-    return ZONES[fi + (ri>fi?1:-1)];
-  }
-  function zoneStepAway(fromZone, refZone){
-    const fi = zoneIndex(fromZone), ri = zoneIndex(refZone);
-    const dir = (ri>=fi) ? -1 : 1; // se pari, per default ci si allontana verso "Molto Corto"
-    const ni = fi + dir;
-    if(ni<0 || ni>ZONES.length-1) return null; // già al limite (non si può allontanare oltre)
-    return ZONES[ni];
-  }
-  // Muovi di N pallini in una direzione fissa (usato dalle frecce sotto la linea) — clampato ai limiti.
-  function zoneStepDirection(fromZone, dir){
-    const fi = zoneIndex(fromZone);
-    const ni = fi + (dir>0?1:-1);
-    if(ni<0 || ni>ZONES.length-1) return null;
-    return ZONES[ni];
-  }
-
-  // Le zone sono un unico asse condiviso (Corto-Medio-Lungo), non una distanza per ogni coppia:
-  // avvicinarsi a uno può avvicinare o allontanare da tutti gli altri, a seconda di dove si trovano
-  // sullo stesso asse. Segnala l'effetto collaterale su chiunque non sia il riferimento scelto.
-  function zoneSideEffectsNote(participants, movingId, refId, beforeZone, afterZone){
-    const notes = [];
-    participants.forEach(o=>{
-      if(o.id===movingId || o.id===refId) return;
-      const before = zoneDistance(beforeZone, o.zone||'Medio');
-      const after = zoneDistance(afterZone, o.zone||'Medio');
-      if(after<before) notes.push(`si avvicina anche a ${o.name}`);
-      else if(after>before) notes.push(`si allontana da ${o.name}`);
-    });
-    return notes.length ? ` — ${notes.join(', ')}` : '';
-  }
+  // (zone-math: ZONES/zoneIndex/zoneDistance/zonePenalty/zoneLabel/zoneStepToward/zoneStepAway/zoneStepDirection/zoneSideEffectsNote) spostato in js/combat-engine.js
   function renderCombatManager(code, players){
     const cardEl = document.getElementById('combat-mgr-card');
     if(!cardEl) return;
@@ -10590,193 +10192,7 @@
     modal.onclick = (ev)=>{ if(ev.target===modal) modal.remove(); };
   }
 
-  // ---------- MISSIONI: report obiettivi/ricompense/PG assegnati/stato ----------
-  const MISSION_STATUS_LABEL = { non_iniziata:'Non Iniziata', in_corso:'In Corso', completata:'Completata', fallita:'Fallita' };
-  const MISSION_STATUS_COLOR = { non_iniziata:'var(--text-mute)', in_corso:'var(--cyan)', completata:'#5cff8a', fallita:'var(--danger)' };
-
-  async function openMissionsModal(){
-    if(!session) return;
-    missionsModalOpen = true;
-    cachedMissions = await getMissions(session.code);
-    missionDraftObjectives = [''];
-    const old = document.getElementById('missions-modal');
-    if(old) old.remove();
-    const modal = document.createElement('div');
-    modal.id = 'missions-modal';
-    modal.className = 'enc-modal-backdrop';
-    modal.innerHTML = `
-      <div class="enc-modal-card hud-frame" style="max-width:640px;">
-        <button class="btn ghost small" id="missions-modal-close" style="position:absolute;top:8px;right:8px;">✕</button>
-        <div class="section-title">📋 Report Missioni</div>
-        <div id="missions-list">${missionsListHTML()}</div>
-        ${session.role==='master' ? `<div class="divider" style="margin:16px 0;"></div><div id="mission-create-form">${missionCreateFormHTML()}</div>` : ''}
-      </div>
-    `;
-    document.body.appendChild(modal);
-    document.getElementById('missions-modal-close').onclick = closeMissionsModal;
-    modal.onclick = (ev)=>{ if(ev.target===modal) closeMissionsModal(); };
-    bindMissionsListEvents();
-    if(session.role==='master') bindMissionCreateForm();
-  }
-
-  function closeMissionsModal(){
-    missionsModalOpen = false;
-    const modal = document.getElementById('missions-modal');
-    if(modal) modal.remove();
-  }
-
-  async function refreshMissionsModal(){
-    if(!missionsModalOpen || !session) return;
-    cachedMissions = await getMissions(session.code);
-    const listEl = document.getElementById('missions-list');
-    if(!listEl) return; // il modal è stato chiuso nel frattempo
-    listEl.innerHTML = missionsListHTML();
-    bindMissionsListEvents();
-  }
-
-  function missionsListHTML(){
-    if(cachedMissions.length===0) return `<div class="muted">Nessuna missione ancora registrata.</div>`;
-    const isMaster = session && session.role==='master';
-    // Per i giocatori mostra prima le missioni assegnate a loro (ma tutte restano visibili, come richiesto).
-    const sorted = isMaster ? cachedMissions : cachedMissions.slice().sort((a,b)=>{
-      const aMine = (a.assigned_to||[]).includes(session.username) ? 0 : 1;
-      const bMine = (b.assigned_to||[]).includes(session.username) ? 0 : 1;
-      return aMine - bMine;
-    });
-    return sorted.map(m=>missionCardHTML(m, isMaster)).join('');
-  }
-
-  function missionCardHTML(m, isMaster){
-    const objs = Array.isArray(m.objectives) ? m.objectives : [];
-    const doneCount = objs.filter(o=>o.done).length;
-    const assigned = Array.isArray(m.assigned_to) ? m.assigned_to : [];
-    return `
-      <div class="hud-frame card" style="padding:12px;margin-bottom:10px;" data-mission-id="${m.id}">
-        <div class="flex-between" style="align-items:flex-start;">
-          <div>
-            <div style="font-weight:700;color:var(--cyan);">${escapeHTML(m.title)}</div>
-            ${m.description ? `<div class="sub" style="margin-top:2px;">${escapeHTML(m.description)}</div>` : ''}
-          </div>
-          <span class="tag mono" style="color:${MISSION_STATUS_COLOR[m.status]||'var(--text-mute)'};border-color:${MISSION_STATUS_COLOR[m.status]||'var(--line)'};">${MISSION_STATUS_LABEL[m.status]||m.status}</span>
-        </div>
-        ${objs.length>0 ? `
-          <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin-top:10px;">Obiettivi (${doneCount}/${objs.length})</div>
-          <div style="margin-top:4px;">
-            ${objs.map((o,i)=>`
-              <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-top:4px;cursor:pointer;${o.done?'opacity:0.6;text-decoration:line-through;':''}">
-                <input type="checkbox" data-mission-obj="${m.id}:${i}" ${o.done?'checked':''} style="width:auto;" />
-                ${escapeHTML(o.text)}
-              </label>
-            `).join('')}
-          </div>
-        ` : ''}
-        ${m.rewards ? `<div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin-top:10px;">Ricompense</div><div style="font-size:13px;margin-top:2px;">${escapeHTML(m.rewards)}</div>` : ''}
-        ${assigned.length>0 ? `<div class="muted" style="font-size:11px;margin-top:8px;">👥 Assegnata a: ${assigned.map(u=>escapeHTML(displayNameFor(u))).join(', ')}</div>` : `<div class="muted" style="font-size:11px;margin-top:8px;">Nessun Tamer assegnato</div>`}
-        <div class="row" style="margin-top:10px;gap:8px;align-items:center;">
-          <select data-mission-status="${m.id}" style="flex:1;">
-            ${Object.keys(MISSION_STATUS_LABEL).map(s=>`<option value="${s}" ${m.status===s?'selected':''}>${MISSION_STATUS_LABEL[s]}</option>`).join('')}
-          </select>
-          ${isMaster ? `<button class="btn ghost small" data-mission-delete="${m.id}">🗑️</button>` : ''}
-        </div>
-      </div>
-    `;
-  }
-
-  function bindMissionsListEvents(){
-    const code = session.code;
-    document.querySelectorAll('[data-mission-obj]').forEach(cb=>{
-      cb.onchange = async ()=>{
-        const [id, idx] = cb.getAttribute('data-mission-obj').split(':');
-        cb.disabled = true;
-        await toggleMissionObjective(code, id, Number(idx));
-        await refreshMissionsModal();
-      };
-    });
-    document.querySelectorAll('[data-mission-status]').forEach(sel=>{
-      sel.onchange = async ()=>{
-        const id = sel.getAttribute('data-mission-status');
-        sel.disabled = true;
-        await updateMission(code, id, { status: sel.value });
-        await refreshMissionsModal();
-      };
-    });
-    document.querySelectorAll('[data-mission-delete]').forEach(btn=>{
-      btn.onclick = async ()=>{
-        const id = btn.getAttribute('data-mission-delete');
-        if(!window.confirm('Eliminare definitivamente questa missione?')) return;
-        await deleteMission(code, id);
-        await refreshMissionsModal();
-      };
-    });
-  }
-
-  function missionCreateFormHTML(){
-    const players = (cachedRoster||[]).filter(m=>m.role==='player');
-    return `
-      <div class="section-title" style="border:none;padding:0;margin-bottom:10px;">➕ Nuova Missione</div>
-      <div class="field"><label>Titolo</label><input type="text" id="mission-title" placeholder="es. Il Segreto della Torre di Infinity" /></div>
-      <div class="field"><label>Descrizione</label><textarea id="mission-desc" rows="2" placeholder="Contesto narrativo..."></textarea></div>
-      <label style="font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;">Obiettivi</label>
-      <div id="mission-objectives-rows" style="margin-top:4px;">${missionDraftObjectives.map((v,i)=>`
-        <div class="row" style="margin-top:6px;gap:6px;">
-          <input type="text" class="mission-obj-input" data-obj-idx="${i}" value="${escapeAttr(v)}" placeholder="es. Trova la chiave nel Settore Foresta" style="flex:1;" />
-          ${missionDraftObjectives.length>1 ? `<button type="button" class="btn ghost small" data-remove-obj="${i}">✕</button>` : ''}
-        </div>
-      `).join('')}</div>
-      <button type="button" class="btn ghost small" id="mission-add-obj" style="margin-top:8px;">+ Aggiungi Obiettivo</button>
-      <div class="field" style="margin-top:12px;"><label>Ricompense</label><input type="text" id="mission-rewards" placeholder="es. 200 Bit, Digicore Raro" /></div>
-      ${players.length>0 ? `
-        <label style="font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;">Assegna a</label>
-        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;">
-          ${players.map(p=>`<label style="display:flex;align-items:center;gap:4px;font-size:13px;"><input type="checkbox" class="mission-assign-cb" value="${escapeAttr(p.username)}" style="width:auto;" />${escapeHTML(displayName(p))}</label>`).join('')}
-        </div>
-      ` : '<div class="muted" style="font-size:11px;">Nessun giocatore ancora presente nel roster.</div>'}
-      <button class="btn solid" id="mission-create-btn" style="width:100%;padding:10px;margin-top:14px;">Crea Missione</button>
-      <div class="muted" id="mission-create-status" style="margin-top:6px;"></div>
-    `;
-  }
-
-  function bindMissionCreateForm(){
-    const rerenderForm = ()=>{
-      const wrap = document.getElementById('mission-create-form');
-      if(wrap) wrap.innerHTML = missionCreateFormHTML();
-      bindMissionCreateForm();
-    };
-    document.getElementById('mission-add-obj').onclick = ()=>{
-      // Salva i valori digitati finora prima di rigenerare la riga in più.
-      document.querySelectorAll('.mission-obj-input').forEach(inp=>{ missionDraftObjectives[Number(inp.getAttribute('data-obj-idx'))] = inp.value; });
-      missionDraftObjectives.push('');
-      rerenderForm();
-    };
-    document.querySelectorAll('[data-remove-obj]').forEach(btn=>{
-      btn.onclick = ()=>{
-        document.querySelectorAll('.mission-obj-input').forEach(inp=>{ missionDraftObjectives[Number(inp.getAttribute('data-obj-idx'))] = inp.value; });
-        missionDraftObjectives.splice(Number(btn.getAttribute('data-remove-obj')), 1);
-        rerenderForm();
-      };
-    });
-    document.getElementById('mission-create-btn').onclick = async ()=>{
-      document.querySelectorAll('.mission-obj-input').forEach(inp=>{ missionDraftObjectives[Number(inp.getAttribute('data-obj-idx'))] = inp.value; });
-      const title = document.getElementById('mission-title').value.trim();
-      const statusEl = document.getElementById('mission-create-status');
-      if(!title){ statusEl.textContent = 'Il titolo è obbligatorio.'; return; }
-      const objectives = missionDraftObjectives.filter(t=>t.trim()).map(t=>({ text:t.trim(), done:false }));
-      const assignedTo = Array.from(document.querySelectorAll('.mission-assign-cb:checked')).map(cb=>cb.value);
-      const description = document.getElementById('mission-desc').value.trim();
-      const rewards = document.getElementById('mission-rewards').value.trim();
-      statusEl.textContent = 'Creazione in corso...';
-      const res = await createMission(session.code, { title, description, objectives, rewards, assignedTo, createdBy: session.username });
-      if(res && res.ok){
-        missionDraftObjectives = [''];
-        cachedMissions = await getMissions(session.code);
-        document.getElementById('missions-list').innerHTML = missionsListHTML();
-        bindMissionsListEvents();
-        rerenderForm();
-      } else {
-        statusEl.textContent = '⚠ Creazione fallita: ' + (lastApiError || 'errore sconosciuto');
-      }
-    };
-  }
+  // (MISSION_STATUS_LABEL/COLOR, getMissions/createMission/updateMission/toggleMissionObjective/deleteMission, openMissionsModal, closeMissionsModal, refreshMissionsModal, missionsListHTML, missionCardHTML, bindMissionsListEvents, missionCreateFormHTML, bindMissionCreateForm) spostati in js/missions.js
 
   // ---------- DIGIMOJI: conversione fonetica italiana -> Hiragana ----------
   // Regole pensate per l'ortografia italiana (ca/co/cu = k, che/chi = k, ci = "chi",
