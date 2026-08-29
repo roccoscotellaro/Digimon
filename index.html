@@ -9446,9 +9446,23 @@
           // Risponde nello stesso canale in cui il giocatore sta leggendo la richiesta: privato
           // col Master, il sottogruppo aperto, o generale — altrimenti (bug corretto) un tiro
           // fatto da dentro un sottogruppo finiva nella Chat Generale invece che nel sottogruppo.
-          if(playerChatMode==='private') await pushPrivateLog(code, session.username, entry);
-          else if(playerChatMode==='subgroup' && playerActiveSubgroupId) await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, entry);
-          else await pushLog(code, entry);
+          //
+          // BUGFIX: qui sotto mancava il tag esplicito di location sulla RISPOSTA al tiro (stesso
+          // identico bug già corretto sopra per la richiesta stessa in reqBtn.onclick — vedi
+          // memberLocationKey/subgroupLocationKey). Senza meta.location esplicito, pushPrivateLog
+          // la marca in automatico con currentLocationKey() (la posizione del gruppo INTERO),
+          // invece della posizione EFFETTIVA di chi sta rispondendo. Se il giocatore/sottogruppo
+          // si era separato dal gruppo, il risultato veniva sì salvato sul server, ma spariva
+          // subito sotto il filtro di default "Settore attuale" della sua stessa chat — il tiro
+          // sembrava non succedere affatto ("non compare il risultato").
+          if(playerChatMode==='private'){
+            await pushPrivateLog(code, session.username, { ...entry, meta: { ...(entry.meta||{}), location: memberLocationKey(me) } });
+          } else if(playerChatMode==='subgroup' && playerActiveSubgroupId){
+            const group = (cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId) || null;
+            await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { ...entry, meta: { ...(entry.meta||{}), location: subgroupLocationKey(group) } });
+          } else {
+            await pushLog(code, entry);
+          }
           refreshLiveParts();
         }
       }
