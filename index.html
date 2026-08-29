@@ -443,6 +443,8 @@
 <body>
 <div class="scanline"></div>
 <div id="root-app" class="app"></div>
+<script src="js/util.js"></script>
+<script src="js/dice.js"></script>
 <script>
 (function(){
   const root = document.getElementById('root-app');
@@ -1300,29 +1302,38 @@
   function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
   function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
 
-  // ---------- Memoria NPC (locale al browser del Master, per campagna) ----------
-  // Ogni volta che il Master parla come un NPC personalizzato (chat generale o privata), nome +
-  // colore (+ immagine se presente) vengono ricordati qui, così le volte successive l'NPC compare
-  // già pronto nel menu "Parla come" invece di dover riscrivere nome e ripescare il colore giusto.
-  // Vive in localStorage (non sul server): è comodo perché non richiede alcuna migrazione DB, col
-  // limite che resta legato a questo browser/dispositivo del Master.
-  function npcStorageKey(code){ return `dvos_npcs_${code}`; }
+  // ---------- Registro NPC condiviso (Supabase via /api/notice?resource=npc) ----------
+  // Prima viveva solo in localStorage sul browser del Master: comodo (nessuna migrazione DB) ma
+  // legato a quel dispositivo — un giocatore che apriva npc.html dal proprio telefono vedeva
+  // sempre il registro vuoto. Ora è condiviso come roster/scena/log/dex: cachedNpcs si popola al
+  // login (renderPlayer/renderMaster) e si aggiorna ogni ~10 minuti nel polling lento (stesso
+  // dexCycle del Digidex in refreshLiveParts — cambia raramente quanto il Dex, non serve
+  // rileggerlo ogni 4s, vedi il commento su dexCycle più sotto per il perché).
+  //
+  // loadSavedNpcs continua a restituire il vecchio formato {name,color,avatar} così tutti i
+  // picker "Parla come"/menziona (che sono diversi punti nel file) restano invariati.
+  let cachedNpcs = [];
+  async function getNpcs(code){ const d = await apiGet('/api/notice?resource=npc&code=' + encodeURIComponent(code), true); return d ? (d.npcs||[]) : []; }
   function loadSavedNpcs(code){
-    try{
-      const raw = localStorage.getItem(npcStorageKey(code));
-      const arr = raw ? JSON.parse(raw) : [];
-      return Array.isArray(arr) ? arr : [];
-    }catch(e){ return []; }
+    return cachedNpcs.map(n=>({ name: n.name, color: n.chatColor||null, avatar: n.faceUrl || n.fullBodyUrl || null }));
   }
-  function rememberNpc(code, npc){
+  async function rememberNpc(code, npc){
     if(!npc || !npc.name || !npc.name.trim()) return;
-    try{
-      const list = loadSavedNpcs(code);
-      const idx = list.findIndex(n=>n.name.toLowerCase()===npc.name.trim().toLowerCase());
-      const entry = { name: npc.name.trim(), color: npc.color||null, avatar: npc.avatar||null };
-      if(idx>=0) list[idx] = entry; else list.unshift(entry);
-      localStorage.setItem(npcStorageKey(code), JSON.stringify(list.slice(0, 30)));
-    }catch(e){}
+    const name = npc.name.trim();
+    const existing = cachedNpcs.find(n=>n.name.toLowerCase()===name.toLowerCase());
+    const entry = {
+      id: existing ? existing.id : null,
+      name,
+      chatColor: npc.color || (existing && existing.chatColor) || '#ffd76a',
+      faceUrl: npc.avatar || (existing && existing.faceUrl) || '',
+      fullBodyUrl: (existing && existing.fullBodyUrl) || '',
+      description: (existing && existing.description) || ''
+    };
+    const d = await apiPost('/api/notice', { resource:'npc', code, ...entry });
+    if(d && d.npc){
+      const idx = cachedNpcs.findIndex(n=>n.id===d.npc.id);
+      if(idx>=0) cachedNpcs[idx] = d.npc; else cachedNpcs.push(d.npc);
+    }
   }
 
   // ---------- API helpers ----------
@@ -1691,36 +1702,9 @@
   async function correggiItaliano(testo){ const d = await apiPost('/api/ai', { mode:'correzione', text: testo }); return d && d.corrected ? d.corrected : testo; }
   async function suggerisciBattute(digimonName, personality, contesto){ const d = await apiPost('/api/ai', { digimonName, personality, context: contesto }); return d && d.lines ? d.lines : ['(errore nel generare suggerimenti, riprova)']; }
 
-  function sanitizeKeyPart(s){ return String(s||'').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 48); }
-
-  const DIE_FACES = ['','⚀','⚁','⚂','⚃','⚄','⚅'];
-
-  function rollD6(){ return 1 + Math.floor(Math.random()*6); }
-
-  function rollSkillCheck(attrVal, skillVal, extraDice){
-    const n = 3 + Math.max(0, Number(extraDice)||0);
-    const allDice = [];
-    for(let i=0;i<n;i++) allDice.push(rollD6());
-    const dice = allDice.slice().sort((a,b)=>b-a).slice(0,3);
-    const sum = dice.reduce((a,b)=>a+b,0);
-    const total = sum + Number(attrVal||0) + Number(skillVal||0);
-    return { dice, total, allDice };
-  }
-
-  function rollAttributeOnly(attrVal){
-    const dice = [rollD6(), rollD6(), rollD6()];
-    const sum = dice.reduce((a,b)=>a+b,0);
-    const total = sum + Number(attrVal||0) - 1;
-    return { dice, total };
-  }
-
-  function rollPool(n, countFours){
-    const count = Math.max(0, Number(n)||0);
-    const dice = [];
-    for(let i=0;i<count;i++) dice.push(rollD6());
-    const successes = dice.filter(d=>d>= (countFours?4:5)).length;
-    return { dice, successes };
-  }
+  // sanitizeKeyPart/DIE_FACES/rollD6/rollSkillCheck/rollAttributeOnly/rollPool sono stati
+  // spostati in js/util.js e js/dice.js (caricati prima di questo script, vedi sotto) --
+  // restano disponibili come funzioni globali esattamente come prima.
 
   const CAMPAIGN_LEVELS = {
     Standard: { ap:10, sp:25, cap:5, thresholds:[3,5,6,7], tnShift:0, startTorment:8 },
@@ -1746,15 +1730,7 @@
     return { label:'Fallimento', cls:'fail' };
   }
 
-  function tormentBoxesHTML(boxes){
-    boxes = Math.max(0, Math.min(10, Number(boxes)||0));
-    let out = '<span style="display:inline-flex;gap:2px;vertical-align:middle;">';
-    for(let i=1;i<=10;i++){
-      out += `<span style="width:11px;height:11px;border:1px solid var(--cyan-dim);${i<=boxes?'background:var(--cyan);':'background:transparent;'}display:inline-block;border-radius:1px;"></span>`;
-    }
-    out += '</span>';
-    return out;
-  }
+  // tormentBoxesHTML e' stata spostata in js/dice.js (pure formattazione, zero dipendenze).
 
   function rollTormentCheck(boxes){
     const dice = [rollD6(), rollD6(), rollD6()];
@@ -1772,9 +1748,7 @@
     return { dice, total, tn, outcome };
   }
 
-  function diceRowHTML(dice){
-    return `<span class="dice-perspective">${dice.map((d,i)=>`<span class="die3d" style="animation-delay:${(i*0.08).toFixed(2)}s;">${DIE_FACES[d]||d}</span>`).join('')}</span>`;
-  }
+  // diceRowHTML e' stata spostata in js/dice.js (usa DIE_FACES, ora definita li').
 
   const SKILL_DEFS = [
     { key:'evade', label:'Evade', attrs:['agility','willpower'] },
@@ -2335,6 +2309,7 @@
       maybeNotifyNew('public', null, cachedLog[cachedLog.length-1], myPublicName);
     }
     if(dexCycle) cachedDex = await getDex(session.code);
+    if(dexCycle) cachedNpcs = await getNpcs(session.code);
     if(slowCycle || (cachedCombat && cachedCombat.active)){
       const freshCombat = await getCombat(session.code);
       if(freshCombat && cachedCombat && typeof cachedCombat==='object'){
@@ -2908,6 +2883,7 @@
     cachedScene = await getScene(code);
     cachedLog = await getLog(code);
     cachedDex = await getDex(code);
+    cachedNpcs = await getNpcs(code);
     cachedCombat = await getCombat(code);
     cachedProgression = await getProgression(code);
 
@@ -5193,6 +5169,7 @@
     cachedScene = await getScene(code);
     cachedLog = await getLog(code);
     cachedDex = await getDex(code);
+    cachedNpcs = await getNpcs(code);
     cachedCombat = await getCombat(code);
     const players = cachedRoster.filter(m=>m.role==='player');
     cachedProgression = await getProgression(code);
@@ -5624,9 +5601,24 @@
         const entry = { who:'Master', role:'request', text: `Richiesta a ${namesLabel}: tira ${label}${tnPart}::REQ::${payload}` };
         if(sendGeneral) await pushLog(code, entry);
         if(sendPrivate){
-          for(const u of targetUsernames){ await pushPrivateLog(code, u, entry); }
+          // BUGFIX: qui sotto mancava il tag di location (vedi memberLocationKey/pushPrivateLog
+          // più sopra nel file) — la richiesta veniva marcata con la posizione ATTUALE DEL MASTER
+          // invece che con quella effettiva del giocatore destinatario. Se il giocatore era stato
+          // spostato singolarmente in un Settore diverso, il filtro "Settore attuale" della sua
+          // Chat Privata non la mostrava mai: appariva solo passando a "Tutto lo storico".
+          // Stesso identico pattern già usato per i normali messaggi di Chat Privata (vedi sopra).
+          for(const u of targetUsernames){
+            const member = cachedRoster.find(m=>m.username===u);
+            await pushPrivateLog(code, u, { ...entry, meta: { location: memberLocationKey(member) } });
+          }
         }
-        if(sendSubgroup) await pushPrivateLog(code, 'subgroup:'+subgroupId, entry);
+        if(sendSubgroup){
+          // Stesso bug e stessa correzione per i Sottogruppi (vedi subgroupLocationKey): la
+          // richiesta va taggata con la posizione EFFETTIVA del sottogruppo, non quella del
+          // Master, altrimenti resta "invisibile" nel filtro di default della sua chat.
+          const group = (cachedSubgroups||[]).find(g=>g.id===subgroupId) || null;
+          await pushPrivateLog(code, 'subgroup:'+subgroupId, { ...entry, meta: { location: subgroupLocationKey(group) } });
+        }
         if(statusEl) statusEl.textContent = '';
         refreshLiveParts();
       };
@@ -9888,8 +9880,7 @@
     });
   }
 
-  function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-  function escapeAttr(s){ return escapeHTML(s); }
+  // escapeHTML/escapeAttr sono state spostate in js/util.js (funzioni pure, zero dipendenze).
 
   // Converte un testo grezzo (narrazione del Master, chat, ecc.) in HTML sicuro,
   // preservando gli a capo e un piccolo sottoinsieme di markdown: ### / ## / # per i titoli

@@ -1,5 +1,5 @@
 // /api/notice.js
-// Gestisce due funzionalità distinte, instradate tramite il parametro `resource`
+// Gestisce funzionalità distinte, instradate tramite il parametro `resource`
 // (stesso pattern già usato in api/upload.js con resource=scan/crestImages, per non superare
 // il limite di 12 funzioni serverless del piano Vercel Hobby — siamo già al tetto):
 //
@@ -13,6 +13,12 @@
 //                                      in localStorage lato client, quindi visibili solo sul
 //                                      dispositivo del Master; ora condivisi via DB come tutto
 //                                      il resto (richiede la tabella `subgroups`, vedi sotto).
+//   resource: 'npc'                -> Registro NPC (npc.html + "Parla come" in index.html).
+//                                      Prima viveva in localStorage (dvos_npc_registry_CODE),
+//                                      quindi un giocatore che apriva npc.html dal proprio
+//                                      telefono vedeva sempre il registro vuoto: gli NPC creati
+//                                      dal Master non uscivano mai dal suo browser. Ora condiviso
+//                                      via DB come subgroup/mission (richiede la tabella `npcs`).
 //
 // Usa lo stesso client Supabase condiviso di lib/db.js (SUPABASE_SERVICE_KEY) di tutto il resto
 // del progetto — la versione precedente si creava un client a sé con SUPABASE_SERVICE_ROLE_KEY,
@@ -316,6 +322,89 @@ async function handleMissionDelete(req, res) {
   return res.status(200).json({ ok: true });
 }
 
+// ---------------- NPC (registro condiviso) ----------------
+// Prima viveva solo in localStorage lato client (dvos_npc_registry_CODE): comodo perché non
+// richiedeva migrazioni, ma legato al browser di chi lo scriveva — un giocatore che apriva
+// npc.html dal proprio telefono per consultarlo vedeva sempre "Nessun NPC registrato", perché
+// il suo browser non aveva mai scritto quella chiave. Ora è una tabella come le altre.
+//
+// Tabella `npcs`: id (testo, generato lato client tipo 'npc_...'), code, name, description,
+// chat_color, full_body_url, face_url, created_at. Il POST fa upsert per id, così sia l'editor
+// completo (npc.html) sia il salvataggio rapido da "Parla come" (index.html, vedi rememberNpc)
+// usano la stessa identica chiamata invece di due percorsi diversi.
+//
+// Migrazione SQL da eseguire una volta sul SQL Editor di Supabase:
+//
+//   create table if not exists npcs (
+//     id text primary key,
+//     code text not null,
+//     name text not null,
+//     description text not null default '',
+//     chat_color text not null default '#ffd76a',
+//     full_body_url text not null default '',
+//     face_url text not null default '',
+//     created_at timestamptz not null default now()
+//   );
+//   create index if not exists npcs_code_idx on npcs (code);
+function npcRowToJson(n) {
+  return {
+    id: n.id,
+    name: n.name,
+    description: n.description || '',
+    chatColor: n.chat_color || '#ffd76a',
+    fullBodyUrl: n.full_body_url || '',
+    faceUrl: n.face_url || '',
+    createdAt: n.created_at ? new Date(n.created_at).getTime() : Date.now()
+  };
+}
+
+async function handleNpcGet(req, res) {
+  const { code } = req.query;
+  if (!code) return res.status(400).json({ error: 'code mancante' });
+  const { data, error } = await supabase
+    .from('npcs')
+    .select('*')
+    .eq('code', code)
+    .order('created_at', { ascending: true });
+  if (error) return res.status(500).json({ error: error.message });
+  return res.status(200).json({ npcs: (data || []).map(npcRowToJson) });
+}
+
+async function handleNpcPost(req, res) {
+  const { code, id, name, description, chatColor, fullBodyUrl, faceUrl } = req.body || {};
+  if (!code || !name || !String(name).trim()) return res.status(400).json({ error: 'code e name sono obbligatori' });
+
+  const npcId = id || ('npc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8));
+  const { data, error } = await supabase
+    .from('npcs')
+    .upsert({
+      id: npcId,
+      code,
+      name: String(name).trim(),
+      description: description || '',
+      chat_color: chatColor || '#ffd76a',
+      full_body_url: fullBodyUrl || '',
+      face_url: faceUrl || ''
+    }, { onConflict: 'id' })
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+
+  return res.status(200).json({ ok: true, npc: npcRowToJson(data) });
+}
+
+async function handleNpcDelete(req, res) {
+  const { code, id } = req.query;
+  if (!code || !id) return res.status(400).json({ error: 'code e id sono obbligatori' });
+  const { error } = await supabase
+    .from('npcs')
+    .delete()
+    .eq('id', id)
+    .eq('code', code);
+  if (error) return res.status(500).json({ error: error.message });
+  return res.status(200).json({ ok: true });
+}
+
 // ---------------- ROUTER ----------------
 module.exports = async (req, res) => {
   try {
@@ -345,6 +434,14 @@ module.exports = async (req, res) => {
       if (req.method === 'PUT') return await handleMissionPut(req, res);
       if (req.method === 'DELETE') return await handleMissionDelete(req, res);
       res.setHeader('Allow', ['GET', 'POST', 'PUT', 'DELETE']);
+      return res.status(405).json({ error: 'Metodo non permesso' });
+    }
+
+    if (resource === 'npc') {
+      if (req.method === 'GET') return await handleNpcGet(req, res);
+      if (req.method === 'POST') return await handleNpcPost(req, res);
+      if (req.method === 'DELETE') return await handleNpcDelete(req, res);
+      res.setHeader('Allow', ['GET', 'POST', 'DELETE']);
       return res.status(405).json({ error: 'Metodo non permesso' });
     }
 

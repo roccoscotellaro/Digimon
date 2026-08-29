@@ -48,6 +48,7 @@
   .btn.small{padding:5px 10px;font-size:10px;}
   .btn.gold{border-color:var(--npc-gold);color:var(--npc-gold);}
   .btn.gold:hover{background:rgba(255,215,106,0.1);}
+  .btn:disabled{opacity:0.5;cursor:default;}
   input[type=text], input[type=number], textarea, select{
     background:var(--panel-2); border:1px solid var(--line); color:var(--text);
     padding:8px 10px; font-family:'Manrope',sans-serif; font-size:14px; border-radius:var(--radius); width:100%;
@@ -118,7 +119,6 @@
 (function(){
   const root = document.getElementById('root-app');
   const SESSION_KEY = 'digivice_session_v1';
-  const NPC_KEY_PREFIX = 'dvos_npc_registry_';
   let session = null;
   let npcList = [];
   let searchQuery = '';
@@ -128,71 +128,56 @@
   let pendingFaceDataUrl = null;
 
   function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
-  function npcKey(code){ return NPC_KEY_PREFIX + code; }
 
-  function loadNpcs(code){
+  // ---------- Registro NPC condiviso (Supabase via /api/notice?resource=npc) ----------
+  // Prima il registro viveva in localStorage sul browser di chi lo scriveva: comodo (nessuna
+  // migrazione DB) ma un giocatore che apriva questa pagina dal proprio telefono vedeva sempre
+  // "Nessun NPC registrato", perché i dati non uscivano mai dal browser del Master. Ora passa
+  // dalle stesse API del resto del progetto (vedi api/notice.js, resource=npc), quindi è visibile
+  // a chiunque acceda con il codice campagna, da qualunque dispositivo — proprio come il Digidex.
+  async function fetchNpcs(code){
     try{
-      const raw = localStorage.getItem(npcKey(code));
-      const arr = raw ? JSON.parse(raw) : [];
-      return Array.isArray(arr) ? arr : [];
+      const r = await fetch('/api/notice?resource=npc&code=' + encodeURIComponent(code));
+      const d = await r.json();
+      return (d && Array.isArray(d.npcs)) ? d.npcs : [];
     }catch(e){ return []; }
   }
-  function saveNpcs(code, list){
-    try{ localStorage.setItem(npcKey(code), JSON.stringify(list)); }catch(e){}
-  }
-
-  // Migrate old simple NPC list (dvos_npcs_CODE) into new registry if any exist
-  function migrateOldNpcs(code){
+  // POST fa upsert per id: stessa chiamata sia per creare (id nuovo generato da genId()) sia
+  // per modificare (id esistente) — un solo percorso invece di due.
+  async function saveNpcApi(code, npc){
     try{
-      const oldKey = 'dvos_npcs_' + code;
-      const raw = localStorage.getItem(oldKey);
-      if(!raw) return;
-      const oldList = JSON.parse(raw);
-      if(!Array.isArray(oldList) || oldList.length===0) return;
-      const existing = loadNpcs(code);
-      const existingNames = new Set(existing.map(n=>n.name.toLowerCase()));
-      let added = 0;
-      oldList.forEach(old=>{
-        if(!old.name || existingNames.has(old.name.toLowerCase())) return;
-        existing.push({
-          id: genId(),
-          name: old.name,
-          description: '',
-          chatColor: old.color || '#ffd76a',
-          fullBodyUrl: old.avatar || '',
-          faceUrl: '',
-          createdAt: Date.now()
-        });
-        existingNames.add(old.name.toLowerCase());
-        added++;
+      const r = await fetch('/api/notice', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ resource:'npc', code, ...npc })
       });
-      if(added>0) saveNpcs(code, existing);
-    }catch(e){}
+      return await r.json();
+    }catch(e){ return null; }
   }
-
-  // Also sync back to the old format so index.html picks them up in "Parla come"
-  function syncToOldFormat(code){
+  async function deleteNpcApi(code, id){
     try{
-      const list = loadNpcs(code);
-      const oldFormat = list.map(n=>({
-        name: n.name,
-        color: n.chatColor||null,
-        avatar: n.faceUrl || n.fullBodyUrl || null
-      }));
-      localStorage.setItem('dvos_npcs_' + code, JSON.stringify(oldFormat));
-    }catch(e){}
+      const r = await fetch('/api/notice?resource=npc&code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id), { method:'DELETE' });
+      return await r.json();
+    }catch(e){ return null; }
   }
 
   function genId(){ return 'npc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,6); }
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s){ return escapeHTML(s); }
 
+  // Punto d'ingresso: carica il registro dal server (una volta, al login) e poi delega a render().
+  // render() da sola resta sincrona e assume npcList già in memoria, così passare dalla lista
+  // al dettaglio/editor e ritorno non rifà una chiamata di rete ogni volta.
+  async function boot(){
+    if(!session){ renderLogin(); return; }
+    root.innerHTML = '<div class="muted" style="text-align:center;padding:40px;">Caricamento NPC…</div>';
+    npcList = await fetchNpcs(session.code);
+    render();
+  }
+
   function render(){
     if(!session){ renderLogin(); return; }
     if(session.role!=='master'){ renderPlayerView(); return; }
-    migrateOldNpcs(session.code);
-    npcList = loadNpcs(session.code);
-
     if(editingNpc){ renderEditor(); return; }
     if(viewingNpc){ renderDetail(); return; }
     renderList();
@@ -225,14 +210,12 @@
         const me = members.find(m=>m.username.toLowerCase()===user.toLowerCase() && m.password===pass);
         if(!me){ document.getElementById('login-err').textContent = 'Credenziali errate.'; return; }
         session = { code, username: me.username, role: me.role||'player' };
-        render();
+        boot();
       }catch(e){ document.getElementById('login-err').textContent = 'Errore di rete.'; }
     };
   }
 
   function renderPlayerView(){
-    migrateOldNpcs(session.code);
-    npcList = loadNpcs(session.code);
     const filtered = npcList.filter(n=> !searchQuery || n.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
     root.innerHTML = `
@@ -345,29 +328,25 @@
       const file = e.target.files[0];
       if(!file) return;
       const reader = new FileReader();
-      reader.onload = (ev)=>{
+      reader.onload = async (ev)=>{
         try{
           const imported = JSON.parse(ev.target.result);
           if(!Array.isArray(imported)){ alert('File non valido.'); return; }
           const existingNames = new Set(npcList.map(n=>n.name.toLowerCase()));
           let added = 0;
-          imported.forEach(imp=>{
-            if(!imp.name) return;
-            if(existingNames.has(imp.name.toLowerCase())) return;
-            npcList.push({
+          for(const imp of imported){
+            if(!imp.name || existingNames.has(imp.name.toLowerCase())) continue;
+            const payload = {
               id: imp.id || genId(),
               name: imp.name,
               description: imp.description || '',
               chatColor: imp.chatColor || '#ffd76a',
               fullBodyUrl: imp.fullBodyUrl || '',
-              faceUrl: imp.faceUrl || '',
-              createdAt: imp.createdAt || Date.now()
-            });
-            existingNames.add(imp.name.toLowerCase());
-            added++;
-          });
-          saveNpcs(session.code, npcList);
-          syncToOldFormat(session.code);
+              faceUrl: imp.faceUrl || ''
+            };
+            const res = await saveNpcApi(session.code, payload);
+            if(res && res.npc){ npcList.push(res.npc); existingNames.add(imp.name.toLowerCase()); added++; }
+          }
           alert(`Importati ${added} NPC (duplicati saltati).`);
           render();
         }catch(err){ alert('Errore nel file JSON.'); }
@@ -418,11 +397,10 @@
       viewingNpc = null;
       render();
     };
-    document.getElementById('btn-delete').onclick = ()=>{
+    document.getElementById('btn-delete').onclick = async ()=>{
       if(!confirm(`Eliminare "${n.name}"? L'azione è irreversibile.`)) return;
+      await deleteNpcApi(session.code, n.id);
       npcList = npcList.filter(x=>x.id!==n.id);
-      saveNpcs(session.code, npcList);
-      syncToOldFormat(session.code);
       viewingNpc = null;
       render();
     };
@@ -568,29 +546,35 @@
       }
     });
 
-    // Save
-    document.getElementById('btn-save').onclick = ()=>{
+    // Save — POST fa upsert per id (vedi saveNpcApi/api/notice.js), quindi create e modifica
+    // passano dalla stessa chiamata.
+    document.getElementById('btn-save').onclick = async ()=>{
       const name = nameInput.value.trim();
       if(!name){ document.getElementById('ed-err').textContent = 'Il nome è obbligatorio.'; return; }
-      const updated = {
+      const saveBtn = document.getElementById('btn-save');
+      const errEl = document.getElementById('ed-err');
+      errEl.textContent = '';
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Salvataggio…';
+      const payload = {
         id: draft.id,
         name,
         description: descInput.value.trim(),
         chatColor: colorInput.value || '#ffd76a',
         fullBodyUrl: fullbodyInput.value.trim(),
-        faceUrl: faceInput.value.trim(),
-        createdAt: draft.createdAt || Date.now()
+        faceUrl: faceInput.value.trim()
       };
-      if(isNew){
-        npcList.push(updated);
-      } else {
-        const idx = npcList.findIndex(n=>n.id===draft.id);
-        if(idx>=0) npcList[idx] = updated;
+      const res = await saveNpcApi(session.code, payload);
+      if(!res || !res.npc){
+        errEl.textContent = 'Errore nel salvataggio, riprova.';
+        saveBtn.disabled = false;
+        saveBtn.textContent = isNew ? '+ Crea NPC' : '💾 Salva modifiche';
+        return;
       }
-      saveNpcs(session.code, npcList);
-      syncToOldFormat(session.code);
+      const idx = npcList.findIndex(n=>n.id===res.npc.id);
+      if(idx>=0) npcList[idx] = res.npc; else npcList.push(res.npc);
       editingNpc = null;
-      viewingNpc = updated;
+      viewingNpc = res.npc;
       render();
     };
 
@@ -599,7 +583,7 @@
   }
 
   session = loadSession();
-  render();
+  boot();
 })();
 </script>
 
