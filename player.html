@@ -287,7 +287,7 @@
     const skills = {}; SKILL_DEFS.forEach(s=>skills[s.key]=0);
     return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, imageUrl:'', currentWounds:null, inventory:[], skills,
       unspentGrowthPoints:0, inspirationPoints:0, tormentPenalty:0, torments:[],
-      majorAspect:{text:'',usesLeft:1}, minorAspect:{text:'',usesLeft:2}, built:false,
+      majorAspect:{text:'',usesLeft:1,desc:''}, minorAspect:{text:'',usesLeft:2,desc:''}, built:false,
       age:'', nationality:'', height:'', hairColor:'', eyeColor:'', distinctiveTraits:'', background:'',
       imageThumbUrl:'', characterName:'' };
   }
@@ -305,8 +305,10 @@
     m.tamer.skills = Object.assign((()=>{const s={};SKILL_DEFS.forEach(d=>s[d.key]=0);return s;})(), m.tamer.skills||{});
     if(!Array.isArray(m.tamer.inventory)) m.tamer.inventory = [];
     if(!Array.isArray(m.tamer.torments)) m.tamer.torments = [];
-    if(!m.tamer.majorAspect) m.tamer.majorAspect = { text:'', usesLeft:1 };
-    if(!m.tamer.minorAspect) m.tamer.minorAspect = { text:'', usesLeft:2 };
+    if(!m.tamer.majorAspect) m.tamer.majorAspect = { text:'', usesLeft:1, desc:'' };
+    if(!m.tamer.minorAspect) m.tamer.minorAspect = { text:'', usesLeft:2, desc:'' };
+    if(typeof m.tamer.majorAspect.desc === 'undefined') m.tamer.majorAspect.desc = '';
+    if(typeof m.tamer.minorAspect.desc === 'undefined') m.tamer.minorAspect.desc = '';
     return m;
   }
 
@@ -652,7 +654,9 @@
       <div class="hud-frame card">
         <div class="section-title"><span>Aspetti</span></div>
         <div class="field"><label>Major Aspect</label><div>${escapeHTML(t.majorAspect.text||'—')} <span class="muted">(${t.majorAspect.usesLeft||0} usi)</span></div></div>
+        ${t.majorAspect.desc ? `<div class="sub" style="margin:-4px 0 8px;">${escapeHTML(t.majorAspect.desc)}</div>` : ''}
         <div class="field"><label>Minor Aspect</label><div>${escapeHTML(t.minorAspect.text||'—')} <span class="muted">(${t.minorAspect.usesLeft||0} usi)</span></div></div>
+        ${t.minorAspect.desc ? `<div class="sub" style="margin-top:-4px;">${escapeHTML(t.minorAspect.desc)}</div>` : ''}
       </div>`;
     }
     return `
@@ -662,10 +666,12 @@
         <div class="field"><label>Major Aspect</label><input type="text" id="p-majorText" value="${escapeAttr(t.majorAspect.text||'')}" placeholder="es. Track Star..." /></div>
         <div class="field" style="max-width:90px;"><label>Usi</label><input type="number" id="p-majorUses" value="${t.majorAspect.usesLeft||0}" /></div>
       </div>
+      <div class="field"><label>Origine (da dove nasce)</label><textarea id="p-majorDesc" rows="2" placeholder="Cosa nella storia/personalità del Tamer giustifica questo Aspect...">${escapeHTML(t.majorAspect.desc||'')}</textarea></div>
       <div class="row">
         <div class="field"><label>Minor Aspect</label><input type="text" id="p-minorText" value="${escapeAttr(t.minorAspect.text||'')}" placeholder="es. Smarter Than They Act..." /></div>
         <div class="field" style="max-width:90px;"><label>Usi</label><input type="number" id="p-minorUses" value="${t.minorAspect.usesLeft||0}" /></div>
       </div>
+      <div class="field"><label>Origine (da dove nasce)</label><textarea id="p-minorDesc" rows="2" placeholder="Cosa nella storia/personalità del Tamer giustifica questo Aspect...">${escapeHTML(t.minorAspect.desc||'')}</textarea></div>
     </div>`;
   }
 
@@ -716,6 +722,7 @@
             <span class="name">${escapeHTML(tor.name)}</span>
             <span class="mono">${tor.boxes||0}/10</span>
           </div>
+          ${!editable && tor.desc ? `<div class="sub" style="margin:4px 0;">${escapeHTML(tor.desc)}</div>` : ''}
           <div class="top-row" style="margin-top:6px;">
             ${tormentBoxesHTML(tor.boxes)}
             ${editable ? `
@@ -725,6 +732,7 @@
             </span>` : ''}
           </div>
           ${editable ? `
+          <div class="field" style="margin-top:6px;"><label>Origine (da dove nasce)</label><textarea data-tor-desc="${i}" rows="2" placeholder="Evento, paura o memoria che ha generato questo Torment...">${escapeHTML(tor.desc||'')}</textarea></div>
           <div class="top-row" style="margin-top:6px;">
             <label style="display:flex;align-items:center;gap:6px;margin:0;"><input type="checkbox" data-torment-rest="${i}" ${tor.usedThisRest?'checked':''} style="width:auto;" /> Già tentato (Rest)</label>
             <button class="btn ghost small" data-torment-remove="${i}">Rimuovi</button>
@@ -737,6 +745,7 @@
           <div class="field"><label>Nome Torment</label><input type="text" id="p-tor-name" placeholder="nome" /></div>
           <div class="field" style="max-width:90px;"><label>Caselle iniziali</label><input type="number" id="p-tor-boxes" value="4" min="0" max="10" /></div>
         </div>
+        <div class="field"><label>Origine (da dove nasce)</label><textarea id="p-tor-desc" rows="2" placeholder="Evento, paura o memoria che ha generato questo Torment..."></textarea></div>
         <button class="btn ghost small" id="p-tor-add" style="width:100%;">+ Aggiungi Torment</button>
       </div>` : ''}
     </div>`;
@@ -1153,10 +1162,14 @@
     if(majorTextEl) target.tamer.majorAspect.text = majorTextEl.value.trim();
     const majorUsesEl = document.getElementById('p-majorUses');
     if(majorUsesEl) target.tamer.majorAspect.usesLeft = Math.max(0, Number(majorUsesEl.value)||0);
+    const majorDescEl = document.getElementById('p-majorDesc');
+    if(majorDescEl) target.tamer.majorAspect.desc = majorDescEl.value.trim();
     const minorTextEl = document.getElementById('p-minorText');
     if(minorTextEl) target.tamer.minorAspect.text = minorTextEl.value.trim();
     const minorUsesEl = document.getElementById('p-minorUses');
     if(minorUsesEl) target.tamer.minorAspect.usesLeft = Math.max(0, Number(minorUsesEl.value)||0);
+    const minorDescEl = document.getElementById('p-minorDesc');
+    if(minorDescEl) target.tamer.minorAspect.desc = minorDescEl.value.trim();
 
     BG_TRAIT_DEFS.forEach(d=>{
       const el = document.getElementById('p-bg-'+d.key);
@@ -1226,13 +1239,22 @@
         await saveMember(session.code, target);
       };
     });
+    root.querySelectorAll('[data-tor-desc]').forEach(ta=>{
+      ta.onblur = async ()=>{
+        collectFormValues(target);
+        const tor = target.tamer.torments[Number(ta.getAttribute('data-tor-desc'))];
+        if(tor) tor.desc = ta.value.trim();
+        await saveMember(session.code, target);
+      };
+    });
     const torAdd = document.getElementById('p-tor-add');
     if(torAdd) torAdd.onclick = async ()=>{
       const name = document.getElementById('p-tor-name').value.trim();
       if(!name) return;
       const boxes = Math.max(0, Math.min(10, Number(document.getElementById('p-tor-boxes').value)||0));
+      const desc = document.getElementById('p-tor-desc').value.trim();
       collectFormValues(target);
-      target.tamer.torments.push({ name, boxes, usedThisRest:false });
+      target.tamer.torments.push({ name, boxes, usedThisRest:false, desc });
       await saveMember(session.code, target);
       renderPage();
     };
