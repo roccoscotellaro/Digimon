@@ -4,6 +4,12 @@
 // Qualities in bonus meccanici. Sono il pezzo a rischio piu' basso della logica di combattimento
 // da estrarre, e il prerequisito per combat-engine.js (che li usa).
 //
+// Estesa in fase 8 (parte chat) con la configurazione di campagna e le Skill dei Tamer
+// (CAMPAIGN_LEVELS/campaignConfig/evaluateVsTN/SKILL_DEFS/prodigiousSkillBonus/ATTR_ABBR): la
+// loro unica dipendenza esterna, cachedProgression, e' un global di js/store.js caricato prima
+// di questo file, quindi non c'e' piu' bisogno che restino nella IIFE di index.html -- servono
+// a js/chat-log-engine.js (attachLogModeration, per valutare i tiri richiesti in chat).
+//
 // Script classico (non un modulo ES), caricato PRIMA del blocco <script> principale in index.html
 // -- restano funzioni/costanti globali esattamente come quando vivevano nella stessa IIFE del
 // file grande, nessun cambiamento di comportamento.
@@ -49,3 +55,58 @@
     return m;
   }
 
+  const CAMPAIGN_LEVELS = {
+    Standard: { ap:10, sp:25, cap:5, thresholds:[3,5,6,7], tnShift:0, startTorment:8 },
+    Classic:  { ap:5,  sp:20, cap:3, thresholds:[2,3,4,5], tnShift:-2, startTorment:5 },
+    Extreme:  { ap:15, sp:30, cap:7, thresholds:[4,6,8,10], tnShift:2, startTorment:10 }
+  };
+
+  function campaignConfig(){
+    const level = (cachedProgression && cachedProgression.campaignLevel) || 'Standard';
+    return CAMPAIGN_LEVELS[level] || CAMPAIGN_LEVELS.Standard;
+  }
+
+  function evaluateVsTN(total, tn, dice){
+    if(tn===null || tn===undefined || tn==='') return null;
+    if(cachedProgression && cachedProgression.naturalCriticalResults && Array.isArray(dice) && dice.length===3){
+      if(dice.every(d=>d===6)) return { label:'Successo Critico', cls:'crit-success' };
+      if(dice.every(d=>d===1)) return { label:'Fallimento Critico', cls:'crit-fail' };
+    }
+    const shift = campaignConfig().tnShift;
+    const diff = total - (Number(tn) - shift);
+    if(diff>=5) return { label:'Successo Critico', cls:'crit-success' };
+    if(diff>=0) return { label:'Successo', cls:'success' };
+    if(diff<=-5) return { label:'Fallimento Critico', cls:'crit-fail' };
+    return { label:'Fallimento', cls:'fail' };
+  }
+
+  const SKILL_DEFS = [
+    { key:'evade', label:'Evade', attrs:['agility','willpower'] },
+    { key:'precision', label:'Precision', attrs:['agility','intelligence'] },
+    { key:'stealth', label:'Stealth', attrs:['agility','body'] },
+    { key:'athletics', label:'Athletics', attrs:['body','agility'] },
+    { key:'endurance', label:'Endurance', attrs:['body','willpower'] },
+    { key:'featsOfStrength', label:'Feats of Strength', attrs:['body','charisma'] },
+    { key:'manipulate', label:'Manipulate', attrs:['charisma','body'] },
+    { key:'perform', label:'Perform', attrs:['charisma','agility'] },
+    { key:'persuasion', label:'Persuasion', attrs:['charisma','intelligence'] },
+    { key:'decipherIntent', label:'Decipher Intent', attrs:['intelligence','charisma'] },
+    { key:'survival', label:'Survival', attrs:['intelligence','willpower'] },
+    { key:'knowledge', label:'Knowledge', attrs:['intelligence'] },
+    { key:'fortitude', label:'Fortitude', attrs:['willpower','intelligence'] },
+    { key:'bravery', label:'Bravery', attrs:['willpower','body'] },
+    { key:'awareness', label:'Awareness', attrs:['willpower','agility'] }
+  ];
+
+  function prodigiousSkillBonus(me, def){
+    const qualities = (me && me.digimon && Array.isArray(me.digimon.qualities)) ? me.digimon.qualities : [];
+    let bonus = 0;
+    qualities.forEach(q=>{
+      if(!q) return;
+      if(q.mechanic==='prodigiousSkill' && q.skillTarget===def.label) bonus += 3;
+      if(q.mechanic==='mindOverMatter' && (q.skillTarget===def.label || q.skillTarget2===def.label)) bonus += 3;
+    });
+    return bonus;
+  }
+
+  const ATTR_ABBR = { agility:'AGI', body:'BODY', charisma:'CAR', intelligence:'INT', willpower:'WILL' };

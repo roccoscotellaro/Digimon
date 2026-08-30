@@ -451,6 +451,12 @@
 <script src="js/combat-engine.js"></script>
 <script src="js/missions.js"></script>
 <script src="js/digimoji.js"></script>
+<script src="js/encounters.js"></script>
+<script src="js/npc-registry.js"></script>
+<script src="js/chat-composer.js"></script>
+<script src="js/chat-log-engine.js"></script>
+<script src="js/subgroups.js"></script>
+<script src="js/private-chat.js"></script>
 <script>
 (function(){
   const root = document.getElementById('root-app');
@@ -473,7 +479,6 @@
   let editingDigimon = false;
   let editingScene = false;
   let sidebarTab = 'scheda';
-  let playerChatMode = 'public';
   // Tracciamento "ultimo messaggio già notificato" per le notifiche desktop — SEPARATO dal
   // tracciamento "letto/non letto" (che usa localStorage e persiste tra sessioni): qui basta la
   // memoria della scheda corrente, perché vogliamo solo evitare di notificare più volte lo stesso
@@ -511,21 +516,8 @@
   let moveOpenUsername = null; // quale giocatore ha aperto il modulo "Sposta" nel pannello unico "Posizione dei giocatori"
   let encounterDraft = null; // pending Digimon (from Dex or homebrew) being reviewed before adding to the scene
   const ACTION_HINT_DEFAULT_TEXT = 'Scorciatoia: scrivi <code>/tira NomeSkill [TN] [major|minor]</code> (es. <code>/tira awareness 15 major</code>) per tirare in chat, opzionalmente usando un Aspect.';
-  let animatedLogIds = new Set();
-  // Selettore "Storico per Settore" (vedi locationFilterSelectHTML/filterByLocation): null =
-  // segue automaticamente la posizione attuale del gruppo; altrimenti una chiave location
-  // esplicita scelta dalla persona, oppure "__all__" per tutto lo storico. Una variabile per
-  // ciascuna chat perché sono superfici indipendenti (una persona potrebbe voler rivedere un
-  // Settore vecchio in Privata mentre la Generale segue quello attuale).
-  let publicLocationFilter = null;
-  let privateLocationFilter = null;
-  let subgroupLocationFilter = {}; // chiave = id del sottogruppo
-  let masterPrivateLocationFilter = {}; // chiave = username del thread privato aperto dal Master
-  let masterSubgroupLocationFilter = {}; // chiave = id del sottogruppo, lato Master
   let pendingActionImageUrl = null;
   let pendingGmImageUrl = null;
-  let pendingPrivateImageUrl = null; // immagine allegata in corso di invio nella Chat Privata del Master
-  let pendingSubgroupImageUrl = null; // immagine allegata in corso di invio nei Sottogruppi di Chat del Master
   // missionsModalOpen/missionDraftObjectives spostati in js/missions.js
 
   async function getProgression(code){
@@ -1254,38 +1246,7 @@
   function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
   function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} }
 
-  // ---------- Registro NPC condiviso (Supabase via /api/notice?resource=npc) ----------
-  // Prima viveva solo in localStorage sul browser del Master: comodo (nessuna migrazione DB) ma
-  // legato a quel dispositivo — un giocatore che apriva npc.html dal proprio telefono vedeva
-  // sempre il registro vuoto. Ora è condiviso come roster/scena/log/dex: cachedNpcs si popola al
-  // login (renderPlayer/renderMaster) e si aggiorna ogni ~10 minuti nel polling lento (stesso
-  // dexCycle del Digidex in refreshLiveParts — cambia raramente quanto il Dex, non serve
-  // rileggerlo ogni 4s, vedi il commento su dexCycle più sotto per il perché).
-  //
-  // loadSavedNpcs continua a restituire il vecchio formato {name,color,avatar} così tutti i
-  // picker "Parla come"/menziona (che sono diversi punti nel file) restano invariati.
-  async function getNpcs(code){ const d = await apiGet('/api/notice?resource=npc&code=' + encodeURIComponent(code), true); return d ? (d.npcs||[]) : []; }
-  function loadSavedNpcs(code){
-    return cachedNpcs.map(n=>({ name: n.name, color: n.chatColor||null, avatar: n.faceUrl || n.fullBodyUrl || null }));
-  }
-  async function rememberNpc(code, npc){
-    if(!npc || !npc.name || !npc.name.trim()) return;
-    const name = npc.name.trim();
-    const existing = cachedNpcs.find(n=>n.name.toLowerCase()===name.toLowerCase());
-    const entry = {
-      id: existing ? existing.id : null,
-      name,
-      chatColor: npc.color || (existing && existing.chatColor) || '#ffd76a',
-      faceUrl: npc.avatar || (existing && existing.faceUrl) || '',
-      fullBodyUrl: (existing && existing.fullBodyUrl) || '',
-      description: (existing && existing.description) || ''
-    };
-    const d = await apiPost('/api/notice', { resource:'npc', code, ...entry });
-    if(d && d.npc){
-      const idx = cachedNpcs.findIndex(n=>n.id===d.npc.id);
-      if(idx>=0) cachedNpcs[idx] = d.npc; else cachedNpcs.push(d.npc);
-    }
-  }
+  // (getNpcs, loadSavedNpcs, rememberNpc) spostati in js/npc-registry.js
 
   // ---------- API helpers ----------
   // apiGet/apiPost/apiPut/apiDelete e la variabile lastApiError sono state spostate in
@@ -1295,142 +1256,7 @@
   // sotto) restano invece dentro index.html perche' quelle variabili le usano davvero, e sono
   // private a questa IIFE. lastApiError resta leggibile come prima ovunque nel file (catena
   // di scope fino al globale dichiarato in api.js), solo non e' piu' dichiarata qui.
-  // ---------- CHAT/AVVISO IMAGE ATTACH ----------
-  // Strategia a 3 livelli:
-  //   1) Tenta /api/upload (endpoint serverless già esistente, target:'chat' -> bucket chat-uploads)
-  //   2) Se 404 o errore, upload diretto a Supabase Storage via REST
-  //   3) Se anche quello fallisce, usa il dataUrl base64 inline (funziona sempre, ma è pesante)
-  //
-  // NOTA STORICA: prima questo chiamava '/api/upload-chat', un endpoint che non è MAI esistito
-  // nel progetto (le funzioni serverless sono solo state/notice/log/ai/roster/dex/upload). Quindi
-  // il passo 1 falliva SEMPRE, il passo 2 era disattivato (SUPABASE_ANON vuota), e ogni immagine
-  // di chat/avviso finiva incorporata come base64 (fino a qualche MB) direttamente nella riga di
-  // `logs`/`notices` — scaricata per intero a ogni polling da ogni giocatore. Era una delle cause
-  // principali dei consumi eccessivi di egress Supabase e Fast Origin Transfer Vercel.
-  const SUPABASE_URL  = 'https://gsquzfhxgyqrnkrqdivc.supabase.co';
-  const SUPABASE_ANON = ''; // <-- inserisci qui la tua anon key se vuoi l'upload diretto a Supabase
-  const CHAT_UPLOAD_BUCKET = 'chat-uploads';
-
-  async function uploadChatImage(code, dataUrl, folder){
-    // 1) Prova endpoint serverless (upload.js, target 'chat' -> bucket chat-uploads su Supabase Storage)
-    try{
-      const res = await apiPost('/api/upload', { code, dataUrl, folder, target: 'chat' });
-      if(res && res.ok && res.url) return res.url;
-    }catch(e){}
-
-    // 2) Prova upload diretto a Supabase Storage (richiede anon key e bucket pubblico)
-    if(SUPABASE_ANON){
-      try{
-        const base64 = dataUrl.split(',')[1];
-        const mimeMatch = dataUrl.match(/^data:(image\/\w+);/);
-        const mime = mimeMatch ? mimeMatch[1] : 'image/png';
-        const ext = mime.split('/')[1] || 'png';
-        const blob = await fetch(dataUrl).then(r=>r.blob());
-        const fileName = `${code}/${folder}/${Date.now()}_${Math.random().toString(36).slice(2,6)}.${ext}`;
-        const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/${CHAT_UPLOAD_BUCKET}/${fileName}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': 'Bearer ' + SUPABASE_ANON,
-            'apikey': SUPABASE_ANON,
-            'Content-Type': mime,
-            'x-upsert': 'true'
-          },
-          body: blob
-        });
-        if(uploadRes.ok){
-          return `${SUPABASE_URL}/storage/v1/object/public/${CHAT_UPLOAD_BUCKET}/${fileName}`;
-        }
-      }catch(e){}
-    }
-
-    // 3) Fallback: usa direttamente il dataUrl base64 (sempre funzionante, nessun server necessario)
-    return dataUrl;
-  }
-
-  function chatAttachHTML(prefix){
-    return `<div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
-      <input type="file" accept="image/*" id="${prefix}-img-file" style="display:none;" />
-      <button type="button" class="btn ghost small" id="${prefix}-img-btn">📎 Allega immagine</button>
-      <button type="button" class="btn ghost small" id="${prefix}-img-link-btn">🔗 Incolla link</button>
-      <span class="muted" id="${prefix}-img-status" style="font-size:11px;"></span>
-      <span id="${prefix}-img-preview"></span>
-    </div>
-    <div id="${prefix}-img-link-row" style="display:none;margin-top:6px;gap:6px;">
-      <input type="text" id="${prefix}-img-link-input" placeholder="https://... (link diretto a un'immagine)" style="flex:1;" />
-      <button type="button" class="btn ghost small" id="${prefix}-img-link-confirm">OK</button>
-    </div>`;
-  }
-  function bindChatAttach(prefix, code, folder, getPending, setPending){
-    const fileInput = document.getElementById(prefix+'-img-file');
-    const btn = document.getElementById(prefix+'-img-btn');
-    const statusEl = document.getElementById(prefix+'-img-status');
-    const previewEl = document.getElementById(prefix+'-img-preview');
-    const linkBtn = document.getElementById(prefix+'-img-link-btn');
-    const linkRow = document.getElementById(prefix+'-img-link-row');
-    const linkInput = document.getElementById(prefix+'-img-link-input');
-    const linkConfirm = document.getElementById(prefix+'-img-link-confirm');
-    if(!fileInput || !btn) return;
-    function renderPreview(){
-      const url = getPending();
-      if(previewEl) previewEl.innerHTML = url
-        ? `<span style="display:inline-flex;align-items:center;gap:4px;"><img src="${escapeAttr(url)}" style="width:28px;height:28px;object-fit:cover;border-radius:4px;border:1px solid var(--line);" /><button type="button" class="btn ghost small" id="${prefix}-img-remove" style="padding:1px 6px;">✕</button></span>`
-        : '';
-      const removeBtn = document.getElementById(prefix+'-img-remove');
-      if(removeBtn) removeBtn.onclick = ()=>{ setPending(null); renderPreview(); };
-    }
-    renderPreview();
-    btn.onclick = ()=> fileInput.click();
-    // Incollare un link diretto invece di caricare il file: nessuna chiamata di upload, nessun
-    // byte trasferito dal nostro server — l'immagine resta ospitata dove già si trova (Imgur,
-    // Discord CDN, ecc.). Alleggerisce sia lo storage sia il traffico verso Vercel/Supabase.
-    if(linkBtn) linkBtn.onclick = ()=>{
-      if(linkRow) linkRow.style.display = linkRow.style.display==='flex' ? 'none' : 'flex';
-      if(linkInput) linkInput.focus();
-    };
-    if(linkConfirm) linkConfirm.onclick = ()=>{
-      const url = (linkInput && linkInput.value || '').trim();
-      if(!url){ if(statusEl) statusEl.textContent = 'Incolla un link valido.'; return; }
-      if(!/^https?:\/\//i.test(url)){ if(statusEl) statusEl.textContent = '⚠ Deve iniziare con http:// o https://'; return; }
-      setPending(url);
-      renderPreview();
-      if(statusEl) statusEl.textContent = '🔗 Immagine collegata (nessun upload).';
-      if(linkInput) linkInput.value = '';
-      if(linkRow) linkRow.style.display = 'none';
-    };
-    if(linkInput) linkInput.addEventListener('keydown', (ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); linkConfirm && linkConfirm.click(); } });
-    fileInput.onchange = async ()=>{
-      const file = fileInput.files[0];
-      if(!file) return;
-      // Limite ragionevole: 3 MB (come l'upload audio)
-      if(file.size > 3 * 1024 * 1024){
-        if(statusEl) statusEl.textContent = '⚠ Immagine troppo grande (max 3 MB).';
-        fileInput.value = '';
-        return;
-      }
-      if(statusEl) statusEl.textContent = 'Caricamento in corso...';
-      btn.disabled = true;
-      try{
-        const dataUrl = await new Promise((resolve, reject)=>{
-          const reader = new FileReader();
-          reader.onload = ()=> resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-        const url = await uploadChatImage(code, dataUrl, folder);
-        if(url){
-          setPending(url);
-          renderPreview();
-          if(statusEl) statusEl.textContent = url.startsWith('data:') ? '📎 (allegata localmente)' : '';
-        } else {
-          if(statusEl) statusEl.textContent = '⚠ Caricamento fallito.';
-        }
-      }catch(e){
-        if(statusEl) statusEl.textContent = '⚠ Errore durante il caricamento: ' + e.message;
-      }
-      btn.disabled = false;
-      fileInput.value = '';
-    };
-  }
+  // (uploadChatImage, chatAttachHTML, bindChatAttach) spostati in js/chat-composer.js
   // apiPut/apiDelete sono state spostate in js/api.js insieme a apiGet/apiPost e lastApiError
   // (vedi il commento sopra apiGet piu' sotto nel file).
 
@@ -1445,12 +1271,6 @@
   async function closeNotice(code, id){ return apiPut('/api/notice', { code, id, deactivate: true }); }
   async function deleteNotice(code, id){ return apiDelete('/api/notice?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
 
-  // ---------- Sottogruppi di Chat ----------
-  // Prima erano salvati in localStorage (solo sul dispositivo del Master, mai visti dai
-  // giocatori). Ora passano dal server come tutto il resto, condivisi tra tutti i dispositivi.
-  async function getSubgroups(code){ const d = await apiGet('/api/notice?resource=subgroup&code=' + encodeURIComponent(code), true); return d ? (d.groups||[]) : []; }
-  async function saveSubgroup(code, { id, name, members }){ return apiPost('/api/notice', { resource:'subgroup', code, id, name, members }); }
-  async function deleteSubgroup(code, id){ return apiDelete('/api/notice?resource=subgroup&code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
 
   // ---------- Segnalazioni Bug ----------
   async function getBugReports(code){ const d = await apiGet('/api/notice?resource=bugreport&code=' + encodeURIComponent(code)); return d ? (d.reports||[]) : []; }
@@ -1460,7 +1280,6 @@
   // getMissions/createMission/updateMission/toggleMissionObjective/deleteMission spostati in js/missions.js
   async function getScanLog(code){ const d = await apiGet('/api/upload?resource=scan&code=' + encodeURIComponent(code)); return d ? (d.allLog||[]) : []; }
   async function deleteScanEntry(code, id){ return apiDelete('/api/upload?resource=scan&code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
-  async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
   async function deleteMember(code, username){ return apiDelete('/api/roster?code=' + encodeURIComponent(code) + '&username=' + encodeURIComponent(username)); }
   async function getScene(code){
     const d = await apiGet('/api/state?resource=scene&code=' + encodeURIComponent(code));
@@ -1489,164 +1308,39 @@
   // selettore si posiziona da solo sulla posizione attuale finché non viene toccato manualmente.
   // I messaggi vecchi, scritti prima di questa funzione (senza meta.location), restano sempre
   // visibili in qualunque filtro, per non perdere nulla della cronologia pregressa.
-  function currentLocationKey(){
-    if(!cachedScene) return '_|_|_';
-    return `${cachedScene.currentMacroSceneId||'_'}|${cachedScene.currentSectorId||'_'}|${cachedScene.currentLuogoId||'_'}`;
-  }
-  function currentLocationLabel(){
-    return locationLabelForKey(currentLocationKey());
-  }
   // Da una chiave "macroId|settoreId|luogoId" a un'etichetta leggibile. sectorNameById/
   // luogoNameById cercano in TUTTE le Macroscene, quindi funzionano anche se la Macroscena
   // registrata nella chiave non è più quella attiva. 'Settore eliminato' compare solo se
   // l'id non si trova più da nessuna parte (Settore cancellato dopo l'invio del messaggio).
-  function locationLabelForKey(key){
-    if(!key || key==='__legacy__') return 'Storico precedente';
-    const parts = String(key).split('|');
-    const sectorId = parts[1], luogoId = parts[2];
-    if(!sectorId || sectorId==='_') return 'Nessun Settore';
-    const sName = sectorNameById(sectorId) || 'Settore eliminato';
-    if(luogoId && luogoId!=='_'){
-      const lName = luogoNameById(sectorId, luogoId);
-      if(lName) return `${sName} — ${lName}`;
-    }
-    return sName;
-  }
   // Elenco delle location presenti in un set di messaggi (per popolare il selettore), con
   // l'etichetta già risolta. La location attuale viene sempre inclusa anche se non ha ancora
   // messaggi propri (così il selettore la mostra comunque, pronta per quando arriveranno) ed è
   // sempre la prima della lista.
-  function buildLocationOptions(entries, currentKey){
-    const map = new Map();
-    (entries||[]).forEach(e=>{
-      const key = (e.meta && e.meta.location) || null;
-      if(!key) return; // i messaggi "legacy" senza tag non diventano una voce a sé: restano sempre visibili (vedi filterByLocation)
-      if(!map.has(key)) map.set(key, locationLabelForKey(key));
-    });
-    if(currentKey && !map.has(currentKey)) map.set(currentKey, locationLabelForKey(currentKey));
-    const keys = Array.from(map.keys());
-    keys.sort((a,b)=>{
-      if(a===currentKey) return -1;
-      if(b===currentKey) return 1;
-      return map.get(a).localeCompare(map.get(b));
-    });
-    return keys.map(k=>({ key:k, label: map.get(k) }));
-  }
   // Filtra un log per location: `selected` è il valore scelto nel selettore ("__all__" = tutto
   // lo storico, altrimenti una chiave location) oppure null/undefined per "segui la posizione
   // attuale automaticamente". I messaggi senza tag (scritti prima di questa funzione) restano
   // sempre visibili in qualunque filtro, per non far sparire la cronologia pregressa.
-  function filterByLocation(entries, selected, currentKey){
-    const effective = (selected===null || selected===undefined) ? currentKey : selected;
-    if(effective==='__all__') return entries||[];
-    return (entries||[]).filter(e => !(e.meta && e.meta.location) || e.meta.location===effective);
-  }
   // Markup del selettore location, riutilizzato identico su Chat Generale/Privata/Sottogruppi,
   // sia lato giocatore sia lato Master. `selected` è il valore attualmente scelto per QUESTA
   // istanza (null = segue la posizione attuale in automatico).
-  function locationFilterSelectHTML(id, entries, currentKey, selected){
-    const opts = buildLocationOptions(entries, currentKey);
-    const selectedValue = (selected===null || selected===undefined) ? currentKey : selected;
-    return `<select id="${id}" style="font-family:'Share Tech Mono',monospace;font-size:10.5px;padding:2px 4px;max-width:190px;background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:var(--radius);">
-      ${opts.map(o=>`<option value="${escapeAttr(o.key)}" ${o.key===selectedValue?'selected':''}>📍 ${escapeHTML(o.label)}</option>`).join('')}
-      <option value="__all__" ${selectedValue==='__all__'?'selected':''}>— Tutto lo storico —</option>
-    </select>`;
-  }
   // Rigenera SOLO le <option> di un selettore già in pagina (senza ricreare l'elemento, per non
   // perdere il focus se la persona lo aveva aperto) — usata durante il polling per far comparire
   // nuove location man mano che compaiono messaggi altrove, mantenendo la selezione corrente.
-  function refreshLocationSelectOptions(selectEl, entries, currentKey, currentValue){
-    if(!selectEl) return;
-    const opts = buildLocationOptions(entries, currentKey);
-    const selectedValue = (currentValue===null || currentValue===undefined) ? currentKey : currentValue;
-    selectEl.innerHTML = opts.map(o=>`<option value="${escapeAttr(o.key)}" ${o.key===selectedValue?'selected':''}>📍 ${escapeHTML(o.label)}</option>`).join('')
-      + `<option value="__all__" ${selectedValue==='__all__'?'selected':''}>— Tutto lo storico —</option>`;
-  }
-  function sceneLog(){
-    return filterByLocation(scenePublicRawLog(), publicLocationFilter, currentLocationKey());
-  }
-  function scenePublicRawLog(){
-    const sid = cachedScene && cachedScene.id;
-    return (cachedLog||[]).filter(l=> !sid || !l.sceneId || l.sceneId===sid);
-  }
   // Esporta (come file .txt scaricabile, generato lato client — nessuna chiamata al server)
   // esattamente ciò che il Registro sta mostrando in questo momento.
-  function exportVisibleLogAsText(entries, titleSuffix){
-    const lines = (entries||[]).map(l=>{
-      const when = l.created_at ? new Date(l.created_at).toLocaleString('it-IT') : '';
-      return `[${when}] ${l.who||'?'}: ${(l.text||'').replace(/\n/g,' ')}`;
-    });
-    const header = `Digivice OS — Registro Chat${titleSuffix ? ' — ' + titleSuffix : ''}\nEsportato il ${new Date().toLocaleString('it-IT')}\n${'='.repeat(40)}\n\n`;
-    const blob = new Blob([header + lines.join('\n')], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `digivice-chat-${new Date().toISOString().slice(0,10)}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
   async function saveScene(code, scene){ const d = await apiPost('/api/state', { resource:'scene', code, ...scene }); return !!(d && d.ok); }
   async function getLog(code){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code)); return d ? (d.log||[]) : []; }
-  async function pushLog(code, entry){
-    // Marca il messaggio con la location attuale (vedi sopra), a meno che chi chiama non
-    // abbia già impostato esplicitamente meta.location (nessun caso attuale, ma per sicurezza).
-    const meta = entry.meta ? { ...entry.meta } : {};
-    if(meta.location===undefined) meta.location = currentLocationKey();
-    return apiPost('/api/log', { code, username: session && session.username, ...entry, meta, sceneId: entry.sceneId || (cachedScene && cachedScene.id) || null });
-  }
-  // whoUpdate (opzionale) = { who, role, meta } per riassegnare anche il "mittente" di un
-  // messaggio già inviato (vedi openEditLogModal), non solo correggerne il testo.
-  async function editLogEntry(code, id, text, thread, whoUpdate){
-    const body = thread ? { code, thread, id, text } : { code, id, text };
-    if(whoUpdate){ Object.assign(body, whoUpdate); }
-    return apiPut('/api/log', body);
-  }
-  async function deleteLogEntry(code, id, thread){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id) + (thread ? '&thread=' + encodeURIComponent(thread) : '')); }
-  async function clearLog(code){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&clearAll=1'); }
   async function heartbeat(code, username){ return apiPost('/api/roster', { resource:'heartbeat', code, username }); }
-  async function getPrivateLog(code, thread){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code) + '&thread=' + encodeURIComponent(thread)); return d ? (d.log||[]) : []; }
-  async function pushPrivateLog(code, thread, entry){
-    // Stesso tag di location della Chat Generale (vedi pushLog sopra) — prima lo storico per
-    // Settore era attivo SOLO lì; ora vale anche per Chat Privata e Sottogruppi.
-    const meta = entry.meta ? { ...entry.meta } : {};
-    if(meta.location===undefined) meta.location = currentLocationKey();
-    return apiPost('/api/log', { code, thread, username: session && session.username, ...entry, meta });
-  }
   async function getDex(code){ const d = await apiGet('/api/dex?code=' + encodeURIComponent(code)); return d ? (d.entries||[]) : []; }
   async function addDexEntry(code, entry){ return apiPost('/api/dex', { code, ...entry }); }
   async function updateDexEntry(code, id, fields){ return apiPut('/api/dex', { code, id, ...fields }); }
-  async function correggiItaliano(testo){ const d = await apiPost('/api/ai', { mode:'correzione', text: testo }); return d && d.corrected ? d.corrected : testo; }
   async function suggerisciBattute(digimonName, personality, contesto){ const d = await apiPost('/api/ai', { digimonName, personality, context: contesto }); return d && d.lines ? d.lines : ['(errore nel generare suggerimenti, riprova)']; }
 
   // sanitizeKeyPart/DIE_FACES/rollD6/rollSkillCheck/rollAttributeOnly/rollPool sono stati
   // spostati in js/util.js e js/dice.js (caricati prima di questo script, vedi sotto) --
   // restano disponibili come funzioni globali esattamente come prima.
 
-  const CAMPAIGN_LEVELS = {
-    Standard: { ap:10, sp:25, cap:5, thresholds:[3,5,6,7], tnShift:0, startTorment:8 },
-    Classic:  { ap:5,  sp:20, cap:3, thresholds:[2,3,4,5], tnShift:-2, startTorment:5 },
-    Extreme:  { ap:15, sp:30, cap:7, thresholds:[4,6,8,10], tnShift:2, startTorment:10 }
-  };
-  function campaignConfig(){
-    const level = (cachedProgression && cachedProgression.campaignLevel) || 'Standard';
-    return CAMPAIGN_LEVELS[level] || CAMPAIGN_LEVELS.Standard;
-  }
 
-  function evaluateVsTN(total, tn, dice){
-    if(tn===null || tn===undefined || tn==='') return null;
-    if(cachedProgression && cachedProgression.naturalCriticalResults && Array.isArray(dice) && dice.length===3){
-      if(dice.every(d=>d===6)) return { label:'Successo Critico', cls:'crit-success' };
-      if(dice.every(d=>d===1)) return { label:'Fallimento Critico', cls:'crit-fail' };
-    }
-    const shift = campaignConfig().tnShift;
-    const diff = total - (Number(tn) - shift);
-    if(diff>=5) return { label:'Successo Critico', cls:'crit-success' };
-    if(diff>=0) return { label:'Successo', cls:'success' };
-    if(diff<=-5) return { label:'Fallimento Critico', cls:'crit-fail' };
-    return { label:'Fallimento', cls:'fail' };
-  }
 
   // tormentBoxesHTML e' stata spostata in js/dice.js (pure formattazione, zero dipendenze).
 
@@ -1668,23 +1362,6 @@
 
   // diceRowHTML e' stata spostata in js/dice.js (usa DIE_FACES, ora definita li').
 
-  const SKILL_DEFS = [
-    { key:'evade', label:'Evade', attrs:['agility','willpower'] },
-    { key:'precision', label:'Precision', attrs:['agility','intelligence'] },
-    { key:'stealth', label:'Stealth', attrs:['agility','body'] },
-    { key:'athletics', label:'Athletics', attrs:['body','agility'] },
-    { key:'endurance', label:'Endurance', attrs:['body','willpower'] },
-    { key:'featsOfStrength', label:'Feats of Strength', attrs:['body','charisma'] },
-    { key:'manipulate', label:'Manipulate', attrs:['charisma','body'] },
-    { key:'perform', label:'Perform', attrs:['charisma','agility'] },
-    { key:'persuasion', label:'Persuasion', attrs:['charisma','intelligence'] },
-    { key:'decipherIntent', label:'Decipher Intent', attrs:['intelligence','charisma'] },
-    { key:'survival', label:'Survival', attrs:['intelligence','willpower'] },
-    { key:'knowledge', label:'Knowledge', attrs:['intelligence'] },
-    { key:'fortitude', label:'Fortitude', attrs:['willpower','intelligence'] },
-    { key:'bravery', label:'Bravery', attrs:['willpower','body'] },
-    { key:'awareness', label:'Awareness', attrs:['willpower','agility'] }
-  ];
 
   function defaultSkills(){
     const s = {};
@@ -1694,16 +1371,6 @@
   // Legge il Digimon partner (stesso membro di roster — le due schede condividono lo stesso record)
   // per sommare eventuali bonus di Prodigious Skill / Mind Over Matter su questa Skill del Tamer:
   // +3 ai Check, per regola Companion 3.02a (aggiornata dal Changelog 21/11/25).
-  function prodigiousSkillBonus(me, def){
-    const qualities = (me && me.digimon && Array.isArray(me.digimon.qualities)) ? me.digimon.qualities : [];
-    let bonus = 0;
-    qualities.forEach(q=>{
-      if(!q) return;
-      if(q.mechanic==='prodigiousSkill' && q.skillTarget===def.label) bonus += 3;
-      if(q.mechanic==='mindOverMatter' && (q.skillTarget===def.label || q.skillTarget2===def.label)) bonus += 3;
-    });
-    return bonus;
-  }
   function skillMax(t, def){
     return Math.max(...def.attrs.map(a=>Number(t[a])||0));
   }
@@ -1956,7 +1623,6 @@
   function getMySubgroups(code, username){
     return (cachedSubgroups||[]).filter(g=>Array.isArray(g.members) && g.members.includes(username));
   }
-  let playerActiveSubgroupId = null;
 
   function updateChatModeButtons(){
     // Sync segmented control
@@ -2092,10 +1758,6 @@
   // Settore "effettivo" di un membro: se non si è mai separato dal gruppo (currentSectorId nullo)
   // segue semplicemente il Settore attuale della Scena; altrimenti resta dove si è spostato da solo
   // finché il Master non lo fa "Rientrare nel gruppo" o non sposta l'intero gruppo (che resetta tutti).
-  function memberEffectiveSectorId(member){
-    const override = member && member.tamer && member.tamer.currentSectorId;
-    return override || (cachedScene && cachedScene.currentSectorId) || null;
-  }
   // Luogo "effettivo" di un membro: se ha un Settore proprio (spostato singolarmente col pannello
   // "Posizione dei giocatori", ANCHE se quel Settore coincide per coincidenza con quello attuale
   // del gruppo) non eredita mai il Luogo di gruppo in automatico — altrimenti un giocatore mandato
@@ -2103,13 +1765,6 @@
   // gruppo sta guardando in quel momento, cosa che il Master non ha scelto. Eredita il Luogo di
   // gruppo SOLO chi non è mai stato spostato singolarmente (nessun Settore proprio: sta seguendo
   // il gruppo in tutto e per tutto).
-  function memberEffectiveLuogoId(member){
-    const luogoOverride = member && member.tamer && member.tamer.currentLuogoId;
-    if(luogoOverride) return luogoOverride;
-    const sectorOverride = member && member.tamer && member.tamer.currentSectorId;
-    if(sectorOverride) return null;
-    return (cachedScene && cachedScene.currentLuogoId) || null;
-  }
   // DIAGNOSI 28/08/2026: Chat Privata e Sottogruppi taggavano SEMPRE i messaggi con
   // currentLocationKey() (la posizione dell'INTERO gruppo sulla Scena), anche quando il
   // destinatario/i membri del sottogruppo si erano separati dal gruppo verso un altro Settore.
@@ -2117,62 +1772,19 @@
   // "riconosciuti" come tali dal filtro "Storico per Settore", che restava ancorato alla
   // posizione del gruppo principale. Queste due funzioni calcolano la chiave usando invece la
   // posizione EFFETTIVA (memberEffectiveSectorId/LuogoId) di chi partecipa alla conversazione.
-  function memberLocationKey(member){
-    if(!cachedScene) return '_|_|_';
-    const sectorId = memberEffectiveSectorId(member);
-    // Il Settore effettivo di un membro separato può appartenere a una Macroscena DIVERSA da
-    // quella che il gruppo sta guardando in quel momento (es. gruppo su "Yokohama" ma il membro,
-    // spostato singolarmente, si trova in un Settore della Macroscena "???"). Cerchiamo quindi la
-    // Macroscena che contiene DAVVERO quel Settore invece di assumere sempre quella corrente del
-    // gruppo, altrimenti la chiave mischierebbe Macroscena sbagliata + Settore/Luogo giusti e il
-    // riconoscimento "stessa zona" tra due membri separati nella stessa Macroscena continuerebbe
-    // a fallire.
-    const found = sectorId ? findSectorAnywhere(cachedScene, sectorId) : null;
-    const macroId = found ? found.macro.id : (cachedScene.currentMacroSceneId || null);
-    return `${macroId||'_'}|${sectorId||'_'}|${memberEffectiveLuogoId(member)||'_'}`;
-  }
   // Per un Sottogruppo usiamo la posizione effettiva del primo membro come riferimento: un
   // Sottogruppo esiste per far parlare tra loro persone che si presume trovarsi nello stesso
   // posto, quindi non gestiamo il caso limite (raro, e comunque non peggiore di prima) di membri
   // finiti in Settori diversi tra loro.
-  function subgroupLocationKey(group){
-    const firstUsername = group && Array.isArray(group.members) && group.members[0];
-    const member = firstUsername ? (cachedRoster||[]).find(m=>m.username===firstUsername) : null;
-    return member ? memberLocationKey(member) : currentLocationKey();
-  }
   // Un Digimon del roster segnato "hiddenFromParty" resta visibile SOLO a Master e proprietario —
   // serve a coprire il tempo tra la creazione/evoluzione di un Digimon e il momento in cui il Master
   // vuole rivelarlo narrativamente al resto del gruppo (es. un Digitama che si schiude prima degli altri).
   // Cerca un Settore per id in TUTTE le Macroscene (non solo quella attiva), utile per mostrare
   // dove si trova un membro anche se il Master sta guardando una Macroscena diversa in quel momento.
-  function sectorNameById(sectorId){
-    if(!sectorId) return null;
-    for(const m of (cachedScene.macroScenes||[])){
-      const s = (m.sectors||[]).find(x=>x.id===sectorId);
-      if(s) return s.name;
-    }
-    return null;
-  }
-  function luogoNameById(sectorId, luogoId){
-    if(!sectorId || !luogoId) return null;
-    for(const m of (cachedScene.macroScenes||[])){
-      const s = (m.sectors||[]).find(x=>x.id===sectorId);
-      if(s){ const lg = (s.luoghi||[]).find(x=>x.id===luogoId); return lg ? lg.name : null; }
-    }
-    return null;
-  }
   // Come sectorNameById/luogoNameById, ma restituisce anche la Macroscena a cui il Settore
   // appartiene — serve a "sceneHTML" per mostrare correttamente la scena di un giocatore separato
   // in una Macroscena diversa da quella attiva per il resto del gruppo (prima si cercava il Settore
   // SOLO dentro la Macroscena attiva, quindi un separato in un'altra Macroscena non vedeva nulla).
-  function findSectorAnywhere(scene, sectorId){
-    if(!sectorId) return null;
-    for(const m of ((scene && scene.macroScenes) || [])){
-      const s = (m.sectors||[]).find(x=>x.id===sectorId);
-      if(s) return { sector: s, macro: m };
-    }
-    return null;
-  }
   function isDigimonHiddenFromViewer(member){
     if(!member || !member.digimon || !member.digimon.hiddenFromParty) return false;
     if(session && session.role==='master') return false;
@@ -2281,7 +1893,7 @@
         // giocatore del thread, non quella del gruppo intero.
         const privKey = memberLocationKey(cachedRoster.find(m=>m.username===masterPrivateThread));
         privLogLive.innerHTML = logHTML(filterByLocation(plog, masterPrivateLocationFilter[masterPrivateThread], privKey), true);
-        attachLogModeration(privLogLive, session.code, null, true);
+        attachLogModeration(privLogLive, session.code, null, true, undefined, refreshLiveParts);
         if(wasAtBottom) privLogLive.scrollTop = privLogLive.scrollHeight;
         markPrivateThreadRead(session.code, masterPrivateThread, plog);
         refreshLocationSelectOptions(document.getElementById('private-location-select'), plog, privKey, masterPrivateLocationFilter[masterPrivateThread]);
@@ -2298,7 +1910,7 @@
         const activeGroupForKey = (await getSubgroups(session.code)).find(g=>g.id===activeSubgroupId);
         const subKey = subgroupLocationKey(activeGroupForKey);
         subLogLive.innerHTML = logHTML(filterByLocation(plog, masterSubgroupLocationFilter[activeSubgroupId], subKey), true);
-        attachLogModeration(subLogLive, session.code, null, false, ()=>'subgroup:'+activeSubgroupId);
+        attachLogModeration(subLogLive, session.code, null, false, ()=>'subgroup:'+activeSubgroupId, refreshLiveParts);
         if(wasAtBottom) subLogLive.scrollTop = subLogLive.scrollHeight;
         refreshLocationSelectOptions(document.getElementById('subgroup-location-select'), plog, subKey, masterSubgroupLocationFilter[activeSubgroupId]);
       }
@@ -2311,7 +1923,7 @@
         : players.map((p,i)=>rosterItemHTML(p,i)).join('');
       bindRosterSuggestButtons(players);
       bindRosterManageButtons(players);
-      if(document.getElementById('mchat-unread-badge')) checkMasterPrivateUnread(session.code, players);
+      if(document.getElementById('mchat-unread-badge')) checkMasterPrivateUnread(session.code, players, maybeNotifyNew);
     }
     const dexLive = document.getElementById('dex-live');
     if(dexLive && dexEditOpenId===null){ dexLive.innerHTML = dexListHTML(cachedDex, session.role==='master'); if(session.role==='master') bindDexEditButtons(session.code); }
@@ -2355,7 +1967,7 @@
       cachedMasterPrivateLog = plog;
       const wasAtBottom = privateLogLiveMaster.scrollHeight - privateLogLiveMaster.scrollTop <= privateLogLiveMaster.clientHeight + 40;
       privateLogLiveMaster.innerHTML = logHTML(plog, true);
-      attachLogModeration(privateLogLiveMaster, session.code, null, true);
+      attachLogModeration(privateLogLiveMaster, session.code, null, true, undefined, refreshLiveParts);
       if(wasAtBottom) privateLogLiveMaster.scrollTop = privateLogLiveMaster.scrollHeight;
     }
     const errBanner = document.getElementById('api-err-banner');
@@ -2933,7 +2545,7 @@
       refreshLiveParts();
     };
     bindAttacksCard(code, me);
-    attachLogModeration(document.getElementById('log-live'), code, me);
+    attachLogModeration(document.getElementById('log-live'), code, me, undefined, undefined, refreshLiveParts);
     bindCombatSelfActions(code, session.username);
     updateChatModeButtons();
     // Chat segmented control (mobile-friendly, works on desktop too)
@@ -2953,7 +2565,6 @@
     startPolling();
   }
 
-  const ATTR_ABBR = { agility:'AGI', body:'BODY', charisma:'CAR', intelligence:'INT', willpower:'WILL' };
   let editingSkills = false;
 
   // Nel pannello Master ogni card di un giocatore ha un containerId tipo 'm-tamer-3', 'm-skills-3',
@@ -5264,9 +4875,9 @@
     bindEncountersPanel(code, session.username);
     bindSceneCurrentSectorLuoghi(code);
     renderCombatManager(code, players);
-    renderPrivateChatMaster(code, players);
-    renderSubgroupChatMaster(code, players);
-    bindMasterChatMode(code, players);
+    renderPrivateChatMaster(code, players, refreshLiveParts, maybeNotifyNew);
+    renderSubgroupChatMaster(code, players, refreshLiveParts);
+    bindMasterChatMode(code, players, refreshLiveParts, maybeNotifyNew);
     renderNoticeManager(code, players);
     renderBugReportsMaster(code);
     renderProgressionMaster(code);
@@ -5275,7 +4886,7 @@
     renderGMReference();
     renderSectorMap(code);
     renderMountingTN();
-    attachLogModeration(document.getElementById('log-live'), code);
+    attachLogModeration(document.getElementById('log-live'), code, undefined, undefined, undefined, refreshLiveParts);
     bindSceneAudio(cachedScene);
     bindSceneAudioUpload(code);
     bindSceneCombatAudioUpload(code);
@@ -5584,18 +5195,6 @@
   // Va cercata "dal vivo" invece di fidarsi solo del campo imageUrl salvato sul partecipante:
   // i partecipanti aggiunti prima di questa funzionalità (o quando il Digimon aggiorna l'immagine)
   // non avrebbero altrimenti mai un ritratto nel selettore Attaccante/Bersaglio.
-  // Fonte di verità unica per l'immagine "migliore" di un Digimon: cerca prima nel Digidex live
-  // (dove GIF/immagine possono essere state aggiornate in qualunque momento), e solo se non trova
-  // corrispondenza usa lo snapshot passato come fallback (preso al momento in cui quell'oggetto
-  // — Incontro di scena, partecipante di combattimento, scheda giocatore — è stato creato/salvato).
-  // Un solo punto da correggere invece di uno snapshot sparso in tre posti diversi.
-  function bestDigimonImage(dexId, name, fallbackImage){
-    let match = null;
-    if(dexId) match = cachedDex.find(d=>d.id===dexId);
-    if(!match && name) match = cachedDex.find(d=>String(d.name).trim().toLowerCase()===String(name).trim().toLowerCase());
-    if(match && (match.gif_url || match.image_url)) return match.gif_url || match.image_url;
-    return fallbackImage || '';
-  }
   // Stessa ricerca live nel Digidex di bestDigimonImage, ma per l'Attributo — usata per mostrare
   // l'iconcina Vaccine/Data/Virus/Free/Variable sui Digimon in scena senza doverlo salvare a parte
   // sull'Incontro (che potrebbe non essere mai stato sincronizzato con quel campo).
@@ -5833,11 +5432,6 @@
     return { logText, dealt, accRoll, dodgeRoll, atkLabel, defeatInfo: null };
   }
 
-  let masterPrivateThread = null;
-  // Ultimo log privato caricato nella vista "chat privata" del Master (aggiornato ad ogni
-  // render/refresh di quel pannello) — serve ad attachLogModeration per trovare il testo
-  // originale del messaggio da modificare, dato che il log privato non passa da cachedLog.
-  let masterChatMode = 'general';
   // Stato UI del Combat Manager (non salvato su DB, resettato solo al refresh pagina):
   // quali righe partecipante sono "espanse" (mostrano Azione/Muovi/Effetti), se il pannello
   // "Risolvi Attacco" è aperto, e quale partecipante è pre-selezionato come Attaccante.
@@ -5846,7 +5440,6 @@
   let combatPresetAttackerId = null;
   let combatPresetTargetId = null;
   let combatSelectedAttackIndex = null;
-  let masterPrivateUnread = {}; // { username: true } — thread ha messaggi non ancora visti dal Master
 
   async function grantMilestoneRewards(code, milestoneNumber, reason){
     const players = cachedRoster.filter(m=>m.role==='player');
@@ -6263,533 +5856,9 @@
     });
   }
 
-  function privateReadKey(code, thread){ return `dvos_privread_${code}_${thread}`; }
-  function markPrivateThreadRead(code, thread, log){
-    if(!log || !log.length) return;
-    try{ localStorage.setItem(privateReadKey(code, thread), String(log[log.length-1].id)); }catch(e){}
-    delete masterPrivateUnread[thread];
-  }
-  function isPrivateThreadUnread(code, thread, log){
-    if(!log || !log.length) return false;
-    const last = log[log.length-1];
-    let lastRead = null;
-    try{ lastRead = localStorage.getItem(privateReadKey(code, thread)); }catch(e){}
-    return String(last.id) !== String(lastRead);
-  }
-  // Controlla in background (durante il polling) se ci sono messaggi privati non letti in QUALSIASI
-  // thread, non solo in quello aperto — serve per il pallino rosso sul bottone "Privata".
-  async function checkMasterPrivateUnread(code, players){
-    for(const p of players){
-      const log = await getPrivateLog(code, p.username);
-      const lastFromPlayer = log.length>0 && log[log.length-1].who !== 'Master';
-      if(lastFromPlayer && isPrivateThreadUnread(code, p.username, log)) masterPrivateUnread[p.username] = true;
-      else delete masterPrivateUnread[p.username];
-      if(log.length) maybeNotifyNew('private', p.username, log[log.length-1], 'Master');
-    }
-    const badge = document.getElementById('mchat-unread-badge');
-    const count = Object.keys(masterPrivateUnread).length;
-    if(badge) badge.innerHTML = count>0 ? `<span style="background:var(--danger);color:#fff;border-radius:8px;padding:1px 6px;font-size:10px;">${count}</span>` : '';
-  }
-  function updateMasterChatModeUI(){
-    const genBlock = document.getElementById('mchat-general-block');
-    const privSlot = document.getElementById('mchat-private-slot');
-    const subSlot = document.getElementById('mchat-subgroup-slot');
-    const genBtn = document.getElementById('mchatmode-general');
-    const privBtn = document.getElementById('mchatmode-private');
-    const subBtn = document.getElementById('mchatmode-subgroup');
-    if(genBlock) genBlock.style.display = masterChatMode==='general' ? '' : 'none';
-    if(privSlot) privSlot.style.display = masterChatMode==='private' ? '' : 'none';
-    if(subSlot) subSlot.style.display = masterChatMode==='subgroup' ? '' : 'none';
-    if(genBtn) genBtn.classList.toggle('active', masterChatMode==='general');
-    if(privBtn) privBtn.classList.toggle('active', masterChatMode==='private');
-    if(subBtn) subBtn.classList.toggle('active', masterChatMode==='subgroup');
-  }
-  function bindMasterChatMode(code, players){
-    const genBtn = document.getElementById('mchatmode-general');
-    const privBtn = document.getElementById('mchatmode-private');
-    const subBtn = document.getElementById('mchatmode-subgroup');
-    if(genBtn) genBtn.onclick = ()=>{ masterChatMode='general'; updateMasterChatModeUI(); };
-    if(privBtn) privBtn.onclick = async ()=>{ masterChatMode='private'; updateMasterChatModeUI(); await renderPrivateChatMaster(code, players); };
-    if(subBtn) subBtn.onclick = async ()=>{ masterChatMode='subgroup'; updateMasterChatModeUI(); await renderSubgroupChatMaster(code, players); };
-    const clearBtn = document.getElementById('btn-clear-chat');
-    if(clearBtn) clearBtn.onclick = async ()=>{
-      if(!window.confirm('Cancellare TUTTA la chat generale? Non si può annullare. Le chat private non vengono toccate.')) return;
-      clearBtn.disabled = true;
-      await clearLog(code);
-      cachedLog = await getLog(code);
-      const logLive = document.getElementById('log-live');
-      if(logLive) logLive.innerHTML = logHTML(sceneLog(), true);
-      clearBtn.disabled = false;
-    };
-    const masterLocSelect = document.getElementById('master-chat-location-select');
-    if(masterLocSelect) masterLocSelect.onchange = ()=>{
-      publicLocationFilter = masterLocSelect.value;
-      const logLive = document.getElementById('log-live');
-      if(logLive) logLive.innerHTML = logHTML(sceneLog(), true);
-    };
-    const masterExportBtn = document.getElementById('btn-master-export-chat');
-    if(masterExportBtn) masterExportBtn.onclick = ()=>{
-      const label = masterLocSelect ? masterLocSelect.options[masterLocSelect.selectedIndex].textContent.replace('📍 ','') : currentLocationLabel();
-      exportVisibleLogAsText(sceneLog(), label);
-    };
-    updateMasterChatModeUI();
-    checkMasterPrivateUnread(code, players);
-  }
-  async function renderPrivateChatMaster(code, players){
-    const cardEl = document.getElementById('mchat-private-slot');
-    if(!cardEl) return;
-    if(!masterPrivateThread && players.length>0) masterPrivateThread = players[0].username;
-    if(players.length===0){
-      cardEl.innerHTML = `<div class="muted">Nessun giocatore ancora collegato.</div>`;
-      return;
-    }
-    const log = masterPrivateThread ? await getPrivateLog(code, masterPrivateThread) : [];
-    cachedMasterPrivateLog = log;
-    // "Parla come" + "Colore scritta in chat" — stessa funzionalità già presente sulla Chat
-    // Generale (vedi #speak-as/#speak-color e btn-gm-post), replicata qui con id prefissati
-    // "private-" per non collidere con quella. Le opzioni (Master / Digimon di un giocatore /
-    // Incontro in scena / Nemico personalizzato) e la logica di risoluzione who/role/avatar/color
-    // sono intenzionalmente identiche, per coerenza tra le due chat.
-    // Vedi memberLocationKey: la chiave "attuale" per la Chat Privata è quella effettiva del
-    // giocatore del thread aperto, non quella del gruppo intero (currentLocationKey).
-    const privKey = memberLocationKey(players.find(p=>p.username===masterPrivateThread));
-    cardEl.innerHTML = `
-      <div class="field"><label>Con chi</label>
-        <select id="private-thread-select">${players.map(p=>`<option value="${escapeAttr(p.username)}" ${p.username===masterPrivateThread?'selected':''}>${masterPrivateUnread[p.username]?'🔴 ':''}${escapeHTML(displayName(p))}</option>`).join('')}</select>
-      </div>
-      <div class="log" id="private-log-live-master" style="height:220px;">${logHTML(filterByLocation(log, masterPrivateLocationFilter[masterPrivateThread], privKey), true)}</div>
-      <div class="muted" style="font-size:10.5px;margin-bottom:8px;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;">
-        ${locationFilterSelectHTML('private-location-select', log, privKey, masterPrivateLocationFilter[masterPrivateThread])}
-        <button class="btn ghost small" id="btn-private-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
-      </div>
-      <div style="margin-top:10px;">${speakAsFieldHTML('private-speak-as', 'private-speak-as-btn')}</div>
-      <div class="row" id="private-enemy-fields" style="display:none;margin-bottom:8px;">
-        <input type="text" id="private-enemy-speak-name" placeholder="Nome nemico" style="flex:2;" />
-        <input type="text" id="private-enemy-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
-      </div>
-      <div class="row" id="private-npc-fields" style="display:none;margin-bottom:8px;">
-        <input type="text" id="private-npc-speak-name" placeholder="Nome NPC" style="flex:2;" />
-        <input type="text" id="private-npc-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
-      </div>
-      <div class="row" style="margin-bottom:8px;align-items:center;">
-        <label class="muted" style="flex:2;font-size:11px;">Colore scritta in chat</label>
-        <input type="color" id="private-speak-color" value="#ff8a3d" style="flex:1;padding:2px;height:34px;" />
-      </div>
-      <textarea id="private-text-master" rows="2" placeholder="Scrivi in privato..." style="margin-top:8px;"></textarea>
-      <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--text-mute);">
-        <input type="checkbox" id="private-digimoji-toggle" /> ✍️ Scrivi in Digimoji
-      </label>
-      <div class="row" style="margin-top:6px;">
-        <button class="btn ghost small" id="private-btn-correct">Correggi Italiano</button>
-      </div>
-      <div class="muted" id="private-correct-status" style="margin-top:2px;font-size:10.5px;"></div>
-      ${chatAttachHTML('private')}
-      ${mentionButtonHTML('private')}
-      <button class="btn amber" id="btn-private-send-master" style="width:100%;margin-top:6px;">Invia</button>
-    `;
-    if(masterChatMode==='private') markPrivateThreadRead(code, masterPrivateThread, log);
-    document.getElementById('mchat-unread-badge') && checkMasterPrivateUnread(code, players);
-    document.getElementById('private-thread-select').onchange = (e)=>{
-      masterPrivateThread = e.target.value;
-      renderPrivateChatMaster(code, players);
-    };
-    bindChatAttach('private', code, 'avviso', ()=>pendingPrivateImageUrl, (url)=>{ pendingPrivateImageUrl = url; });
-    bindMentionButton('private', code, 'private-text-master');
-    // Correzione IT via AI: stessa funzione già usata in Chat Generale (Player) — mancava qui,
-    // costringendo il Master a correggere a mano i messaggi di Chat Privata.
-    const privCorrectBtn = document.getElementById('private-btn-correct');
-    if(privCorrectBtn) privCorrectBtn.onclick = async ()=>{
-      const ta = document.getElementById('private-text-master');
-      const status = document.getElementById('private-correct-status');
-      status.textContent = 'Correzione in corso...';
-      const corrected = await correggiItaliano(ta.value);
-      ta.value = corrected;
-      status.textContent = lastApiError ? ('Errore: ' + lastApiError) : 'Testo corretto.';
-    };
-    const privLocSelect = document.getElementById('private-location-select');
-    if(privLocSelect) privLocSelect.onchange = ()=>{
-      masterPrivateLocationFilter[masterPrivateThread] = privLocSelect.value;
-      const privLogLive = document.getElementById('private-log-live-master');
-      if(privLogLive) privLogLive.innerHTML = logHTML(filterByLocation(log, privLocSelect.value, privKey), true);
-    };
-    const privExportBtn = document.getElementById('btn-private-export-chat');
-    if(privExportBtn) privExportBtn.onclick = ()=>{
-      const filterVal = masterPrivateLocationFilter[masterPrivateThread];
-      const filtered = filterByLocation(log, filterVal, privKey);
-      const label = privLocSelect ? privLocSelect.options[privLocSelect.selectedIndex].textContent.replace('📍 ','') : currentLocationLabel();
-      exportVisibleLogAsText(filtered, label);
-    };
-    const privSpeakAsSel = document.getElementById('private-speak-as');
-    const privEnemyFields = document.getElementById('private-enemy-fields');
-    const privNpcFields = document.getElementById('private-npc-fields');
-    const privColorInput = document.getElementById('private-speak-color');
-    function applyPrivSpeakAsMode(mode){
-      privEnemyFields.style.display = mode==='enemy' ? 'flex' : 'none';
-      privNpcFields.style.display = mode==='npc' ? 'flex' : 'none';
-      if(mode.startsWith('digimon:')){
-        const username = mode.slice('digimon:'.length);
-        const member = cachedRoster.find(m=>m.username===username);
-        if(privColorInput) privColorInput.value = (member && member.digimon.chatColor) || '#c896ff';
-      } else if(mode.startsWith('encounter:')){
-        if(privColorInput) privColorInput.value = '#ff5d5d';
-      } else if(mode.startsWith('dex:')){
-        if(privColorInput) privColorInput.value = '#ff5d5d';
-      } else if(mode==='enemy'){
-        if(privColorInput) privColorInput.value = '#ff5d5d';
-      } else if(mode==='npc'){
-        if(privColorInput) privColorInput.value = '#ffd76a';
-      } else if(mode.startsWith('npc-saved:')){
-        const name = mode.slice('npc-saved:'.length);
-        const saved = loadSavedNpcs(code).find(n=>n.name===name);
-        if(privColorInput) privColorInput.value = (saved && saved.color) || '#ffd76a';
-      } else {
-        if(privColorInput) privColorInput.value = '#ff8a3d';
-      }
-    }
-    attachSpeakAsButton('private-speak-as', 'private-speak-as-btn', code, null, applyPrivSpeakAsMode);
-    document.getElementById('btn-private-send-master').onclick = async ()=>{
-      const ta = document.getElementById('private-text-master');
-      const privDigimojiChkPre = document.getElementById('private-digimoji-toggle');
-      if(privDigimojiChkPre && privDigimojiChkPre.checked){ ta.value = italianToHiragana(ta.value); }
-      const text = ta.value.trim();
-      if(!text || !masterPrivateThread) return;
-      const mode = privSpeakAsSel ? privSpeakAsSel.value : 'master';
-      let who = 'Master', role = 'gm', avatar = null, color = null;
-      if(mode.startsWith('digimon:')){
-        const username = mode.slice('digimon:'.length);
-        const member = cachedRoster.find(m=>m.username===username);
-        who = (member && member.digimon.name) ? member.digimon.name : username;
-        role = 'digimon';
-        avatar = member ? member.digimon.imageUrl : null;
-        color = member ? member.digimon.chatColor : null;
-      } else if(mode.startsWith('encounter:')){
-        const idx = Number(mode.slice('encounter:'.length));
-        const encObj = (cachedScene.encounters||[])[idx];
-        who = encName(encObj) || 'Digimon';
-        const dexMatch = cachedDex.find(e=>e.name.trim().toLowerCase()===who.trim().toLowerCase());
-        role = 'enemy';
-        avatar = (encObj && typeof encObj==='object' && encObj.image) ? encObj.image : (dexMatch ? dexMatch.image_url : null);
-      } else if(mode.startsWith('dex:')){
-        const dexId = mode.slice('dex:'.length);
-        const dexEntry = cachedDex.find(e=>String(e.id)===dexId);
-        who = dexEntry ? dexEntry.name : 'Digimon';
-        role = 'enemy';
-        avatar = dexEntry ? dexEntry.image_url : null;
-      } else if(mode==='enemy'){
-        who = document.getElementById('private-enemy-speak-name').value.trim() || 'Nemico';
-        role = 'enemy';
-        avatar = document.getElementById('private-enemy-speak-img').value.trim() || null;
-      } else if(mode==='npc'){
-        who = document.getElementById('private-npc-speak-name').value.trim() || 'NPC';
-        role = 'npc';
-        avatar = document.getElementById('private-npc-speak-img').value.trim() || null;
-      } else if(mode.startsWith('npc-saved:')){
-        const savedName = mode.slice('npc-saved:'.length);
-        const saved = loadSavedNpcs(code).find(n=>n.name===savedName);
-        who = (saved && saved.name) || savedName;
-        role = 'npc';
-        avatar = saved ? saved.avatar : null;
-      }
-      const meta = {};
-      if(avatar) meta.avatar = avatar;
-      const chosenColor = privColorInput ? privColorInput.value : color;
-      if(chosenColor) meta.color = chosenColor;
-      if(pendingPrivateImageUrl) meta.image = pendingPrivateImageUrl;
-      const privDigimojiChk = document.getElementById('private-digimoji-toggle');
-      if(privDigimojiChk && privDigimojiChk.checked) meta.digimoji = true;
-      // Stessa correzione della Chat Privata/Sottogruppi: tagga con la posizione effettiva del
-      // giocatore destinatario, non quella del gruppo intero (vedi memberLocationKey sopra).
-      meta.location = memberLocationKey(cachedRoster.find(m=>m.username===masterPrivateThread));
-      if(role==='npc') rememberNpc(code, { name: who, color: chosenColor, avatar });
-      await pushPrivateLog(code, masterPrivateThread, { who, role, text, meta });
-      ta.value='';
-      pendingPrivateImageUrl = null;
-      // renderPrivateChatMaster ricostruisce anche la select "Parla come" da loadSavedNpcs(code),
-      // quindi un NPC nuovo qui compare già pronto per la prossima volta senza bisogno di un patch
-      // manuale del DOM come nella chat generale (questa vista si ridisegna comunque per intero).
-      renderPrivateChatMaster(code, players);
-    };
-    const logLive = document.getElementById('private-log-live-master');
-    attachLogModeration(logLive, code, null, true);
-    if(logLive) logLive.scrollTop = logLive.scrollHeight;
-    attachDigimojiInput('private-text-master', 'private-digimoji-toggle');
-  }
+  // (privateReadKey/markPrivateThreadRead/isPrivateThreadUnread/checkMasterPrivateUnread/
+  // updateMasterChatModeUI/bindMasterChatMode/renderPrivateChatMaster) spostato in js/private-chat.js
 
-  // ===== SOTTOGRUPPI DI CHAT =====
-  // Un sottogruppo è un thread privato condiviso tra più giocatori (e il Master).
-  // I thread dei MESSAGGI usano la stessa API di pushPrivateLog/getPrivateLog con un nome
-  // prefissato "subgroup:" per non collidere con quelli 1:1. La LISTA dei sottogruppi (chi
-  // ne fa parte, nome) passa invece da /api/notice?resource=subgroup (tabella `subgroups` su
-  // Supabase) — prima era in localStorage, quindi visibile solo sul dispositivo del Master e
-  // mai su quello dei giocatori. Vedi getSubgroups/saveSubgroup/deleteSubgroup più sopra.
-  let activeSubgroupId = null;
-
-  async function renderSubgroupChatMaster(code, players){
-    const cardEl = document.getElementById('mchat-subgroup-slot');
-    if(!cardEl) return;
-    const groups = await getSubgroups(code);
-    cachedSubgroups = groups;
-    if(!activeSubgroupId && groups.length>0) activeSubgroupId = groups[0].id;
-    const activeGroup = groups.find(g=>g.id===activeSubgroupId) || null;
-    // Vedi subgroupLocationKey: la chiave "attuale" per il Sottogruppo è quella effettiva dei
-    // suoi membri, non quella del gruppo intero (currentLocationKey).
-    const subKey = subgroupLocationKey(activeGroup);
-    const log = activeGroup ? await getPrivateLog(code, 'subgroup:'+activeGroup.id) : [];
-    cachedSubgroupLog = log;
-
-    cardEl.innerHTML = `
-      <div class="section-title" style="margin-top:0;">👥 Sottogruppi di Chat</div>
-      <div class="muted" style="font-size:11px;margin-bottom:10px;">Crea gruppi di giocatori che possono chattare tra loro. Solo i membri del gruppo (e il Master) vedono i messaggi.</div>
-      <div class="row" style="margin-bottom:10px;flex-wrap:wrap;gap:4px;">
-        ${groups.map(g=>`<button class="btn small ${g.id===activeSubgroupId?'active':''}" data-subgroup-select="${escapeAttr(g.id)}" style="${g.id===activeSubgroupId?'background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);':''}">${escapeHTML(g.name)} (${g.members.length})</button>`).join('')}
-        <button class="btn small ghost" id="btn-create-subgroup">＋ Nuovo</button>
-      </div>
-      ${activeGroup ? `
-        <div class="muted" style="font-size:11px;margin-bottom:6px;">Membri: ${activeGroup.members.map(u=>escapeHTML(displayNameFor(u))).join(', ')}
-          <button class="btn ghost small" data-subgroup-edit="${escapeAttr(activeGroup.id)}" style="margin-left:6px;">✎ Modifica</button>
-          <button class="btn ghost small danger" data-subgroup-delete="${escapeAttr(activeGroup.id)}" style="margin-left:4px;">🗑️</button>
-        </div>
-        <div class="log" id="subgroup-log-live" style="height:200px;">${logHTML(filterByLocation(log, masterSubgroupLocationFilter[activeGroup.id], subKey), true)}</div>
-        <div class="muted" style="font-size:10.5px;margin-bottom:8px;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;">
-          ${locationFilterSelectHTML('subgroup-location-select', log, subKey, masterSubgroupLocationFilter[activeGroup.id])}
-          <button class="btn ghost small" id="btn-subgroup-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
-        </div>
-        <div style="margin-top:10px;">${speakAsFieldHTML('subgroup-speak-as', 'subgroup-speak-as-btn')}</div>
-        <div class="row" id="subgroup-enemy-fields" style="display:none;margin-bottom:8px;">
-          <input type="text" id="subgroup-enemy-speak-name" placeholder="Nome nemico" style="flex:2;" />
-          <input type="text" id="subgroup-enemy-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
-        </div>
-        <div class="row" id="subgroup-npc-fields" style="display:none;margin-bottom:8px;">
-          <input type="text" id="subgroup-npc-speak-name" placeholder="Nome NPC" style="flex:2;" />
-          <input type="text" id="subgroup-npc-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
-        </div>
-        <div class="row" style="margin-bottom:8px;align-items:center;">
-          <label class="muted" style="flex:2;font-size:11px;">Colore scritta in chat</label>
-          <input type="color" id="subgroup-speak-color" value="#ff8a3d" style="flex:1;padding:2px;height:34px;" />
-        </div>
-        <textarea id="subgroup-text" rows="2" placeholder="Scrivi nel sottogruppo..." style="margin-top:8px;"></textarea>
-        <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--text-mute);">
-          <input type="checkbox" id="subgroup-digimoji-toggle" /> ✍️ Scrivi in Digimoji
-        </label>
-        <div class="row" style="margin-top:6px;">
-          <button class="btn ghost small" id="subgroup-btn-correct">Correggi Italiano</button>
-        </div>
-        <div class="muted" id="subgroup-correct-status" style="margin-top:2px;font-size:10.5px;"></div>
-        ${chatAttachHTML('subgroup')}
-        ${mentionButtonHTML('subgroup')}
-        <button class="btn amber" id="btn-subgroup-send" style="width:100%;margin-top:6px;">Invia</button>
-      ` : `<div class="muted">Nessun sottogruppo creato. Clicca "＋ Nuovo" per creare il primo.</div>`}
-    `;
-
-    // Bind group selection buttons
-    cardEl.querySelectorAll('[data-subgroup-select]').forEach(btn=>{
-      btn.onclick = ()=>{
-        activeSubgroupId = btn.getAttribute('data-subgroup-select');
-        renderSubgroupChatMaster(code, players);
-      };
-    });
-
-    // Create new subgroup
-    const createBtn = document.getElementById('btn-create-subgroup');
-    if(createBtn) createBtn.onclick = ()=>{ openSubgroupModal(code, players, null); };
-
-    // Edit subgroup
-    cardEl.querySelectorAll('[data-subgroup-edit]').forEach(btn=>{
-      btn.onclick = ()=>{
-        const gid = btn.getAttribute('data-subgroup-edit');
-        const g = groups.find(x=>x.id===gid);
-        if(g) openSubgroupModal(code, players, g);
-      };
-    });
-
-    // Delete subgroup
-    cardEl.querySelectorAll('[data-subgroup-delete]').forEach(btn=>{
-      btn.onclick = async ()=>{
-        if(!window.confirm('Eliminare questo sottogruppo? I messaggi resteranno salvati ma non saranno più visibili.')) return;
-        const gid = btn.getAttribute('data-subgroup-delete');
-        await deleteSubgroup(code, gid);
-        const gs = groups.filter(x=>x.id!==gid);
-        activeSubgroupId = gs.length>0 ? gs[0].id : null;
-        renderSubgroupChatMaster(code, players);
-      };
-    });
-
-    // Send message
-    const sendBtn = document.getElementById('btn-subgroup-send');
-    if(activeGroup) bindChatAttach('subgroup', code, 'chat', ()=>pendingSubgroupImageUrl, (url)=>{ pendingSubgroupImageUrl = url; });
-    if(activeGroup) bindMentionButton('subgroup', code, 'subgroup-text');
-    // Correzione IT via AI: stessa funzione già usata in Chat Generale (Player) e ora anche in
-    // Chat Privata (Master) — mancava qui, unica sezione rimasta senza.
-    const subCorrectBtn = document.getElementById('subgroup-btn-correct');
-    if(subCorrectBtn) subCorrectBtn.onclick = async ()=>{
-      const ta = document.getElementById('subgroup-text');
-      const status = document.getElementById('subgroup-correct-status');
-      status.textContent = 'Correzione in corso...';
-      const corrected = await correggiItaliano(ta.value);
-      ta.value = corrected;
-      status.textContent = lastApiError ? ('Errore: ' + lastApiError) : 'Testo corretto.';
-    };
-    const subLocSelect = document.getElementById('subgroup-location-select');
-    if(subLocSelect && activeGroup) subLocSelect.onchange = ()=>{
-      masterSubgroupLocationFilter[activeGroup.id] = subLocSelect.value;
-      const subLogLive = document.getElementById('subgroup-log-live');
-      if(subLogLive) subLogLive.innerHTML = logHTML(filterByLocation(log, subLocSelect.value, subKey), true);
-    };
-    const subExportBtn = document.getElementById('btn-subgroup-export-chat');
-    if(subExportBtn && activeGroup) subExportBtn.onclick = ()=>{
-      const filterVal = masterSubgroupLocationFilter[activeGroup.id];
-      const filtered = filterByLocation(log, filterVal, subKey);
-      const label = subLocSelect ? subLocSelect.options[subLocSelect.selectedIndex].textContent.replace('📍 ','') : currentLocationLabel();
-      exportVisibleLogAsText(filtered, label);
-    };
-    const subSpeakAsSel = document.getElementById('subgroup-speak-as');
-    const subEnemyFields = document.getElementById('subgroup-enemy-fields');
-    const subNpcFields = document.getElementById('subgroup-npc-fields');
-    const subColorInput = document.getElementById('subgroup-speak-color');
-    if(subSpeakAsSel){
-      const applySubSpeakAsMode = (mode)=>{
-        subEnemyFields.style.display = mode==='enemy' ? 'flex' : 'none';
-        subNpcFields.style.display = mode==='npc' ? 'flex' : 'none';
-        if(mode.startsWith('digimon:')){
-          const username = mode.slice('digimon:'.length);
-          const member = cachedRoster.find(m=>m.username===username);
-          if(subColorInput) subColorInput.value = (member && member.digimon.chatColor) || '#c896ff';
-        } else if(mode.startsWith('encounter:')){
-          if(subColorInput) subColorInput.value = '#ff5d5d';
-        } else if(mode.startsWith('dex:')){
-          if(subColorInput) subColorInput.value = '#ff5d5d';
-        } else if(mode==='enemy'){
-          if(subColorInput) subColorInput.value = '#ff5d5d';
-        } else if(mode==='npc'){
-          if(subColorInput) subColorInput.value = '#ffd76a';
-        } else if(mode.startsWith('npc-saved:')){
-          const name = mode.slice('npc-saved:'.length);
-          const saved = loadSavedNpcs(code).find(n=>n.name===name);
-          if(subColorInput) subColorInput.value = (saved && saved.color) || '#ffd76a';
-        } else {
-          if(subColorInput) subColorInput.value = '#ff8a3d';
-        }
-      };
-      // Solo i Digimon dei membri di QUESTO sottogruppo, non di tutta la campagna — stesso
-      // filtro che c'era prima nelle <option> generate lato server.
-      attachSpeakAsButton('subgroup-speak-as', 'subgroup-speak-as-btn', code, activeGroup ? activeGroup.members : null, applySubSpeakAsMode);
-    }
-    if(sendBtn && activeGroup) sendBtn.onclick = async ()=>{
-      const ta = document.getElementById('subgroup-text');
-      const subDigimojiChkPre = document.getElementById('subgroup-digimoji-toggle');
-      if(subDigimojiChkPre && subDigimojiChkPre.checked){ ta.value = italianToHiragana(ta.value); }
-      const text = ta.value.trim();
-      if(!text) return;
-      const mode = subSpeakAsSel ? subSpeakAsSel.value : 'master';
-      let who = 'Master', role = 'gm', avatar = null, color = null;
-      if(mode.startsWith('digimon:')){
-        const username = mode.slice('digimon:'.length);
-        const member = cachedRoster.find(m=>m.username===username);
-        who = (member && member.digimon.name) ? member.digimon.name : username;
-        role = 'digimon';
-        avatar = member ? member.digimon.imageUrl : null;
-        color = member ? member.digimon.chatColor : null;
-      } else if(mode.startsWith('encounter:')){
-        const idx = Number(mode.slice('encounter:'.length));
-        const encObj = (cachedScene.encounters||[])[idx];
-        who = encName(encObj) || 'Digimon';
-        const dexMatch = cachedDex.find(e=>e.name.trim().toLowerCase()===who.trim().toLowerCase());
-        role = 'enemy';
-        avatar = (encObj && typeof encObj==='object' && encObj.image) ? encObj.image : (dexMatch ? dexMatch.image_url : null);
-      } else if(mode.startsWith('dex:')){
-        const dexId = mode.slice('dex:'.length);
-        const dexEntry = cachedDex.find(e=>String(e.id)===dexId);
-        who = dexEntry ? dexEntry.name : 'Digimon';
-        role = 'enemy';
-        avatar = dexEntry ? dexEntry.image_url : null;
-      } else if(mode==='enemy'){
-        who = document.getElementById('subgroup-enemy-speak-name').value.trim() || 'Nemico';
-        role = 'enemy';
-        avatar = document.getElementById('subgroup-enemy-speak-img').value.trim() || null;
-      } else if(mode==='npc'){
-        who = document.getElementById('subgroup-npc-speak-name').value.trim() || 'NPC';
-        role = 'npc';
-        avatar = document.getElementById('subgroup-npc-speak-img').value.trim() || null;
-      } else if(mode.startsWith('npc-saved:')){
-        const savedName = mode.slice('npc-saved:'.length);
-        const saved = loadSavedNpcs(code).find(n=>n.name===savedName);
-        who = (saved && saved.name) || savedName;
-        role = 'npc';
-        avatar = saved ? saved.avatar : null;
-      }
-      const meta = {};
-      if(avatar) meta.avatar = avatar;
-      const chosenColor = subColorInput ? subColorInput.value : color;
-      if(chosenColor) meta.color = chosenColor;
-      if(pendingSubgroupImageUrl) meta.image = pendingSubgroupImageUrl;
-      if(subDigimojiChkPre && subDigimojiChkPre.checked) meta.digimoji = true;
-      // Tagga con la posizione EFFETTIVA del sottogruppo (vedi subgroupLocationKey), non quella
-      // del gruppo intero — così un sottogruppo separato viene "riconosciuto" nel Settore giusto.
-      meta.location = subgroupLocationKey(activeGroup);
-      if(role==='npc') rememberNpc(code, { name: who, color: chosenColor, avatar });
-      await pushPrivateLog(code, 'subgroup:'+activeGroup.id, { who, role, text, meta });
-      ta.value='';
-      pendingSubgroupImageUrl = null;
-      renderSubgroupChatMaster(code, players);
-    };
-
-    const logLive = document.getElementById('subgroup-log-live');
-    if(logLive){
-      attachLogModeration(logLive, code, null, false, ()=>'subgroup:'+activeSubgroupId);
-      logLive.scrollTop = logLive.scrollHeight;
-    }
-    if(activeGroup) attachDigimojiInput('subgroup-text', 'subgroup-digimoji-toggle');
-  }
-
-  function openSubgroupModal(code, players, existing){
-    const old = document.getElementById('subgroup-modal');
-    if(old) old.remove();
-    const modal = document.createElement('div');
-    modal.id = 'subgroup-modal';
-    modal.className = 'enc-modal-backdrop';
-    modal.innerHTML = `
-      <div class="enc-modal-card hud-frame" style="max-width:420px;">
-        <button class="btn ghost small" id="subgroup-modal-close" style="position:absolute;top:8px;right:8px;">✕</button>
-        <div class="section-title" style="margin-top:0;">${existing?'✎ Modifica':'＋ Nuovo'} Sottogruppo</div>
-        <div class="field"><label>Nome del gruppo</label><input type="text" id="subgroup-modal-name" value="${existing?escapeAttr(existing.name):''}" placeholder="es. Squadra Alpha" /></div>
-        <div class="field" style="margin-top:10px;"><label>Membri</label>
-          ${players.map(p=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;">
-            <input type="checkbox" class="subgroup-member-chk" value="${escapeAttr(p.username)}" ${existing && existing.members.includes(p.username)?'checked':''} />
-            ${escapeHTML(displayName(p))}
-          </label>`).join('')}
-        </div>
-        <div class="err" id="subgroup-modal-status"></div>
-        <div class="row" style="margin-top:12px;">
-          <button class="btn ghost" id="subgroup-modal-cancel" style="flex:1;">Annulla</button>
-          <button class="btn solid" id="subgroup-modal-save" style="flex:1;">Salva</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-    const closeIt = ()=>modal.remove();
-    document.getElementById('subgroup-modal-close').onclick = closeIt;
-    document.getElementById('subgroup-modal-cancel').onclick = closeIt;
-    modal.onclick = (ev)=>{ if(ev.target===modal) closeIt(); };
-    document.getElementById('subgroup-modal-save').onclick = async ()=>{
-      const name = document.getElementById('subgroup-modal-name').value.trim();
-      const statusEl = document.getElementById('subgroup-modal-status');
-      if(!name){ statusEl.textContent = 'Inserisci un nome per il gruppo.'; return; }
-      const members = Array.from(modal.querySelectorAll('.subgroup-member-chk:checked')).map(c=>c.value);
-      if(members.length<1){ statusEl.textContent = 'Seleziona almeno un giocatore.'; return; }
-      const saveBtn = document.getElementById('subgroup-modal-save');
-      saveBtn.disabled = true; saveBtn.textContent = 'Salvataggio...';
-      const res = await saveSubgroup(code, { id: existing ? existing.id : undefined, name, members });
-      if(!res || !res.ok){
-        statusEl.textContent = 'Errore: ' + (lastApiError||'sconosciuto');
-        saveBtn.disabled = false; saveBtn.textContent = 'Salva';
-        return;
-      }
-      if(!existing) activeSubgroupId = res.group ? res.group.id : null;
-      closeIt();
-      renderSubgroupChatMaster(code, (cachedRoster||[]).filter(m=>m.role==='player'));
-    };
-  }
-  // ===== fine Sottogruppi di Chat =====
 
   // (zone-math: ZONES/zoneIndex/zoneDistance/zonePenalty/zoneLabel/zoneStepToward/zoneStepAway/zoneStepDirection/zoneSideEffectsNote) spostato in js/combat-engine.js
   function renderCombatManager(code, players){
@@ -9151,629 +8220,7 @@
   // Risolve l'avatar da mostrare in chat per ogni entry del log. Per i player usa la miniatura
   // del Tamer (imageThumbUrl → imageUrl); per i digimon usa bestDigimonImage (gif se disponibile);
   // per NPC/enemy/gm usa l.meta.avatar (già presente). Restituisce un URL o ''.
-  function resolveLogAvatar(l){
-    // Se l'entry ha già un avatar esplicito in meta, lo usiamo (NPC/enemy/digimon parlati dal Master)
-    if(l.meta && l.meta.avatar) return l.meta.avatar;
-    // Player: cerca nel roster la miniatura del Tamer
-    if(l.role==='player' || l.role==='roll'){
-      const member = (cachedRoster||[]).find(m=>{
-        const cn = m.tamer && m.tamer.characterName;
-        const dn = (cn && String(cn).trim()) ? String(cn).trim() : m.username;
-        return dn === l.who || m.username === l.who;
-      });
-      if(member && member.tamer){
-        return member.tamer.imageThumbUrl || member.tamer.imageUrl || '';
-      }
-    }
-    // Digimon: cerca gif/immagine tramite bestDigimonImage
-    if(l.role==='digimon'){
-      const member = (cachedRoster||[]).find(m=>{
-        return m.digimon && (m.digimon.name === l.who);
-      });
-      if(member && member.digimon){
-        return bestDigimonImage(null, member.digimon.name, member.digimon.imageUrl) || '';
-      }
-    }
-    // GM (Master): nessun avatar di default
-    return '';
-  }
-
-  function logHTML(log, canModerate){
-    if(!log || log.length===0) return '<div class="muted">Il registro è vuoto. Le azioni appariranno qui.</div>';
-    return log.map(l=>{
-      let displayText = l.text;
-      let fulfillBtn = '';
-      let techDetailHTML = '';
-      let hideDiceInline = false;
-      if(l.text && l.text.includes('::TECH::')){
-        const [shown, techLine] = l.text.split('::TECH::');
-        displayText = shown;
-        hideDiceInline = true;
-        let diceInner = '';
-        if(l.meta && Array.isArray(l.meta.dice)){
-          diceInner = `<div style="margin:4px 0;">${l.meta.dice.map(d=>`<span style="display:inline-block;font-size:20px;color:var(--cyan);margin-right:2px;">${DIE_FACES[d]||d}</span>`).join('')}</div>`;
-        }
-        techDetailHTML = `<details style="margin-top:4px;"><summary class="muted" style="font-size:10px;cursor:pointer;">▸ dettagli attacco/difesa e dadi</summary><div style="margin-top:4px;">${diceInner}<div class="muted" style="font-size:10.5px;">${escapeHTML((techLine||'').trim())}</div></div></details>`;
-      }
-      if(l.role==='request' && l.text.includes('::REQ::')){
-        const [shown, payload] = l.text.split('::REQ::');
-        displayText = shown;
-        const parts = payload.split('|');
-        // Il primo campo può contenere più username separati da virgola (richiesta a più
-        // giocatori contemporaneamente) — ognuno vede il proprio bottone sullo stesso messaggio.
-        const targets = (parts[0]||'').split(',').filter(Boolean);
-        const skillKey = parts[1], tn = parts[2]||'';
-        if(session && session.role==='player' && targets.includes(session.username)){
-          fulfillBtn = `<button class="btn amber small" style="margin-top:6px;" data-fulfill-target="${escapeAttr(parts[0])}" data-fulfill-skill="${escapeAttr(skillKey)}" data-fulfill-tn="${escapeAttr(tn)}">🎲 Tira ora</button>`;
-        }
-      }
-      // Invito del Master a spostarsi ("Vuoi andare a XXX?"): visibile a chiunque legga questo
-      // messaggio (non a un giocatore specifico come la richiesta di tiro) — ogni giocatore che
-      // clicca si sposta DA SOLO, senza muovere il resto del gruppo.
-      if(l.role==='moverequest' && l.text.includes('::MOVEREQ::')){
-        const [shown, payload] = l.text.split('::MOVEREQ::');
-        displayText = shown;
-        const [moveSectorId, moveLuogoId] = payload.split('|');
-        if(session && session.role==='player' && moveSectorId){
-          fulfillBtn = `<button class="btn small" style="margin-top:6px;background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);" data-move-accept-sector="${escapeAttr(moveSectorId)}" data-move-accept-luogo="${escapeAttr(moveLuogoId||'')}">🚶 Sì, andiamo!</button>`;
-        }
-      }
-      let diceHTML = '';
-      if(!hideDiceInline && l.meta && Array.isArray(l.meta.dice)){
-        const alreadyAnimated = animatedLogIds.has(l.id);
-        diceHTML = `<div style="margin:4px 0;">${l.meta.dice.map((d,i)=>alreadyAnimated
-          ? `<span style="display:inline-block;font-size:22px;color:var(--cyan);margin-right:2px;">${DIE_FACES[d]||d}</span>`
-          : `<span class="die3d" style="font-size:22px;margin-right:2px;animation-delay:${(i*0.08).toFixed(2)}s;">${DIE_FACES[d]||d}</span>`
-        ).join('')}</div>`;
-        animatedLogIds.add(l.id);
-      }
-      return `
-      <div class="log-entry ${l.role}">
-        <div class="flex-between">
-          <div>${(()=>{ const __av = resolveLogAvatar(l); return __av ? `<img class="who-avatar" src="${escapeAttr(__av)}" data-avatar-expand="${escapeAttr(__av)}" style="cursor:zoom-in;" onerror="this.style.display='none'" />` : ''; })()}<span class="who mono" ${l.meta && l.meta.color ? `style="color:${escapeAttr(l.meta.color)};"` : ''}>${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span></div>
-          ${canModerate ? `<div><button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;">✎</button><button class="btn ghost small" data-log-del="${l.id}" style="padding:2px 6px;">✕</button></div>` : ''}
-        </div>
-        <div class="txt${l.meta && l.meta.digimoji ? ' digimoji-text' : ''}" ${l.meta && l.meta.digimoji ? `title="${escapeAttr(displayText)}"` : ''}>${formatLogText(displayText)}</div>
-        ${l.meta && l.meta.digimoji ? `<div class="muted" style="font-size:10px;margin-top:2px;">(scritto in Digimoji — passa il mouse per leggere in chiaro)</div>` : ''}
-        ${l.meta && l.meta.image ? `<img src="${escapeAttr(l.meta.image)}" class="log-image" data-avatar-expand="${escapeAttr(l.meta.image)}" onerror="this.style.display='none'" />` : ''}
-        ${diceHTML}
-        ${techDetailHTML}
-        ${fulfillBtn}
-      </div>
-    `;
-    }).join('');
-  }
-
-  // Modale "Modifica messaggio": sostituisce il vecchio window.prompt(), che su mobile (e non solo)
-  // è un popup nativo minuscolo, non stilizzato, a riga singola — pessimo per correggere un
-  // messaggio di più righe. Riusa lo stesso schema visivo degli altri modali della pagina
-  // (.enc-modal-backdrop/.enc-modal-card, vedi openMissionsModal/showEncounterDetail).
-  function openEditLogModal(entry, code, thread){
-    const old = document.getElementById('edit-log-modal');
-    if(old) old.remove();
-    const modal = document.createElement('div');
-    modal.id = 'edit-log-modal';
-    modal.className = 'enc-modal-backdrop';
-    const currentAvatar = entry ? resolveLogAvatar(entry) : '';
-    modal.innerHTML = `
-      <div class="enc-modal-card hud-frame" style="max-width:520px;">
-        <button class="btn ghost small" id="edit-log-modal-close" style="position:absolute;top:8px;right:8px;">✕</button>
-        <div class="section-title" style="margin-top:0;">✎ Modifica messaggio</div>
-        <textarea id="edit-log-modal-text" rows="5" style="width:100%;">${escapeHTML(entry ? entry.text : '')}</textarea>
-        <div class="muted" style="font-size:11px;margin-top:10px;display:flex;align-items:center;gap:6px;">
-          ${currentAvatar?`<img src="${escapeAttr(currentAvatar)}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;" onerror="this.style.display='none'" />`:''}
-          Attualmente: <b>${escapeHTML(entry ? entry.who : '')}</b>
-        </div>
-        <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;">
-          <input type="checkbox" id="edit-log-modal-change-who" /> Cambia anche chi ha "parlato"
-        </label>
-        <div id="edit-log-modal-who-fields" style="display:none;margin-top:8px;">
-          ${speakAsFieldHTML('edit-log-modal-speak-as', 'edit-log-modal-speak-as-btn')}
-          <div class="row" id="edit-log-modal-enemy-fields" style="display:none;margin-bottom:8px;">
-            <input type="text" id="edit-log-modal-enemy-name" placeholder="Nome nemico" style="flex:2;" />
-            <input type="text" id="edit-log-modal-enemy-img" placeholder="URL immagine (opz.)" style="flex:2;" />
-          </div>
-          <div class="row" id="edit-log-modal-npc-fields" style="display:none;margin-bottom:8px;">
-            <input type="text" id="edit-log-modal-npc-name" placeholder="Nome NPC" style="flex:2;" />
-            <input type="text" id="edit-log-modal-npc-img" placeholder="URL immagine (opz.)" style="flex:2;" />
-          </div>
-          <div class="row" style="margin-bottom:4px;align-items:center;">
-            <label class="muted" style="flex:2;font-size:11px;">Colore scritta in chat</label>
-            <input type="color" id="edit-log-modal-color" value="${escapeAttr((entry&&entry.meta&&entry.meta.color)||'#ff8a3d')}" style="flex:1;padding:2px;height:34px;" />
-          </div>
-        </div>
-        <div class="err" id="edit-log-modal-status"></div>
-        <div class="row" style="margin-top:10px;">
-          <button class="btn ghost" id="edit-log-modal-cancel" style="flex:1;">Annulla</button>
-          <button class="btn solid" id="edit-log-modal-save" style="flex:1;">Salva</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-    const closeIt = ()=>modal.remove();
-    document.getElementById('edit-log-modal-close').onclick = closeIt;
-    document.getElementById('edit-log-modal-cancel').onclick = closeIt;
-    modal.onclick = (ev)=>{ if(ev.target===modal) closeIt(); };
-    const textEl = document.getElementById('edit-log-modal-text');
-    textEl.focus();
-    textEl.setSelectionRange(textEl.value.length, textEl.value.length);
-    const changeWhoChk = document.getElementById('edit-log-modal-change-who');
-    const whoFields = document.getElementById('edit-log-modal-who-fields');
-    changeWhoChk.onchange = ()=>{ whoFields.style.display = changeWhoChk.checked ? 'block' : 'none'; };
-    const speakSel = document.getElementById('edit-log-modal-speak-as');
-    const enemyFields = document.getElementById('edit-log-modal-enemy-fields');
-    const npcFields = document.getElementById('edit-log-modal-npc-fields');
-    const colorInput = document.getElementById('edit-log-modal-color');
-    attachSpeakAsButton('edit-log-modal-speak-as', 'edit-log-modal-speak-as-btn', code, null, (mode)=>{
-      enemyFields.style.display = mode==='enemy' ? 'flex' : 'none';
-      npcFields.style.display = mode==='npc' ? 'flex' : 'none';
-      if(mode.startsWith('npc-saved:')){
-        const name = mode.slice('npc-saved:'.length);
-        const saved = loadSavedNpcs(code).find(n=>n.name===name);
-        colorInput.value = (saved && saved.color) || '#ffd76a';
-      } else if(mode==='enemy'){
-        colorInput.value = '#ff8a3d';
-      }
-    });
-    const saveBtn = document.getElementById('edit-log-modal-save');
-    saveBtn.onclick = async ()=>{
-      const newText = textEl.value.trim();
-      const statusEl = document.getElementById('edit-log-modal-status');
-      if(!newText){ statusEl.textContent = 'Il messaggio non può essere vuoto.'; return; }
-      let whoUpdate = null;
-      // Stessa logica di risoluzione who/role/avatar già usata dai bottoni "Invia" delle 3 chat
-      // (vedi btn-gm-post / private / subgroup), applicata qui a un messaggio già esistente.
-      if(changeWhoChk.checked){
-        const mode = speakSel.value;
-        let who = 'Master', role = 'gm', avatar = null;
-        if(mode.startsWith('digimon:')){
-          const username = mode.slice('digimon:'.length);
-          const member = cachedRoster.find(m=>m.username===username);
-          who = (member && member.digimon.name) ? member.digimon.name : username;
-          role = 'digimon';
-          avatar = member ? member.digimon.imageUrl : null;
-        } else if(mode.startsWith('encounter:')){
-          const idx = Number(mode.slice('encounter:'.length));
-          const encObj = (cachedScene.encounters||[])[idx];
-          who = encName(encObj) || 'Digimon';
-          const dexMatch = cachedDex.find(e=>e.name.trim().toLowerCase()===who.trim().toLowerCase());
-          role = 'enemy';
-          avatar = (encObj && typeof encObj==='object' && encObj.image) ? encObj.image : (dexMatch ? dexMatch.image_url : null);
-        } else if(mode.startsWith('dex:')){
-          const dexId = mode.slice('dex:'.length);
-          const dexEntry = cachedDex.find(e=>String(e.id)===dexId);
-          who = dexEntry ? dexEntry.name : 'Digimon';
-          role = 'enemy';
-          avatar = dexEntry ? dexEntry.image_url : null;
-        } else if(mode==='enemy'){
-          who = document.getElementById('edit-log-modal-enemy-name').value.trim() || 'Nemico';
-          role = 'enemy';
-          avatar = document.getElementById('edit-log-modal-enemy-img').value.trim() || null;
-        } else if(mode==='npc'){
-          who = document.getElementById('edit-log-modal-npc-name').value.trim() || 'NPC';
-          role = 'npc';
-          avatar = document.getElementById('edit-log-modal-npc-img').value.trim() || null;
-        } else if(mode.startsWith('npc-saved:')){
-          const savedName = mode.slice('npc-saved:'.length);
-          const saved = loadSavedNpcs(code).find(n=>n.name===savedName);
-          who = (saved && saved.name) || savedName;
-          role = 'npc';
-          avatar = saved ? saved.avatar : null;
-        }
-        // meta: preserva eventuali chiavi già presenti sull'entry (es. image di un allegato,
-        // digimoji) e aggiorna solo avatar/color, invece di sovrascrivere tutto il meta.
-        const meta = Object.assign({}, entry.meta || {});
-        if(avatar) meta.avatar = avatar; else delete meta.avatar;
-        const chosenColor = colorInput.value;
-        if(chosenColor) meta.color = chosenColor;
-        if(role==='npc') rememberNpc(code, { name: who, color: chosenColor, avatar });
-        whoUpdate = { who, role, meta };
-      }
-      saveBtn.disabled = true;
-      const ok = await editLogEntry(code, entry.id, newText, thread, whoUpdate);
-      if(!ok){ statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); saveBtn.disabled = false; return; }
-      closeIt();
-      refreshLiveParts();
-    };
-  }
-
-  function attachLogModeration(container, code, me, isPrivate, subgroupThread){
-    if(!container || container.dataset.modBound) return;
-    container.dataset.modBound = '1';
-    container.addEventListener('click', async (e)=>{
-      const editBtn = e.target.closest('[data-log-edit]');
-      const delBtn = e.target.closest('[data-log-del]');
-      const fulfillBtn = e.target.closest('[data-fulfill-target]');
-      const moveAcceptBtn = e.target.closest('[data-move-accept-sector]');
-      // In chat privata il thread attuale può cambiare da un refresh all'altro (il Master
-      // passa da un giocatore all'altro), quindi lo leggiamo dalla variabile globale al
-      // momento del click, non lo "congeliamo" quando la funzione viene collegata.
-      const thread = subgroupThread ? (typeof subgroupThread==='function'?subgroupThread():subgroupThread) : (isPrivate ? masterPrivateThread : null);
-      const sourceLog = subgroupThread ? cachedSubgroupLog : (isPrivate ? cachedMasterPrivateLog : cachedLog);
-      if(editBtn){
-        const id = editBtn.getAttribute('data-log-edit');
-        const entry = sourceLog.find(l=>String(l.id)===String(id));
-        if(entry) openEditLogModal(entry, code, thread);
-      }
-      if(delBtn){
-        const id = delBtn.getAttribute('data-log-del');
-        if(window.confirm('Eliminare questo messaggio dal registro?')){
-          await deleteLogEntry(code, id, thread);
-          refreshLiveParts();
-        }
-      }
-      if(fulfillBtn && me){
-        const skillKey = fulfillBtn.getAttribute('data-fulfill-skill');
-        const tn = fulfillBtn.getAttribute('data-fulfill-tn');
-        const poolKeys = ['baseAccuracy','baseDodge','baseHealth'];
-        let text = null;
-        let rollMeta = null;
-        if(poolKeys.includes(skillKey)){
-          const { dice, successes } = rollPool(me.digimon[skillKey]);
-          const label = skillKey==='baseAccuracy'?'Accuracy':(skillKey==='baseDodge'?'Dodge':'Health');
-          text = `tira Pool Check ${label} (${me.digimon[skillKey]}d6): [${dice.join(',')}] → ${successes} successi (richiesto dal Master)`;
-          rollMeta = { dice, successes };
-        } else {
-          const def = SKILL_DEFS.find(d=>d.key===skillKey);
-          if(def){
-            const attr = def.attrs[0];
-            const attrVal = me.tamer[attr];
-            const digimonBonus = prodigiousSkillBonus(me, def);
-            const skillVal = Number(me.tamer.skills[def.key]||0) + digimonBonus;
-            const { dice, total: baseTotal } = rollSkillCheck(attrVal, skillVal);
-            let total = baseTotal;
-            let aspectNote = digimonBonus>0 ? ` +${digimonBonus} dal Digimon (Prodigious Skill/Mind Over Matter)` : '';
-            const majorLeft = me.tamer.majorAspect ? (me.tamer.majorAspect.usesLeft||0) : 0;
-            const minorLeft = me.tamer.minorAspect ? (me.tamer.minorAspect.usesLeft||0) : 0;
-            if(majorLeft>0 || minorLeft>0){
-              const choice = window.prompt(`Usare un Aspect? Scrivi "major" (+4, ${majorLeft} usi), "minor" (+2, ${minorLeft} usi), o lascia vuoto per nessuno.`, '');
-              if(choice && choice.trim().toLowerCase().startsWith('major') && majorLeft>0){
-                total += 4; me.tamer.majorAspect.usesLeft -= 1;
-                aspectNote = ` +4 Major Aspect (${me.tamer.majorAspect.text})`;
-                await saveMember(session.code, me);
-              } else if(choice && choice.trim().toLowerCase().startsWith('minor') && minorLeft>0){
-                total += 2; me.tamer.minorAspect.usesLeft -= 1;
-                aspectNote = ` +2 Minor Aspect (${me.tamer.minorAspect.text})`;
-                await saveMember(session.code, me);
-              }
-            }
-            const verdict = evaluateVsTN(total, tn, dice);
-            text = `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict?` vs TN ${tn} → ${verdict.label}`:'') + ' (richiesto dal Master)';
-            rollMeta = { dice, total, verdict: verdict?verdict.label:null };
-          }
-        }
-        if(text){
-          const entry = { who: displayName(me), role:'roll', text, meta: rollMeta };
-          // Risponde nello stesso canale in cui il giocatore sta leggendo la richiesta: privato
-          // col Master, il sottogruppo aperto, o generale — altrimenti (bug corretto) un tiro
-          // fatto da dentro un sottogruppo finiva nella Chat Generale invece che nel sottogruppo.
-          //
-          // BUGFIX: qui sotto mancava il tag esplicito di location sulla RISPOSTA al tiro (stesso
-          // identico bug già corretto sopra per la richiesta stessa in reqBtn.onclick — vedi
-          // memberLocationKey/subgroupLocationKey). Senza meta.location esplicito, pushPrivateLog
-          // la marca in automatico con currentLocationKey() (la posizione del gruppo INTERO),
-          // invece della posizione EFFETTIVA di chi sta rispondendo. Se il giocatore/sottogruppo
-          // si era separato dal gruppo, il risultato veniva sì salvato sul server, ma spariva
-          // subito sotto il filtro di default "Settore attuale" della sua stessa chat — il tiro
-          // sembrava non succedere affatto ("non compare il risultato").
-          if(playerChatMode==='private'){
-            await pushPrivateLog(code, session.username, { ...entry, meta: { ...(entry.meta||{}), location: memberLocationKey(me) } });
-          } else if(playerChatMode==='subgroup' && playerActiveSubgroupId){
-            const group = (cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId) || null;
-            await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { ...entry, meta: { ...(entry.meta||{}), location: subgroupLocationKey(group) } });
-          } else {
-            await pushLog(code, entry);
-          }
-          refreshLiveParts();
-        }
-      }
-      if(moveAcceptBtn && me){
-        // Il Master ha esplicitamente proposto questa destinazione in chat: lo spostamento va a
-        // buon fine anche se lo "spostamento libero"/le connessioni non lo permetterebbero — qui
-        // non è il giocatore a decidere di muoversi da solo, è un invito diretto del Master.
-        const sectorId = moveAcceptBtn.getAttribute('data-move-accept-sector');
-        const luogoId = moveAcceptBtn.getAttribute('data-move-accept-luogo') || null;
-        if(sectorId){
-          moveAcceptBtn.disabled = true;
-          const prevSectorId = me.tamer.currentSectorId;
-          const prevLuogoId = me.tamer.currentLuogoId;
-          me.tamer.currentSectorId = sectorId;
-          me.tamer.currentLuogoId = luogoId;
-          const ok = await saveMember(code, me);
-          if(!ok){
-            me.tamer.currentSectorId = prevSectorId;
-            me.tamer.currentLuogoId = prevLuogoId;
-            moveAcceptBtn.disabled = false;
-          } else {
-            const destName = luogoId ? luogoNameById(sectorId, luogoId) : sectorNameById(sectorId);
-            const entry = { who: displayName(me), role:'player', text: `🚶 ${displayName(me)} si sposta a "${destName||''}".` };
-            if(playerChatMode==='private') await pushPrivateLog(code, session.username, entry);
-            else if(playerChatMode==='subgroup' && playerActiveSubgroupId) await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, entry);
-            else await pushLog(code, entry);
-            refreshLiveParts();
-          }
-        }
-      }
-    });
-  }
-
-  // escapeHTML/escapeAttr sono state spostate in js/util.js (funzioni pure, zero dipendenze).
-
-  // Converte un testo grezzo (narrazione del Master, chat, ecc.) in HTML sicuro,
-  // preservando gli a capo e un piccolo sottoinsieme di markdown: ### / ## / # per i titoli
-  // e **testo** per il grassetto. L'escaping HTML avviene sempre PRIMA di interpretare
-  // i simboli markdown, quindi non introduce rischi di injection.
-  function formatLogText(raw){
-    if(raw==null || raw==='') return '';
-    const escaped = escapeHTML(String(raw)).replace(/\r\n/g,'\n');
-    const lines = escaped.split('\n');
-    let html = '';
-    lines.forEach((line, i)=>{
-      const h = line.match(/^(#{1,3})\s+(.*)$/);
-      if(h){
-        html += `<div class="log-h log-h${h[1].length}">${h[2]}</div>`;
-      } else {
-        html += line;
-        if(i < lines.length-1) html += '<br>';
-      }
-    });
-    // Discorso diretto: il testo tra virgolette viene evidenziato (colore + corsivo, vedi CSS
-    // .log-speech) per distinguere a colpo d'occhio ciò che il personaggio DICE dal resto del
-    // messaggio (narrazione/azione) — richiesto per rendere più leggibili i messaggi lunghi dove
-    // si mescolano descrizione e battute. Riconosce le virgolette dritte "..." (diventate &quot;
-    // dopo l'escaping HTML sopra) e quelle tipografiche “...”/«...» (non toccate dall'escaping).
-    // Non greedy e senza attraversare <br>/<div> (escluso "<" dal contenuto): resta dentro una
-    // singola riga, quindi non scatta per una virgoletta "aperta" dimenticata a fine messaggio.
-    html = html
-      .replace(/(&quot;)([^<]+?)(&quot;)/g, '$1<span class="log-speech">$2</span>$3')
-      .replace(/(“)([^<]+?)(”)/g, '$1<span class="log-speech">$2</span>$3')
-      .replace(/(«)([^<]+?)(»)/g, '$1<span class="log-speech">$2</span>$3');
-    // grassetto **testo** (non a cavallo di righe già trasformate in <div>)
-    html = html.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
-    // "Menziona": [[dex:ID]] / [[npc:NOME_CODIFICATO]] inseriti dal bottone 🔖 nel composer
-    // diventano un badge cliccabile con mini-ritratto, invece di restare testo grezzo — mostra
-    // subito a chi legge di chi si sta parlando, con un tap per vedere la scheda completa.
-    // Varianti "solo immagine": [[dex-img:ID]] / [[npc-img:NOME_CODIFICATO]], inserite dal
-    // picker scegliendo 🖼️ invece della riga intera — mostrano solo il ritratto (nessun nome/
-    // chip), e un click ingrandisce l'immagine (stessa lightbox degli avatar/allegati) invece di
-    // aprire la scheda completa. Vanno sostituite PRIMA delle varianti "chip" qui sotto, perché
-    // altrimenti "dex-img:ID" non farebbe match di "dex:ID" (i due prefissi non si sovrappongono,
-    // ma teniamole comunque in quest'ordine per chiarezza).
-    html = html.replace(/\[\[dex-img:([a-zA-Z0-9_-]+)\]\]/g, (m, id)=>{
-      const e = cachedDex.find(x=>String(x.id)===id);
-      if(!e || !e.image_url) return m;
-      return mentionImageOnlyHTML(e.image_url, e.name);
-    });
-    html = html.replace(/\[\[npc-img:([^\]]+)\]\]/g, (m, encName)=>{
-      let name; try{ name = decodeURIComponent(encName); }catch(err){ name = encName; }
-      const npcs = loadSavedNpcs(session && session.code);
-      const n = npcs.find(x=>x.name===name);
-      if(!n || !n.avatar) return m;
-      return mentionImageOnlyHTML(n.avatar, name);
-    });
-    html = html.replace(/\[\[dex:([a-zA-Z0-9_-]+)\]\]/g, (m, id)=>{
-      const e = cachedDex.find(x=>String(x.id)===id);
-      if(!e) return m;
-      return mentionChipHTML(e.image_url, e.name, 'dex:'+id);
-    });
-    html = html.replace(/\[\[npc:([^\]]+)\]\]/g, (m, encName)=>{
-      let name; try{ name = decodeURIComponent(encName); }catch(err){ name = encName; }
-      const npcs = loadSavedNpcs(session && session.code);
-      const n = npcs.find(x=>x.name===name);
-      return mentionChipHTML(n ? n.avatar : null, name, 'npc:'+encName);
-    });
-    return html;
-  }
-  function mentionChipHTML(avatar, name, dataKey){
-    return `<span class="mention-chip" data-mention-open="${escapeAttr(dataKey)}">${avatar?`<img src="${escapeAttr(avatar)}" onerror="this.style.display='none'" />`:''}${escapeHTML(name)}</span>`;
-  }
-  // "Solo immagine": stesso data-avatar-expand già gestito dalla delegation globale (riga
-  // ~10148) per avatar e allegati del Registro, quindi il click apre direttamente la lightbox
-  // sull'immagine — niente scheda con nome/descrizione, come richiesto per questa modalità.
-  function mentionImageOnlyHTML(avatar, name){
-    return `<img class="who-avatar" src="${escapeAttr(avatar)}" alt="${escapeAttr(name)}" data-avatar-expand="${escapeAttr(avatar)}" style="width:22px;height:22px;border-radius:4px;object-fit:cover;cursor:zoom-in;vertical-align:middle;" onerror="this.style.display='none'" />`;
-  }
-  // Bottone "🔖 Menziona" accanto a un composer: apre il selezionatore e inserisce il token
-  // scelto (Digidex o NPC salvato) al punto del cursore nella textarea indicata.
-  function mentionButtonHTML(prefix){
-    return `<button type="button" class="btn ghost small" id="${prefix}-mention-btn" style="margin-top:6px;">🔖 Menziona</button>`;
-  }
-  function bindMentionButton(prefix, code, textareaId){
-    const btn = document.getElementById(prefix+'-mention-btn');
-    if(!btn) return;
-    btn.onclick = ()=> openMentionPicker(code, (token)=>{
-      const ta = document.getElementById(textareaId);
-      if(!ta) return;
-      const pos = ta.selectionStart==null ? ta.value.length : ta.selectionStart;
-      ta.value = ta.value.slice(0,pos) + token + ' ' + ta.value.slice(pos);
-      ta.focus();
-      const newPos = pos + token.length + 1;
-      try{ ta.setSelectionRange(newPos, newPos); }catch(e){}
-    });
-  }
-  function openMentionPicker(code, onPick){
-    const old = document.getElementById('mention-picker-modal');
-    if(old) old.remove();
-    const modal = document.createElement('div');
-    modal.id = 'mention-picker-modal';
-    modal.className = 'enc-modal-backdrop';
-    const npcs = loadSavedNpcs(code);
-    modal.innerHTML = `
-      <div class="enc-modal-card hud-frame" style="max-width:420px;max-height:80vh;overflow:auto;position:relative;">
-        <button class="btn ghost small" id="mention-picker-close" style="position:absolute;top:8px;right:8px;">✕</button>
-        <div class="section-title" style="margin-top:0;">🔖 Mostra chi stai citando</div>
-        <input type="text" id="mention-picker-search" placeholder="Cerca nel Digidex o negli NPC..." style="width:100%;margin-bottom:10px;" />
-        <div id="mention-picker-list"></div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-    const closeIt = ()=>modal.remove();
-    document.getElementById('mention-picker-close').onclick = closeIt;
-    modal.onclick = (ev)=>{ if(ev.target===modal) closeIt(); };
-    const listEl = document.getElementById('mention-picker-list');
-    const searchEl = document.getElementById('mention-picker-search');
-    // Ogni riga ha due modi per essere scelta: un tap sulla riga (nome+ritratto) inserisce la
-    // menzione "completa" (chip col nome, scheda con descrizione al click — comportamento
-    // invariato), il pulsante 🖼️ a destra (solo se c'è un'immagine) inserisce la variante "solo
-    // immagine" invece. Le due azioni sono su elementi separati per non doversi chiedere ogni
-    // volta "che tipo di menzione vuoi" in un secondo passaggio.
-    function renderList(){
-      const q = (searchEl.value||'').trim().toLowerCase();
-      const dexMatches = cachedDex.filter(e=>!q || e.name.toLowerCase().includes(q)).slice(0,25);
-      const npcMatches = npcs.filter(n=>!q || n.name.toLowerCase().includes(q)).slice(0,25);
-      listEl.innerHTML = `
-        ${dexMatches.length ? `<div class="muted" style="font-size:10px;text-transform:uppercase;margin:6px 0 4px;">Digidex</div>` + dexMatches.map(e=>`<div class="roster-item" style="display:flex;align-items:center;gap:8px;padding:6px 8px;">
-          <span data-mention-pick="dex:${escapeAttr(e.id)}" style="flex:1;cursor:pointer;display:flex;align-items:center;gap:8px;">${e.image_url?`<img src="${escapeAttr(e.image_url)}" style="width:26px;height:26px;object-fit:cover;border-radius:4px;" />`:''}<span>${escapeHTML(e.name)}</span></span>
-          ${e.image_url?`<button type="button" class="btn ghost small" data-mention-pick-img="dex:${escapeAttr(e.id)}" title="Inserisci solo l'immagine" style="padding:2px 6px;">🖼️</button>`:''}
-        </div>`).join('') : ''}
-        ${npcMatches.length ? `<div class="muted" style="font-size:10px;text-transform:uppercase;margin:10px 0 4px;">NPC</div>` + npcMatches.map(n=>`<div class="roster-item" style="display:flex;align-items:center;gap:8px;padding:6px 8px;">
-          <span data-mention-pick="npc:${escapeAttr(encodeURIComponent(n.name))}" style="flex:1;cursor:pointer;display:flex;align-items:center;gap:8px;">${n.avatar?`<img src="${escapeAttr(n.avatar)}" style="width:26px;height:26px;object-fit:cover;border-radius:4px;" />`:''}<span>${escapeHTML(n.name)}</span></span>
-          ${n.avatar?`<button type="button" class="btn ghost small" data-mention-pick-img="npc:${escapeAttr(encodeURIComponent(n.name))}" title="Inserisci solo l'immagine" style="padding:2px 6px;">🖼️</button>`:''}
-        </div>`).join('') : ''}
-        ${(!dexMatches.length && !npcMatches.length) ? '<div class="muted">Nessun risultato.</div>' : ''}
-      `;
-      listEl.querySelectorAll('[data-mention-pick]').forEach(item=>{
-        item.onclick = ()=>{
-          const val = item.getAttribute('data-mention-pick');
-          onPick(`[[${val}]]`);
-          closeIt();
-        };
-      });
-      listEl.querySelectorAll('[data-mention-pick-img]').forEach(btn=>{
-        btn.onclick = (ev)=>{
-          ev.stopPropagation();
-          const val = btn.getAttribute('data-mention-pick-img');
-          const sep = val.indexOf(':');
-          const kind = val.slice(0, sep); // "dex" o "npc"
-          const rest = val.slice(sep+1);
-          onPick(`[[${kind}-img:${rest}]]`);
-          closeIt();
-        };
-      });
-    }
-    searchEl.oninput = renderList;
-    renderList();
-    searchEl.focus();
-  }
-  // ===== "Parla come" — picker cercabile invece del <select> gigante =====
-  // Su mobile un <select> nativo con tutto il Digidex dentro diventa una ruota di scelta
-  // interminabile e scomodissima da scorrere. Master/Digimon dei giocatori/Incontri in scena
-  // restano in cima come lista fissa (di solito pochi elementi); Digidex e NPC salvati, che
-  // possono essere centinaia, si vedono solo cercando. Usata da Chat Generale, Privata,
-  // Sottogruppi e dalla modale di modifica messaggio, cosi' il comportamento resta identico
-  // ovunque compaia "Parla come".
-  function speakAsFieldHTML(hiddenId, btnId, initialLabel){
-    return `
-      <div class="field"><label>Parla come</label>
-        <button type="button" class="btn ghost" id="${btnId}" style="width:100%;text-align:left;">${escapeHTML(initialLabel||'🎙️ Master (narrazione)')}</button>
-        <input type="hidden" id="${hiddenId}" value="master" />
-      </div>
-    `;
-  }
-  // applyFn(mode) viene richiamata subito dopo la scelta, per riusare la stessa logica che già
-  // mostra/nasconde i campi Nemico/NPC e precompila il colore — invariata rispetto a prima,
-  // cambia solo come viene innescata (niente più .onchange su un <select>).
-  function attachSpeakAsButton(hiddenId, btnId, code, memberUsernames, applyFn){
-    const hidden = document.getElementById(hiddenId);
-    const btn = document.getElementById(btnId);
-    if(!btn || !hidden) return;
-    btn.onclick = ()=> openSpeakAsPicker(code, memberUsernames, (value, label)=>{
-      hidden.value = value;
-      btn.textContent = label;
-      if(applyFn) applyFn(value);
-    });
-  }
-  function openSpeakAsPicker(code, memberUsernames, onPick){
-    const old = document.getElementById('speak-as-picker-modal');
-    if(old) old.remove();
-    const modal = document.createElement('div');
-    modal.id = 'speak-as-picker-modal';
-    modal.className = 'enc-modal-backdrop';
-    const npcs = loadSavedNpcs(code);
-    const rosterPool = memberUsernames ? (cachedRoster||[]).filter(p=>memberUsernames.includes(p.username)) : (cachedRoster||[]);
-    modal.innerHTML = `
-      <div class="enc-modal-card hud-frame" style="max-width:420px;max-height:80vh;overflow:auto;position:relative;">
-        <button class="btn ghost small" id="speak-as-picker-close" style="position:absolute;top:8px;right:8px;">✕</button>
-        <div class="section-title" style="margin-top:0;">🎭 Parla come</div>
-        <div id="speak-as-picker-fixed"></div>
-        <input type="text" id="speak-as-picker-search" placeholder="Cerca nel Digidex o negli NPC..." style="width:100%;margin:10px 0;" />
-        <div id="speak-as-picker-list"></div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-    const closeIt = ()=>modal.remove();
-    document.getElementById('speak-as-picker-close').onclick = closeIt;
-    modal.onclick = (ev)=>{ if(ev.target===modal) closeIt(); };
-    const pick = (value, label)=>{ onPick(value, label); closeIt(); };
-    const fixedEl = document.getElementById('speak-as-picker-fixed');
-    fixedEl.innerHTML = `
-      <div class="roster-item" data-pick="master" data-pick-label="🎙️ Master (narrazione)" style="cursor:pointer;padding:6px 8px;">🎙️ Master (narrazione)</div>
-      ${rosterPool.map(p=>{ const label = (p.digimon&&p.digimon.name) || (displayName(p)+' — Digimon'); return `<div class="roster-item" data-pick="digimon:${escapeAttr(p.username)}" data-pick-label="${escapeAttr(label)}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 8px;">${(p.digimon&&p.digimon.imageUrl)?`<img src="${escapeAttr(p.digimon.imageUrl)}" style="width:22px;height:22px;object-fit:cover;border-radius:4px;" />`:''}<span>${escapeHTML(label)}</span></div>`; }).join('')}
-      ${((cachedScene&&cachedScene.encounters)||[]).map((e,i)=>{ const label = encName(e)||'Digimon'; return `<div class="roster-item" data-pick="encounter:${i}" data-pick-label="${escapeAttr(label)}" style="cursor:pointer;padding:6px 8px;">⚔️ ${escapeHTML(label)} (in scena)</div>`; }).join('')}
-    `;
-    const bindPickables = (root)=>{
-      root.querySelectorAll('[data-pick]').forEach(item=>{
-        item.onclick = ()=> pick(item.getAttribute('data-pick'), item.getAttribute('data-pick-label'));
-      });
-    };
-    bindPickables(fixedEl);
-    const listEl = document.getElementById('speak-as-picker-list');
-    const searchEl = document.getElementById('speak-as-picker-search');
-    function renderList(){
-      const q = (searchEl.value||'').trim().toLowerCase();
-      // Digidex/NPC compaiono solo cercando (sono le liste potenzialmente lunghissime); senza
-      // testo digitato mostriamo solo un assaggio degli NPC recenti, così la lista non parte
-      // già enorme.
-      const dexMatches = q ? cachedDex.filter(e=>e.name.toLowerCase().includes(q)).slice(0,25) : [];
-      const npcMatches = q ? npcs.filter(n=>n.name.toLowerCase().includes(q)).slice(0,25) : npcs.slice(0,10);
-      listEl.innerHTML = `
-        ${dexMatches.length ? `<div class="muted" style="font-size:10px;text-transform:uppercase;margin:6px 0 4px;">Digidex</div>` + dexMatches.map(e=>`<div class="roster-item" data-pick="dex:${escapeAttr(e.id)}" data-pick-label="${escapeAttr(e.name)}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 8px;">${e.image_url?`<img src="${escapeAttr(e.image_url)}" style="width:22px;height:22px;object-fit:cover;border-radius:4px;" />`:''}<span>${escapeHTML(e.name)}</span></div>`).join('') : ''}
-        ${npcMatches.length ? `<div class="muted" style="font-size:10px;text-transform:uppercase;margin:10px 0 4px;">NPC salvati</div>` + npcMatches.map(n=>`<div class="roster-item" data-pick="npc-saved:${escapeAttr(n.name)}" data-pick-label="${escapeAttr(n.name)}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 8px;">${n.avatar?`<img src="${escapeAttr(n.avatar)}" style="width:22px;height:22px;object-fit:cover;border-radius:4px;" />`:''}<span>${escapeHTML(n.name)}</span></div>`).join('') : ''}
-        <div class="roster-item" data-pick="enemy" data-pick-label="💀 Nemico personalizzato..." style="cursor:pointer;padding:6px 8px;">💀 Nemico personalizzato...</div>
-        <div class="roster-item" data-pick="npc" data-pick-label="👤 NPC nuovo..." style="cursor:pointer;padding:6px 8px;">👤 NPC nuovo...</div>
-        ${(q && !dexMatches.length && !npcMatches.length) ? '<div class="muted">Nessun risultato nel Digidex/NPC.</div>' : ''}
-      `;
-      bindPickables(listEl);
-    }
-    searchEl.oninput = renderList;
-    renderList();
-    searchEl.focus();
-  }
-  function openMentionDetail(key){
-    if(key.startsWith('dex:')){
-      const e = cachedDex.find(x=>String(x.id)===key.slice(4));
-      if(!e) return;
-      showMentionDetailModal({ name:e.name, image:e.image_url, description:e.description, stage:e.stage, categories:e.categories });
-    } else if(key.startsWith('npc:')){
-      const encName = key.slice(4);
-      let name; try{ name = decodeURIComponent(encName); }catch(err){ name = encName; }
-      const npcs = loadSavedNpcs(session && session.code);
-      const n = npcs.find(x=>x.name===name);
-      showMentionDetailModal({ name, image: n ? n.avatar : null, description:'', stage:null, categories:[] });
-    }
-  }
-  function showMentionDetailModal({ name, image, description, stage, categories }){
-    const old = document.getElementById('mention-detail-modal');
-    if(old) old.remove();
-    const modal = document.createElement('div');
-    modal.id = 'mention-detail-modal';
-    modal.className = 'enc-modal-backdrop';
-    modal.innerHTML = `
-      <div class="enc-modal-card hud-frame" style="max-width:380px;position:relative;">
-        <button class="btn ghost small" id="mention-detail-close" style="position:absolute;top:8px;right:8px;">✕</button>
-        ${image ? `<div class="enc-modal-img-wrap"><img src="${escapeAttr(image)}" onerror="this.style.display='none'" class="enc-modal-img" /></div>` : ''}
-        <div style="margin-top:10px;">
-          <b style="font-size:16px;">${escapeHTML(name)}</b>
-          ${stage ? `<span class="tag" style="margin-left:6px;">${escapeHTML(stage)}</span>` : ''}
-        </div>
-        ${categories && categories.length ? `<div class="muted" style="font-size:11px;margin-top:4px;">${categories.map(c=>escapeHTML(c)).join(' · ')}</div>` : ''}
-        ${description ? `<div style="margin-top:10px;font-size:13px;white-space:pre-wrap;">${escapeHTML(description)}</div>` : ''}
-      </div>
-    `;
-    document.body.appendChild(modal);
-    document.getElementById('mention-detail-close').onclick = ()=>modal.remove();
-    modal.onclick = (ev)=>{ if(ev.target===modal) modal.remove(); };
-  }
+  // (mentionButtonHTML/bindMentionButton/openMentionPicker, speakAsFieldHTML/attachSpeakAsButton/openSpeakAsPicker, openMentionDetail/showMentionDetailModal) spostati in js/chat-composer.js
   // Le "evolutions" di una voce Digidex sono oggetti { name, imageUrl, ... }, non semplici stringhe.
   // Estrae sempre il nome in modo sicuro, altrimenti finisce per stampare "[object Object]" a video
   // (ed è quello che finiva salvato dentro unlockedEvolutions dalla checkbox del Master).
@@ -9825,26 +8272,7 @@
     return list;
   }
 
-  // ---------- SCENE ENCOUNTERS: name-only strings (legacy) vs full Dex-linked objects ----------
-  function normalizeEncounter(e){
-    if(typeof e === 'string'){
-      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null, disposition:'enemy' };
-    }
-    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null, disposition:'enemy' }, e);
-  }
-  const ENCOUNTER_DISPOSITIONS = { enemy:{label:'Nemico', color:'var(--danger)', icon:'⚔️'}, ally:{label:'Alleato', color:'var(--cyan)', icon:'🤝'}, neutral:{label:'Neutrale', color:'var(--text-mute)', icon:'❔'} };
-
-  // Caselle Ferita di un Incontro nella Scena, stessa formula usata per i Digimon dei giocatori (Stage + Health×2)
-  function encounterMaxWounds(e){
-    const bs = (e && e.baseStats) || {};
-    return Math.max(1, stageIndex(e && e.stage) + Number(bs.baseHealth||0)*2);
-  }
-  function encounterCurrentWounds(e){
-    const max = encounterMaxWounds(e);
-    if(e.currentWounds===null || e.currentWounds===undefined) return max;
-    return Math.max(0, Math.min(max, Number(e.currentWounds)));
-  }
-  function encName(e){ return (typeof e==='string') ? e : ((e && e.name) || ''); }
+  // (normalizeEncounter, ENCOUNTER_DISPOSITIONS, encounterMaxWounds, encounterCurrentWounds, encName) spostati in js/encounters.js
 
   function findCurrentSector(){
     if(!cachedScene.currentSectorId) return null;
