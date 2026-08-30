@@ -132,3 +132,24 @@
     }
     return targetCard+'-card';
   }
+
+  // Lightbox generica per ingrandire un'immagine (sfondo di Scena, avatar in chat) con un click:
+  // spostata qui da index.html perché usata sia dal delegate di click di js/scene-encounters.js
+  // (sfondo Scena/avatar) sia potenzialmente da altri punti della UI in futuro.
+  function openImageLightbox(url){
+    if(!url) return;
+    const old = document.getElementById('img-lightbox');
+    if(old) old.remove();
+    const modal = document.createElement('div');
+    modal.id = 'img-lightbox';
+    modal.className = 'enc-modal-backdrop';
+    modal.innerHTML = `
+      <div style="position:relative;max-width:92vw;max-height:92vh;">
+        <button class="btn ghost small" id="img-lightbox-close" style="position:absolute;top:-14px;right:-14px;z-index:2;">✕</button>
+        <img src="${escapeAttr(url)}" style="max-width:92vw;max-height:92vh;object-fit:contain;border:1px solid var(--line);background:#05070a;" />
+      </div>
+    `;
+    document.body.appendChild(modal);
+    document.getElementById('img-lightbox-close').onclick = ()=>modal.remove();
+    modal.onclick = (ev)=>{ if(ev.target===modal) modal.remove(); };
+  }
