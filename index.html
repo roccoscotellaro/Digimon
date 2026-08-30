@@ -543,7 +543,35 @@
   async function saveProgression(code, data){ return apiPost('/api/state', { resource:'progression', code, ...data }); }
 
   async function getCombat(code){ const d = await apiGet('/api/state?resource=combat&code=' + encodeURIComponent(code)); return d ? d.combat : null; }
-  async function saveCombat(code, data){ return apiPost('/api/state', { resource:'combat', code, data }); }
+  // BUGFIX (segnalato dal vivo: "il personaggio torna indietro da solo post movimento e consuma
+  // anche l'altra azione"): refreshLiveParts() ri-fetcha cachedCombat dal server ad ogni ciclo di
+  // polling (ogni 15s) E lo fa girare anche a fine di ogni azione locale (es. doMove chiama
+  // refreshLiveParts() subito dopo aver salvato). Se il timer di polling scattava PROPRIO durante
+  // la finestra fra la mutazione locale (es. p.zone = newZone) e la risposta di questo
+  // saveCombat(...), il refetch del poll sostituiva (Object.assign) cachedCombat.participants con
+  // la copia ANCORA VECCHIA del server (scritta prima che questo salvataggio arrivasse) — a quel
+  // punto il saveCombat in corso finiva per salvare quella stessa copia vecchia (nessun errore,
+  // "ok"), quindi né lo spostamento né la spesa dell'Azione venivano davvero persistiti: la
+  // narrazione in chat diceva "ti sei spostato" ma la posizione tornava quella di prima al giro di
+  // polling successivo ("torna indietro da solo"). Il giocatore, non sapendo che la mossa non era
+  // mai stata salvata, procedeva con l'azione successiva (es. Attacca) usando quella che credeva
+  // fosse la sua seconda Azione — che invece era ancora la prima disponibile lato server, e veniva
+  // sì spesa per davvero: netto, 2 Azioni consumate per un solo spostamento mai avvenuto. Fix:
+  // combatActionPending resta true per tutta la durata di QUALSIASI salvataggio di combattimento
+  // (saveCombat è l'unico punto da cui tutte le azioni di combattimento passano); refreshLiveParts
+  // (vedi combatActionPending più sotto) salta il refetch del combattimento finché è true, quindi
+  // un salvataggio in corso non può più essere sovrascritto da un poll concorrente. Riusata anche
+  // come guardia anti-doppio-click nei bottoni self-service del giocatore (vedi bindAttacksCard/
+  // bindCombatSelfActions), che rifiutano un secondo click mentre un salvataggio è già in corso.
+  let combatActionPending = false;
+  async function saveCombat(code, data){
+    combatActionPending = true;
+    try {
+      return await apiPost('/api/state', { resource:'combat', code, data });
+    } finally {
+      combatActionPending = false;
+    }
+  }
 
   // ---------- Blocco chat di combattimento (richiesta utente) ----------
   // Quando il Master avvia un combattimento può scegliere UNA chat (Generale o un Sottogruppo
@@ -880,6 +908,12 @@
       const p = cachedCombat.participants.find(x=>x.username===username);
       if(!p) return;
       const statusEl = document.getElementById('self-action-status');
+      // Guardia anti-doppio-click/doppio-tap: vedi combatActionPending presso saveCombat — evita di
+      // spendere due Azioni per un solo tap mentre il salvataggio precedente è ancora in corso.
+      if(combatActionPending){
+        if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Azione precedente ancora in salvataggio, attendi un istante e riprova.'; }
+        return;
+      }
       if(!isMyCombatTurn(cachedCombat, username)){
         if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Non è il tuo turno.'; }
         return;
@@ -957,6 +991,13 @@
 
     async function doMove(closer){
       if(!cachedCombat || !cachedCombat.active) return;
+      // Guardia anti-doppio-click/doppio-tap: vedi combatActionPending presso saveCombat — un
+      // secondo tap mentre il salvataggio precedente è ancora in corso non deve spendere una
+      // seconda Azione (era proprio la causa del bug "consuma anche l'altra azione").
+      if(combatActionPending){
+        if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent='Spostamento precedente ancora in salvataggio, attendi un istante e riprova.'; }
+        return;
+      }
       const p = cachedCombat.participants.find(x=>x.username===session.username);
       if(!p) return;
       if(!isMyCombatTurn(cachedCombat, session.username)){
@@ -1008,6 +1049,11 @@
     document.querySelectorAll('[data-self-attack-idx]').forEach(btn=>{
       btn.onclick = async ()=>{
         if(!cachedCombat || !cachedCombat.active) return;
+        // Vedi combatActionPending presso saveCombat: stessa guardia anti-doppio-click di doMove.
+        if(combatActionPending){
+          if(resEl) resEl.innerHTML = '<div class="err">Azione precedente ancora in salvataggio, attendi un istante e riprova.</div>';
+          return;
+        }
         const p = cachedCombat.participants.find(x=>x.username===session.username);
         if(!p) return;
         if(!isMyCombatTurn(cachedCombat, session.username)){
@@ -1885,7 +1931,11 @@
     }
     if(dexCycle) cachedDex = await getDex(session.code);
     if(dexCycle) cachedNpcs = await getNpcs(session.code);
-    if(slowCycle || (cachedCombat && cachedCombat.active)){
+    // Vedi combatActionPending (definita presso saveCombat): non ri-fetchare/sovrascrivere il
+    // combattimento mentre un salvataggio locale è in corso, altrimenti questo poll può clobberare
+    // una mutazione non ancora confermata dal server con una copia ancora vecchia (bug "torna
+    // indietro da solo").
+    if(!combatActionPending && (slowCycle || (cachedCombat && cachedCombat.active))){
       const freshCombat = await getCombat(session.code);
       if(freshCombat && cachedCombat && typeof cachedCombat==='object'){
         // Muta l'oggetto esistente invece di sostituirlo: il Combat Manager del Master
