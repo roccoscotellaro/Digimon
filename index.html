@@ -132,10 +132,6 @@
   .scene-box .portraits{position:absolute;bottom:10px;right:14px;display:flex;gap:6px;}
   .scene-box .portraits img{width:44px;height:44px;object-fit:cover;border:1px solid var(--cyan-dim);border-radius:50%;background:#000;}
   .scene-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-mute);font-size:12px;}
-  /* Barra "Scena" fissata in cima su mobile (vedi @media max-width:760px sotto): sfondo + Digimon
-     in scena restano visibili anche mentre si è sulle schede Chat/Battaglia, non solo su Scena.
-     Su desktop resta invisibile: la Scena è già sempre a vista nella colonna, niente da duplicare. */
-  .mobile-scene-pin{display:none;}
   .enc-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;overflow-y:auto;}
   .enc-modal-card{position:relative;max-width:460px;width:100%;padding:20px;background:var(--panel);border:1px solid var(--line);max-height:90vh;overflow-y:auto;}
   .enc-modal-img-wrap{width:100%;height:300px;background:#12181f;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;}
@@ -273,19 +269,6 @@
     .role-pick{flex-direction:column;}
     .login-wrap{margin:24px auto;max-width:100%;padding:20px !important;}
     .scene-box{height:140px;}
-
-    /* Barra Scena fissa (vedi commento sulla classe più sopra): visibile solo su mobile, molto
-       più compatta del riquadro Scena Attuale/Composizione Scena normale — solo sfondo ridotto
-       e Digimon in scena, senza la card di breadcrumb/descrizione Settore (troppo lunga per
-       stare sempre in cima) né i campi di editing (quelli restano solo nella scheda Scena). */
-    .mobile-scene-pin{display:block;margin-bottom:10px;padding:8px !important;}
-    .mobile-scene-pin .scene-box{height:64px;margin-bottom:0;}
-    .mobile-scene-pin .scene-box .title{font-size:14px;bottom:4px;left:8px;}
-    .mobile-scene-pin .scene-expand-hint{top:4px;right:6px;font-size:12px;}
-    .mobile-scene-pin > div > .hud-frame.card{display:none;}
-    /* Il log Chat deve restare più corto della sua altezza normale per lasciare spazio alla
-       barra Scena fissa qui sopra, altrimenti sfora sotto il fondo dello schermo. */
-    .mobile-section[data-mobile-tab="chat"] .log{margin-top:0;}
     .sheet-head{flex-wrap:wrap;}
     .die3d, .die3d-static{font-size:20px !important;}
     .roster-item .sub{font-size:11px;}
@@ -305,12 +288,9 @@
     div[style*="display:flex;gap:14px"]{flex-direction:column;}
     div[style*="display:grid;grid-template-columns:1fr 1fr;gap:14px"]{grid-template-columns:1fr;}
 
-    /* ===== CHAT MOBILE: il log occupa quasi tutto lo schermo =====
-       -370px/-320px invece di -230px/-180px: la barra Scena fissa qui sopra (.mobile-scene-pin,
-       ~140px) mangia spazio in cima anche sulla scheda Chat, va tolto dal calcolo o il log
-       sforerebbe sotto il fondo dello schermo. */
+    /* ===== CHAT MOBILE: il log occupa quasi tutto lo schermo ===== */
     .mobile-section[data-mobile-tab="chat"] .log{
-      height:calc(100svh - 370px) !important;min-height:200px;max-height:calc(100svh - 320px);
+      height:calc(100svh - 230px) !important;min-height:200px;max-height:calc(100svh - 180px);
       font-size:14px;
     }
     .mobile-section[data-mobile-tab="chat"] .section-title{margin-bottom:4px !important;padding-bottom:4px !important;}
@@ -372,9 +352,14 @@
       border-radius:50%;background:var(--danger);box-shadow:0 0 4px var(--danger);
     }
 
-    /* Sezioni mobile: solo quella attiva è visibile */
+    /* Sezioni mobile: solo quella attiva è visibile... */
     .mobile-section{display:none !important;}
     .mobile-section.mobile-active{display:block !important;padding-bottom:calc(72px + env(safe-area-inset-bottom, 0px)) !important;}
+    /* ...tranne "Scena": resta sempre visibile (musica + Digimon in scena), anche mentre si è su
+       Chat o Battaglia, sia per i giocatori che per il Master. È la STESSA sezione della scheda
+       Scena (nessuna duplicazione): questa regola la sottrae al toggle sopra perché il selettore
+       con l'attributo ha specificità maggiore della classe .mobile-section da sola. */
+    .mobile-section[data-mobile-tab="scena"]{display:block !important;}
 
     /* Chat: segmented control — solo aggiustamenti di misura per touch, lo stile base è
        nella regola .chat-seg/.chat-seg-btn fuori dal media query (sempre attiva). */
@@ -1829,14 +1814,9 @@
     }
 
     const sceneLive = document.getElementById('scene-live');
-    const scenePinLive = document.getElementById('scene-pin-live');
-    if(sceneLive || scenePinLive){
+    if(sceneLive){
       const sceneViewer = session.role==='player' ? (cachedRoster.find(m=>m.username===session.username) || cachedMe) : null;
-      if(sceneLive) sceneLive.innerHTML = `<div class="muted mono" style="margin-bottom:8px;">${onlineSummary(cachedRoster)}</div>` + sceneHTML(cachedScene, sceneViewer);
-      // Barra Scena fissa mobile (.mobile-scene-pin): stesso Settore/Incontri di #scene-live ad
-      // ogni poll, così resta corretta anche mentre si è sulla scheda Chat/Battaglia — vedi il
-      // commento sulla classe .mobile-scene-pin nel CSS.
-      if(scenePinLive) scenePinLive.innerHTML = sceneHTML(cachedScene, sceneViewer);
+      sceneLive.innerHTML = `<div class="muted mono" style="margin-bottom:8px;">${onlineSummary(cachedRoster)}</div>` + sceneHTML(cachedScene, sceneViewer);
     }
     bindSceneAudio(cachedScene);
     if(missionsModalOpen) refreshMissionsModal();
@@ -2014,7 +1994,6 @@
 
     root.innerHTML = `
       ${topbar('Vista Giocatore')}
-      <div class="hud-frame card mobile-scene-pin"><div id="scene-pin-live">${sceneHTML(cachedScene, me)}</div></div>
       <div class="grid2">
         <div>
           <div class="mobile-section" data-mobile-tab="scena">
@@ -2915,7 +2894,6 @@
 
     root.innerHTML = `
       ${topbar('Vista Master')}
-      <div class="hud-frame card mobile-scene-pin"><div id="scene-pin-live">${sceneHTML(cachedScene)}</div></div>
       <div class="grid2">
         <div>
           <div class="mobile-section" data-mobile-tab="scena">
