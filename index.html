@@ -360,6 +360,17 @@
        Scena (nessuna duplicazione): questa regola la sottrae al toggle sopra perché il selettore
        con l'attributo ha specificità maggiore della classe .mobile-section da sola. */
     .mobile-section[data-mobile-tab="scena"]{display:block !important;}
+    /* Quando però NON si è effettivamente sulla scheda Scena (manca .mobile-active: si è su Chat/
+       Battaglia/ecc.), il contenuto completo è superfluo — resta visibile solo l'essenziale
+       (sfondo/immagine della Scena + i Digimon in essa, via #scene-live), nascondendo: titolo
+       sezione, riga Milestone/Ispirazione, widget audio, breadcrumb/descrizione del Settore
+       (unico .hud-frame.card dentro #scene-live), e per il Master anche tutti i campi di editing
+       (Titolo/Immagine/Musica/Luoghi/Incontri/ecc.) e il pannello Mappa dei Settori. Sempre la
+       STESSA sezione, nessun elemento duplicato: solo un sottoinsieme nascosto via CSS. */
+    .mobile-section[data-mobile-tab="scena"]:not(.mobile-active) > .hud-frame.card > *:not(#scene-live){display:none;}
+    .mobile-section[data-mobile-tab="scena"]:not(.mobile-active) #scene-live > .hud-frame.card{display:none;}
+    .mobile-section[data-mobile-tab="scena"]:not(.mobile-active) #sector-map-card{display:none;}
+    .mobile-section[data-mobile-tab="scena"]:not(.mobile-active) > .hud-frame.card{padding-bottom:8px;margin-bottom:8px;}
 
     /* Chat: segmented control — solo aggiustamenti di misura per touch, lo stile base è
        nella regola .chat-seg/.chat-seg-btn fuori dal media query (sempre attiva). */
