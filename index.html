@@ -545,6 +545,65 @@
   async function getCombat(code){ const d = await apiGet('/api/state?resource=combat&code=' + encodeURIComponent(code)); return d ? d.combat : null; }
   async function saveCombat(code, data){ return apiPost('/api/state', { resource:'combat', code, data }); }
 
+  // ---------- Blocco chat di combattimento (richiesta utente) ----------
+  // Quando il Master avvia un combattimento può scegliere UNA chat (Generale o un Sottogruppo
+  // esistente) dove: 1) viene inviato un avviso che spiega che la chat è bloccata; 2) i giocatori
+  // non possono più scrivere messaggi liberi in quella chat finché il Master non conclude il
+  // combattimento (bindActionSend più sotto controlla combatChatLockLocationMatches prima di ogni
+  // invio); 3) tutta la narrazione automatica del combattimento (tiri, spostamenti, danni, Clash,
+  // ecc. — vedi pushCombatNarration, usata al posto di pushLog da tutte le funzioni di
+  // combattimento) viene instradata lì invece che sempre in Chat Generale. combat.chatLock è
+  // { location: 'general' | 'sub:<id sottogruppo>', message } — location null/assente = nessun
+  // blocco, comportamento identico a prima (pushCombatNarration si comporta come pushLog).
+  const DEFAULT_COMBAT_LOCK_MESSAGE = "⚔️ È iniziato un combattimento! Questa chat resta bloccata per i giocatori finché il Master non lo conclude — segui qui gli eventi e le narrazioni dello scontro.";
+  function combatChatLockLabel(location){
+    if(!location || location==='general') return 'Chat Generale';
+    if(location.startsWith('sub:')){
+      const g = (cachedSubgroups||[]).find(x=>x.id===location.slice(4));
+      return g ? `Sottogruppo: ${g.name}` : 'Sottogruppo';
+    }
+    return location;
+  }
+  // Instrada la narrazione automatica di un'azione di combattimento verso la chat scelta dal
+  // Master per QUEL combattimento (combat.chatLock), con lo stesso schema location già usato
+  // altrove (pushLog per Generale, pushPrivateLog col thread 'subgroup:'+id per un Sottogruppo).
+  // Se il Master non ha scelto nessuna chat (combat.chatLock assente — combattimento "vecchio
+  // stile"/nessun blocco richiesto), si comporta esattamente come un pushLog normale: nessun
+  // cambiamento di comportamento per chi non usa la feature.
+  async function pushCombatNarration(combat, entry){
+    const lock = combat && combat.chatLock;
+    if(!lock || !lock.location || lock.location==='general') return pushLog(session.code, entry);
+    if(lock.location.startsWith('sub:')) return pushPrivateLog(session.code, 'subgroup:'+lock.location.slice(4), entry);
+    return pushLog(session.code, entry);
+  }
+  // true se il composer di chat che il GIOCATORE sta guardando in questo momento (chatMode +
+  // eventuale sottogruppo attivo) è proprio quello bloccato da un combattimento in corso — usata
+  // sia per disabilitare visivamente il campo (renderChatArea) sia come controllo definitivo
+  // prima dell'invio (bottone "Invia"), così non è aggirabile anche se la UI fosse rimasta stale.
+  function combatChatLockLocationMatches(chatMode, subgroupId){
+    if(!cachedCombat || !cachedCombat.active || !cachedCombat.chatLock) return false;
+    const loc = cachedCombat.chatLock.location;
+    if(!loc) return false;
+    if(loc==='general') return chatMode==='public';
+    if(loc.startsWith('sub:')) return chatMode==='subgroup' && subgroupId===loc.slice(4);
+    return false;
+  }
+  // Countdown/scadenza delle 24h dall'inizio del turno attuale (combat.turnStartedAt, impostato
+  // quando il Master calcola l'ordine dei turni e ad ogni "Turno Successivo" — vedi
+  // advanceCombatTurn/btn-combat-calc-order): puramente informativo, un promemoria di quanto tempo
+  // resta prima che sia "regolare" per il Master intervenire al posto del giocatore di turno — il
+  // Master può già farlo in qualsiasi momento dal proprio Combat Manager (nessun controllo di
+  // turno lato Master), questo timer non blocca né sblocca nulla di per sé.
+  function combatTurnTimerLabel(combat){
+    if(!combat || !combat.turnStartedAt) return null;
+    const started = new Date(combat.turnStartedAt).getTime();
+    if(isNaN(started)) return null;
+    const elapsedMs = Date.now() - started;
+    const remainingMs = 24*60*60*1000 - elapsedMs;
+    const fmt = (ms)=>{ const h = Math.floor(ms/3600000); const m = Math.floor((ms%3600000)/60000); return h>0 ? `${h}h ${m}m` : `${m}m`; };
+    return remainingMs <= 0 ? { expired:true, overText: fmt(-remainingMs) } : { expired:false, text: fmt(remainingMs) };
+  }
+
   // buildInitiativeOrder spostato in js/combat-engine.js
 
   const ACTION_DEFS = [
@@ -635,10 +694,13 @@
       skipped++;
     } while(isParticipantDefeated(combat.participants.find(p=>p.id===combat.order[combat.currentIndex])) && skipped < combat.order.length);
     const starting = combat.participants.find(p=>p.id===combat.order[combat.currentIndex]);
+    // Timer 24h (richiesta utente): riparte da zero ad ogni cambio di turno, non solo al primo —
+    // vedi combatTurnTimerLabel/combatDisplayHTML.
+    combat.turnStartedAt = new Date().toISOString();
     if(starting){
       const tickLogs = await tickEffectsForParticipant(code, combat, starting);
       for(const line of tickLogs){
-        await pushLog(code, { who:'Sistema', role:'gm', text: line });
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: line });
       }
       if(starting.isPC){
         const member = cachedRoster.find(m=>m.username===starting.username);
@@ -649,7 +711,7 @@
               const revertIdx = Math.max(0, stageIndex(member.digimon.defaultStage)-1);
               const revertStage = STAGES[revertIdx];
               applyStageChange(member.digimon, member.digimon.stage, revertStage);
-              await pushLog(code, { who:'Sistema', role:'gm', text: `${member.digimon.name||displayName(member)} torna a ${member.digimon.stage} (fine Evoluzione Forzata) — Stat aggiornate.` });
+              await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${member.digimon.name||displayName(member)} torna a ${member.digimon.stage} (fine Evoluzione Forzata) — Stat aggiornate.` });
             }
           }
           await saveMember(code, member);
@@ -664,8 +726,14 @@
   }
   async function endCombatNow(code, players){
     if(!window.confirm('Terminare il combattimento e azzerare i partecipanti?')) return;
+    const prevLock = cachedCombat && cachedCombat.chatLock;
     cachedCombat = defaultCombat();
     await saveCombat(code, cachedCombat);
+    // Sblocco simmetrico all'avviso di inizio (vedi btn-combat-start): la chat scelta dal Master
+    // torna libera per i giocatori, con un messaggio che lo conferma nello stesso posto.
+    if(prevLock && prevLock.location){
+      await pushCombatNarration({ chatLock: prevLock }, { who:'Sistema', role:'gm', text: '🔓 Il combattimento è terminato — questa chat è di nuovo libera.' });
+    }
     __combatMusicSynced = false;
     stopCombatMusic();
     renderCombatManager(code, players);
@@ -823,7 +891,7 @@
         return;
       }
       await saveCombat(code, cachedCombat);
-      await pushLog(code, { who: p.name, role:'player', text: `${p.name} usa ${result.def.label} (${result.def.cost} Azione/i) — restano ${p.actions}/2 Azioni.` });
+      await pushCombatNarration(cachedCombat, { who: p.name, role:'player', text: `${p.name} usa ${result.def.label} (${result.def.cost} Azione/i) — restano ${p.actions}/2 Azioni.` });
       refreshLiveParts();
     };
   }
@@ -906,6 +974,7 @@
         if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent = closer ? 'Sei già alla stessa zona di questo bersaglio.' : 'Non puoi allontanarti oltre così.'; }
         return;
       }
+      const prevActions = p.actions===undefined?2:p.actions;
       const spend = trySpendAction(p, 'move');
       if(!spend.ok){
         if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent = spend.msg; }
@@ -913,8 +982,24 @@
       }
       const from = p.zone||'Medio';
       p.zone = newZone;
-      await saveCombat(code, cachedCombat);
-      await pushLog(code, { who: p.name, role:'player', text: `${p.name} si ${closer?'avvicina a':'allontana da'} ${ref.name}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(cachedCombat.participants, p.id, ref.id, from, newZone)}` });
+      // BUGFIX: saveCombat() può fallire (rete, o l'ultima scrittura vince: /api/state fa un
+      // upsert dell'intero oggetto combat senza alcun controllo di versione, quindi un salvataggio
+      // concorrente — es. il Master che clicca "Turno Successivo" quasi nello stesso istante — può
+      // sovrascrivere in silenzio questo spostamento) — il risultato non veniva mai controllato,
+      // quindi lo spostamento locale (zona + Azione spesa) e il messaggio "ti sei spostato" in chat
+      // venivano comunque confermati anche quando il salvataggio non era davvero andato a buon
+      // fine: esattamente il bug segnalato ("notifica di avvenuto spostamento" ma il Digimon non si
+      // è spostato). Ora, se saveCombat torna null, la mutazione locale viene annullata (zona e
+      // Azione ripristinate) e non viene narrato né aggiornata la UI, con un messaggio d'errore
+      // chiaro invece di un falso successo.
+      const ok = await saveCombat(code, cachedCombat);
+      if(!ok){
+        p.zone = from;
+        p.actions = prevActions;
+        if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent = 'Spostamento non salvato (errore di rete o conflitto con un\'altra azione in corso) — riprova.'; }
+        return;
+      }
+      await pushCombatNarration(cachedCombat, { who: p.name, role:'player', text: `${p.name} si ${closer?'avvicina a':'allontana da'} ${ref.name}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(cachedCombat.participants, p.id, ref.id, from, newZone)}` });
       refreshLiveParts();
     }
     if(moveCloserBtn) moveCloserBtn.onclick = ()=>doMove(true);
@@ -948,7 +1033,7 @@
           resEl.innerHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">vs</span>${diceRowHTML(dodgeRoll.dice)}${dealt>0?`<span class="roll-total">${dealt} danno</span>`:''}`;
         }
         await saveCombat(code, cachedCombat);
-        await pushLog(code, { who: p.name, role:'roll', text: logText, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
+        await pushCombatNarration(cachedCombat, { who: p.name, role:'roll', text: logText, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
         refreshLiveParts();
       };
     });
@@ -1206,7 +1291,7 @@
         if(!result.ok){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; } return; }
         const from = p.zone||'Medio';
         p.zone = newZone;
-        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si sposta: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.` });
+        await pushCombatNarration(cachedCombat, { who: p.name, role:'gm', text: `${p.name} si sposta: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.` });
         await saveCombat(code, cachedCombat);
         const combatLive = document.getElementById('combat-live');
         if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, true);
@@ -1231,10 +1316,14 @@
     const byId = {};
     combat.participants.forEach(p=>byId[p.id]=p);
     const orderList = (combat.order||[]).map(id=>byId[id]).filter(Boolean);
+    const activeP = orderList[combat.currentIndex] || null;
+    const timer = combatTurnTimerLabel(combat);
     return `
       <div class="flex-between" style="margin-bottom:8px;">
         <span class="mono" style="color:var(--cyan);">ROUND ${combat.round}</span>
       </div>
+      ${combat.chatLock ? `<div class="muted" style="margin-bottom:6px;font-size:11px;">🔒 Chat bloccata per i giocatori: <b>${escapeHTML(combatChatLockLabel(combat.chatLock.location))}</b> — si sblocca da sola a fine combattimento.</div>` : ''}
+      ${timer && activeP ? `<div class="muted" style="margin-bottom:8px;font-size:11px;${timer.expired?'color:var(--danger);':''}">⏳ Turno di <b>${escapeHTML(combatDisplayName(activeP, isMaster))}</b>: ${timer.expired ? `scaduto da ${escapeHTML(timer.overText)} — ${isMaster?'puoi agire tu al posto suo dalla Gestione Combattimento qui sotto':'il Master può ormai agire al posto tuo'}.` : `${escapeHTML(timer.text)} rimasti prima che il Master possa agire al posto suo.`}</div>` : ''}
       ${zoneLineHTML(combat, !!isMaster)}
       ${orderList.length===0 ? '<div class="muted">Ordine non ancora calcolato.</div>' : orderList.map((p,i)=>{
         const wounds = getParticipantWounds(p);
@@ -1918,18 +2007,24 @@
       bindCombatSelfActions(session.code, session.username);
     }
     // Blocca la chat pubblica (non quella privata col Master) fuori dal proprio turno, se in combattimento.
+    // Blocca inoltre, per TUTTI (indipendentemente dal turno), la chat scelta dal Master come
+    // "chat di combattimento" (chatLock) finché il Master non conclude lo scontro.
     if(session.role==='player'){
       const myTurnNow = isMyCombatTurn(cachedCombat, session.username);
-      const lockPublicChat = !!(cachedCombat && cachedCombat.active) && playerChatMode!=='private' && playerChatMode!=='subgroup' && !myTurnNow;
+      const turnLockPublicChat = !!(cachedCombat && cachedCombat.active) && playerChatMode!=='private' && playerChatMode!=='subgroup' && !myTurnNow;
+      const chatLocked = combatChatLockLocationMatches(playerChatMode, playerActiveSubgroupId);
+      const lockPublicChat = turnLockPublicChat || chatLocked;
       ['action-text','btn-send-action','btn-correct','action-img-btn'].forEach(id=>{
         const el = document.getElementById(id);
         if(el) el.disabled = lockPublicChat;
       });
       const actionHintEl = document.getElementById('action-hint');
       if(actionHintEl){
-        actionHintEl.innerHTML = lockPublicChat
-          ? '<span style="color:var(--danger);">⛔ Sei in combattimento: la chat pubblica è bloccata fuori dal tuo turno. Puoi comunque scrivere in privato al Master.</span>'
-          : ACTION_HINT_DEFAULT_TEXT;
+        actionHintEl.innerHTML = chatLocked
+          ? '<span style="color:var(--danger);">🔒 Questa chat è bloccata: è in corso un combattimento. Puoi comunque scrivere in privato al Master.</span>'
+          : turnLockPublicChat
+            ? '<span style="color:var(--danger);">⛔ Sei in combattimento: la chat pubblica è bloccata fuori dal tuo turno. Puoi comunque scrivere in privato al Master.</span>'
+            : ACTION_HINT_DEFAULT_TEXT;
       }
     }
     const privateLogLiveMaster = document.getElementById('private-log-live-master');
@@ -2092,6 +2187,11 @@
       const ta = document.getElementById('action-text');
       const raw = ta.value.trim();
       if(!raw) return;
+      if(combatChatLockLocationMatches(playerChatMode, playerActiveSubgroupId)){
+        const actionHintEl = document.getElementById('action-hint');
+        if(actionHintEl) actionHintEl.innerHTML = '<span style="color:var(--danger);">🔒 Questa chat è bloccata: è in corso un combattimento.</span>';
+        return;
+      }
       if(playerChatMode==='subgroup' && playerActiveSubgroupId){
         const subMeta = {};
         if(pendingActionImageUrl) subMeta.image = pendingActionImageUrl;
@@ -3922,16 +4022,34 @@
           <select id="combat-start-zone-enemy">${ZONES.map(z=>`<option value="${z}" ${z==='Molto Lungo'?'selected':''}>${zoneLabel(z)}</option>`).join('')}</select>
         </div>
         <div class="muted" style="font-size:10px;margin-bottom:6px;">Default: Alleati e Nemici partono agli estremi opposti della linea — modificabile qui se la scena richiede altro.</div>
+        <div class="field"><label>Chat da avvisare e bloccare</label>
+          <select id="combat-start-chatlock">
+            <option value="general">Chat Generale</option>
+            ${(cachedSubgroups||[]).map(g=>`<option value="sub:${g.id}">Sottogruppo: ${escapeHTML(g.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Messaggio di avviso (modificabile, lasciare vuoto per non bloccare nessuna chat)</label>
+          <textarea id="combat-start-chatlock-msg" rows="3" style="width:100%;">${escapeHTML(DEFAULT_COMBAT_LOCK_MESSAGE)}</textarea>
+        </div>
         <button class="btn solid" id="btn-combat-start" style="width:100%;margin-top:6px;">Inizia Combattimento</button>
       `;
       document.getElementById('btn-combat-start').onclick = async ()=>{
         const startZoneAllySel = document.getElementById('combat-start-zone-ally');
         const startZoneEnemySel = document.getElementById('combat-start-zone-enemy');
+        const chatLockSel = document.getElementById('combat-start-chatlock');
+        const chatLockMsgEl = document.getElementById('combat-start-chatlock-msg');
         cachedCombat = defaultCombat();
         cachedCombat.active = true;
         cachedCombat.startZoneAlly = (startZoneAllySel && startZoneAllySel.value) || 'Molto Corto';
         cachedCombat.startZoneEnemy = (startZoneEnemySel && startZoneEnemySel.value) || 'Molto Lungo';
+        const chatLockMsg = (chatLockMsgEl && chatLockMsgEl.value || '').trim();
+        if(chatLockSel && chatLockMsg){
+          cachedCombat.chatLock = { location: chatLockSel.value, message: chatLockMsg };
+        }
         await saveCombat(code, cachedCombat);
+        if(cachedCombat.chatLock){
+          await pushCombatNarration(cachedCombat, { who:'Sistema', role:'gm', text: '🔒 ' + cachedCombat.chatLock.message });
+        }
         __combatMusicSynced = true;
         startCombatMusic(cachedScene);
         for(const p of players){
@@ -4295,7 +4413,7 @@
           }
           controller.clashWith=null; controller.clashController=false; controller.clashPinned=false; controller.clashComebackBonus=0;
           opponent.clashWith=null; opponent.clashController=false; opponent.clashPinned=false; opponent.clashComebackBonus=0;
-          await pushLog(code, { who:'Master', role:'roll', text, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
+          await pushCombatNarration(combat, { who:'Master', role:'roll', text, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
           await persistAndRefresh();
         };
       }
@@ -4315,13 +4433,13 @@
           const w = getParticipantWounds(opponent);
           text = `⚔ ${controller.name} attacca ${opponent.name} nel Clash: Acc ${cStats.accuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} vs Dodge½ ${Math.floor(oStats.dodge/2)}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} → COLPITO! ${dealt} danno → ${opponent.name} ${w.current}/${w.max} Ferite`;
         }
-        await pushLog(code, { who:'Master', role:'roll', text, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
+        await pushCombatNarration(combat, { who:'Master', role:'roll', text, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
         await persistAndRefresh();
         renderClashActions();
       };
       document.getElementById('btn-clash-pin').onclick = async ()=>{
         opponent.clashPinned = true;
-        await pushLog(code, { who:'Master', role:'gm', text: `📌 ${controller.name} pinna ${opponent.name}: non può Fuggire o fare Comeback finché non riesce un Contest Pin.` });
+        await pushCombatNarration(combat, { who:'Master', role:'gm', text: `📌 ${controller.name} pinna ${opponent.name}: non può Fuggire o fare Comeback finché non riesce un Contest Pin.` });
         await persistAndRefresh();
         renderClashActions();
       };
@@ -4342,7 +4460,7 @@
         controller.clashWith=null; controller.clashController=false; controller.clashPinned=false; controller.clashComebackBonus=0;
         opponent.clashWith=null; opponent.clashController=false; opponent.clashPinned=false; opponent.clashComebackBonus=0;
         const w = getParticipantWounds(opponent);
-        await pushLog(code, { who:'Master', role:'gm', text: `🤾 ${controller.name} lancia ${opponent.name} (${dealt} danno, ora a ${opponent.zone}) — il Clash finisce.` });
+        await pushCombatNarration(combat, { who:'Master', role:'gm', text: `🤾 ${controller.name} lancia ${opponent.name} (${dealt} danno, ora a ${opponent.zone}) — il Clash finisce.` });
         await persistAndRefresh();
       };
       document.getElementById('btn-clash-weak').onclick = async ()=>{
@@ -4361,13 +4479,13 @@
           const w = getParticipantWounds(controller);
           text = `🥊 ${opponent.name} tenta un Attacco Disperato su ${controller.name}: COLPITO! ${dealt} danno (dimezzato) → ${controller.name} ${w.current}/${w.max} Ferite`;
         }
-        await pushLog(code, { who:'Master', role:'roll', text, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
+        await pushCombatNarration(combat, { who:'Master', role:'roll', text, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
         await persistAndRefresh();
         renderClashActions();
       };
       document.getElementById('btn-clash-comeback').onclick = async ()=>{
         opponent.clashComebackBonus = 3;
-        await pushLog(code, { who:'Master', role:'gm', text: `💪 ${opponent.name} si prepara al Comeback: +3 alla prossima Contesa del Clash.` });
+        await pushCombatNarration(combat, { who:'Master', role:'gm', text: `💪 ${opponent.name} si prepara al Comeback: +3 alla prossima Contesa del Clash.` });
         await persistAndRefresh();
         renderClashActions();
       };
@@ -4385,7 +4503,7 @@
         } else {
           text = `🔓 ${opponent.name} tenta Contest Pin: 3d6[${dice.join(',')}]+${val}=${total} vs TN ${tn} → Fallito, resta Pinnato.`;
         }
-        await pushLog(code, { who:'Master', role:'roll', text, meta:{dice} });
+        await pushCombatNarration(combat, { who:'Master', role:'roll', text, meta:{dice} });
         await persistAndRefresh();
         renderClashActions();
       };
@@ -4428,13 +4546,13 @@
         // Testo principale in chat = narrazione (di base, subito; sostituita dall'AI se arriva in tempo).
         // I dettagli tecnici (Accuracy/Dodge, tiri) restano dietro il marcatore ::TECH::, visibili solo espandendo.
         const baseNarr = basicAttackNarration(attacker, target, atk, hit, dealt, defeatInfo);
-        const pushed = await pushLog(code, { who: attacker.name, role:'roll', text: `${baseNarr}::TECH::${logText}`, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
+        const pushed = await pushCombatNarration(combat, { who: attacker.name, role:'roll', text: `${baseNarr}::TECH::${logText}`, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
         const rollEntryId = pushed && pushed.entry && pushed.entry.id;
         if(defeatInfo){
           const noticeText = defeatInfo.digitama
             ? `🥚 ${defeatInfo.name} è Sconfitto ed è già al Default Stage minimo — da regolamento diventerebbe Digitama, gestiscilo a mano.`
             : `🏳️ ${defeatInfo.name} è Sconfitto! Retrocede a ${defeatInfo.toStage} con 1 Ferita e viene ignorato per il resto del combattimento (a meno che il giocatore non scelga di rientrare a proprio rischio).`;
-          await pushLog(code, { who:'Sistema', role:'gm', text: noticeText });
+          await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: noticeText });
         }
         await persistAndRefresh();
         // persistAndRefresh ricostruisce l'intera card (quindi anche #combat-attack-result vuoto):
@@ -4542,7 +4660,7 @@
           hitCount>0, combatMonsterGain,
           `${diceRowHTML(accRoll.dice)}<div class="muted" style="margin-top:4px;font-size:10.5px;">${lines.map(escapeHTML).join('<br>')}</div>`
         );
-        await pushLog(code, { who:'Master', role:'roll', text: lines.join(' | '), meta:{ dice: accRoll.dice } });
+        await pushCombatNarration(combat, { who:'Master', role:'roll', text: lines.join(' | '), meta:{ dice: accRoll.dice } });
         await persistAndRefresh();
         const resEl2 = document.getElementById('combat-attack-result');
         if(resEl2) resEl2.innerHTML = compactHTML;
@@ -4589,7 +4707,7 @@
         const logText = autoWin
           ? `🤼 Clash: il Pin era ancora attivo, ${winner.name} controlla automaticamente senza tirare. Entrambi tornano in Stance Neutrale.`
           : `🤼 Clash: ${a.name} (3d6+CPU${aStats.cpu}+RAM${aStats.ram}=${aRoll.total}) vs ${b.name} (3d6+CPU${bStats.cpu}+RAM${bStats.ram}=${bRoll.total}) → controlla ${winner.name}. Entrambi tornano in Stance Neutrale.`;
-        await pushLog(code, { who:'Master', role:'gm', text: logText });
+        await pushCombatNarration(combat, { who:'Master', role:'gm', text: logText });
         if(resEl) resEl.innerHTML = `<div class="muted">Controlla il Clash: <b style="color:var(--cyan);">${escapeHTML(winner.name)}</b></div>`;
         await persistAndRefresh();
       };
@@ -4603,7 +4721,7 @@
         const b = combat.participants.find(p=>p.id===bId);
         if(a){ a.clashWith=null; a.clashController=false; a.clashPinned=false; a.clashComebackBonus=0; }
         if(b){ b.clashWith=null; b.clashController=false; b.clashPinned=false; b.clashComebackBonus=0; }
-        await pushLog(code, { who:'Master', role:'gm', text: `🏁 Il Clash tra ${a?a.name:'?'} e ${b?b.name:'?'} è terminato.` });
+        await pushCombatNarration(combat, { who:'Master', role:'gm', text: `🏁 Il Clash tra ${a?a.name:'?'} e ${b?b.name:'?'} è terminato.` });
         const resEl = document.getElementById('combat-clash-result');
         if(resEl) resEl.innerHTML = '';
         await persistAndRefresh();
@@ -4637,7 +4755,7 @@
         if(!aOk || !bOk){
           logText += ' → Jogress NON riuscito.';
           if(resEl) resEl.innerHTML = `<div class="err">Jogress fallito.</div>`;
-          await pushLog(code, { who:'Master', role:'roll', text: logText, meta:{dice:aRoll.dice.concat(bRoll.dice)} });
+          await pushCombatNarration(combat, { who:'Master', role:'roll', text: logText, meta:{dice:aRoll.dice.concat(bRoll.dice)} });
           await persistAndRefresh();
           return;
         }
@@ -4661,7 +4779,7 @@
         combat.participants = combat.participants.filter(p=>p.id!==a.id && p.id!==b.id);
         combat.participants.push(fused);
         logText += ` → Successo! ${aMember.digimon.name} e ${bMember.digimon.name} si fondono in ${fusionName} (${newStage}).`;
-        await pushLog(code, { who:'Master', role:'roll', text: logText, meta:{dice:aRoll.dice.concat(bRoll.dice)} });
+        await pushCombatNarration(combat, { who:'Master', role:'roll', text: logText, meta:{dice:aRoll.dice.concat(bRoll.dice)} });
         if(resEl) resEl.innerHTML = `<div class="muted">Fusione riuscita: <b style="color:var(--cyan);">${escapeHTML(fusionName)}</b></div>`;
         await persistAndRefresh();
       };
@@ -4677,7 +4795,7 @@
           return;
         }
         combat.participants = combat.participants.filter(p=>p.id!==fused.id);
-        await pushLog(code, { who:'Master', role:'gm', text: `↩️ La fusione ${fused.name} si scioglie. Riaggiungi ${fused.jogressOf.join(' e ')} manualmente dal menu "Aggiungi giocatore".` });
+        await pushCombatNarration(combat, { who:'Master', role:'gm', text: `↩️ La fusione ${fused.name} si scioglie. Riaggiungi ${fused.jogressOf.join(' e ')} manualmente dal menu "Aggiungi giocatore".` });
         const resEl = document.getElementById('jogress-result');
         if(resEl) resEl.innerHTML = '';
         await persistAndRefresh();
@@ -4727,7 +4845,7 @@
         } else {
           p.defeated = false;
         }
-        await pushLog(code, { who:'Sistema', role:'gm', text: `↩️ ${p.name} rientra in combattimento a proprio rischio.` });
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `↩️ ${p.name} rientra in combattimento a proprio rischio.` });
         await persistAndRefresh();
       };
     });
@@ -4770,7 +4888,7 @@
           if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; }
           return;
         }
-        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} usa ${result.def.label} (${result.def.cost} Azione/i) — restano ${p.actions}/2 Azioni.` });
+        await pushCombatNarration(combat, { who: p.name, role:'gm', text: `${p.name} usa ${result.def.label} (${result.def.cost} Azione/i) — restano ${p.actions}/2 Azioni.` });
         await persistAndRefresh();
         refreshLiveParts();
       };
@@ -4795,7 +4913,7 @@
         const max = (p.isPC && (cachedRoster.find(m=>m.username===p.username)||{}).digimon||{}).hybridMode ? 3 : 2;
         const before = p.actions===undefined?2:p.actions;
         p.actions = Math.min(max, before+1);
-        await pushLog(code, { who:'Sistema', role:'gm', text: `${p.name} riottiene 1 Azione (es. Reload/Battle Cry/Horde Duelist riuscito) — ora ${p.actions}/2.` });
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${p.name} riottiene 1 Azione (es. Reload/Battle Cry/Horde Duelist riuscito) — ora ${p.actions}/2.` });
         await persistAndRefresh();
       };
     });
@@ -4805,7 +4923,7 @@
         const p = combat.participants.find(x=>x.id===id);
         if(!p) return;
         p.attackedThisRound = false;
-        await pushLog(code, { who:'Sistema', role:'gm', text: `${p.name} riottiene l'uso del proprio Attacco questo round (es. Reload riuscito).` });
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${p.name} riottiene l'uso del proprio Attacco questo round (es. Reload riuscito).` });
         await persistAndRefresh();
       };
     });
@@ -4825,7 +4943,7 @@
         if(!result.ok){ showLocal(result.msg, false); return; }
         const from = p.zone||'Medio';
         p.zone = newZone;
-        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si avvicina a ${ref.name}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}` });
+        await pushCombatNarration(combat, { who: p.name, role:'gm', text: `${p.name} si avvicina a ${ref.name}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}` });
         await persistAndRefresh();
       };
     });
@@ -4845,7 +4963,7 @@
         if(!result.ok){ showLocal(result.msg, false); return; }
         const from = p.zone||'Medio';
         p.zone = newZone;
-        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} si allontana da ${ref.name}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}` });
+        await pushCombatNarration(combat, { who: p.name, role:'gm', text: `${p.name} si allontana da ${ref.name}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}` });
         await persistAndRefresh();
       };
     });
@@ -4865,7 +4983,7 @@
         }
         const from = p.zone||'Medio';
         p.zone = target;
-        await pushLog(code, { who: p.name, role:'gm', text: `${p.name} viene posizionato in ${zoneLabel(target)} (${zoneLabel(from)} → ${zoneLabel(target)}, 1 Azione, senza riferimento a un bersaglio specifico) — restano ${p.actions}/2 Azioni.` });
+        await pushCombatNarration(combat, { who: p.name, role:'gm', text: `${p.name} viene posizionato in ${zoneLabel(target)} (${zoneLabel(from)} → ${zoneLabel(target)}, 1 Azione, senza riferimento a un bersaglio specifico) — restano ${p.actions}/2 Azioni.` });
         await persistAndRefresh();
       };
     });
@@ -4960,7 +5078,7 @@
         }
         member.tamer.specialOrdersUsed[orderKey] = true;
         await saveMember(code, member);
-        await pushLog(code, { who: p.name, role:'gm', text: logText });
+        await pushCombatNarration(combat, { who: p.name, role:'gm', text: logText });
         await persistAndRefresh();
       };
     });
@@ -4975,11 +5093,11 @@
         const def = EFFECT_DEFS.find(d=>d.key===key);
         if(def && def.instant){
           const msg = await applyInstantEffect(code, p, key, potency);
-          await pushLog(code, { who:'Master', role:'gm', text: `✨ ${msg}` });
+          await pushCombatNarration(combat, { who:'Master', role:'gm', text: `✨ ${msg}` });
         } else {
           if(!p.effects) p.effects = [];
           p.effects.push({ key, potency, duration });
-          await pushLog(code, { who:'Master', role:'gm', text: `${p.name} riceve ${def?def.label:key} (Potenza ${potency}, Durata ${duration}).` });
+          await pushCombatNarration(combat, { who:'Master', role:'gm', text: `${p.name} riceve ${def?def.label:key} (Potenza ${potency}, Durata ${duration}).` });
         }
         await persistAndRefresh();
       };
@@ -5094,6 +5212,10 @@
     document.getElementById('btn-combat-calc-order').onclick = async ()=>{
       if(combat.participants.length===0) return;
       recalcCombatOrder(combat);
+      // Timer 24h (richiesta utente): il primo turno "parte" ufficialmente da qui, non dal click
+      // su "Inizia Combattimento" (che apre solo il pannello di preparazione) — vedi
+      // combatTurnTimerLabel.
+      combat.turnStartedAt = new Date().toISOString();
       await persistAndRefresh();
       const statusEl = document.getElementById('combat-mgr-status');
       const orderNames = (combat.order||[]).map(id=>{ const p = combat.participants.find(x=>x.id===id); return p ? p.name : '?'; });
