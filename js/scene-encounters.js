@@ -1392,13 +1392,9 @@
 
   function rerenderSceneLive(){
     const el = document.getElementById('scene-live');
-    const pinEl = document.getElementById('scene-pin-live');
-    if(!el && !pinEl) return;
+    if(!el) return;
     const sceneViewer = (session && session.role==='player') ? (cachedRoster.find(m=>m.username===session.username) || cachedMe) : null;
-    if(el) el.innerHTML = `<div class="muted mono" style="margin-bottom:8px;">${onlineSummary(cachedRoster)}</div>` + sceneHTML(cachedScene, sceneViewer);
-    // La barra Scena fissa mobile (.mobile-scene-pin) resta sincronizzata con lo stesso Settore/
-    // Incontri di #scene-live, ma senza il "chi è online" (troppo lungo per restare compatta).
-    if(pinEl) pinEl.innerHTML = sceneHTML(cachedScene, sceneViewer);
+    el.innerHTML = `<div class="muted mono" style="margin-bottom:8px;">${onlineSummary(cachedRoster)}</div>` + sceneHTML(cachedScene, sceneViewer);
   }
 
   // Global delegation: works no matter which render function last drew the scene box
