@@ -945,9 +945,17 @@
     const cur = currentTurnParticipant(combat);
     if(!cur) return '<div class="muted" style="margin-bottom:8px;">Ordine non ancora calcolato dal Master.</div>';
     const mine = cur.isPC && cur.username===username;
-    return mine
-      ? `<div class="hud-frame" style="padding:6px 10px;margin-bottom:8px;border-color:var(--cyan);background:rgba(53,232,201,0.08);"><b style="color:var(--cyan);">▶ È il tuo turno!</b></div>`
-      : `<div class="muted" style="margin-bottom:8px;">Turno di <b>${escapeHTML(cur.name)}</b> — attendi il tuo turno.</div>`;
+    if(!mine){
+      // Solo usata qui (attacksCardHTML, vista Giocatore): niente parametro isMaster da passare a
+      // combatDisplayName, quindi false fisso — se non fosse mai stato mascherato qui, il nome/
+      // Digimon nascosto di un altro partecipante si sarebbe letto comunque in questo banner anche
+      // quando la lista partecipanti sotto lo mostra giustamente come "❔ (???)".
+      return `<div class="muted" style="margin-bottom:8px;">Turno di <b>${escapeHTML(combatDisplayName(cur, false))}</b> — attendi il tuo turno.</div>`;
+    }
+    return `<div class="hud-frame" style="padding:6px 10px;margin-bottom:8px;border-color:var(--cyan);background:rgba(53,232,201,0.08);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+      <b style="color:var(--cyan);">▶ È il tuo turno!</b>
+      <button class="btn ghost small" id="btn-end-my-turn" title="Concludi il tuo turno anche se non hai speso tutte le Azioni">Fine Turno ⏭</button>
+    </div>`;
   }
 
   function attacksCardHTML(me, combat, username){
@@ -996,6 +1004,29 @@
     // I vecchi bottoni "Avvicinati/Allontanati" (e la doMove che li gestiva) sono stati tolti da
     // qui — vedi il commento in attacksCardHTML: il movimento del Giocatore ora passa dalle
     // frecce ◀/▶ della linea distanze (zoneLineHTML/bindZoneLineArrows), condivise col Master.
+
+    // "Fine Turno ⏭" (dentro turnBannerHTML, visibile solo quando è davvero il proprio turno):
+    // permette al Giocatore di chiudere il turno da solo, invece di dover aspettare che sia il
+    // Master a farlo avanzare per lui — richiama la STESSA advanceCombatTurn già usata dal
+    // "Turno Successivo" del Master, quindi stesso avanzamento ordine/reset Azioni/timer.
+    const endTurnBtn = document.getElementById('btn-end-my-turn');
+    if(endTurnBtn) endTurnBtn.onclick = async ()=>{
+      if(!cachedCombat || !cachedCombat.active) return;
+      // Guardia anti-doppio-tap: vedi combatActionPending presso saveCombat.
+      if(combatActionPending){
+        window.alert('Un\'azione precedente è ancora in salvataggio, attendi un istante e riprova.');
+        return;
+      }
+      if(!isMyCombatTurn(cachedCombat, session.username)) return;
+      const p = cachedCombat.participants.find(x=>x.username===session.username);
+      const actsLeft = p ? (p.actions===undefined?2:p.actions) : 0;
+      // Conferma solo se ci sono Azioni non spese, per evitare che un tap accidentale le butti via
+      // senza preavviso — se sono già a 0/2 chiude subito, senza popup superfluo.
+      if(actsLeft>0 && !window.confirm(`Hai ancora ${actsLeft} Azion${actsLeft===1?'e':'i'} non spes${actsLeft===1?'a':'e'} questo turno: concluderlo comunque?`)) return;
+      endTurnBtn.disabled = true;
+      await advanceCombatTurn(code, (cachedRoster||[]).filter(m=>m.role==='player'));
+      refreshLiveParts();
+    };
 
     document.querySelectorAll('[data-self-attack-idx]').forEach(btn=>{
       btn.onclick = async ()=>{
