@@ -1120,7 +1120,13 @@
         // Incontro (se ce ne sono), così la linea delle distanze/l'ordine dei turni si aggiornano
         // subito senza dover ri-aggiungere il Digimon al combattimento.
         if(cachedCombat && Array.isArray(cachedCombat.participants)){
-          cachedCombat.participants.forEach(p=>{ if(p.sourceEncounterId===e.id) p.nameHidden = e.nameHidden; });
+          cachedCombat.participants.forEach(p=>{
+            if(p.sourceEncounterId!==e.id) return;
+            p.nameHidden = e.nameHidden;
+            // Se lo nascondiamo ORA (non aveva già un'etichetta), assegna subito un numero
+            // stabile ("Nemico N") — vedi assignHiddenLabelNum in js/encounters.js.
+            if(p.nameHidden) assignHiddenLabelNum(cachedCombat, p);
+          });
           // Non possiamo chiamare saveCombat(): è definita dentro la IIFE principale di
           // index.html (script caricato DOPO questo file), quindi invisibile da qui — a
           // differenza di saveScene, che è stata spostata in questo stesso file. apiPost

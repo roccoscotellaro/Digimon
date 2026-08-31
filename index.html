@@ -614,12 +614,15 @@
     if(!lock || !lock.location || lock.location==='general') return pushLog(session.code, entry);
     if(lock.location.startsWith('sub:')){
       const subgroupId = lock.location.slice(4);
-      const group = (cachedSubgroups||[]).find(g=>g.id===subgroupId);
-      // pushPrivateLog di default etichetta meta.location con la posizione del GRUPPO principale
-      // (currentLocationKey()), ma la vista "Storico per Settore" della chat del sottogruppo filtra
-      // per la posizione EFFETTIVA del sottogruppo (subgroupLocationKey), che può differire quando il
-      // sottogruppo si trova altrove sulla mappa. Senza questo, le narrazioni di combattimento
-      // sparivano silenziosamente dalla chat del sottogruppo.
+      // IMPORTANTE: niente cachedSubgroups qui — è popolata SOLO in un paio di punti lato Master
+      // (pannello "Sottogruppi di Chat", selettore sottogruppo della richiesta di tiro). Per un
+      // Giocatore resta sempre vuota/non aggiornata, quindi group risultava sempre undefined e la
+      // riga finiva silenziosamente su currentLocationKey() (posizione del gruppo) invece che su
+      // quella vera del sottogruppo — il narrato dell'azione del giocatore veniva scritto, ma
+      // filtrato via dalla vista "Storico per Settore" della chat del sottogruppo (sembrava che
+      // "non uscisse nulla"). getSubgroups fa una fetch fresca, funziona per chiunque.
+      const groups = await getSubgroups(session.code);
+      const group = groups.find(g=>g.id===subgroupId);
       const meta = { ...(entry.meta||{}) };
       if(meta.location===undefined) meta.location = group ? subgroupLocationKey(group) : currentLocationKey();
       return pushPrivateLog(session.code, 'subgroup:'+subgroupId, { ...entry, meta });
@@ -896,8 +899,8 @@
     // rendering per-spettatore per il testo già generato) — quindi se Attaccante/Bersaglio hanno
     // nameHidden (Incontro con nome non ancora rivelato dal Master), qui li mascheriamo SEMPRE,
     // anche per il Master, per restare coerenti col resto della UI (combatDisplayName ecc.).
-    const attackerName = attacker.nameHidden ? '❔ (???)' : attacker.name;
-    const targetName = target.nameHidden ? '❔ (???)' : target.name;
+    const attackerName = attacker.nameHidden ? hiddenParticipantLabel(attacker) : attacker.name;
+    const targetName = target.nameHidden ? hiddenParticipantLabel(target) : target.name;
     if(!hit) return isHelpful
       ? `${attackerName} tenta di supportare ${targetName} con ${atkName}, ma non riesce.`
       : `${attackerName} tenta ${atkName} su ${targetName}, ma schiva.`;
@@ -972,7 +975,7 @@
         return;
       }
       await saveCombat(code, cachedCombat);
-      await pushCombatNarration(cachedCombat, { who: p.name, role:'player', text: `${p.name} usa ${result.def.label} (${result.def.cost} Azione/i) — restano ${p.actions}/2 Azioni.` });
+      await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'player', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i) — restano ${p.actions}/2 Azioni.`, meta:{avatar: resolveParticipantImage(p)} });
       refreshLiveParts();
     };
   }
@@ -1104,10 +1107,10 @@
         // visibile in chat, dettagli tecnici (Accuracy/Dodge, tiri) dietro ::TECH:: — sostituita
         // dalla narrazione AI se arriva in tempo (narrateAttack, timeout 6s).
         const baseNarr = basicAttackNarration(p, target, atk, hit, dealt, defeatInfo);
-        const pushed = await pushCombatNarration(cachedCombat, { who: p.name, role:'roll', text: `${baseNarr}::TECH::${logText}`, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
+        const pushed = await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'roll', text: `${baseNarr}::TECH::${logText}`, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice), avatar: resolveParticipantImage(p) } });
         const rollEntryId = pushed && pushed.entry && pushed.entry.id;
         if(defeatInfo){
-          const defeatDispName = target.nameHidden ? '❔ (???)' : defeatInfo.name;
+          const defeatDispName = target.nameHidden ? hiddenParticipantLabel(target) : defeatInfo.name;
           const noticeText = defeatInfo.digitama
             ? `🥚 ${defeatDispName} è Sconfitto ed è già al Default Stage minimo — da regolamento diventerebbe Digitama, gestiscilo a mano.`
             : `🏳️ ${defeatDispName} è Sconfitto! Retrocede a ${defeatInfo.toStage} con 1 Ferita e viene ignorato per il resto del combattimento (a meno che il giocatore non scelga di rientrare a proprio rischio).`;
@@ -1296,7 +1299,7 @@
   // c'è nulla da nascondere.
   function combatDisplayName(p, isMaster){
     if(!p) return '';
-    if(p.nameHidden && !isMaster) return '❔ (???)';
+    if(p.nameHidden && !isMaster) return hiddenParticipantLabel(p);
     if(!p.username) return p.name || '';
     if(isMaster || (session && session.username===p.username)) return p.name;
     const member = cachedRoster.find(m=>m.username===p.username);
@@ -1413,7 +1416,7 @@
         const from = p.zone||'Medio';
         const prevActions = p.actions;
         p.zone = newZone;
-        const moveDispName = p.nameHidden ? '❔ (???)' : p.name;
+        const moveDispName = p.nameHidden ? hiddenParticipantLabel(p) : p.name;
         // saveCombat può fallire (rete, o conflitto con un salvataggio concorrente) — se succede,
         // annulliamo la mutazione locale invece di narrare/mostrare uno spostamento che sul server
         // non è mai stato salvato (stesso bugfix già applicato al vecchio doMove del Giocatore).
@@ -1429,7 +1432,7 @@
         // narrazione AI (narrateMovement) se arriva in tempo.
         const moveBaseNarr = `${moveDispName} si sposta verso ${zoneLabel(newZone)}.`;
         const moveTechDetail = `${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.`;
-        const movePushed = await pushCombatNarration(cachedCombat, { who: p.name, role: isMasterNow?'gm':'player', text: `${moveBaseNarr}::TECH::${moveTechDetail}` });
+        const movePushed = await pushCombatNarration(cachedCombat, { who: narratorName(p), role: isMasterNow?'gm':'player', text: `${moveBaseNarr}::TECH::${moveTechDetail}`, meta:{ avatar: resolveParticipantImage(p) } });
         const moveEntryId = movePushed && movePushed.entry && movePushed.entry.id;
         const combatLive = document.getElementById('combat-live');
         // isMasterNow, non un `true` fisso: questa stessa funzione ora è richiamata anche dal
@@ -4559,7 +4562,7 @@
           const dodgeRoll = rollPool(Math.floor(oStats.dodge/2));
           let text, techDetail, dealt=0;
           if(accRoll.successes<=dodgeRoll.successes){
-            text = `🏆 Finisher di ${controller.name} su ${opponent.name}: MANCATO — il Clash finisce comunque.`;
+            text = `🏆 Finisher di ${narratorName(controller)} su ${narratorName(opponent)}: MANCATO — il Clash finisce comunque.`;
             techDetail = `Acc ${cStats.accuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} succ. vs Dodge½ ${Math.floor(oStats.dodge/2)}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ.`;
           } else {
             const excess = accRoll.successes-dodgeRoll.successes;
@@ -4584,12 +4587,12 @@
             }
             await applyDamageToParticipant(code, combat, opponent, dealt);
             const w = getParticipantWounds(opponent);
-            text = `🏆 Finisher di ${controller.name} su ${opponent.name}: COLPITO! ${dealt} danno → ${opponent.name} ${w.current}/${w.max} Ferite — il Clash finisce.`;
+            text = `🏆 Finisher di ${narratorName(controller)} su ${narratorName(opponent)}: COLPITO! ${dealt} danno → ${narratorName(opponent)} ${w.current}/${w.max} Ferite — il Clash finisce.`;
             techDetail = `Acc ${cStats.accuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} succ. vs Dodge½ ${Math.floor(oStats.dodge/2)}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ.${bonusNote}`;
           }
           controller.clashWith=null; controller.clashController=false; controller.clashPinned=false; controller.clashComebackBonus=0;
           opponent.clashWith=null; opponent.clashController=false; opponent.clashPinned=false; opponent.clashComebackBonus=0;
-          await pushCombatNarration(combat, { who:'Master', role:'roll', text: `${text}::TECH::${techDetail}`, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
+          await pushCombatNarration(combat, { who:'Master', role:'roll', text: `${text}::TECH::${techDetail}`, meta:{dice:accRoll.dice.concat(dodgeRoll.dice), avatar: resolveParticipantImage(controller)} });
           await persistAndRefresh();
         };
       }
@@ -4602,21 +4605,21 @@
         let dealt=0, text;
         const techDetail = `Acc ${cStats.accuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} succ. vs Dodge½ ${Math.floor(oStats.dodge/2)}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ.`;
         if(accRoll.successes<=dodgeRoll.successes){
-          text = `⚔ ${controller.name} attacca ${opponent.name} nel Clash: MANCATO`;
+          text = `⚔ ${narratorName(controller)} attacca ${narratorName(opponent)} nel Clash: MANCATO`;
         } else {
           const excess = accRoll.successes-dodgeRoll.successes;
           dealt = Math.max(0, excess+cStats.damage-oStats.armor);
           await applyDamageToParticipant(code, combat, opponent, dealt);
           const w = getParticipantWounds(opponent);
-          text = `⚔ ${controller.name} attacca ${opponent.name} nel Clash: COLPITO! ${dealt} danno → ${opponent.name} ${w.current}/${w.max} Ferite`;
+          text = `⚔ ${narratorName(controller)} attacca ${narratorName(opponent)} nel Clash: COLPITO! ${dealt} danno → ${narratorName(opponent)} ${w.current}/${w.max} Ferite`;
         }
-        await pushCombatNarration(combat, { who:'Master', role:'roll', text: `${text}::TECH::${techDetail}`, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
+        await pushCombatNarration(combat, { who:'Master', role:'roll', text: `${text}::TECH::${techDetail}`, meta:{dice:accRoll.dice.concat(dodgeRoll.dice), avatar: resolveParticipantImage(controller)} });
         await persistAndRefresh();
         renderClashActions();
       };
       document.getElementById('btn-clash-pin').onclick = async ()=>{
         opponent.clashPinned = true;
-        await pushCombatNarration(combat, { who:'Master', role:'gm', text: `📌 ${controller.name} pinna ${opponent.name}: non può Fuggire o fare Comeback finché non riesce un Contest Pin.` });
+        await pushCombatNarration(combat, { who:'Master', role:'gm', text: `📌 ${narratorName(controller)} pinna ${narratorName(opponent)}: non può Fuggire o fare Comeback finché non riesce un Contest Pin.`, meta:{avatar: resolveParticipantImage(controller)} });
         await persistAndRefresh();
         renderClashActions();
       };
@@ -4637,7 +4640,7 @@
         controller.clashWith=null; controller.clashController=false; controller.clashPinned=false; controller.clashComebackBonus=0;
         opponent.clashWith=null; opponent.clashController=false; opponent.clashPinned=false; opponent.clashComebackBonus=0;
         const w = getParticipantWounds(opponent);
-        await pushCombatNarration(combat, { who:'Master', role:'gm', text: `🤾 ${controller.name} lancia ${opponent.name} (${dealt} danno, ora a ${opponent.zone}) — il Clash finisce.` });
+        await pushCombatNarration(combat, { who:'Master', role:'gm', text: `🤾 ${narratorName(controller)} lancia ${narratorName(opponent)} (${dealt} danno, ora a ${zoneLabel(opponent.zone)}) — il Clash finisce.`, meta:{avatar: resolveParticipantImage(controller)} });
         await persistAndRefresh();
       };
       document.getElementById('btn-clash-weak').onclick = async ()=>{
@@ -4648,22 +4651,22 @@
         let dealt=0, text;
         const techDetail = `Acc ${oStats.accuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} succ. vs Dodge½ ${Math.floor(cStats.dodge/2)}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ.`;
         if(accRoll.successes<=dodgeRoll.successes){
-          text = `🥊 ${opponent.name} tenta un Attacco Disperato su ${controller.name}: MANCATO`;
+          text = `🥊 ${narratorName(opponent)} tenta un Attacco Disperato su ${narratorName(controller)}: MANCATO`;
         } else {
           const excess = accRoll.successes-dodgeRoll.successes;
           const raw = Math.max(0, excess+oStats.damage-cStats.armor);
           dealt = Math.ceil(raw/2);
           await applyDamageToParticipant(code, combat, controller, dealt);
           const w = getParticipantWounds(controller);
-          text = `🥊 ${opponent.name} tenta un Attacco Disperato su ${controller.name}: COLPITO! ${dealt} danno (dimezzato) → ${controller.name} ${w.current}/${w.max} Ferite`;
+          text = `🥊 ${narratorName(opponent)} tenta un Attacco Disperato su ${narratorName(controller)}: COLPITO! ${dealt} danno (dimezzato) → ${narratorName(controller)} ${w.current}/${w.max} Ferite`;
         }
-        await pushCombatNarration(combat, { who:'Master', role:'roll', text: `${text}::TECH::${techDetail}`, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
+        await pushCombatNarration(combat, { who:'Master', role:'roll', text: `${text}::TECH::${techDetail}`, meta:{dice:accRoll.dice.concat(dodgeRoll.dice), avatar: resolveParticipantImage(opponent)} });
         await persistAndRefresh();
         renderClashActions();
       };
       document.getElementById('btn-clash-comeback').onclick = async ()=>{
         opponent.clashComebackBonus = 3;
-        await pushCombatNarration(combat, { who:'Master', role:'gm', text: `💪 ${opponent.name} si prepara al Comeback: +3 alla prossima Contesa del Clash.` });
+        await pushCombatNarration(combat, { who:'Master', role:'gm', text: `💪 ${narratorName(opponent)} si prepara al Comeback: +3 alla prossima Contesa del Clash.`, meta:{avatar: resolveParticipantImage(opponent)} });
         await persistAndRefresh();
         renderClashActions();
       };
@@ -4678,11 +4681,11 @@
         if(total >= tn){
           opponent.clashPinned = false;
           opponent.clashComebackBonus = 2;
-          text = `🔓 ${opponent.name} tenta Contest Pin: Successo! Pin rotto, +2 alla prossima Contesa.`;
+          text = `🔓 ${narratorName(opponent)} tenta Contest Pin: Successo! Pin rotto, +2 alla prossima Contesa.`;
         } else {
-          text = `🔓 ${opponent.name} tenta Contest Pin: Fallito, resta Pinnato.`;
+          text = `🔓 ${narratorName(opponent)} tenta Contest Pin: Fallito, resta Pinnato.`;
         }
-        await pushCombatNarration(combat, { who:'Master', role:'roll', text: `${text}::TECH::${techDetail}`, meta:{dice} });
+        await pushCombatNarration(combat, { who:'Master', role:'roll', text: `${text}::TECH::${techDetail}`, meta:{dice, avatar: resolveParticipantImage(opponent)} });
         await persistAndRefresh();
         renderClashActions();
       };
@@ -4725,10 +4728,10 @@
         // Testo principale in chat = narrazione (di base, subito; sostituita dall'AI se arriva in tempo).
         // I dettagli tecnici (Accuracy/Dodge, tiri) restano dietro il marcatore ::TECH::, visibili solo espandendo.
         const baseNarr = basicAttackNarration(attacker, target, atk, hit, dealt, defeatInfo);
-        const pushed = await pushCombatNarration(combat, { who: attacker.name, role:'roll', text: `${baseNarr}::TECH::${logText}`, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
+        const pushed = await pushCombatNarration(combat, { who: narratorName(attacker), role:'roll', text: `${baseNarr}::TECH::${logText}`, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice), avatar: resolveParticipantImage(attacker) } });
         const rollEntryId = pushed && pushed.entry && pushed.entry.id;
         if(defeatInfo){
-          const defeatDispName = target.nameHidden ? '❔ (???)' : defeatInfo.name;
+          const defeatDispName = target.nameHidden ? hiddenParticipantLabel(target) : defeatInfo.name;
           const noticeText = defeatInfo.digitama
             ? `🥚 ${defeatDispName} è Sconfitto ed è già al Default Stage minimo — da regolamento diventerebbe Digitama, gestiscilo a mano.`
             : `🏳️ ${defeatDispName} è Sconfitto! Retrocede a ${defeatInfo.toStage} con 1 Ferita e viene ignorato per il resto del combattimento (a meno che il giocatore non scelga di rientrare a proprio rischio).`;
@@ -4786,14 +4789,14 @@
         const effAccuracy = Math.max(0, aStats.accuracy);
         const accRoll = rollPool(effAccuracy);
         if(aStats.certainStrike>0) accRoll.successes += aStats.certainStrike;
-        const lines = [`🌪 ${attacker.name} usa ${atk.name} ${attackTagsPlain(atk)} come Area Attack sulla zona ${zone} (Accuracy ${effAccuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} succ.):`];
+        const lines = [`🌪 ${narratorName(attacker)} usa ${atk.name} ${attackTagsPlain(atk)} come Area Attack sulla zona ${zone} (Accuracy ${effAccuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} succ.):`];
         let combatMonsterGain = 0;
         for(const v of victims){
           const vStats = getParticipantCombatStats(v);
           const dodgeRoll = rollPool(vStats.dodge);
           if(vStats.absoluteEvasion>0) dodgeRoll.successes += vStats.absoluteEvasion;
           if(accRoll.successes <= dodgeRoll.successes){
-            lines.push(`— ${v.name}: MANCATO (Dodge ${vStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ.)`);
+            lines.push(`— ${narratorName(v)}: MANCATO (Dodge ${vStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ.)`);
             continue;
           }
           const excess = accRoll.successes - dodgeRoll.successes;
@@ -4804,16 +4807,16 @@
               const finalPotency = isPositive ? 0 : 1;
               if(def && def.instant){
                 const msg = await applyInstantEffect(code, v, atk.effectKey, 1);
-                lines.push(`— ${v.name}: COLPITO! ${msg}`);
+                lines.push(`— ${narratorName(v)}: COLPITO! ${msg}`);
               } else if(finalPotency>0){
                 if(!v.effects) v.effects=[];
                 v.effects.push({ key: atk.effectKey, potency:1, duration:1 });
-                lines.push(`— ${v.name}: COLPITO! Applica ${def?def.label:atk.effectKey} (Potenza 1, Durata 1 — ridotto da Area).`);
+                lines.push(`— ${narratorName(v)}: COLPITO! Applica ${def?def.label:atk.effectKey} (Potenza 1, Durata 1 — ridotto da Area).`);
               } else {
-                lines.push(`— ${v.name}: COLPITO! Effetto positivo azzerato dalla penalità Area (nessun effetto).`);
+                lines.push(`— ${narratorName(v)}: COLPITO! Effetto positivo azzerato dalla penalità Area (nessun effetto).`);
               }
             } else {
-              lines.push(`— ${v.name}: COLPITO! (nessun Effetto collegato)`);
+              lines.push(`— ${narratorName(v)}: COLPITO! (nessun Effetto collegato)`);
             }
           } else {
             const raw = excess + aStats.damage;
@@ -4823,7 +4826,7 @@
             const w = getParticipantWounds(v);
             const vDefeat = await applyDefeatIfNeeded(code, v);
             const vDefeatNote = vDefeat ? (vDefeat.digitama ? ` 🥚 Sconfitto — già al Default Stage minimo, diventerebbe Digitama (gestisci a mano).` : ` 🏳️ Sconfitto! Retrocede a ${vDefeat.toStage} con 1 Ferita.`) : '';
-            lines.push(`— ${v.name}: COLPITO! ${dealt} danno (dimezzato da Area) → ${w.current}/${w.max} Ferite${vDefeatNote}`);
+            lines.push(`— ${narratorName(v)}: COLPITO! ${dealt} danno (dimezzato da Area) → ${w.current}/${w.max} Ferite${vDefeatNote}`);
           }
         }
         if(attacker.isPC && atk.type!=='Support'){
@@ -4835,12 +4838,13 @@
         }
         if(resEl) resEl.innerHTML = '<div class="muted" style="font-size:11px;">Tiro in corso...</div>';
         const hitCount = victims.length - lines.filter(l=>l.includes('MANCATO')).length;
+        const areaFriendly = `🌪 ${narratorName(attacker)} usa ${atk.name} come Area su ${zoneLabel(zone)}: ${hitCount}/${victims.length} colpiti.`;
         const compactHTML = attackResultCompactHTML(
-          `🌪 ${atk.name} come Area su ${zone}: ${hitCount}/${victims.length} colpiti.`,
+          areaFriendly,
           hitCount>0, combatMonsterGain,
           `${diceRowHTML(accRoll.dice)}<div class="muted" style="margin-top:4px;font-size:10.5px;">${lines.map(escapeHTML).join('<br>')}</div>`
         );
-        await pushCombatNarration(combat, { who:'Master', role:'roll', text: `${`🌪 ${atk.name} come Area su ${zone}: ${hitCount}/${victims.length} colpiti.`}::TECH::${lines.join(' | ')}`, meta:{ dice: accRoll.dice } });
+        await pushCombatNarration(combat, { who:'Master', role:'roll', text: `${areaFriendly}::TECH::${lines.join(' | ')}`, meta:{ dice: accRoll.dice, avatar: resolveParticipantImage(attacker) } });
         await persistAndRefresh();
         const resEl2 = document.getElementById('combat-attack-result');
         if(resEl2) resEl2.innerHTML = compactHTML;
@@ -4885,12 +4889,13 @@
         if(a.isPC){ const m=cachedRoster.find(x=>x.username===a.username); if(m){ m.digimon.stance='Neutral'; await saveMember(code, m); } }
         if(b.isPC){ const m=cachedRoster.find(x=>x.username===b.username); if(m){ m.digimon.stance='Neutral'; await saveMember(code, m); } }
         const friendlyClash = autoWin
-          ? `🤼 Clash: il Pin era ancora attivo, controlla automaticamente ${winner.name}. Entrambi tornano in Stance Neutrale.`
-          : `🤼 Clash: controlla ${winner.name}. Entrambi tornano in Stance Neutrale.`;
+          ? `🤼 Clash: il Pin era ancora attivo, controlla automaticamente ${narratorName(winner)}. Entrambi tornano in Stance Neutrale.`
+          : `🤼 Clash: controlla ${narratorName(winner)}. Entrambi tornano in Stance Neutrale.`;
         const techClash = autoWin
-          ? `Pin attivo su ${loser.name}: nessun tiro, controllo automatico a ${winner.name}.`
-          : `${a.name} 3d6+CPU${aStats.cpu}+RAM${aStats.ram}=${aRoll.total} vs ${b.name} 3d6+CPU${bStats.cpu}+RAM${bStats.ram}=${bRoll.total}`;
-        await pushCombatNarration(combat, { who:'Master', role:'gm', text: `${friendlyClash}::TECH::${techClash}`, meta: autoWin?{}:{dice:(aRoll.dice||[]).concat(bRoll.dice||[])} });
+          ? `Pin attivo su ${narratorName(loser)}: nessun tiro, controllo automatico a ${narratorName(winner)}.`
+          : `${narratorName(a)} 3d6+CPU${aStats.cpu}+RAM${aStats.ram}=${aRoll.total} vs ${narratorName(b)} 3d6+CPU${bStats.cpu}+RAM${bStats.ram}=${bRoll.total}`;
+        const clashMeta = autoWin ? { avatar: resolveParticipantImage(winner) } : { dice:(aRoll.dice||[]).concat(bRoll.dice||[]), avatar: resolveParticipantImage(winner) };
+        await pushCombatNarration(combat, { who:'Master', role:'gm', text: `${friendlyClash}::TECH::${techClash}`, meta: clashMeta });
         if(resEl) resEl.innerHTML = `<div class="muted">Controlla il Clash: <b style="color:var(--cyan);">${escapeHTML(winner.name)}</b></div>`;
         await persistAndRefresh();
       };
@@ -4904,7 +4909,7 @@
         const b = combat.participants.find(p=>p.id===bId);
         if(a){ a.clashWith=null; a.clashController=false; a.clashPinned=false; a.clashComebackBonus=0; }
         if(b){ b.clashWith=null; b.clashController=false; b.clashPinned=false; b.clashComebackBonus=0; }
-        await pushCombatNarration(combat, { who:'Master', role:'gm', text: `🏁 Il Clash tra ${a?a.name:'?'} e ${b?b.name:'?'} è terminato.` });
+        await pushCombatNarration(combat, { who:'Master', role:'gm', text: `🏁 Il Clash tra ${a?narratorName(a):'?'} e ${b?narratorName(b):'?'} è terminato.` });
         const resEl = document.getElementById('combat-clash-result');
         if(resEl) resEl.innerHTML = '';
         await persistAndRefresh();
@@ -5070,7 +5075,7 @@
           if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; }
           return;
         }
-        await pushCombatNarration(combat, { who: p.name, role:'gm', text: `${p.name} usa ${result.def.label} (${result.def.cost} Azione/i) — restano ${p.actions}/2 Azioni.` });
+        await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i) — restano ${p.actions}/2 Azioni.`, meta:{avatar: resolveParticipantImage(p)} });
         await persistAndRefresh();
         refreshLiveParts();
       };
@@ -5095,7 +5100,7 @@
         const max = (p.isPC && (cachedRoster.find(m=>m.username===p.username)||{}).digimon||{}).hybridMode ? 3 : 2;
         const before = p.actions===undefined?2:p.actions;
         p.actions = Math.min(max, before+1);
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${p.name} riottiene 1 Azione (es. Reload/Battle Cry/Horde Duelist riuscito) — ora ${p.actions}/2.` });
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${narratorName(p)} riottiene 1 Azione (es. Reload/Battle Cry/Horde Duelist riuscito) — ora ${p.actions}/2.` });
         await persistAndRefresh();
       };
     });
@@ -5105,7 +5110,7 @@
         const p = combat.participants.find(x=>x.id===id);
         if(!p) return;
         p.attackedThisRound = false;
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${p.name} riottiene l'uso del proprio Attacco questo round (es. Reload riuscito).` });
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${narratorName(p)} riottiene l'uso del proprio Attacco questo round (es. Reload riuscito).` });
         await persistAndRefresh();
       };
     });
@@ -5125,7 +5130,7 @@
         if(!result.ok){ showLocal(result.msg, false); return; }
         const from = p.zone||'Medio';
         p.zone = newZone;
-        await pushCombatNarration(combat, { who: p.name, role:'gm', text: `${p.name} si avvicina a ${ref.name}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}` });
+        await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} si avvicina a ${narratorName(ref)}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}`, meta:{avatar: resolveParticipantImage(p)} });
         await persistAndRefresh();
       };
     });
@@ -5145,7 +5150,7 @@
         if(!result.ok){ showLocal(result.msg, false); return; }
         const from = p.zone||'Medio';
         p.zone = newZone;
-        await pushCombatNarration(combat, { who: p.name, role:'gm', text: `${p.name} si allontana da ${ref.name}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}` });
+        await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} si allontana da ${narratorName(ref)}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}`, meta:{avatar: resolveParticipantImage(p)} });
         await persistAndRefresh();
       };
     });
@@ -5165,7 +5170,7 @@
         }
         const from = p.zone||'Medio';
         p.zone = target;
-        await pushCombatNarration(combat, { who: p.name, role:'gm', text: `${p.name} viene posizionato in ${zoneLabel(target)} (${zoneLabel(from)} → ${zoneLabel(target)}, 1 Azione, senza riferimento a un bersaglio specifico) — restano ${p.actions}/2 Azioni.` });
+        await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} viene posizionato in ${zoneLabel(target)} (${zoneLabel(from)} → ${zoneLabel(target)}, 1 Azione, senza riferimento a un bersaglio specifico) — restano ${p.actions}/2 Azioni.`, meta:{avatar: resolveParticipantImage(p)} });
         await persistAndRefresh();
       };
     });
@@ -5336,7 +5341,7 @@
         const maxWounds = encounterMaxWounds(enc);
         const currentWounds = encounterCurrentWounds(enc);
         const attribute = (enc.categories && enc.categories[0]) || 'Free';
-        cachedCombat.participants.push({
+        const newParticipant = {
           id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:enc.name, side,
           ram: Math.max(0, Math.floor(dodge/3)), initiative:0, actions:2, attackedThisRound:false, effects:[],
           zone: (side==='ally' ? cachedCombat.startZoneAlly : cachedCombat.startZoneEnemy) || (side==='ally'?'Molto Corto':'Molto Lungo'), clashPinned:false, clashComebackBonus:0, isPC:false,
@@ -5344,7 +5349,12 @@
           armor: Number(bs.baseArmor)||0, maxWounds, currentWounds, attribute,
           sourceEncounterId: enc.id, isBoss: !!enc.isBoss, attacks: enc.attacks || [], imageUrl: enc.image || '',
           nameHidden: !!enc.nameHidden
-        });
+        };
+        // Se il nome è nascosto, assegna subito un'etichetta stabile ("Nemico N") — vedi
+        // assignHiddenLabelNum in js/encounters.js: va chiamata PRIMA del push, così il nuovo
+        // partecipante non conta come "già presente" nel calcolo del prossimo numero libero.
+        assignHiddenLabelNum(cachedCombat, newParticipant);
+        cachedCombat.participants.push(newParticipant);
         await persistAndRefresh();
       };
     }

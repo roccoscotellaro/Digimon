@@ -29,3 +29,33 @@
     return Math.max(0, Math.min(max, Number(e.currentWounds)));
   }
   function encName(e){ return (typeof e==='string') ? e : ((e && e.name) || ''); }
+
+  // ---------- Etichetta stabile per partecipanti al combattimento con nome nascosto ----------
+  // Con più Digimon nascosti in scena, mostrare "❔ (???)" per tutti li rende indistinguibili in
+  // chat/UI (specialmente da mobile, dove non si vede la linea delle distanze). Assegniamo quindi
+  // un numero STABILE per lato ("Nemico 1", "Nemico 2", ...), scritto una volta su
+  // p.hiddenLabelNum e mai ricalcolato — così resta lo stesso anche se altri partecipanti vengono
+  // aggiunti o rimossi in seguito (a differenza di un indice ricalcolato ad ogni render, che
+  // salterebbe/si sovrapporrebbe cambiando la lista).
+  function assignHiddenLabelNum(combat, p){
+    if(!p || !p.nameHidden || p.hiddenLabelNum) return;
+    const used = new Set((combat && Array.isArray(combat.participants) ? combat.participants : [])
+      .filter(x=>x.nameHidden && x.side===p.side && x.hiddenLabelNum)
+      .map(x=>x.hiddenLabelNum));
+    let n = 1;
+    while(used.has(n)) n++;
+    p.hiddenLabelNum = n;
+  }
+  // Etichetta da mostrare (testo del messaggio, mittente in chat, select del bersaglio, ecc.) per
+  // un partecipante con nome nascosto — usa il numero assegnato da assignHiddenLabelNum se
+  // presente, altrimenti il vecchio "❔ (???)" generico come fallback (es. dati più vecchi mai
+  // passati da lì).
+  function hiddenParticipantLabel(p){
+    if(!p) return '❔ (???)';
+    const kind = p.side==='enemy' ? 'Nemico' : 'Sconosciuto';
+    return p.hiddenLabelNum ? `❔ ${kind} ${p.hiddenLabelNum}` : '❔ (???)';
+  }
+  // Nome "sicuro" da usare ovunque serva mostrare il mittente/attore di una narrazione di
+  // combattimento (campo `who` dei messaggi in chat compreso) — maschera automaticamente se il
+  // partecipante ha nameHidden, altrimenti il nome vero.
+  function narratorName(p){ return (p && p.nameHidden) ? hiddenParticipantLabel(p) : (p ? p.name : ''); }
