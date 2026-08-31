@@ -749,7 +749,10 @@
     await saveCombat(code, combat);
     renderCombatManager(code, players);
     const combatLive = document.getElementById('combat-live');
-    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, true);
+    // advanceCombatTurn è condivisa tra il bottone "Turno Successivo" del Master e "Fine Turno" del
+    // Giocatore (bindAttacksCard) — un `true` fisso smascererebbe qui nomi/Digimon nascosti al
+    // Giocatore ogni volta che chiude il proprio turno.
+    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, !!(session && session.role==='master'));
     bindZoneLineArrows(code, players);
   }
   async function endCombatNow(code, players){
@@ -963,14 +966,13 @@
     return `
       ${turnBannerHTML(combat, username)}
       ${p ? `<div class="muted" style="margin-bottom:8px;">Zona attuale: <b style="color:var(--amber);">${zoneLabel(p.zone||'Medio')}</b> · Azioni: <span class="mono">${actsLeft}/2</span></div>` : ''}
-      <div class="field"><label>Bersaglio / riferimento</label>
+      <div class="field"><label>Bersaglio</label>
         <select id="self-target-select" ${canAct?'':'disabled'}>${targetOptions || '<option value="">(nessun altro partecipante)</option>'}</select>
       </div>
-      <div class="row" style="margin-top:6px;">
-        <button class="btn small" id="btn-self-move-closer" style="flex:1;" ${canAct?'':'disabled'}>⬅ Avvicinati (1 Az.)</button>
-        <button class="btn ghost small" id="btn-self-move-away" style="flex:1;" ${canAct?'':'disabled'}>Allontanati ➡ (1 Az.)</button>
-      </div>
-      <div class="muted" id="self-move-status" style="margin-top:4px;"></div>
+      <!-- I vecchi bottoni "Avvicinati/Allontanati" (relativi a un bersaglio scelto qui sopra) sono
+           stati tolti perché poco intuitivi — il movimento ora si fa con le stesse frecce ◀/▶ del
+           Master, mostrate sotto la linea delle distanze qui sopra (zoneLineHTML) quando è il tuo
+           turno. Il select resta: serve solo più a scegliere il Bersaglio dell'Attacco qui sotto. -->
       <div class="divider"></div>
       <div class="moves-grid">
         ${(me.digimon.attacks||[]).map((a,i)=>{
@@ -990,67 +992,10 @@
 
   function bindAttacksCard(code, me){
     const targetSel = document.getElementById('self-target-select');
-    const moveCloserBtn = document.getElementById('btn-self-move-closer');
-    const moveAwayBtn = document.getElementById('btn-self-move-away');
-    const moveStatus = document.getElementById('self-move-status');
     const resEl = document.getElementById('self-attack-result');
-
-    async function doMove(closer){
-      if(!cachedCombat || !cachedCombat.active) return;
-      // Guardia anti-doppio-click/doppio-tap: vedi combatActionPending presso saveCombat — un
-      // secondo tap mentre il salvataggio precedente è ancora in corso non deve spendere una
-      // seconda Azione (era proprio la causa del bug "consuma anche l'altra azione").
-      if(combatActionPending){
-        if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent='Spostamento precedente ancora in salvataggio, attendi un istante e riprova.'; }
-        return;
-      }
-      const p = cachedCombat.participants.find(x=>x.username===session.username);
-      if(!p) return;
-      if(!isMyCombatTurn(cachedCombat, session.username)){
-        if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent='Non è il tuo turno.'; }
-        return;
-      }
-      const refId = targetSel ? targetSel.value : '';
-      const ref = cachedCombat.participants.find(x=>x.id===refId);
-      if(!ref){
-        if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent='Scegli un Digimon di riferimento.'; }
-        return;
-      }
-      const newZone = closer ? zoneStepToward(p.zone||'Medio', ref.zone||'Medio') : zoneStepAway(p.zone||'Medio', ref.zone||'Medio');
-      if(!newZone){
-        if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent = closer ? 'Sei già alla stessa zona di questo bersaglio.' : 'Non puoi allontanarti oltre così.'; }
-        return;
-      }
-      const prevActions = p.actions===undefined?2:p.actions;
-      const spend = trySpendAction(p, 'move');
-      if(!spend.ok){
-        if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent = spend.msg; }
-        return;
-      }
-      const from = p.zone||'Medio';
-      p.zone = newZone;
-      // BUGFIX: saveCombat() può fallire (rete, o l'ultima scrittura vince: /api/state fa un
-      // upsert dell'intero oggetto combat senza alcun controllo di versione, quindi un salvataggio
-      // concorrente — es. il Master che clicca "Turno Successivo" quasi nello stesso istante — può
-      // sovrascrivere in silenzio questo spostamento) — il risultato non veniva mai controllato,
-      // quindi lo spostamento locale (zona + Azione spesa) e il messaggio "ti sei spostato" in chat
-      // venivano comunque confermati anche quando il salvataggio non era davvero andato a buon
-      // fine: esattamente il bug segnalato ("notifica di avvenuto spostamento" ma il Digimon non si
-      // è spostato). Ora, se saveCombat torna null, la mutazione locale viene annullata (zona e
-      // Azione ripristinate) e non viene narrato né aggiornata la UI, con un messaggio d'errore
-      // chiaro invece di un falso successo.
-      const ok = await saveCombat(code, cachedCombat);
-      if(!ok){
-        p.zone = from;
-        p.actions = prevActions;
-        if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent = 'Spostamento non salvato (errore di rete o conflitto con un\'altra azione in corso) — riprova.'; }
-        return;
-      }
-      await pushCombatNarration(cachedCombat, { who: p.name, role:'player', text: `${p.name} si ${closer?'avvicina a':'allontana da'} ${ref.name}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(cachedCombat.participants, p.id, ref.id, from, newZone)}` });
-      refreshLiveParts();
-    }
-    if(moveCloserBtn) moveCloserBtn.onclick = ()=>doMove(true);
-    if(moveAwayBtn) moveAwayBtn.onclick = ()=>doMove(false);
+    // I vecchi bottoni "Avvicinati/Allontanati" (e la doMove che li gestiva) sono stati tolti da
+    // qui — vedi il commento in attacksCardHTML: il movimento del Giocatore ora passa dalle
+    // frecce ◀/▶ della linea distanze (zoneLineHTML/bindZoneLineArrows), condivise col Master.
 
     document.querySelectorAll('[data-self-attack-idx]').forEach(btn=>{
       btn.onclick = async ()=>{
@@ -1328,19 +1273,30 @@
             </div>
           `;}).join('')}
         </div>
-        ${(isMaster && active) ? `
+        ${(()=>{
+          // Chi può muovere chi è di turno con queste frecce: il Master sempre (qualunque
+          // partecipante), il Giocatore SOLO quando è il proprio Digimon ad essere di turno — così
+          // sostituiamo, anche su mobile, i meno intuitivi bottoni "Avvicinati/Allontanati" del
+          // pannello Attacchi con lo stesso semplice ◀/▶ già usato dal Master.
+          const isMyTurnToMove = !isMaster && active && active.isPC && session && session.username===active.username;
+          if(!active || !(isMaster || isMyTurnToMove)) return '';
+          const moveLabel = isMaster ? escapeHTML(active.name) : 'te stesso';
+          return `
           <div class="row" style="margin-top:8px;">
-            <button class="btn ghost small" data-zoneline-move="-1" style="flex:1;" ${activeIdx<=0?'disabled':''}>◀ Muovi ${escapeHTML(active.name)} (1 Az.)</button>
-            <button class="btn ghost small" data-zoneline-move="1" style="flex:1;" ${activeIdx>=ZONES.length-1?'disabled':''}>Muovi ${escapeHTML(active.name)} (1 Az.) ▶</button>
+            <button class="btn ghost small" data-zoneline-move="-1" style="flex:1;" ${activeIdx<=0?'disabled':''}>◀ Muovi ${moveLabel} (1 Az.)</button>
+            <button class="btn ghost small" data-zoneline-move="1" style="flex:1;" ${activeIdx>=ZONES.length-1?'disabled':''}>Muovi ${moveLabel} (1 Az.) ▶</button>
           </div>
           <div id="zoneline-move-status" class="muted" style="font-size:10px;margin-top:2px;min-height:12px;"></div>
-        ` : ''}
+          `;
+        })()}
         ${here_multi_note(combat)}
       </div>
     `;
   }
   // Lega le frecce sotto la linea al Digimon di cui è il turno — sposta di 1 pallino nella direzione
-  // scelta, spendendo 1 Azione. Va richiamata ogni volta che #combat-live viene ridisegnato per il Master.
+  // scelta, spendendo 1 Azione. Va richiamata ogni volta che #combat-live viene ridisegnato, sia per
+  // il Master (può sempre muovere chi è di turno) sia per il Giocatore (solo nel proprio turno —
+  // vedi il guard qui sotto, che rispecchia la condizione con cui zoneLineHTML genera i bottoni).
   function bindZoneLineArrows(code, players){
     document.querySelectorAll('[data-zoneline-move]').forEach(btn=>{
       btn.onclick = async ()=>{
@@ -1348,18 +1304,44 @@
         const p = cachedCombat.participants.find(x=>x.id===cachedCombat.order[cachedCombat.currentIndex]);
         const statusEl = document.getElementById('zoneline-move-status');
         if(!p) return;
+        const isMasterNow = !!(session && session.role==='master');
+        // Guardia lato client (oltre a quella che già nasconde il bottone): un Giocatore può
+        // muovere solo il proprio Digimon, e solo quando è davvero il suo turno.
+        if(!isMasterNow && !(p.isPC && session && session.username===p.username)){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = 'Non è il tuo turno.'; }
+          return;
+        }
+        // Guardia anti-doppio-tap: vedi combatActionPending presso saveCombat — un secondo tap
+        // mentre il salvataggio precedente è ancora in corso non deve spendere una seconda Azione.
+        if(combatActionPending){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = 'Spostamento precedente ancora in salvataggio, attendi un istante e riprova.'; }
+          return;
+        }
         const dir = Number(btn.getAttribute('data-zoneline-move'));
         const newZone = zoneStepDirection(p.zone||'Medio', dir);
         if(!newZone){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `${p.name} è già al limite della linea.`; } return; }
         const result = trySpendAction(p, 'move');
         if(!result.ok){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; } return; }
         const from = p.zone||'Medio';
+        const prevActions = p.actions;
         p.zone = newZone;
         const moveDispName = p.nameHidden ? '❔ (???)' : p.name;
-        await pushCombatNarration(cachedCombat, { who: p.name, role:'gm', text: `${moveDispName} si sposta: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.` });
-        await saveCombat(code, cachedCombat);
+        // saveCombat può fallire (rete, o conflitto con un salvataggio concorrente) — se succede,
+        // annulliamo la mutazione locale invece di narrare/mostrare uno spostamento che sul server
+        // non è mai stato salvato (stesso bugfix già applicato al vecchio doMove del Giocatore).
+        const ok = await saveCombat(code, cachedCombat);
+        if(!ok){
+          p.zone = from;
+          p.actions = prevActions;
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = 'Spostamento non salvato (errore di rete o conflitto con un\'altra azione in corso) — riprova.'; }
+          return;
+        }
+        await pushCombatNarration(cachedCombat, { who: p.name, role: isMasterNow?'gm':'player', text: `${moveDispName} si sposta: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.` });
         const combatLive = document.getElementById('combat-live');
-        if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, true);
+        // isMasterNow, non un `true` fisso: questa stessa funzione ora è richiamata anche dal
+        // Giocatore (vedi sopra) — un `true` fisso qui smascererebbe a lui i nomi/Digimon nascosti
+        // ad ogni suo stesso spostamento (stesso bug già corretto altrove in advanceCombatTurn).
+        if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, isMasterNow);
         bindZoneLineArrows(code, players);
         if(typeof renderCombatManager==='function' && document.getElementById('combat-mgr-card')) renderCombatManager(code, players);
       };
@@ -2059,7 +2041,10 @@
     const combatLive = document.getElementById('combat-live');
     const isMasterRole = session && session.role==='master';
     if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, isMasterRole);
-    if(isMasterRole) bindZoneLineArrows(session.code, (cachedRoster||[]).filter(m=>m.role==='player'));
+    // Prima si legava solo per il Master: ora le frecce ◀/▶ compaiono anche al Giocatore nel
+    // proprio turno (vedi zoneLineHTML/bindZoneLineArrows) — bindZoneLineArrows è comunque un
+    // no-op sicuro quando non ci sono bottoni [data-zoneline-move] nel DOM.
+    bindZoneLineArrows(session.code, (cachedRoster||[]).filter(m=>m.role==='player'));
     const attacksCard = document.getElementById('attacks-card');
     if(attacksCard) attacksCard.style.display = (cachedCombat && cachedCombat.active) ? '' : 'none';
     if(session.role==='player'){
@@ -2317,6 +2302,9 @@
     bindAttacksCard(code, me);
     attachLogModeration(document.getElementById('log-live'), code, me, undefined, undefined, refreshLiveParts);
     bindCombatSelfActions(code, session.username);
+    // Frecce ◀/▶ della linea distanze (vedi zoneLineHTML): compaiono anche al Giocatore quando è
+    // il suo turno — le leghiamo già al primo render, non solo al primo poll di refreshLiveParts.
+    bindZoneLineArrows(code, (cachedRoster||[]).filter(m=>m.role==='player'));
     updateChatModeButtons();
     // Chat segmented control (mobile-friendly, works on desktop too)
     document.querySelectorAll('#player-chat-seg .chat-seg-btn').forEach(btn=>{
