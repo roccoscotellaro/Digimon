@@ -12,9 +12,9 @@
   // ---------- SCENE ENCOUNTERS: name-only strings (legacy) vs full Dex-linked objects ----------
   function normalizeEncounter(e){
     if(typeof e === 'string'){
-      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null, disposition:'enemy' };
+      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null, disposition:'enemy', nameHidden:false };
     }
-    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null, disposition:'enemy' }, e);
+    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null, disposition:'enemy', nameHidden:false }, e);
   }
   const ENCOUNTER_DISPOSITIONS = { enemy:{label:'Nemico', color:'var(--danger)', icon:'⚔️'}, ally:{label:'Alleato', color:'var(--cyan)', icon:'🤝'}, neutral:{label:'Neutrale', color:'var(--text-mute)', icon:'❔'} };
 

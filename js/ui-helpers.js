@@ -79,10 +79,15 @@
     `;
   }
 
-  function portraitHTML(imageUrl, name, size){
+  // extraStyle (opzionale): CSS in linea aggiuntivo applicato SOLO quando c'è un'immagine da
+  // mostrare (es. "object-fit:contain;background:transparent;" per i ritratti GIF nel selettore
+  // Attaccante/Bersaglio del Master, dove la GIF va vista per intero senza essere ritagliata né
+  // avere uno sfondo pieno dietro — vedi participantChipHTML in index.html). Senza extraStyle il
+  // comportamento resta identico a prima (nessun cambiamento per gli altri usi di portraitHTML).
+  function portraitHTML(imageUrl, name, size, extraStyle){
     const cls = size==='sm' ? 'portrait-sm' : 'portrait';
     if(imageUrl){
-      return `<img class="${cls}" src="${escapeAttr(imageUrl)}" onerror="this.style.visibility='hidden'" />`;
+      return `<img class="${cls}" src="${escapeAttr(imageUrl)}" onerror="this.style.visibility='hidden'"${extraStyle?` style="${extraStyle}"`:''} />`;
     }
     const initial = (name||'?').trim().charAt(0).toUpperCase() || '?';
     return `<div class="${cls}" style="display:flex;align-items:center;justify-content:center;color:var(--cyan);font-family:'Share Tech Mono',monospace;font-size:${size==='sm'?'14px':'20px'};">${initial}</div>`;

@@ -725,15 +725,6 @@
     // Timer 24h (richiesta utente): riparte da zero ad ogni cambio di turno, non solo al primo —
     // vedi combatTurnTimerLabel/combatDisplayHTML.
     combat.turnStartedAt = new Date().toISOString();
-    // Notifica "è il tuo turno" (richiesta utente, per ridurre i tempi di attesa): instradata nella
-    // Chat Privata del giocatore col Master — è l'UNICO canale esistente che raggiunge in modo
-    // mirato UN SOLO destinatario (vedi subsForUsername in log.js, la Web Push la manda solo alle
-    // sottoscrizioni di quello username), a differenza di pushCombatNarration che, per costruzione,
-    // arriva a chiunque legga quella chat. Funziona indipendentemente da chi ha chiamato questa
-    // funzione (Master da "Turno Successivo" o il giocatore stesso da "Fine Turno").
-    if(starting && starting.isPC && starting.username){
-      await pushPrivateLog(code, starting.username, { who:'Sistema', role:'gm', text: '⚔️ È il tuo turno in combattimento!' });
-    }
     if(starting){
       const tickLogs = await tickEffectsForParticipant(code, combat, starting);
       for(const line of tickLogs){
@@ -758,12 +749,7 @@
     await saveCombat(code, combat);
     renderCombatManager(code, players);
     const combatLive = document.getElementById('combat-live');
-    // BUGFIX: era hardcoded a `true` (isMaster) — innocuo finché solo il Master poteva chiamare
-    // questa funzione (dal proprio bottone "Turno Successivo"), ma ora che anche il giocatore la
-    // richiama da "Fine Turno" (vedi bindAttacksCard) avrebbe smascherato al giocatore i nomi dei
-    // Digimon nascosti/non ancora approvati di altri (combatDisplayName maschera solo se
-    // isMaster è falso). Usa il ruolo reale della sessione che ha appena chiamato la funzione.
-    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, !!(session && session.role==='master'));
+    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, true);
     bindZoneLineArrows(code, players);
   }
   async function endCombatNow(code, players){
@@ -865,18 +851,24 @@
     const isSupport = atk && atk.type==='Support';
     const effDef = (isSupport && atk.effectKey) ? EFFECT_DEFS.find(d=>d.key===atk.effectKey) : null;
     const isHelpful = effDef && effDef.type==='positive';
+    // Il testo di narrazione finisce nel log condiviso, uguale per tutti i lettori (non c'è
+    // rendering per-spettatore per il testo già generato) — quindi se Attaccante/Bersaglio hanno
+    // nameHidden (Incontro con nome non ancora rivelato dal Master), qui li mascheriamo SEMPRE,
+    // anche per il Master, per restare coerenti col resto della UI (combatDisplayName ecc.).
+    const attackerName = attacker.nameHidden ? '❔ (???)' : attacker.name;
+    const targetName = target.nameHidden ? '❔ (???)' : target.name;
     if(!hit) return isHelpful
-      ? `${attacker.name} tenta di supportare ${target.name} con ${atkName}, ma non riesce.`
-      : `${attacker.name} tenta ${atkName} su ${target.name}, ma schiva.`;
+      ? `${attackerName} tenta di supportare ${targetName} con ${atkName}, ma non riesce.`
+      : `${attackerName} tenta ${atkName} su ${targetName}, ma schiva.`;
     if(isSupport) return isHelpful
-      ? `${attacker.name} supporta ${target.name} con ${atkName}.`
-      : `${attacker.name} colpisce ${target.name} con ${atkName}, applicando il suo Effetto.`;
+      ? `${attackerName} supporta ${targetName} con ${atkName}.`
+      : `${attackerName} colpisce ${targetName} con ${atkName}, applicando il suo Effetto.`;
     if(defeatInfo){
       return defeatInfo.digitama
-        ? `${attacker.name} colpisce ${target.name} con ${atkName} (${dealt}): è ridotto/a allo stremo.`
-        : `${attacker.name} colpisce ${target.name} con ${atkName} (${dealt}) e lo/la sconfigge!`;
+        ? `${attackerName} colpisce ${targetName} con ${atkName} (${dealt}): è ridotto/a allo stremo.`
+        : `${attackerName} colpisce ${targetName} con ${atkName} (${dealt}) e lo/la sconfigge!`;
     }
-    return `${attacker.name} colpisce ${target.name} con ${atkName} (${dealt}).`;
+    return `${attackerName} colpisce ${targetName} con ${atkName} (${dealt}).`;
   }
 
   function attackResultCompactHTML(narrLine, hit, dealt, detailHTML){
@@ -945,17 +937,13 @@
   }
 
   // ---------- pannello Attacco/Movimento self-service del giocatore (solo nel proprio turno) ----------
-  // Richiesta utente: "Manca il tasto per far passare la persona di turno" — mancava un modo per
-  // il GIOCATORE di concludere volontariamente il proprio turno (prima solo il Master poteva farlo
-  // avanzare, dal proprio bottone "Turno Successivo"). Bottone "Fine Turno" mostrato solo quando è
-  // davvero il turno del giocatore, bindato in bindAttacksCard qui sotto.
   function turnBannerHTML(combat, username){
     if(!combat || !combat.active) return '';
     const cur = currentTurnParticipant(combat);
     if(!cur) return '<div class="muted" style="margin-bottom:8px;">Ordine non ancora calcolato dal Master.</div>';
     const mine = cur.isPC && cur.username===username;
     return mine
-      ? `<div class="hud-frame" style="padding:6px 10px;margin-bottom:8px;border-color:var(--cyan);background:rgba(53,232,201,0.08);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;"><b style="color:var(--cyan);">▶ È il tuo turno!</b><button class="btn ghost small" id="btn-end-turn-self">Fine Turno ⏭</button></div>`
+      ? `<div class="hud-frame" style="padding:6px 10px;margin-bottom:8px;border-color:var(--cyan);background:rgba(53,232,201,0.08);"><b style="color:var(--cyan);">▶ È il tuo turno!</b></div>`
       : `<div class="muted" style="margin-bottom:8px;">Turno di <b>${escapeHTML(cur.name)}</b> — attendi il tuo turno.</div>`;
   }
 
@@ -1063,28 +1051,6 @@
     }
     if(moveCloserBtn) moveCloserBtn.onclick = ()=>doMove(true);
     if(moveAwayBtn) moveAwayBtn.onclick = ()=>doMove(false);
-
-    const endTurnBtn = document.getElementById('btn-end-turn-self');
-    if(endTurnBtn){
-      endTurnBtn.onclick = async ()=>{
-        if(!cachedCombat || !cachedCombat.active) return;
-        // Stessa guardia anti-doppio-click delle altre azioni self-service (vedi combatActionPending).
-        if(combatActionPending){
-          if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent='Azione precedente ancora in salvataggio, attendi un istante e riprova.'; }
-          return;
-        }
-        if(!isMyCombatTurn(cachedCombat, session.username)) return;
-        const p = cachedCombat.participants.find(x=>x.username===session.username);
-        const actsLeft = p ? (p.actions===undefined?2:p.actions) : 0;
-        if(actsLeft>0 && !window.confirm(`Concludere il turno ora? Perderai ${actsLeft} Azione/i non usata/e.`)) return;
-        // advanceCombatTurn è la stessa funzione usata dal bottone "Turno Successivo" del Master
-        // (index.html) — qui il giocatore la richiama per il proprio turno soltanto (il controllo
-        // isMyCombatTurn sopra lo garantisce). Le chiamate a renderCombatManager/bindZoneLineArrows
-        // al suo interno non trovano elementi Master nel DOM del giocatore e non fanno nulla.
-        await advanceCombatTurn(code, cachedRoster.filter(m=>m.role==='player'));
-        refreshLiveParts();
-      };
-    }
 
     document.querySelectorAll('[data-self-attack-idx]').forEach(btn=>{
       btn.onclick = async ()=>{
@@ -1296,7 +1262,9 @@
   // p.username collega il partecipante alla sua scheda in cachedRoster; se manca (nemico/NPC) non
   // c'è nulla da nascondere.
   function combatDisplayName(p, isMaster){
-    if(!p || !p.username) return (p && p.name) || '';
+    if(!p) return '';
+    if(p.nameHidden && !isMaster) return '❔ (???)';
+    if(!p.username) return p.name || '';
     if(isMaster || (session && session.username===p.username)) return p.name;
     const member = cachedRoster.find(m=>m.username===p.username);
     if(member && member.digimon && member.digimon.approved===false) return '🥚 (Uovo)';
@@ -1341,7 +1309,7 @@
                   const isMasked = dispName !== p.name;
                   const portrait = isMasked
                     ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--panel-2);color:var(--text-mute);font-size:14px;">❔</div>`
-                    : portraitHTML(resolveParticipantImage(p), dispName, 'sm');
+                    : portraitHTML(resolveParticipantImage(p, true), dispName, 'sm');
                   return `<div title="${escapeAttr(dispName)}" style="width:26px;height:26px;border-radius:6px;overflow:hidden;border:2px solid ${color};box-shadow:0 0 4px rgba(0,0,0,0.4);">${portrait}</div>`;
                 }).join('')}
               </div>
@@ -1377,7 +1345,8 @@
         if(!result.ok){ if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; } return; }
         const from = p.zone||'Medio';
         p.zone = newZone;
-        await pushCombatNarration(cachedCombat, { who: p.name, role:'gm', text: `${p.name} si sposta: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.` });
+        const moveDispName = p.nameHidden ? '❔ (???)' : p.name;
+        await pushCombatNarration(cachedCombat, { who: p.name, role:'gm', text: `${moveDispName} si sposta: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.` });
         await saveCombat(code, cachedCombat);
         const combatLive = document.getElementById('combat-live');
         if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, true);
@@ -3633,23 +3602,23 @@
   // l'iconcina Vaccine/Data/Virus/Free/Variable sui Digimon in scena senza doverlo salvare a parte
   // sull'Incontro (che potrebbe non essere mai stato sincronizzato con quel campo).
   // dexAttributeFor spostata in js/scene-encounters.js
-  function resolveParticipantImage(p){
+  function resolveParticipantImage(p, preferStatic){
     if(p.isPC){
       const member = cachedRoster.find(m=>m.username===p.username);
       if(member && member.digimon){
-        return bestDigimonImage(null, member.digimon.name, member.digimon.imageUrl);
+        return bestDigimonImage(null, member.digimon.name, member.digimon.imageUrl, preferStatic);
       }
     } else if(p.sourceEncounterId){
       const enc = (cachedScene.encounters||[]).find(e=>e.id===p.sourceEncounterId);
-      if(enc) return bestDigimonImage(enc.dexId, enc.name, enc.gif || enc.image);
+      if(enc) return bestDigimonImage(enc.dexId, enc.name, preferStatic ? (enc.image || enc.gif) : (enc.gif || enc.image), preferStatic);
     }
-    return bestDigimonImage(null, p.name, p.imageUrl);
+    return bestDigimonImage(null, p.name, p.imageUrl, preferStatic);
   }
   function participantChipHTML(p, role, selected){
     const color = participantSideColor(p);
     const defeated = isParticipantDefeated(p);
     return `<button type="button" data-chip-role="${role}" data-chip-id="${p.id}" title="${escapeAttr(p.name)} — ${p.side==='ally'?'Alleato':'Nemico'}" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:3px;width:52px;border-radius:8px;border:2px solid ${selected?color:'transparent'};background:${selected?'rgba(255,255,255,0.05)':'transparent'};cursor:pointer;opacity:${defeated?'0.45':'1'};">
-      <div style="width:32px;height:32px;border-radius:6px;overflow:hidden;border:1px solid ${color};">${portraitHTML(resolveParticipantImage(p), p.name, 'sm')}</div>
+      <div style="width:32px;height:32px;border-radius:6px;overflow:hidden;border:1px solid ${color};">${portraitHTML(resolveParticipantImage(p), p.name, 'sm', 'object-fit:contain;background:transparent;')}</div>
       <span style="font-size:9px;max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${color};">${escapeHTML(p.name)}</span>
     </button>`;
   }
@@ -3870,20 +3839,6 @@
   let combatPresetTargetId = null;
   let combatSelectedAttackIndex = null;
 
-  // Notifica "il tuo Digimon può evolvere" (richiesta utente, per ridurre i tempi di attesa): true
-  // se il Digimon ha Evolution Points sufficienti per salire al prossimo Stage E quello Stage è già
-  // stato "costruito" (stageStats con un nome assegnato) — stessa condizione già usata dal
-  // guard-rail del bottone "Evolvi" (vedi js/digimon-card.js, messaggio "mai stato costruito" e il
-  // controllo EP prima di applyStageChange), qui riusata solo per decidere quando avvisare.
-  function canEvolveNow(d){
-    if(!d) return false;
-    const curIdx = stageIndex(d.stage);
-    if(curIdx < 0 || curIdx >= STAGES.length-1) return false;
-    const nextStage = STAGES[curIdx+1];
-    const built = !!(d.stageStats && d.stageStats[nextStage] && d.stageStats[nextStage].name);
-    if(!built) return false;
-    return Number(d.evolutionPoints||0) >= evolutionCost(d, nextStage);
-  }
   async function grantMilestoneRewards(code, milestoneNumber, reason){
     const players = cachedRoster.filter(m=>m.role==='player');
     for(const p of players){
@@ -4053,17 +4008,11 @@
     document.getElementById('btn-take-break').onclick = async ()=>{
       const players = cachedRoster.filter(m=>m.role==='player');
       for(const p of players){
-        const wasEvoReady = canEvolveNow(p.digimon);
         p.tamer.currentWounds = 3 + Number(p.tamer.skills.endurance||0);
         p.digimon.currentWounds = p.digimon.maxWounds;
         const cap = cachedProgression ? Number(cachedProgression.milestone||0) : 0;
         p.digimon.evolutionPoints = Math.min(cap, Number(p.digimon.evolutionPoints||0)+1);
         await saveMember(code, p);
-        // Notifica mirata "puoi evolvere" (richiesta utente): solo alla transizione non-pronto ->
-        // pronto, non ad ogni Break (altrimenti spammerebbe chi è già pronto da un pezzo).
-        if(!wasEvoReady && canEvolveNow(p.digimon)){
-          await pushPrivateLog(code, p.username, { who:'Sistema', role:'gm', text: `✨ Il tuo Digimon ${p.digimon.name||displayName(p)} può evolvere adesso!` });
-        }
       }
       await pushLog(code, { who:'Sistema', role:'gm', text: `☕ Il party prende un Break: Ferite recuperate del tutto, +1 Evolution Point a testa.` });
       refreshLiveParts();
@@ -4071,7 +4020,6 @@
     document.getElementById('btn-take-rest').onclick = async ()=>{
       const players = cachedRoster.filter(m=>m.role==='player');
       for(const p of players){
-        const wasEvoReady = canEvolveNow(p.digimon);
         p.tamer.currentWounds = 3 + Number(p.tamer.skills.endurance||0);
         p.digimon.currentWounds = p.digimon.maxWounds;
         const cap = cachedProgression ? Number(cachedProgression.milestone||0) : 0;
@@ -4082,9 +4030,6 @@
         TALENT_DEFS.filter(t=>t.once==='rest').forEach(t=>{ p.tamer.specialOrdersUsed[t.order] = false; });
         (p.digimon.armorForms||[]).forEach(af=>{ af.usedThisRest = false; });
         await saveMember(code, p);
-        if(!wasEvoReady && canEvolveNow(p.digimon)){
-          await pushPrivateLog(code, p.username, { who:'Sistema', role:'gm', text: `✨ Il tuo Digimon ${p.digimon.name||displayName(p)} può evolvere adesso!` });
-        }
       }
       await pushLog(code, { who:'Sistema', role:'gm', text: `😴 Il party fa un Rest: Ferite ed Evolution Points recuperati del tutto, penalità Torment rimosse, Torment Check di nuovo disponibili.` });
       refreshLiveParts();
@@ -4163,21 +4108,6 @@
         await saveCombat(code, cachedCombat);
         if(cachedCombat.chatLock){
           await pushCombatNarration(cachedCombat, { who:'Sistema', role:'gm', text: '🔒 ' + cachedCombat.chatLock.message });
-        } else {
-          // Notifica minima garantita, rivista su segnalazione utente: NON più un broadcast su
-          // Chat Generale (se il combattimento coinvolge solo alcuni giocatori, o si svolge
-          // altrove, un annuncio in Generale o non arriva a chi serve o disturba chi non
-          // c'entra). Notifichiamo invece SOLO i partecipanti PC di questo combattimento, uno per
-          // uno, sulla loro chat privata col Master — stesso canale già usato per l'avviso "è il
-          // tuo turno": garantisce un push reale mirato (subsForUsername, vedi log.js) senza mai
-          // toccare la Chat Generale.
-          const notifiedStart = new Set();
-          for(const part of (cachedCombat.participants||[])){
-            if(part.isPC && part.username && !notifiedStart.has(part.username)){
-              notifiedStart.add(part.username);
-              await pushPrivateLog(code, part.username, { who:'Sistema', role:'gm', text: '⚔️ È iniziato un combattimento!' });
-            }
-          }
         }
         __combatMusicSynced = true;
         startCombatMusic(cachedScene);
@@ -4197,18 +4127,6 @@
 
     cardEl.innerHTML = `
       <div class="section-title">Gestione Combattimento</div>
-      <div class="hud-frame" style="padding:8px 10px;margin-bottom:10px;">
-        <div class="muted" style="font-size:11px;margin-bottom:4px;">📢 Chat annunci di questo combattimento: <b style="color:var(--cyan);">${combat.chatLock ? escapeHTML(combatChatLockLabel(combat.chatLock.location)) : 'nessuna (nessun blocco/annuncio dedicato)'}</b></div>
-        <div class="row">
-          <select id="combat-chatlock-live-select" style="flex:2;">
-            <option value="none" ${!combat.chatLock?'selected':''}>Nessuna (nessun blocco/annuncio dedicato)</option>
-            <option value="general" ${combat.chatLock && combat.chatLock.location==='general'?'selected':''}>Chat Generale</option>
-            ${(cachedSubgroups||[]).map(g=>`<option value="sub:${g.id}" ${combat.chatLock && combat.chatLock.location==='sub:'+g.id?'selected':''}>Sottogruppo: ${escapeHTML(g.name)}</option>`).join('')}
-          </select>
-          <button class="btn ghost small" id="btn-combat-chatlock-update" style="flex:1;">Cambia</button>
-        </div>
-        <div class="muted" id="combat-chatlock-live-status" style="font-size:10px;margin-top:4px;"></div>
-      </div>
       <div class="row" style="margin-bottom:4px;align-items:center;">
         <span class="muted" style="flex:1;">Zona di partenza Alleati</span>
         <select id="combat-startzone-ally-live" style="flex:1;">${ZONES.map(z=>`<option value="${z}" ${(combat.startZoneAlly||'Molto Corto')===z?'selected':''}>${zoneLabel(z)}</option>`).join('')}</select>
@@ -4690,9 +4608,10 @@
         const pushed = await pushCombatNarration(combat, { who: attacker.name, role:'roll', text: `${baseNarr}::TECH::${logText}`, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
         const rollEntryId = pushed && pushed.entry && pushed.entry.id;
         if(defeatInfo){
+          const defeatDispName = target.nameHidden ? '❔ (???)' : defeatInfo.name;
           const noticeText = defeatInfo.digitama
-            ? `🥚 ${defeatInfo.name} è Sconfitto ed è già al Default Stage minimo — da regolamento diventerebbe Digitama, gestiscilo a mano.`
-            : `🏳️ ${defeatInfo.name} è Sconfitto! Retrocede a ${defeatInfo.toStage} con 1 Ferita e viene ignorato per il resto del combattimento (a meno che il giocatore non scelga di rientrare a proprio rischio).`;
+            ? `🥚 ${defeatDispName} è Sconfitto ed è già al Default Stage minimo — da regolamento diventerebbe Digitama, gestiscilo a mano.`
+            : `🏳️ ${defeatDispName} è Sconfitto! Retrocede a ${defeatInfo.toStage} con 1 Ferita e viene ignorato per il resto del combattimento (a meno che il giocatore non scelga di rientrare a proprio rischio).`;
           await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: noticeText });
         }
         await persistAndRefresh();
@@ -5252,39 +5171,6 @@
       };
     });
 
-    const chatlockUpdateBtn = document.getElementById('btn-combat-chatlock-update');
-    if(chatlockUpdateBtn){
-      chatlockUpdateBtn.onclick = async ()=>{
-        const sel = document.getElementById('combat-chatlock-live-select');
-        const statusEl = document.getElementById('combat-chatlock-live-status');
-        if(!sel) return;
-        const newVal = sel.value; // 'none' | 'general' | 'sub:<id>'
-        const prevLock = combat.chatLock;
-        const prevLoc = prevLock ? prevLock.location : null;
-        const newLoc = newVal==='none' ? null : newVal;
-        if(prevLoc===newLoc){
-          if(statusEl) statusEl.textContent = 'La chat annunci è già questa.';
-          return;
-        }
-        // Sblocca la vecchia chat (se c'era) con una nota, poi blocca/annuncia sulla nuova — stesso
-        // schema simmetrico di "Inizia Combattimento"/"Termina Combattimento".
-        if(prevLoc){
-          await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: '🔓 Gli annunci di questo combattimento si spostano altrove — questa chat è di nuovo libera.' });
-        }
-        if(newLoc){
-          combat.chatLock = { location: newLoc, message: (prevLock && prevLock.message) || DEFAULT_COMBAT_LOCK_MESSAGE };
-          await saveCombat(code, combat);
-          await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: '🔒 Da qui in poi gli annunci (e il blocco) di questo combattimento sono qui.' });
-        } else {
-          combat.chatLock = null;
-          await saveCombat(code, combat);
-        }
-        renderCombatManager(code, players);
-        const combatLive = document.getElementById('combat-live');
-        if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, true);
-      };
-    }
-
     document.getElementById('btn-combat-add-player').onclick = async ()=>{
       const username = document.getElementById('combat-add-player').value;
       if(!username) return;
@@ -5329,7 +5215,8 @@
           zone: (side==='ally' ? cachedCombat.startZoneAlly : cachedCombat.startZoneEnemy) || (side==='ally'?'Molto Corto':'Molto Lungo'), clashPinned:false, clashComebackBonus:0, isPC:false,
           accuracy: Number(bs.baseAccuracy)||0, damage: Number(bs.baseDamage)||0, dodge,
           armor: Number(bs.baseArmor)||0, maxWounds, currentWounds: maxWounds, attribute,
-          sourceEncounterId: enc.id, isBoss: !!enc.isBoss, attacks: enc.attacks || [], imageUrl: enc.image || ''
+          sourceEncounterId: enc.id, isBoss: !!enc.isBoss, attacks: enc.attacks || [], imageUrl: enc.image || '',
+          nameHidden: !!enc.nameHidden
         });
         await persistAndRefresh();
       };

@@ -253,11 +253,21 @@
   // corrispondenza usa lo snapshot passato come fallback (preso al momento in cui quell'oggetto
   // — Incontro di scena, partecipante di combattimento, scheda giocatore — è stato creato/salvato).
   // Un solo punto da correggere invece di uno snapshot sparso in tre posti diversi.
-  function bestDigimonImage(dexId, name, fallbackImage){
+  //
+  // preferStatic (opzionale): di norma, se una voce del Digidex ha sia l'immagine statica che la
+  // GIF animata, questa funzione preferisce la GIF (comportamento storico, usato per la scelta
+  // Attaccante/Bersaglio del Master e per gli avatar in chat). Passando preferStatic=true si
+  // inverte la preferenza (immagine statica prima, GIF come fallback) — usato dalla linea delle
+  // distanze in combattimento, dove le GIF (pensate per la sola scheda Dex) risultavano poco
+  // leggibili nei ritratti piccoli.
+  function bestDigimonImage(dexId, name, fallbackImage, preferStatic){
     let match = null;
     if(dexId) match = cachedDex.find(d=>d.id===dexId);
     if(!match && name) match = cachedDex.find(d=>String(d.name).trim().toLowerCase()===String(name).trim().toLowerCase());
-    if(match && (match.gif_url || match.image_url)) return match.gif_url || match.image_url;
+    if(match){
+      const chosen = preferStatic ? (match.image_url || match.gif_url) : (match.gif_url || match.image_url);
+      if(chosen) return chosen;
+    }
     return fallbackImage || '';
   }
 
@@ -650,22 +660,10 @@
             evoQuickBtn.disabled = true;
             d.evolutionPoints = Number(d.evolutionPoints||0) - cost;
             const oldName = d.name || 'Il Digimon';
-            // BUGFIX: a differenza dei bottoni "Evolvi"/"Forza" della Scheda Digimon (digimon-card.js),
-            // questo percorso non richiamava affatto showEvolutionTransition/__playEvolutionSfx — un
-            // giocatore che evolveva SOLO da qui non vedeva mai l'animazione. Corretto usando esattamente
-            // lo stesso pattern (immagine vecchia/nuova via bestDigimonImage, gate su getEvoAnimEnabled —
-            // entrambe definite in js/digimon-card.js, chiamabili da qui come funzione globale bare,
-            // eseguito dopo che tutti gli script sono stati parsati).
-            const __oldImg = bestDigimonImage(null, d.name, d.imageUrl);
             applyStageChange(d, d.stage, target);
             d.currentWounds = d.maxWounds;
             await saveMember(code, me);
-            const __newImg = bestDigimonImage(null, d.name, d.imageUrl);
-            await pushPlayerNarration(code, me, { who: displayName(me), role:'player', text: `✨ ${oldName} è avvolto da un bagliore di dati... e digivolve in ${d.name||target}!${cost>0?` (spesi ${cost} Evolution Points)`:''} — Stat aggiornate automaticamente. Ricorda di segnare 1 Azione spesa.`, meta: __newImg ? { image: __newImg } : null });
-            if(getEvoAnimEnabled()){
-              try{ __playEvolutionSfx('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787073018875_mziu9s.mpeg'); }catch(e){}
-              showEvolutionTransition(__oldImg, __newImg, d.name);
-            }
+            await pushPlayerNarration(code, me, { who: displayName(me), role:'player', text: `✨ ${oldName} è avvolto da un bagliore di dati... e digivolve in ${d.name||target}!${cost>0?` (spesi ${cost} Evolution Points)`:''} — Stat aggiornate automaticamente. Ricorda di segnare 1 Azione spesa.` });
             evoQuickBtn.disabled = false;
             if(onChanged) onChanged();
           }

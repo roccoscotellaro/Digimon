@@ -830,16 +830,26 @@
   function getEncImgLarge(){ try{ return localStorage.getItem('digivice_enc_img_large')==='1'; }catch(e){ return false; } }
   function setEncImgLarge(v){ try{ localStorage.setItem('digivice_enc_img_large', v?'1':'0'); }catch(e){} }
 
+  // Un Incontro è "identificato" (nome/immagine/descrizione mostrabili a un giocatore) finché il
+  // Master non spunta "🎭 Nascondi Nome" su quell'Incontro — vedi encountersReadonlyHTML, che la
+  // usa per decidere se mostrare la card mascherata ("❔ ???") a chi non è Master.
+  function isEncounterIdentityKnown(e){
+    if(e && e.nameHidden) return false;
+    return true;
+  }
+
   function encountersReadonlyHTML(scene){
     const enc = (scene && Array.isArray(scene.encounters)) ? scene.encounters.map(normalizeEncounter) : [];
     const visible = enc.filter(e=>e.revealed!==false);
     if(visible.length===0) return '';
-    // Group visually-identical entries (same name/stage/image) so duplicates show a ×N counter instead of repeating.
+    const isMasterView = !!(session && session.role==='master');
+    // Group visually-identical entries (same name/stage/image/nameHidden) so duplicates show a
+    // ×N counter instead of repeating.
     const groups = [];
     visible.forEach(e=>{
-      const key = e.name.trim().toLowerCase()+'|'+(e.stage||'')+'|'+(e.image||'');
+      const key = e.name.trim().toLowerCase()+'|'+(e.stage||'')+'|'+(e.image||'')+'|'+(e.nameHidden?'1':'0');
       let g = groups.find(x=>x.key===key);
-      if(!g){ g = { key, name:e.name, stage:e.stage, image:e.image, isBoss:false, count:0, single:e }; groups.push(g); }
+      if(!g){ g = { key, name:e.name, stage:e.stage, image:e.image, isBoss:false, count:0, single:e, nameHidden: !!e.nameHidden }; groups.push(g); }
       g.count++;
       if(e.isBoss) g.isBoss = true;
     });
@@ -850,6 +860,20 @@
         <button type="button" class="btn ghost small" data-toggle-enc-size style="margin-bottom:8px;">${large?'🔎 Immagini più piccole':'🔍 Immagini più grandi'}</button>
         <div style="display:flex;flex-wrap:wrap;gap:10px;">
           ${groups.map(g=>{
+            // Master a parte: chi non è Master vede solo la presenza ("qualcosa è qui"), mai nome,
+            // immagine o descrizione, finché il Master non toglie "🎭 Nascondi Nome" da questo
+            // Incontro — niente attributo data-enc-name, quindi il click non apre nemmeno il
+            // dettaglio (che rivelerebbe nome/descrizione/evoluzioni).
+            const masked = !isEncounterIdentityKnown(g) && !isMasterView;
+            if(masked){
+              const cardW = imgSize+18;
+              return `
+              <div class="enc-card-mini" style="width:${cardW}px;padding:4px;border-radius:8px;border:2px solid transparent;position:relative;" title="Presenza non identificata">
+                ${g.count>1 ? `<span style="position:absolute;top:-4px;right:0px;background:var(--cyan);color:#04211c;font-size:9px;font-weight:700;border-radius:8px;padding:1px 5px;">×${g.count}</span>` : ''}
+                <div style="width:${imgSize}px;height:${imgSize}px;display:flex;align-items:center;justify-content:center;background:var(--panel-2);border-radius:6px;color:var(--text-mute);font-size:16px;">❔</div>
+                <div style="font-size:10px;text-align:center;margin-top:3px;line-height:1.2;">???</div>
+              </div>`;
+            }
             // Una barra vita si mostra solo per un individuo singolo: per un gruppo (×N) le Ferite si tracciano nel Combat Manager una volta ingaggiati.
             const showHp = g.count===1 && encounterMaxWounds(g.single) > 1;
             const cardW = showHp ? Math.max(imgSize+18, 90) : imgSize+18;
@@ -884,8 +908,8 @@
         <div class="roster-item" style="padding:6px 8px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;${e.isBoss?'border-color:var(--danger);':''}border-left:3px solid ${disp.color};">
           ${(()=>{ const img = bestDigimonImage(e.dexId, e.name, e.gif || e.image); return img ? `<img src="${escapeAttr(img)}" onerror="this.style.display='none'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0;" />` : ''; })()}
           <div style="flex:1;min-width:140px;">
-            <div><b>${escapeHTML(e.name)}</b> ${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}${attributeIconHTML(dexAttributeFor(e.dexId, e.name), 14)}<button class="tag" data-cycle-disposition="${i}" style="cursor:pointer;color:${disp.color};border-color:${disp.color};background:none;" title="Clicca per cambiare (Nemico/Alleato/Neutrale) — si riflette nell'aggiunta al combattimento">${disp.icon} ${disp.label}</button>${e.isBoss?`<span class="tag" style="color:var(--danger);border-color:var(--danger);">👑 Boss</span>`:''}${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>
-            <div class="muted" style="font-size:11px;">${visible ? '👁️ Visibile ai giocatori' : '🙈 Nascosto — solo il Master lo vede'}</div>
+            <div><b>${escapeHTML(e.name)}</b> ${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}${attributeIconHTML(dexAttributeFor(e.dexId, e.name), 14)}<button class="tag" data-cycle-disposition="${i}" style="cursor:pointer;color:${disp.color};border-color:${disp.color};background:none;" title="Clicca per cambiare (Nemico/Alleato/Neutrale) — si riflette nell'aggiunta al combattimento">${disp.icon} ${disp.label}</button>${e.isBoss?`<span class="tag" style="color:var(--danger);border-color:var(--danger);">👑 Boss</span>`:''}${e.nameHidden?`<span class="tag" style="color:var(--violet, #b98cf0);border-color:var(--violet, #b98cf0);">🎭 Nome Nascosto</span>`:''}${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>
+            <div class="muted" style="font-size:11px;">${visible ? '👁️ Visibile ai giocatori' : '🙈 Nascosto — solo il Master lo vede'}${visible ? (e.nameHidden ? ' · 🎭 Presenza visibile, nome e descrizione nascosti ai giocatori' : '') : ''}</div>
             <div style="display:flex;align-items:center;gap:6px;max-width:220px;">
               ${miniHpBarHTML(curW, maxW)}
               <div class="bar-controls" style="margin-top:5px;">
@@ -908,6 +932,7 @@
           </div>
           <button class="btn ${e.isBoss?'':'ghost'} small" data-toggle-boss="${i}" style="padding:4px 8px;font-size:10px;">${e.isBoss?'👑 Rimuovi Boss':'👑 Segna Boss'}</button>
           <button class="btn ${visible?'ghost':''} small" data-toggle-reveal="${i}" style="padding:4px 8px;font-size:10px;">${visible?'🙈 Nascondi':'👁️ Mostra ai giocatori'}</button>
+          <button class="btn ${e.nameHidden?'':'ghost'} small" data-toggle-namehidden="${i}" style="padding:4px 8px;font-size:10px;" title="Il Digimon resta visibile in Scena, ma nome/descrizione restano '???' per i giocatori finché non lo riveli">${e.nameHidden?'🏷️ Rivela Nome':'🎭 Nascondi Nome'}</button>
           <button class="btn ghost small" data-dupe-enc="${i}" style="padding:4px 8px;font-size:10px;" title="Aggiunge una copia identica">+1 copia</button>
           ${already ? `<button class="btn ghost small" data-refresh-atk="${i}" style="padding:4px 8px;font-size:10px;" title="Ricarica Attacchi + Immagine/GIF dal Digidex — utile se sono stati aggiornati o se erano stati importati prima di una correzione">🔄 Sincronizza da Dex</button>` : ''}
           ${already ? '' : `<button class="btn small" data-quickdex="${i}" style="padding:4px 8px;font-size:10px;">+Dex</button>`}
@@ -1070,6 +1095,32 @@
         if(!e) return;
         const isVisible = e.revealed!==false;
         e.revealed = !isVisible;
+        await saveScene(code, cachedScene);
+        live.innerHTML = encountersEditableHTML(cachedScene.encounters);
+        bindEncountersInnerActions(code, username, onChanged);
+        if(onChanged) onChanged();
+      };
+    });
+    // "🎭 Nascondi Nome" / "🏷️ Rivela Nome": indipendente dalla visibilità dell'Incontro (sopra).
+    // Il Digimon resta visto (presenza in Scena), ma nome/immagine/descrizione restano "???" ai
+    // giocatori finché il Master non lo rivela — vedi encountersReadonlyHTML e combatDisplayName.
+    live.querySelectorAll('[data-toggle-namehidden]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const idx = Number(btn.getAttribute('data-toggle-namehidden'));
+        const e = cachedScene.encounters[idx];
+        if(!e) return;
+        e.nameHidden = !e.nameHidden;
+        // Propaga lo stesso stato ai partecipanti al combattimento già collegati a questo
+        // Incontro (se ce ne sono), così la linea delle distanze/l'ordine dei turni si aggiornano
+        // subito senza dover ri-aggiungere il Digimon al combattimento.
+        if(cachedCombat && Array.isArray(cachedCombat.participants)){
+          cachedCombat.participants.forEach(p=>{ if(p.sourceEncounterId===e.id) p.nameHidden = e.nameHidden; });
+          // Non possiamo chiamare saveCombat(): è definita dentro la IIFE principale di
+          // index.html (script caricato DOPO questo file), quindi invisibile da qui — a
+          // differenza di saveScene, che è stata spostata in questo stesso file. apiPost
+          // (js/api.js, vera funzione globale) replica esattamente ciò che fa saveCombat.
+          if(cachedCombat.active) await apiPost('/api/state', { resource:'combat', code, data: cachedCombat });
+        }
         await saveScene(code, cachedScene);
         live.innerHTML = encountersEditableHTML(cachedScene.encounters);
         bindEncountersInnerActions(code, username, onChanged);
@@ -1392,9 +1443,13 @@
 
   function rerenderSceneLive(){
     const el = document.getElementById('scene-live');
-    if(!el) return;
+    const pinEl = document.getElementById('scene-pin-live');
+    if(!el && !pinEl) return;
     const sceneViewer = (session && session.role==='player') ? (cachedRoster.find(m=>m.username===session.username) || cachedMe) : null;
-    el.innerHTML = `<div class="muted mono" style="margin-bottom:8px;">${onlineSummary(cachedRoster)}</div>` + sceneHTML(cachedScene, sceneViewer);
+    if(el) el.innerHTML = `<div class="muted mono" style="margin-bottom:8px;">${onlineSummary(cachedRoster)}</div>` + sceneHTML(cachedScene, sceneViewer);
+    // La barra Scena fissa mobile (.mobile-scene-pin) resta sincronizzata con lo stesso Settore/
+    // Incontri di #scene-live, ma senza il "chi è online" (troppo lungo per restare compatta).
+    if(pinEl) pinEl.innerHTML = sceneHTML(cachedScene, sceneViewer);
   }
 
   // Global delegation: works no matter which render function last drew the scene box
