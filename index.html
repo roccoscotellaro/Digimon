@@ -601,7 +601,18 @@
   async function pushCombatNarration(combat, entry){
     const lock = combat && combat.chatLock;
     if(!lock || !lock.location || lock.location==='general') return pushLog(session.code, entry);
-    if(lock.location.startsWith('sub:')) return pushPrivateLog(session.code, 'subgroup:'+lock.location.slice(4), entry);
+    if(lock.location.startsWith('sub:')){
+      const subgroupId = lock.location.slice(4);
+      const group = (cachedSubgroups||[]).find(g=>g.id===subgroupId);
+      // pushPrivateLog di default etichetta meta.location con la posizione del GRUPPO principale
+      // (currentLocationKey()), ma la vista "Storico per Settore" della chat del sottogruppo filtra
+      // per la posizione EFFETTIVA del sottogruppo (subgroupLocationKey), che può differire quando il
+      // sottogruppo si trova altrove sulla mappa. Senza questo, le narrazioni di combattimento
+      // sparivano silenziosamente dalla chat del sottogruppo.
+      const meta = { ...(entry.meta||{}) };
+      if(meta.location===undefined) meta.location = group ? subgroupLocationKey(group) : currentLocationKey();
+      return pushPrivateLog(session.code, 'subgroup:'+subgroupId, { ...entry, meta });
+    }
     return pushLog(session.code, entry);
   }
   // true se il composer di chat che il GIOCATORE sta guardando in questo momento (chatMode +
@@ -2082,8 +2093,23 @@
       cachedMe = cachedRoster.find(m=>m.username===session.username) || cachedMe;
       const attacksCardInner = document.getElementById('attacks-card-inner');
       if(attacksCardInner && cachedMe){
+        // Bug mobile: il poll (ogni 15s) ricostruisce da zero l'HTML di questa card, quindi
+        // sostituisce anche <select id="self-target-select"> con un elemento nuovo che riparte
+        // dalla prima opzione. Se il giocatore aveva già scelto un bersaglio e il poll scattava
+        // proprio in quella finestra, il tasto Attacca (che legge il valore dal DOM al momento del
+        // click) finiva per colpire il bersaglio sbagliato. Qui salviamo la selezione prima di
+        // ridisegnare e la ripristiniamo subito dopo, se quel bersaglio esiste ancora tra i
+        // partecipanti.
+        const prevTargetSel = document.getElementById('self-target-select');
+        const prevTargetVal = prevTargetSel ? prevTargetSel.value : null;
         attacksCardInner.innerHTML = attacksCardHTML(cachedMe, cachedCombat, session.username);
         bindAttacksCard(session.code, cachedMe);
+        if(prevTargetVal){
+          const newTargetSel = document.getElementById('self-target-select');
+          if(newTargetSel && Array.from(newTargetSel.options).some(o=>o.value===prevTargetVal)){
+            newTargetSel.value = prevTargetVal;
+          }
+        }
       }
     }
     const combatSelf = document.getElementById('combat-self-actions');
@@ -4471,9 +4497,10 @@
           const oStats = getParticipantCombatStats(opponent);
           const accRoll = rollPool(cStats.accuracy);
           const dodgeRoll = rollPool(Math.floor(oStats.dodge/2));
-          let text, dealt=0;
+          let text, techDetail, dealt=0;
           if(accRoll.successes<=dodgeRoll.successes){
-            text = `🏆 Finisher di ${controller.name} su ${opponent.name}: MANCATO (${accRoll.successes} vs ${dodgeRoll.successes} succ.) — il Clash finisce comunque.`;
+            text = `🏆 Finisher di ${controller.name} su ${opponent.name}: MANCATO — il Clash finisce comunque.`;
+            techDetail = `Acc ${cStats.accuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} succ. vs Dodge½ ${Math.floor(oStats.dodge/2)}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ.`;
           } else {
             const excess = accRoll.successes-dodgeRoll.successes;
             dealt = Math.max(0, excess+cStats.damage-oStats.armor);
@@ -4497,11 +4524,12 @@
             }
             await applyDamageToParticipant(code, combat, opponent, dealt);
             const w = getParticipantWounds(opponent);
-            text = `🏆 Finisher di ${controller.name} su ${opponent.name}: COLPITO! ${dealt} danno${bonusNote} → ${opponent.name} ${w.current}/${w.max} Ferite — il Clash finisce.`;
+            text = `🏆 Finisher di ${controller.name} su ${opponent.name}: COLPITO! ${dealt} danno → ${opponent.name} ${w.current}/${w.max} Ferite — il Clash finisce.`;
+            techDetail = `Acc ${cStats.accuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} succ. vs Dodge½ ${Math.floor(oStats.dodge/2)}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ.${bonusNote}`;
           }
           controller.clashWith=null; controller.clashController=false; controller.clashPinned=false; controller.clashComebackBonus=0;
           opponent.clashWith=null; opponent.clashController=false; opponent.clashPinned=false; opponent.clashComebackBonus=0;
-          await pushCombatNarration(combat, { who:'Master', role:'roll', text, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
+          await pushCombatNarration(combat, { who:'Master', role:'roll', text: `${text}::TECH::${techDetail}`, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
           await persistAndRefresh();
         };
       }
@@ -4512,16 +4540,17 @@
         const accRoll = rollPool(cStats.accuracy);
         const dodgeRoll = rollPool(Math.floor(oStats.dodge/2));
         let dealt=0, text;
+        const techDetail = `Acc ${cStats.accuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} succ. vs Dodge½ ${Math.floor(oStats.dodge/2)}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ.`;
         if(accRoll.successes<=dodgeRoll.successes){
-          text = `⚔ ${controller.name} attacca ${opponent.name} nel Clash: Acc ${cStats.accuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} vs Dodge½ ${Math.floor(oStats.dodge/2)}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} → MANCATO`;
+          text = `⚔ ${controller.name} attacca ${opponent.name} nel Clash: MANCATO`;
         } else {
           const excess = accRoll.successes-dodgeRoll.successes;
           dealt = Math.max(0, excess+cStats.damage-oStats.armor);
           await applyDamageToParticipant(code, combat, opponent, dealt);
           const w = getParticipantWounds(opponent);
-          text = `⚔ ${controller.name} attacca ${opponent.name} nel Clash: Acc ${cStats.accuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} vs Dodge½ ${Math.floor(oStats.dodge/2)}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} → COLPITO! ${dealt} danno → ${opponent.name} ${w.current}/${w.max} Ferite`;
+          text = `⚔ ${controller.name} attacca ${opponent.name} nel Clash: COLPITO! ${dealt} danno → ${opponent.name} ${w.current}/${w.max} Ferite`;
         }
-        await pushCombatNarration(combat, { who:'Master', role:'roll', text, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
+        await pushCombatNarration(combat, { who:'Master', role:'roll', text: `${text}::TECH::${techDetail}`, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
         await persistAndRefresh();
         renderClashActions();
       };
@@ -4557,8 +4586,9 @@
         const accRoll = rollPool(oStats.accuracy);
         const dodgeRoll = rollPool(Math.floor(cStats.dodge/2));
         let dealt=0, text;
+        const techDetail = `Acc ${oStats.accuracy}d6[${accRoll.dice.join(',')}]=${accRoll.successes} succ. vs Dodge½ ${Math.floor(cStats.dodge/2)}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ.`;
         if(accRoll.successes<=dodgeRoll.successes){
-          text = `🥊 ${opponent.name} tenta un Attacco Disperato su ${controller.name}: MANCATO (${accRoll.successes} vs ${dodgeRoll.successes} succ.)`;
+          text = `🥊 ${opponent.name} tenta un Attacco Disperato su ${controller.name}: MANCATO`;
         } else {
           const excess = accRoll.successes-dodgeRoll.successes;
           const raw = Math.max(0, excess+oStats.damage-cStats.armor);
@@ -4567,7 +4597,7 @@
           const w = getParticipantWounds(controller);
           text = `🥊 ${opponent.name} tenta un Attacco Disperato su ${controller.name}: COLPITO! ${dealt} danno (dimezzato) → ${controller.name} ${w.current}/${w.max} Ferite`;
         }
-        await pushCombatNarration(combat, { who:'Master', role:'roll', text, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
+        await pushCombatNarration(combat, { who:'Master', role:'roll', text: `${text}::TECH::${techDetail}`, meta:{dice:accRoll.dice.concat(dodgeRoll.dice)} });
         await persistAndRefresh();
         renderClashActions();
       };
@@ -4583,15 +4613,16 @@
         const tn = 12 + cStats.cpu;
         const val = Math.max(oStats.cpu, oStats.ram);
         const { dice, total } = rollSkillCheck(val, 0);
+        const techDetail = `3d6[${dice.join(',')}]+${val}=${total} vs TN ${tn}`;
         let text;
         if(total >= tn){
           opponent.clashPinned = false;
           opponent.clashComebackBonus = 2;
-          text = `🔓 ${opponent.name} tenta Contest Pin: 3d6[${dice.join(',')}]+${val}=${total} vs TN ${tn} → Successo! Pin rotto, +2 alla prossima Contesa.`;
+          text = `🔓 ${opponent.name} tenta Contest Pin: Successo! Pin rotto, +2 alla prossima Contesa.`;
         } else {
-          text = `🔓 ${opponent.name} tenta Contest Pin: 3d6[${dice.join(',')}]+${val}=${total} vs TN ${tn} → Fallito, resta Pinnato.`;
+          text = `🔓 ${opponent.name} tenta Contest Pin: Fallito, resta Pinnato.`;
         }
-        await pushCombatNarration(combat, { who:'Master', role:'roll', text, meta:{dice} });
+        await pushCombatNarration(combat, { who:'Master', role:'roll', text: `${text}::TECH::${techDetail}`, meta:{dice} });
         await persistAndRefresh();
         renderClashActions();
       };
@@ -4749,7 +4780,7 @@
           hitCount>0, combatMonsterGain,
           `${diceRowHTML(accRoll.dice)}<div class="muted" style="margin-top:4px;font-size:10.5px;">${lines.map(escapeHTML).join('<br>')}</div>`
         );
-        await pushCombatNarration(combat, { who:'Master', role:'roll', text: lines.join(' | '), meta:{ dice: accRoll.dice } });
+        await pushCombatNarration(combat, { who:'Master', role:'roll', text: `${`🌪 ${atk.name} come Area su ${zone}: ${hitCount}/${victims.length} colpiti.`}::TECH::${lines.join(' | ')}`, meta:{ dice: accRoll.dice } });
         await persistAndRefresh();
         const resEl2 = document.getElementById('combat-attack-result');
         if(resEl2) resEl2.innerHTML = compactHTML;
@@ -4793,10 +4824,13 @@
         a.clashController = (winner.id===a.id); b.clashController = (winner.id===b.id);
         if(a.isPC){ const m=cachedRoster.find(x=>x.username===a.username); if(m){ m.digimon.stance='Neutral'; await saveMember(code, m); } }
         if(b.isPC){ const m=cachedRoster.find(x=>x.username===b.username); if(m){ m.digimon.stance='Neutral'; await saveMember(code, m); } }
-        const logText = autoWin
-          ? `🤼 Clash: il Pin era ancora attivo, ${winner.name} controlla automaticamente senza tirare. Entrambi tornano in Stance Neutrale.`
-          : `🤼 Clash: ${a.name} (3d6+CPU${aStats.cpu}+RAM${aStats.ram}=${aRoll.total}) vs ${b.name} (3d6+CPU${bStats.cpu}+RAM${bStats.ram}=${bRoll.total}) → controlla ${winner.name}. Entrambi tornano in Stance Neutrale.`;
-        await pushCombatNarration(combat, { who:'Master', role:'gm', text: logText });
+        const friendlyClash = autoWin
+          ? `🤼 Clash: il Pin era ancora attivo, controlla automaticamente ${winner.name}. Entrambi tornano in Stance Neutrale.`
+          : `🤼 Clash: controlla ${winner.name}. Entrambi tornano in Stance Neutrale.`;
+        const techClash = autoWin
+          ? `Pin attivo su ${loser.name}: nessun tiro, controllo automatico a ${winner.name}.`
+          : `${a.name} 3d6+CPU${aStats.cpu}+RAM${aStats.ram}=${aRoll.total} vs ${b.name} 3d6+CPU${bStats.cpu}+RAM${bStats.ram}=${bRoll.total}`;
+        await pushCombatNarration(combat, { who:'Master', role:'gm', text: `${friendlyClash}::TECH::${techClash}`, meta: autoWin?{}:{dice:(aRoll.dice||[]).concat(bRoll.dice||[])} });
         if(resEl) resEl.innerHTML = `<div class="muted">Controlla il Clash: <b style="color:var(--cyan);">${escapeHTML(winner.name)}</b></div>`;
         await persistAndRefresh();
       };
@@ -4840,11 +4874,10 @@
         const aRoll = rollSkillCheck(aMember.tamer.willpower, 0);
         const bRoll = rollSkillCheck(bMember.tamer.willpower, 0);
         const aOk = aRoll.total >= 15, bOk = bRoll.total >= 15;
-        let logText = `🤝 Jogress Check: ${a.name} (Willpower ${aMember.tamer.willpower}) 3d6[${aRoll.dice.join(',')}]=${aRoll.total} vs TN 15 (${aOk?'Successo':'Fallito'}) · ${b.name} (Willpower ${bMember.tamer.willpower}) 3d6[${bRoll.dice.join(',')}]=${bRoll.total} vs TN 15 (${bOk?'Successo':'Fallito'})`;
+        const jogressTech = `${a.name} (Willpower ${aMember.tamer.willpower}) 3d6[${aRoll.dice.join(',')}]=${aRoll.total} vs TN 15 (${aOk?'Successo':'Fallito'}) · ${b.name} (Willpower ${bMember.tamer.willpower}) 3d6[${bRoll.dice.join(',')}]=${bRoll.total} vs TN 15 (${bOk?'Successo':'Fallito'})`;
         if(!aOk || !bOk){
-          logText += ' → Jogress NON riuscito.';
           if(resEl) resEl.innerHTML = `<div class="err">Jogress fallito.</div>`;
-          await pushCombatNarration(combat, { who:'Master', role:'roll', text: logText, meta:{dice:aRoll.dice.concat(bRoll.dice)} });
+          await pushCombatNarration(combat, { who:'Master', role:'roll', text: `🤝 Tentativo di Jogress tra ${a.name} e ${b.name}: NON riuscito.::TECH::${jogressTech}`, meta:{dice:aRoll.dice.concat(bRoll.dice)} });
           await persistAndRefresh();
           return;
         }
@@ -4867,8 +4900,8 @@
         };
         combat.participants = combat.participants.filter(p=>p.id!==a.id && p.id!==b.id);
         combat.participants.push(fused);
-        logText += ` → Successo! ${aMember.digimon.name} e ${bMember.digimon.name} si fondono in ${fusionName} (${newStage}).`;
-        await pushCombatNarration(combat, { who:'Master', role:'roll', text: logText, meta:{dice:aRoll.dice.concat(bRoll.dice)} });
+        const jogressFriendly = `🤝 Successo! ${aMember.digimon.name} e ${bMember.digimon.name} si fondono in ${fusionName} (${newStage}).`;
+        await pushCombatNarration(combat, { who:'Master', role:'roll', text: `${jogressFriendly}::TECH::${jogressTech}`, meta:{dice:aRoll.dice.concat(bRoll.dice)} });
         if(resEl) resEl.innerHTML = `<div class="muted">Fusione riuscita: <b style="color:var(--cyan);">${escapeHTML(fusionName)}</b></div>`;
         await persistAndRefresh();
       };
