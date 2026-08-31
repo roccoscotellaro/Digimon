@@ -449,6 +449,8 @@
   .hp-mini-val{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-mute);white-space:nowrap;}
   .hp-mini-label{font-size:9px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-mute);margin-right:2px;}
   .enc-card-mini{display:flex;flex-direction:column;align-items:center;}
+  .target-dropdown-item:active{background:var(--panel-2);}
+  .target-dropdown-item+.target-dropdown-item{border-top:1px solid var(--line);}
 
   .view-mode .field-static{margin-bottom:10px;}
   .field-static label{margin-bottom:2px;}
@@ -1010,13 +1012,53 @@
     // se il Digimon in questione non è ancora stato approvato — stessa logica già usata nella
     // lista partecipanti e nella linea delle zone, qui applicata anche al menu del bersaglio.
     const isMasterView = !!(session && session.role==='master');
-    const targetOptions = others.map(x=>`<option value="${x.id}">${escapeHTML(combatDisplayName(x, isMasterView))} ${x.side==='enemy'?'(Nemico)':'(Alleato)'} — ${escapeHTML(zoneLabel(x.zone||'Medio'))}</option>`).join('');
     const canAct = myTurn && !!p;
+    // Dropdown custom con ritratto: un <select> nativo non può mostrare immagini, quindi usiamo
+    // un componente HTML che si comporta come un select ma renderizza un'icona per ogni voce,
+    // facilitando l'identificazione su mobile quando i nomi sono nascosti ("Nemico 1", "Nemico 2").
+    // Il valore selezionato è sincronizzato con un <input type="hidden" id="self-target-select">.
+    const firstOther = others[0];
+    const targetItemsHTML = others.map(x=>{
+      const dispName = combatDisplayName(x, isMasterView);
+      const sideTag = x.side==='enemy' ? '(Nemico)' : '(Alleato)';
+      const zone = zoneLabel(x.zone||'Medio');
+      const img = resolveParticipantImage(x, true);
+      const isMasked = dispName !== x.name;
+      const showImg = !isMasked || !!x.nameHidden; // nameHidden mostra immagine, altre maschere no
+      const portraitEl = showImg && img
+        ? `<img src="${escapeAttr(img)}" onerror="this.style.display='none'" style="width:28px;height:28px;object-fit:cover;border-radius:5px;flex-shrink:0;" />`
+        : `<div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:var(--panel-2);border-radius:5px;flex-shrink:0;color:var(--text-mute);font-size:13px;">❔</div>`;
+      return `<div class="target-dropdown-item" data-target-id="${escapeAttr(x.id)}" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;">
+        ${portraitEl}
+        <span style="flex:1;min-width:0;"><span style="font-size:12px;">${escapeHTML(dispName)}</span> <span class="muted" style="font-size:10px;">${escapeHTML(sideTag)} — ${escapeHTML(zone)}</span></span>
+      </div>`;
+    }).join('');
+    const selDisplay = (()=>{
+      if(!firstOther) return '(nessun altro partecipante)';
+      const dn = combatDisplayName(firstOther, isMasterView);
+      const st = firstOther.side==='enemy' ? '(Nemico)' : '(Alleato)';
+      const zn = zoneLabel(firstOther.zone||'Medio');
+      const im = resolveParticipantImage(firstOther, true);
+      const isMask = dn !== firstOther.name;
+      const showI = !isMask || !!firstOther.nameHidden;
+      const pEl = showI && im
+        ? `<img src="${escapeAttr(im)}" onerror="this.style.display='none'" style="width:24px;height:24px;object-fit:cover;border-radius:4px;flex-shrink:0;" />`
+        : `<div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:var(--panel-2);border-radius:4px;flex-shrink:0;color:var(--text-mute);font-size:11px;">❔</div>`;
+      return `${pEl} <span style="flex:1;min-width:0;font-size:12px;">${escapeHTML(dn)} <span class="muted" style="font-size:10px;">${escapeHTML(st)} — ${escapeHTML(zn)}</span></span>`;
+    })();
     return `
       ${turnBannerHTML(combat, username)}
       ${p ? `<div class="muted" style="margin-bottom:8px;">Zona attuale: <b style="color:var(--amber);">${zoneLabel(p.zone||'Medio')}</b> · Azioni: <span class="mono">${actsLeft}/2</span></div>` : ''}
-      <div class="field"><label>Bersaglio</label>
-        <select id="self-target-select" ${canAct?'':'disabled'}>${targetOptions || '<option value="">(nessun altro partecipante)</option>'}</select>
+      <div class="field"><label>BERSAGLIO</label>
+        <input type="hidden" id="self-target-select" value="${firstOther?escapeAttr(firstOther.id):''}">
+        <div id="target-dropdown-wrapper" style="position:relative;${canAct?'':'opacity:0.5;pointer-events:none;'}">
+          <div id="target-dropdown-toggle" style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;cursor:pointer;min-height:36px;">
+            ${selDisplay} <span style="margin-left:auto;color:var(--text-mute);">▾</span>
+          </div>
+          <div id="target-dropdown-list" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-top:2px;max-height:220px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+            ${targetItemsHTML || '<div class="muted" style="padding:10px;">(nessun altro partecipante)</div>'}
+          </div>
+        </div>
       </div>
       <!-- I vecchi bottoni "Avvicinati/Allontanati" (relativi a un bersaglio scelto qui sopra) sono
            stati tolti perché poco intuitivi — il movimento ora si fa con le stesse frecce ◀/▶ del
@@ -1042,6 +1084,29 @@
   function bindAttacksCard(code, me){
     const targetSel = document.getElementById('self-target-select');
     const resEl = document.getElementById('self-attack-result');
+
+    // Binding dropdown custom bersaglio (ritratto + nome)
+    const ddToggle = document.getElementById('target-dropdown-toggle');
+    const ddList = document.getElementById('target-dropdown-list');
+    if(ddToggle && ddList){
+      ddToggle.onclick = ()=>{ ddList.style.display = ddList.style.display==='none' ? 'block' : 'none'; };
+      ddList.querySelectorAll('.target-dropdown-item').forEach(item=>{
+        item.onmouseenter = ()=>{ item.style.background='var(--panel-2)'; };
+        item.onmouseleave = ()=>{ item.style.background=''; };
+        item.onclick = ()=>{
+          const id = item.getAttribute('data-target-id');
+          if(targetSel) targetSel.value = id;
+          // Aggiorna la riga visualizzata nel toggle copiando il contenuto dell'item scelto
+          ddToggle.innerHTML = item.innerHTML + ' <span style="margin-left:auto;color:var(--text-mute);">▾</span>';
+          ddList.style.display = 'none';
+        };
+      });
+      // Chiudi dropdown cliccando fuori
+      document.addEventListener('click', (ev)=>{
+        if(!ev.target.closest('#target-dropdown-wrapper')) ddList.style.display = 'none';
+      }, { once: false });
+    }
+
     // I vecchi bottoni "Avvicinati/Allontanati" (e la doMove che li gestiva) sono stati tolti da
     // qui — vedi il commento in attacksCardHTML: il movimento del Giocatore ora passa dalle
     // frecce ◀/▶ della linea distanze (zoneLineHTML/bindZoneLineArrows), condivise col Master.
@@ -1465,6 +1530,8 @@
 
   function combatDisplayHTML(combat, isMaster){
     if(!combat || !combat.active) return '<div class="muted">Nessun combattimento in corso.</div>';
+    // Assegna etichette stabili anche lato giocatore (nel caso non sia passato da renderCombatManager)
+    (combat.participants||[]).forEach(p => assignHiddenLabelNum(combat, p));
     const byId = {};
     combat.participants.forEach(p=>byId[p.id]=p);
     const orderList = (combat.order||[]).map(id=>byId[id]).filter(Boolean);
@@ -2169,8 +2236,14 @@
         bindAttacksCard(session.code, cachedMe);
         if(prevTargetVal){
           const newTargetSel = document.getElementById('self-target-select');
-          if(newTargetSel && Array.from(newTargetSel.options).some(o=>o.value===prevTargetVal)){
+          // self-target-select è ora un <input type="hidden">: basta verificare che il bersaglio
+          // esista ancora tra gli item del dropdown custom.
+          const matchItem = document.querySelector(`.target-dropdown-item[data-target-id="${CSS.escape(prevTargetVal)}"]`);
+          if(newTargetSel && matchItem){
             newTargetSel.value = prevTargetVal;
+            // Aggiorna anche la riga visibile nel toggle
+            const ddToggle = document.getElementById('target-dropdown-toggle');
+            if(ddToggle) ddToggle.innerHTML = matchItem.innerHTML + ' <span style="margin-left:auto;color:var(--text-mute);">▾</span>';
           }
         }
       }
@@ -3859,6 +3932,11 @@
 
   // Esegue i tiri Accuracy (attaccante) vs Dodge (bersaglio, automatico) e applica il danno se colpito.
   // Assume che validateAttackTargeting sia già stato chiamato con esito positivo.
+  // Nome "sicuro" per i log tecnici (::TECH::): se il partecipante ha nameHidden, mostra
+  // l'etichetta nascosta ("Nemico 1" ecc.) invece del nome reale, così espandendo i dettagli
+  // in chat il giocatore non vede il vero nome del Digimon.
+  function techLogName(p){ return (p && p.nameHidden) ? hiddenParticipantLabel(p) : (p ? p.name : ''); }
+
   async function performAttackRoll(code, combat, attacker, target, atk){
     const aStats = getParticipantCombatStats(attacker);
     const tStats = getParticipantCombatStats(target);
@@ -3887,6 +3965,9 @@
     const zoneNote = (zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza: ${zoneLabel(attacker.zone||'Medio')}→${zoneLabel(target.zone||'Medio')})` : '') + (overpowerUsed ? ' [Overpower: 4 conta come Successo]' : '');
     const certainNote = (aStats.certainStrike>0 ? ` +${aStats.certainStrike} [CERTAIN]` : '') + attrAdvNote;
     const atkLabel = atk ? `${atk.name} ${attackTagsPlain(atk)}` : 'Attacco generico';
+    // Nomi mascherati per i log tecnici: se il Digimon ha nameHidden, il log NON rivela il nome reale.
+    const aName = techLogName(attacker);
+    const tName = techLogName(target);
     let logText, dealt = 0;
 
     if(atk && atk.type==='Support'){
@@ -3895,7 +3976,7 @@
       const verb = isHelpful ? 'supporta' : 'colpisce';
       const resultTag = isHelpful ? 'RIUSCITO' : 'COLPITO';
       if(accRoll.successes <= dodgeRoll.successes){
-        logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → ${isHelpful?'NON RIUSCITO':'MANCATO'}, nessun Effetto applicato.`;
+        logText = `✨ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → ${isHelpful?'NON RIUSCITO':'MANCATO'}, nessun Effetto applicato.`;
       } else if(atk.effectKey){
         const def = effDef;
         // Potenza 1 / Durata 3 di default (stessi valori dello strumento manuale "+Effetto" sulla riga
@@ -3904,19 +3985,19 @@
         const potency = 1;
         if(def && def.instant){
           const msg = await applyInstantEffect(code, target, atk.effectKey, potency);
-          logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → ${resultTag}! ${msg}`;
+          logText = `✨ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → ${resultTag}! ${msg}`;
         } else {
           const duration = 3;
           if(!target.effects) target.effects = [];
           target.effects.push({ key: atk.effectKey, potency, duration });
-          logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → ${resultTag}! ${isHelpful?'Supporta':'Applica'} ${def?def.label:atk.effectKey} (Potenza ${potency}, Durata ${duration} — valori di default, correggibili a mano sulla riga di ${target.name}).`;
+          logText = `✨ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → ${resultTag}! ${isHelpful?'Supporta':'Applica'} ${def?def.label:atk.effectKey} (Potenza ${potency}, Durata ${duration} — valori di default, correggibili a mano sulla riga di ${tName}).`;
         }
       } else {
-        logText = `✨ ${attacker.name} usa ${atkLabel} su ${target.name}: ${verb}, ma non ha un Effetto collegato da applicare.`;
+        logText = `✨ ${aName} usa ${atkLabel} su ${tName}: ${verb}, ma non ha un Effetto collegato da applicare.`;
       }
     } else {
       if(accRoll.successes <= dodgeRoll.successes){
-        logText = `⚔ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO (schivato)`;
+        logText = `⚔ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO (schivato)`;
       } else {
         const excess = accRoll.successes - dodgeRoll.successes;
         let raw = excess + aStats.damage;
@@ -3937,11 +4018,12 @@
         const defeatInfo = await applyDefeatIfNeeded(code, target);
         let defeatNote = '';
         if(defeatInfo){
+          const defName = target.nameHidden ? hiddenParticipantLabel(target) : defeatInfo.name;
           defeatNote = defeatInfo.digitama
-            ? ` 🥚 ${defeatInfo.name} è Sconfitto ed è già al Default Stage minimo: da regolamento diventerebbe Digitama — gestiscilo a mano.`
-            : ` 🏳️ ${defeatInfo.name} è Sconfitto! Retrocede a ${defeatInfo.toStage} con 1 Ferita.`;
+            ? ` 🥚 ${defName} è Sconfitto ed è già al Default Stage minimo: da regolamento diventerebbe Digitama — gestiscilo a mano.`
+            : ` 🏳️ ${defName} è Sconfitto! Retrocede a ${defeatInfo.toStage} con 1 Ferita.`;
         }
-        logText = `⚔ ${attacker.name} usa ${atkLabel} su ${target.name}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! (${excess}+DMG ${aStats.damage})${combatMonsterNote}-ARM ${tStats.armor} = ${dealt} danno → ${target.name} ${w.current}/${w.max} Ferite${defeatNote}`;
+        logText = `⚔ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! (${excess}+DMG ${aStats.damage})${combatMonsterNote}-ARM ${tStats.armor} = ${dealt} danno → ${tName} ${w.current}/${w.max} Ferite${defeatNote}`;
         return { logText, dealt, accRoll, dodgeRoll, atkLabel, defeatInfo };
       }
     }
@@ -4183,6 +4265,11 @@
     const combat = cachedCombat;
     // Preseleziona di default l'Attaccante = Digimon di cui è il turno (se non è già stato scelto
     // esplicitamente qualcun altro), per velocizzare la risoluzione del suo attacco.
+    // Assegna etichette stabili ("Nemico 1", "Nemico 2") ai partecipanti con nome nascosto che
+    // non hanno ancora un hiddenLabelNum — succede se il combattimento è stato creato prima di
+    // questa feature o se il dato non è sopravvissuto a un reload.
+    (combat.participants||[]).forEach(p => assignHiddenLabelNum(combat, p));
+
     if(!combatPresetAttackerId){
       const curr = currentTurnParticipant(combat);
       if(curr) combatPresetAttackerId = curr.id;
