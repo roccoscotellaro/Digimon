@@ -598,6 +598,17 @@
   // Se il Master non ha scelto nessuna chat (combat.chatLock assente — combattimento "vecchio
   // stile"/nessun blocco richiesto), si comporta esattamente come un pushLog normale: nessun
   // cambiamento di comportamento per chi non usa la feature.
+  // Stesso instradamento di pushCombatNarration, ma restituisce solo il `thread` (es.
+  // 'subgroup:xxx', o null per la Chat Generale) usato per quella chiamata — serve a chi deve poi
+  // MODIFICARE il messaggio appena pubblicato (narrazione AI in arrivo dopo la frase di base):
+  // editLogEntry deve ricevere lo stesso thread, altrimenti cerca di aggiornare la riga sbagliata
+  // (la tabella "logs" pubblica invece di "private_logs") e l'update non trova nulla da cambiare.
+  function combatNarrationThread(combat){
+    const lock = combat && combat.chatLock;
+    if(!lock || !lock.location || lock.location==='general') return null;
+    if(lock.location.startsWith('sub:')) return 'subgroup:'+lock.location.slice(4);
+    return null;
+  }
   async function pushCombatNarration(combat, entry){
     const lock = combat && combat.chatLock;
     if(!lock || !lock.location || lock.location==='general') return pushLog(session.code, entry);
@@ -858,6 +869,22 @@
     }catch(e){ return null; }
   }
 
+  // Stesso schema di narrateAttack ma per uno spostamento sulla linea delle distanze (nessun tiro
+  // coinvolto: solo zona di partenza/arrivo). Usata da bindZoneLineArrows per arricchire la frase
+  // di base con una narrazione AI, esattamente come già avviene per gli attacchi.
+  async function narrateMovement(p, from, newZone){
+    try{
+      let personality = 'Nemico feroce e imprevedibile.';
+      if(p.isPC){
+        const member = cachedRoster.find(m=>m.username===p.username);
+        if(member && member.tamer && member.tamer.personality) personality = member.tamer.personality;
+      }
+      const context = `Si sposta lungo la linea delle distanze: da "${zoneLabel(from)}" a "${zoneLabel(newZone)}".`;
+      const d = await apiPost('/api/ai', { mode:'narrazione-movimento', digimonName: p.name, personality, context });
+      return (d && Array.isArray(d.lines) && d.lines[0]) ? d.lines[0] : null;
+    }catch(e){ return null; }
+  }
+
   // Frase descrittiva di base (nessuna chiamata AI, istantanea) usata come testo principale finché
   // (o se) la narrazione AI non arriva — così il messaggio in chat è sempre leggibile subito.
   function basicAttackNarration(attacker, target, atk, hit, dealt, defeatInfo){
@@ -1067,13 +1094,32 @@
           if(resEl) resEl.innerHTML = `<div class="err">${spend.msg}</div>`;
           return;
         }
-        const { logText, dealt, accRoll, dodgeRoll } = await performAttackRoll(code, cachedCombat, p, target, atk);
+        const { logText, dealt, accRoll, dodgeRoll, defeatInfo } = await performAttackRoll(code, cachedCombat, p, target, atk);
+        const hit = accRoll.successes > dodgeRoll.successes;
         if(resEl){
           resEl.innerHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">vs</span>${diceRowHTML(dodgeRoll.dice)}${dealt>0?`<span class="roll-total">${dealt} danno</span>`:''}`;
         }
         await saveCombat(code, cachedCombat);
-        await pushCombatNarration(cachedCombat, { who: p.name, role:'roll', text: logText, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
+        // Stesso schema del Master (btn-combat-attack, vedi commento lì): frase di base subito
+        // visibile in chat, dettagli tecnici (Accuracy/Dodge, tiri) dietro ::TECH:: — sostituita
+        // dalla narrazione AI se arriva in tempo (narrateAttack, timeout 6s).
+        const baseNarr = basicAttackNarration(p, target, atk, hit, dealt, defeatInfo);
+        const pushed = await pushCombatNarration(cachedCombat, { who: p.name, role:'roll', text: `${baseNarr}::TECH::${logText}`, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice) } });
+        const rollEntryId = pushed && pushed.entry && pushed.entry.id;
+        if(defeatInfo){
+          const defeatDispName = target.nameHidden ? '❔ (???)' : defeatInfo.name;
+          const noticeText = defeatInfo.digitama
+            ? `🥚 ${defeatDispName} è Sconfitto ed è già al Default Stage minimo — da regolamento diventerebbe Digitama, gestiscilo a mano.`
+            : `🏳️ ${defeatDispName} è Sconfitto! Retrocede a ${defeatInfo.toStage} con 1 Ferita e viene ignorato per il resto del combattimento (a meno che il giocatore non scelga di rientrare a proprio rischio).`;
+          await pushCombatNarration(cachedCombat, { who:'Sistema', role:'gm', text: noticeText });
+        }
         refreshLiveParts();
+        const narrTimeout = new Promise(resolve=>setTimeout(()=>resolve(null), 6000));
+        Promise.race([narrateAttack(p, target, atk, hit, dealt, defeatInfo), narrTimeout]).then(async (narrLine)=>{
+          if(!narrLine || !rollEntryId) return;
+          await editLogEntry(code, rollEntryId, `${narrLine}::TECH::${logText}`, combatNarrationThread(cachedCombat));
+          refreshLiveParts();
+        });
       };
     });
   }
@@ -1378,7 +1424,13 @@
           if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = 'Spostamento non salvato (errore di rete o conflitto con un\'altra azione in corso) — riprova.'; }
           return;
         }
-        await pushCombatNarration(cachedCombat, { who: p.name, role: isMasterNow?'gm':'player', text: `${moveDispName} si sposta: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.` });
+        // Stesso schema degli attacchi: frase di base subito visibile, dettaglio tecnico (zona di
+        // partenza/arrivo, Azioni residue) dietro ::TECH::, poi eventualmente sostituita dalla
+        // narrazione AI (narrateMovement) se arriva in tempo.
+        const moveBaseNarr = `${moveDispName} si sposta verso ${zoneLabel(newZone)}.`;
+        const moveTechDetail = `${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.`;
+        const movePushed = await pushCombatNarration(cachedCombat, { who: p.name, role: isMasterNow?'gm':'player', text: `${moveBaseNarr}::TECH::${moveTechDetail}` });
+        const moveEntryId = movePushed && movePushed.entry && movePushed.entry.id;
         const combatLive = document.getElementById('combat-live');
         // isMasterNow, non un `true` fisso: questa stessa funzione ora è richiamata anche dal
         // Giocatore (vedi sopra) — un `true` fisso qui smascererebbe a lui i nomi/Digimon nascosti
@@ -1386,6 +1438,14 @@
         if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, isMasterNow);
         bindZoneLineArrows(code, players);
         if(typeof renderCombatManager==='function' && document.getElementById('combat-mgr-card')) renderCombatManager(code, players);
+        if(!p.nameHidden){
+          const moveNarrTimeout = new Promise(resolve=>setTimeout(()=>resolve(null), 6000));
+          Promise.race([narrateMovement(p, from, newZone), moveNarrTimeout]).then(async (narrLine)=>{
+            if(!narrLine || !moveEntryId) return;
+            await editLogEntry(code, moveEntryId, `${narrLine}::TECH::${moveTechDetail}`, combatNarrationThread(cachedCombat));
+            refreshLiveParts();
+          });
+        }
       };
     });
   }
@@ -4684,7 +4744,7 @@
         const narrTimeout = new Promise(resolve=>setTimeout(()=>resolve(null), 6000));
         Promise.race([narrateAttack(attacker, target, atk, hit, dealt, defeatInfo), narrTimeout]).then(async (narrLine)=>{
           if(!narrLine || !rollEntryId) return;
-          await editLogEntry(code, rollEntryId, `${narrLine}::TECH::${logText}`);
+          await editLogEntry(code, rollEntryId, `${narrLine}::TECH::${logText}`, combatNarrationThread(combat));
           refreshLiveParts();
         });
       };
