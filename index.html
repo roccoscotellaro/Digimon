@@ -306,8 +306,8 @@
       -webkit-tap-highlight-color:transparent;
     }
     /* Log entry avatar più grandi su mobile */
-    .who-avatar{width:28px;height:28px;}
-    .log-entry.digimon .who-avatar{width:32px;height:32px;}
+    .who-avatar{width:36px;height:36px;}
+    .log-entry.digimon .who-avatar{width:40px;height:40px;}
     .log-entry .who{font-size:12px;}
     .log-entry .txt{font-size:13.5px;line-height:1.5;}
     .log-image{max-width:180px;max-height:180px;}
@@ -774,6 +774,15 @@
       }
     }
     await saveCombat(code, combat);
+
+    // Notifica al giocatore specifico quando tocca a lui: invia un messaggio di sistema nella
+    // narrazione di combattimento (e quindi anche come push notification se il campanello è attivo).
+    // Solo per PC, solo se è un giocatore diverso dal Master (il Master vede già tutto).
+    if(starting && starting.isPC && starting.username){
+      const turnDispName = combatDisplayName(starting, false);
+      await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `⚔️ ${turnDispName}, è il tuo turno!` });
+    }
+
     renderCombatManager(code, players);
     const combatLive = document.getElementById('combat-live');
     // advanceCombatTurn è condivisa tra il bottone "Turno Successivo" del Master e "Fine Turno" del
@@ -844,32 +853,36 @@
       const atkName = atk ? atk.name : 'Attacco generico';
       const tags = atk ? attackTagsPlain(atk) : '';
       const desc = (atk && atk.desc) ? atk.desc : '';
+      // Nomi mascherati: se nameHidden, l'AI riceve "Nemico 1" ecc. così la narrazione generata
+      // non rivela il vero nome del Digimon ai giocatori.
+      const aDispName = techLogName(attacker);
+      const tDispName = target ? techLogName(target) : 'il bersaglio';
       let esito;
       const isSupport = atk && atk.type==='Support';
       const supportEffDef = (isSupport && atk.effectKey) ? EFFECT_DEFS.find(d=>d.key===atk.effectKey) : null;
       const isHelpfulSupport = supportEffDef && supportEffDef.type==='positive';
       if(!hit){
         esito = isHelpfulSupport
-          ? `Il tentativo di supportare ${target?target.name:'il bersaglio'} non riesce.`
-          : `${target?target.name:'Il bersaglio'} schiva completamente l'attacco.`;
+          ? `Il tentativo di supportare ${tDispName} non riesce.`
+          : `${tDispName} schiva completamente l'attacco.`;
       } else if(isHelpfulSupport){
-        esito = `Supporta e aiuta ${target?target.name:'il bersaglio'} con un Effetto positivo (non è un'azione ostile, niente danno).`;
+        esito = `Supporta e aiuta ${tDispName} con un Effetto positivo (non è un'azione ostile, niente danno).`;
       } else if(isSupport){
-        esito = `Colpisce ${target?target.name:'il bersaglio'} e gli applica un Effetto di stato (non è un attacco a danno diretto — niente numeri di danno).`;
+        esito = `Colpisce ${tDispName} e gli applica un Effetto di stato (non è un attacco a danno diretto — niente numeri di danno).`;
       } else if(defeatInfo){
         esito = defeatInfo.digitama
-          ? `Colpisce ${target?target.name:'il bersaglio'} per ${dealt} danni, riducendolo/a in fin di vita: crolla al suolo, sull'orlo di regredire a Digitama.`
-          : `Colpisce ${target?target.name:'il bersaglio'} per ${dealt} danni, sconfiggendolo/a: crolla esausto/a e regredisce a ${defeatInfo.toStage}.`;
+          ? `Colpisce ${tDispName} per ${dealt} danni, riducendolo/a in fin di vita: crolla al suolo, sull'orlo di regredire a Digitama.`
+          : `Colpisce ${tDispName} per ${dealt} danni, sconfiggendolo/a: crolla esausto/a e regredisce a ${defeatInfo.toStage}.`;
       } else {
-        esito = `Colpisce ${target?target.name:'il bersaglio'}, infliggendo ${dealt} danni.`;
+        esito = `Colpisce ${tDispName}, infliggendo ${dealt} danni.`;
       }
       let personality = 'Nemico feroce e imprevedibile.';
       if(attacker.isPC){
         const member = cachedRoster.find(m=>m.username===attacker.username);
         if(member && member.tamer && member.tamer.personality) personality = member.tamer.personality;
       }
-      const context = `Attacco usato: ${atkName} ${tags}${desc?`\nDescrizione di riferimento: ${desc}`:''}\nBersaglio: ${target?target.name:'sconosciuto'}\nEsito: ${esito}`;
-      const d = await apiPost('/api/ai', { mode:'narrazione-attacco', digimonName: attacker.name, personality, context });
+      const context = `Attacco usato: ${atkName} ${tags}${desc?`\nDescrizione di riferimento: ${desc}`:''}\nBersaglio: ${tDispName}\nEsito: ${esito}`;
+      const d = await apiPost('/api/ai', { mode:'narrazione-attacco', digimonName: aDispName, personality, context });
       return (d && Array.isArray(d.lines) && d.lines[0]) ? d.lines[0] : null;
     }catch(e){ return null; }
   }
@@ -879,13 +892,15 @@
   // di base con una narrazione AI, esattamente come già avviene per gli attacchi.
   async function narrateMovement(p, from, newZone){
     try{
+      // Nome mascherato: se nameHidden, l'AI riceve "Nemico 1" ecc.
+      const pDispName = techLogName(p);
       let personality = 'Nemico feroce e imprevedibile.';
       if(p.isPC){
         const member = cachedRoster.find(m=>m.username===p.username);
         if(member && member.tamer && member.tamer.personality) personality = member.tamer.personality;
       }
       const context = `Si sposta lungo la linea delle distanze: da "${zoneLabel(from)}" a "${zoneLabel(newZone)}".`;
-      const d = await apiPost('/api/ai', { mode:'narrazione-movimento', digimonName: p.name, personality, context });
+      const d = await apiPost('/api/ai', { mode:'narrazione-movimento', digimonName: pDispName, personality, context });
       return (d && Array.isArray(d.lines) && d.lines[0]) ? d.lines[0] : null;
     }catch(e){ return null; }
   }
