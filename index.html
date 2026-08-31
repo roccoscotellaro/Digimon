@@ -1309,7 +1309,11 @@
                   const isMasked = dispName !== p.name;
                   const portrait = isMasked
                     ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--panel-2);color:var(--text-mute);font-size:14px;">❔</div>`
-                    : portraitHTML(resolveParticipantImage(p, true), dispName, 'sm');
+                    // .portrait-sm ha una dimensione FISSA (36x36) via CSS: senza forzare qui
+                    // width/height:100%, l'img si renderizza a 36x36 dentro il contenitore 26x26
+                    // (overflow:hidden) e mostra solo l'angolo in alto a sinistra invece di
+                    // scalarsi per intero — width/height:100% la fa riempire il contenitore reale.
+                    : portraitHTML(resolveParticipantImage(p, true), dispName, 'sm', 'width:100%;height:100%;object-fit:cover;');
                   return `<div title="${escapeAttr(dispName)}" style="width:26px;height:26px;border-radius:6px;overflow:hidden;border:2px solid ${color};box-shadow:0 0 4px rgba(0,0,0,0.4);">${portrait}</div>`;
                 }).join('')}
               </div>
@@ -3618,7 +3622,7 @@
     const color = participantSideColor(p);
     const defeated = isParticipantDefeated(p);
     return `<button type="button" data-chip-role="${role}" data-chip-id="${p.id}" title="${escapeAttr(p.name)} — ${p.side==='ally'?'Alleato':'Nemico'}" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:3px;width:52px;border-radius:8px;border:2px solid ${selected?color:'transparent'};background:${selected?'rgba(255,255,255,0.05)':'transparent'};cursor:pointer;opacity:${defeated?'0.45':'1'};">
-      <div style="width:32px;height:32px;border-radius:6px;overflow:hidden;border:1px solid ${color};">${portraitHTML(resolveParticipantImage(p), p.name, 'sm', 'object-fit:contain;background:transparent;')}</div>
+      <div style="width:32px;height:32px;border-radius:6px;overflow:hidden;border:1px solid ${color};">${portraitHTML(resolveParticipantImage(p), p.name, 'sm', 'width:100%;height:100%;object-fit:contain;background:transparent;')}</div>
       <span style="font-size:9px;max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${color};">${escapeHTML(p.name)}</span>
     </button>`;
   }
@@ -5207,14 +5211,19 @@
         const side = (sideSel && sideSel.value==='ally') ? 'ally' : 'enemy';
         const bs = enc.baseStats || {};
         const dodge = Number(bs.baseDodge)||0;
-        const maxWounds = Number(bs.baseHealth)||1;
+        // Stessa formula usata ovunque altrove per un Incontro (Stage + Health×2, vedi
+        // encounterMaxWounds in js/encounters.js) — prima qui si usava solo bs.baseHealth "nudo",
+        // ignorando lo Stage: risultato, le Caselle Ferita in Gestione Combattimento non
+        // corrispondevano a quelle mostrate in Composizione Scena per lo stesso Digimon.
+        const maxWounds = encounterMaxWounds(enc);
+        const currentWounds = encounterCurrentWounds(enc);
         const attribute = (enc.categories && enc.categories[0]) || 'Free';
         cachedCombat.participants.push({
           id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name:enc.name, side,
           ram: Math.max(0, Math.floor(dodge/3)), initiative:0, actions:2, attackedThisRound:false, effects:[],
           zone: (side==='ally' ? cachedCombat.startZoneAlly : cachedCombat.startZoneEnemy) || (side==='ally'?'Molto Corto':'Molto Lungo'), clashPinned:false, clashComebackBonus:0, isPC:false,
           accuracy: Number(bs.baseAccuracy)||0, damage: Number(bs.baseDamage)||0, dodge,
-          armor: Number(bs.baseArmor)||0, maxWounds, currentWounds: maxWounds, attribute,
+          armor: Number(bs.baseArmor)||0, maxWounds, currentWounds, attribute,
           sourceEncounterId: enc.id, isBoss: !!enc.isBoss, attacks: enc.attacks || [], imageUrl: enc.image || '',
           nameHidden: !!enc.nameHidden
         });
