@@ -725,6 +725,15 @@
     // Timer 24h (richiesta utente): riparte da zero ad ogni cambio di turno, non solo al primo —
     // vedi combatTurnTimerLabel/combatDisplayHTML.
     combat.turnStartedAt = new Date().toISOString();
+    // Notifica "è il tuo turno" (richiesta utente, per ridurre i tempi di attesa): instradata nella
+    // Chat Privata del giocatore col Master — è l'UNICO canale esistente che raggiunge in modo
+    // mirato UN SOLO destinatario (vedi subsForUsername in log.js, la Web Push la manda solo alle
+    // sottoscrizioni di quello username), a differenza di pushCombatNarration che, per costruzione,
+    // arriva a chiunque legga quella chat. Funziona indipendentemente da chi ha chiamato questa
+    // funzione (Master da "Turno Successivo" o il giocatore stesso da "Fine Turno").
+    if(starting && starting.isPC && starting.username){
+      await pushPrivateLog(code, starting.username, { who:'Sistema', role:'gm', text: '⚔️ È il tuo turno in combattimento!' });
+    }
     if(starting){
       const tickLogs = await tickEffectsForParticipant(code, combat, starting);
       for(const line of tickLogs){
@@ -749,7 +758,12 @@
     await saveCombat(code, combat);
     renderCombatManager(code, players);
     const combatLive = document.getElementById('combat-live');
-    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, true);
+    // BUGFIX: era hardcoded a `true` (isMaster) — innocuo finché solo il Master poteva chiamare
+    // questa funzione (dal proprio bottone "Turno Successivo"), ma ora che anche il giocatore la
+    // richiama da "Fine Turno" (vedi bindAttacksCard) avrebbe smascherato al giocatore i nomi dei
+    // Digimon nascosti/non ancora approvati di altri (combatDisplayName maschera solo se
+    // isMaster è falso). Usa il ruolo reale della sessione che ha appena chiamato la funzione.
+    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, !!(session && session.role==='master'));
     bindZoneLineArrows(code, players);
   }
   async function endCombatNow(code, players){
@@ -931,13 +945,17 @@
   }
 
   // ---------- pannello Attacco/Movimento self-service del giocatore (solo nel proprio turno) ----------
+  // Richiesta utente: "Manca il tasto per far passare la persona di turno" — mancava un modo per
+  // il GIOCATORE di concludere volontariamente il proprio turno (prima solo il Master poteva farlo
+  // avanzare, dal proprio bottone "Turno Successivo"). Bottone "Fine Turno" mostrato solo quando è
+  // davvero il turno del giocatore, bindato in bindAttacksCard qui sotto.
   function turnBannerHTML(combat, username){
     if(!combat || !combat.active) return '';
     const cur = currentTurnParticipant(combat);
     if(!cur) return '<div class="muted" style="margin-bottom:8px;">Ordine non ancora calcolato dal Master.</div>';
     const mine = cur.isPC && cur.username===username;
     return mine
-      ? `<div class="hud-frame" style="padding:6px 10px;margin-bottom:8px;border-color:var(--cyan);background:rgba(53,232,201,0.08);"><b style="color:var(--cyan);">▶ È il tuo turno!</b></div>`
+      ? `<div class="hud-frame" style="padding:6px 10px;margin-bottom:8px;border-color:var(--cyan);background:rgba(53,232,201,0.08);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;"><b style="color:var(--cyan);">▶ È il tuo turno!</b><button class="btn ghost small" id="btn-end-turn-self">Fine Turno ⏭</button></div>`
       : `<div class="muted" style="margin-bottom:8px;">Turno di <b>${escapeHTML(cur.name)}</b> — attendi il tuo turno.</div>`;
   }
 
@@ -1045,6 +1063,28 @@
     }
     if(moveCloserBtn) moveCloserBtn.onclick = ()=>doMove(true);
     if(moveAwayBtn) moveAwayBtn.onclick = ()=>doMove(false);
+
+    const endTurnBtn = document.getElementById('btn-end-turn-self');
+    if(endTurnBtn){
+      endTurnBtn.onclick = async ()=>{
+        if(!cachedCombat || !cachedCombat.active) return;
+        // Stessa guardia anti-doppio-click delle altre azioni self-service (vedi combatActionPending).
+        if(combatActionPending){
+          if(moveStatus){ moveStatus.style.color='var(--danger)'; moveStatus.textContent='Azione precedente ancora in salvataggio, attendi un istante e riprova.'; }
+          return;
+        }
+        if(!isMyCombatTurn(cachedCombat, session.username)) return;
+        const p = cachedCombat.participants.find(x=>x.username===session.username);
+        const actsLeft = p ? (p.actions===undefined?2:p.actions) : 0;
+        if(actsLeft>0 && !window.confirm(`Concludere il turno ora? Perderai ${actsLeft} Azione/i non usata/e.`)) return;
+        // advanceCombatTurn è la stessa funzione usata dal bottone "Turno Successivo" del Master
+        // (index.html) — qui il giocatore la richiama per il proprio turno soltanto (il controllo
+        // isMyCombatTurn sopra lo garantisce). Le chiamate a renderCombatManager/bindZoneLineArrows
+        // al suo interno non trovano elementi Master nel DOM del giocatore e non fanno nulla.
+        await advanceCombatTurn(code, cachedRoster.filter(m=>m.role==='player'));
+        refreshLiveParts();
+      };
+    }
 
     document.querySelectorAll('[data-self-attack-idx]').forEach(btn=>{
       btn.onclick = async ()=>{
@@ -3830,6 +3870,20 @@
   let combatPresetTargetId = null;
   let combatSelectedAttackIndex = null;
 
+  // Notifica "il tuo Digimon può evolvere" (richiesta utente, per ridurre i tempi di attesa): true
+  // se il Digimon ha Evolution Points sufficienti per salire al prossimo Stage E quello Stage è già
+  // stato "costruito" (stageStats con un nome assegnato) — stessa condizione già usata dal
+  // guard-rail del bottone "Evolvi" (vedi js/digimon-card.js, messaggio "mai stato costruito" e il
+  // controllo EP prima di applyStageChange), qui riusata solo per decidere quando avvisare.
+  function canEvolveNow(d){
+    if(!d) return false;
+    const curIdx = stageIndex(d.stage);
+    if(curIdx < 0 || curIdx >= STAGES.length-1) return false;
+    const nextStage = STAGES[curIdx+1];
+    const built = !!(d.stageStats && d.stageStats[nextStage] && d.stageStats[nextStage].name);
+    if(!built) return false;
+    return Number(d.evolutionPoints||0) >= evolutionCost(d, nextStage);
+  }
   async function grantMilestoneRewards(code, milestoneNumber, reason){
     const players = cachedRoster.filter(m=>m.role==='player');
     for(const p of players){
@@ -3999,11 +4053,17 @@
     document.getElementById('btn-take-break').onclick = async ()=>{
       const players = cachedRoster.filter(m=>m.role==='player');
       for(const p of players){
+        const wasEvoReady = canEvolveNow(p.digimon);
         p.tamer.currentWounds = 3 + Number(p.tamer.skills.endurance||0);
         p.digimon.currentWounds = p.digimon.maxWounds;
         const cap = cachedProgression ? Number(cachedProgression.milestone||0) : 0;
         p.digimon.evolutionPoints = Math.min(cap, Number(p.digimon.evolutionPoints||0)+1);
         await saveMember(code, p);
+        // Notifica mirata "puoi evolvere" (richiesta utente): solo alla transizione non-pronto ->
+        // pronto, non ad ogni Break (altrimenti spammerebbe chi è già pronto da un pezzo).
+        if(!wasEvoReady && canEvolveNow(p.digimon)){
+          await pushPrivateLog(code, p.username, { who:'Sistema', role:'gm', text: `✨ Il tuo Digimon ${p.digimon.name||displayName(p)} può evolvere adesso!` });
+        }
       }
       await pushLog(code, { who:'Sistema', role:'gm', text: `☕ Il party prende un Break: Ferite recuperate del tutto, +1 Evolution Point a testa.` });
       refreshLiveParts();
@@ -4011,6 +4071,7 @@
     document.getElementById('btn-take-rest').onclick = async ()=>{
       const players = cachedRoster.filter(m=>m.role==='player');
       for(const p of players){
+        const wasEvoReady = canEvolveNow(p.digimon);
         p.tamer.currentWounds = 3 + Number(p.tamer.skills.endurance||0);
         p.digimon.currentWounds = p.digimon.maxWounds;
         const cap = cachedProgression ? Number(cachedProgression.milestone||0) : 0;
@@ -4021,6 +4082,9 @@
         TALENT_DEFS.filter(t=>t.once==='rest').forEach(t=>{ p.tamer.specialOrdersUsed[t.order] = false; });
         (p.digimon.armorForms||[]).forEach(af=>{ af.usedThisRest = false; });
         await saveMember(code, p);
+        if(!wasEvoReady && canEvolveNow(p.digimon)){
+          await pushPrivateLog(code, p.username, { who:'Sistema', role:'gm', text: `✨ Il tuo Digimon ${p.digimon.name||displayName(p)} può evolvere adesso!` });
+        }
       }
       await pushLog(code, { who:'Sistema', role:'gm', text: `😴 Il party fa un Rest: Ferite ed Evolution Points recuperati del tutto, penalità Torment rimosse, Torment Check di nuovo disponibili.` });
       refreshLiveParts();
@@ -4099,6 +4163,21 @@
         await saveCombat(code, cachedCombat);
         if(cachedCombat.chatLock){
           await pushCombatNarration(cachedCombat, { who:'Sistema', role:'gm', text: '🔒 ' + cachedCombat.chatLock.message });
+        } else {
+          // Notifica minima garantita, rivista su segnalazione utente: NON più un broadcast su
+          // Chat Generale (se il combattimento coinvolge solo alcuni giocatori, o si svolge
+          // altrove, un annuncio in Generale o non arriva a chi serve o disturba chi non
+          // c'entra). Notifichiamo invece SOLO i partecipanti PC di questo combattimento, uno per
+          // uno, sulla loro chat privata col Master — stesso canale già usato per l'avviso "è il
+          // tuo turno": garantisce un push reale mirato (subsForUsername, vedi log.js) senza mai
+          // toccare la Chat Generale.
+          const notifiedStart = new Set();
+          for(const part of (cachedCombat.participants||[])){
+            if(part.isPC && part.username && !notifiedStart.has(part.username)){
+              notifiedStart.add(part.username);
+              await pushPrivateLog(code, part.username, { who:'Sistema', role:'gm', text: '⚔️ È iniziato un combattimento!' });
+            }
+          }
         }
         __combatMusicSynced = true;
         startCombatMusic(cachedScene);
@@ -4118,6 +4197,18 @@
 
     cardEl.innerHTML = `
       <div class="section-title">Gestione Combattimento</div>
+      <div class="hud-frame" style="padding:8px 10px;margin-bottom:10px;">
+        <div class="muted" style="font-size:11px;margin-bottom:4px;">📢 Chat annunci di questo combattimento: <b style="color:var(--cyan);">${combat.chatLock ? escapeHTML(combatChatLockLabel(combat.chatLock.location)) : 'nessuna (nessun blocco/annuncio dedicato)'}</b></div>
+        <div class="row">
+          <select id="combat-chatlock-live-select" style="flex:2;">
+            <option value="none" ${!combat.chatLock?'selected':''}>Nessuna (nessun blocco/annuncio dedicato)</option>
+            <option value="general" ${combat.chatLock && combat.chatLock.location==='general'?'selected':''}>Chat Generale</option>
+            ${(cachedSubgroups||[]).map(g=>`<option value="sub:${g.id}" ${combat.chatLock && combat.chatLock.location==='sub:'+g.id?'selected':''}>Sottogruppo: ${escapeHTML(g.name)}</option>`).join('')}
+          </select>
+          <button class="btn ghost small" id="btn-combat-chatlock-update" style="flex:1;">Cambia</button>
+        </div>
+        <div class="muted" id="combat-chatlock-live-status" style="font-size:10px;margin-top:4px;"></div>
+      </div>
       <div class="row" style="margin-bottom:4px;align-items:center;">
         <span class="muted" style="flex:1;">Zona di partenza Alleati</span>
         <select id="combat-startzone-ally-live" style="flex:1;">${ZONES.map(z=>`<option value="${z}" ${(combat.startZoneAlly||'Molto Corto')===z?'selected':''}>${zoneLabel(z)}</option>`).join('')}</select>
@@ -5160,6 +5251,39 @@
         await persistAndRefresh();
       };
     });
+
+    const chatlockUpdateBtn = document.getElementById('btn-combat-chatlock-update');
+    if(chatlockUpdateBtn){
+      chatlockUpdateBtn.onclick = async ()=>{
+        const sel = document.getElementById('combat-chatlock-live-select');
+        const statusEl = document.getElementById('combat-chatlock-live-status');
+        if(!sel) return;
+        const newVal = sel.value; // 'none' | 'general' | 'sub:<id>'
+        const prevLock = combat.chatLock;
+        const prevLoc = prevLock ? prevLock.location : null;
+        const newLoc = newVal==='none' ? null : newVal;
+        if(prevLoc===newLoc){
+          if(statusEl) statusEl.textContent = 'La chat annunci è già questa.';
+          return;
+        }
+        // Sblocca la vecchia chat (se c'era) con una nota, poi blocca/annuncia sulla nuova — stesso
+        // schema simmetrico di "Inizia Combattimento"/"Termina Combattimento".
+        if(prevLoc){
+          await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: '🔓 Gli annunci di questo combattimento si spostano altrove — questa chat è di nuovo libera.' });
+        }
+        if(newLoc){
+          combat.chatLock = { location: newLoc, message: (prevLock && prevLock.message) || DEFAULT_COMBAT_LOCK_MESSAGE };
+          await saveCombat(code, combat);
+          await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: '🔒 Da qui in poi gli annunci (e il blocco) di questo combattimento sono qui.' });
+        } else {
+          combat.chatLock = null;
+          await saveCombat(code, combat);
+        }
+        renderCombatManager(code, players);
+        const combatLive = document.getElementById('combat-live');
+        if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, true);
+      };
+    }
 
     document.getElementById('btn-combat-add-player').onclick = async ()=>{
       const username = document.getElementById('combat-add-player').value;
