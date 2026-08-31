@@ -1307,7 +1307,13 @@
                   const color = p.side==='ally' ? 'var(--cyan)' : 'var(--danger)';
                   const dispName = combatDisplayName(p, isMaster);
                   const isMasked = dispName !== p.name;
-                  const portrait = isMasked
+                  // Un Incontro con "🎭 Nascondi Nome" nasconde SOLO nome/descrizione: l'immagine
+                  // resta visibile (la presenza in Scena è comunque nota) — vedi combatDisplayName.
+                  // Le altre forme di mascheramento (Uovo non ancora approvato, Digimon di un
+                  // giocatore nascosto al resto del gruppo) continuano a nascondere anche l'immagine,
+                  // coerente con come sono già trattate altrove nell'app.
+                  const showPortraitDespiteMask = isMasked && !!p.nameHidden && !isMaster;
+                  const portrait = (isMasked && !showPortraitDespiteMask)
                     ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--panel-2);color:var(--text-mute);font-size:14px;">❔</div>`
                     // .portrait-sm ha una dimensione FISSA (36x36) via CSS: senza forzare qui
                     // width/height:100%, l'img si renderizza a 36x36 dentro il contenitore 26x26

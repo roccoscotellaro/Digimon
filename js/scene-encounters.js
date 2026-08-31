@@ -866,11 +866,17 @@
             // dettaglio (che rivelerebbe nome/descrizione/evoluzioni).
             const masked = !isEncounterIdentityKnown(g) && !isMasterView;
             if(masked){
+              // Presenza nascosta: la Scena mostra CHE qualcosa/qualcuno è lì (immagine visibile,
+              // se impostata), solo nome/descrizione restano "???" finché il Master non rivela —
+              // niente data-enc-name, quindi il click non apre comunque il dettaglio.
               const cardW = imgSize+18;
+              const maskedImg = g.image
+                ? `<img src="${escapeAttr(g.image)}" onerror="this.style.display='none'" style="width:${imgSize}px;height:${imgSize}px;object-fit:cover;border-radius:6px;" />`
+                : `<div style="width:${imgSize}px;height:${imgSize}px;display:flex;align-items:center;justify-content:center;background:var(--panel-2);border-radius:6px;color:var(--text-mute);font-size:16px;">❔</div>`;
               return `
               <div class="enc-card-mini" style="width:${cardW}px;padding:4px;border-radius:8px;border:2px solid transparent;position:relative;" title="Presenza non identificata">
                 ${g.count>1 ? `<span style="position:absolute;top:-4px;right:0px;background:var(--cyan);color:#04211c;font-size:9px;font-weight:700;border-radius:8px;padding:1px 5px;">×${g.count}</span>` : ''}
-                <div style="width:${imgSize}px;height:${imgSize}px;display:flex;align-items:center;justify-content:center;background:var(--panel-2);border-radius:6px;color:var(--text-mute);font-size:16px;">❔</div>
+                ${maskedImg}
                 <div style="font-size:10px;text-align:center;margin-top:3px;line-height:1.2;">???</div>
               </div>`;
             }
