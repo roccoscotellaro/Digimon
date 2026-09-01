@@ -738,48 +738,51 @@
     refreshSceneDaytimeBadge();
     // Aggiorna anche l'eventuale orologio nel pannello Master con tutti i canali
     const panel = document.getElementById('game-clock-all-channels');
-    if(panel && cachedGameClock && cachedGameClock.clocks){
-      const gc = cachedGameClock;
-      const entries = Object.entries(gc.clocks);
-      if(entries.length===0){
-        panel.innerHTML = '<span class="muted">Nessun canale avanzato ancora.</span>';
-      } else {
-        panel.innerHTML = entries.map(([k,v])=>{
-          let label = k;
-          if(k==='general') label = '💬 Generale';
-          else if(k.startsWith('sub:')){
-            const gid = k.slice(4);
-            const g = (cachedSubgroups||[]).find(x=>x.id===gid);
-            label = '👥 '+(g?g.name:'Sottogruppo');
-          } else if(k.startsWith('private:')) label = '✉️ Privata ('+k.slice(8)+')';
-          return `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-size:12px;font-family:'Share Tech Mono',monospace;"><span style="color:var(--text-mute);">${escapeHTML(label)}</span> <b style="color:var(--amber);">${escapeHTML(v)}</b></span>`;
-        }).join('');
-      }
+    if(panel){
+      const gc = cachedGameClock || defaultGameClock();
+      const channels = allClockChannels();
+      const base = gc.baseTime || '08:00';
+      panel.innerHTML = channels.map(ch=>{
+        const time = (gc.clocks && gc.clocks[ch.key]) || base;
+        const dt = daytimeInfo(time);
+        return `<span style="display:inline-flex;align-items:center;gap:4px;margin:2px 10px 2px 0;font-size:12px;font-family:'Share Tech Mono',monospace;"><span style="font-size:14px;">${dt.icon}</span><span style="color:var(--text-mute);">${escapeHTML(ch.label)}</span> <b style="color:var(--amber);">${escapeHTML(time)}</b></span>`;
+      }).join('');
+      // Aggiorna anche il selettore se presente
+      refreshClockChannelSelect();
     }
   }
 
   // Pannello Master per impostare l'orologio (inserito dal render del Master).
+  // Costruisce la lista completa dei canali: Generale + ogni sottogruppo + ogni giocatore (privata).
+  function allClockChannels(){
+    const channels = [{ key:'general', label:'💬 Generale' }];
+    (cachedSubgroups||[]).forEach(g=>{
+      channels.push({ key:'sub:'+g.id, label:'👥 '+g.name });
+    });
+    (cachedRoster||[]).filter(m=>m.role==='player').forEach(m=>{
+      channels.push({ key:'private:'+m.username, label:'✉️ Privata ('+displayName(m)+')' });
+    });
+    return channels;
+  }
+
   function gameClockMasterPanelHTML(){
     const gc = cachedGameClock || defaultGameClock();
-    const channels = Object.keys(gc.clocks||{});
-    const channelOpts = channels.map(k=>{
-      let label = k;
-      if(k==='general') label = 'Generale';
-      else if(k.startsWith('sub:')){ const g=(cachedSubgroups||[]).find(x=>x.id===k.slice(4)); label=g?g.name:'Sottogruppo'; }
-      else if(k.startsWith('private:')) label='Privata ('+k.slice(8)+')';
-      return `<option value="${escapeAttr(k)}">${escapeHTML(label)}</option>`;
+    const channels = allClockChannels();
+    const channelOpts = channels.map(ch=>{
+      const time = (gc.clocks && gc.clocks[ch.key]) ? ` [${gc.clocks[ch.key]}]` : '';
+      return `<option value="${escapeAttr(ch.key)}">${escapeHTML(ch.label)}${escapeHTML(time)}</option>`;
     }).join('');
     return `
     <div class="game-clock-master-panel">
-      <div style="display:flex;align-items:center;gap:6px;">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
         <span style="font-size:16px;">🕐</span>
         <label style="white-space:nowrap;">Ora Base</label>
         <input type="time" id="gc-base-time" value="${escapeAttr(gc.baseTime||'08:00')}" />
         <button class="btn small" id="gc-set-base">Imposta</button>
       </div>
-      <div style="display:flex;align-items:center;gap:6px;">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
         <label style="white-space:nowrap;">Canale</label>
-        <select id="gc-channel-select"><option value="__all__">Tutti</option>${channelOpts}</select>
+        <select id="gc-channel-select"><option value="__all__">— Tutti i canali —</option>${channelOpts}</select>
         <label style="white-space:nowrap;">Vai a</label>
         <input type="time" id="gc-manual-time" value="${escapeAttr(gc.baseTime||'08:00')}" />
         <button class="btn small" id="gc-set-channel">Imposta</button>
@@ -809,13 +812,16 @@
       if(!cachedGameClock) cachedGameClock = defaultGameClock();
       if(!cachedGameClock.clocks) cachedGameClock.clocks = {};
       if(ch==='__all__'){
-        Object.keys(cachedGameClock.clocks).forEach(k=>{ cachedGameClock.clocks[k]=val; });
+        // Imposta TUTTI i canali conosciuti, non solo quelli già avanzati
+        allClockChannels().forEach(c=>{ cachedGameClock.clocks[c.key] = val; });
         cachedGameClock.baseTime = val;
       } else {
         cachedGameClock.clocks[ch] = val;
       }
       await saveGameClock(session.code, cachedGameClock);
       refreshGameClockDisplay();
+      // Aggiorna le opzioni del selettore per mostrare i nuovi orari
+      refreshClockChannelSelect();
     };
     const resetBtn = document.getElementById('gc-reset-all');
     if(resetBtn) resetBtn.onclick = async ()=>{
@@ -826,6 +832,20 @@
       refreshGameClockDisplay();
     };
     refreshGameClockDisplay();
+  }
+
+  // Aggiorna le opzioni del selettore canale per riflettere gli orari correnti (senza ricreare
+  // l'intero pannello, che perderebbe il focus dell'utente).
+  function refreshClockChannelSelect(){
+    const sel = document.getElementById('gc-channel-select');
+    if(!sel) return;
+    const gc = cachedGameClock || defaultGameClock();
+    const channels = allClockChannels();
+    const current = sel.value;
+    sel.innerHTML = '<option value="__all__">— Tutti i canali —</option>' + channels.map(ch=>{
+      const time = (gc.clocks && gc.clocks[ch.key]) ? ` [${gc.clocks[ch.key]}]` : '';
+      return `<option value="${escapeAttr(ch.key)}"${ch.key===current?' selected':''}>${escapeHTML(ch.label)}${escapeHTML(time)}</option>`;
+    }).join('');
   }
   // ========== Fine Orologio di Gioco ==========
 
