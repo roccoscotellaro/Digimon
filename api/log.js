@@ -5,10 +5,8 @@
 //   GET    /api/log?code=XXX&thread=Mario           -> log privato di quel thread (tabella private_logs)
 //   POST   { code, username, who, text, ... }        -> scrive sul log pubblico
 //   POST   { code, thread, username, who, text, ... } -> scrive sul log privato
-//   PUT    { code, id, text, who?, role?, meta? }      -> modifica un messaggio del log pubblico
-//                                                          (who/role/meta opzionali: riassegnano
-//                                                          anche il mittente, non solo il testo)
-//   PUT    { code, thread, id, text, who?, role?, meta? } -> come sopra, sul log privato del thread
+//   PUT    { code, id, text }                        -> modifica un messaggio del log pubblico
+//   PUT    { code, thread, id, text }                 -> modifica un messaggio del log privato di quel thread
 //   DELETE ?code=XXX&id=YYY                           -> elimina un messaggio dal log pubblico
 //   DELETE ?code=XXX&clearAll=1                       -> svuota TUTTO il log pubblico della campagna
 //   DELETE ?code=XXX&thread=Mario&id=YYY              -> elimina un messaggio dal log privato di quel thread
@@ -153,26 +151,36 @@ module.exports = async (req, res) => {
 
       const threadUsername = req.query.thread;
 
+      // NOTA: qui sotto ordiniamo per id DESCENDING (dal più recente) prima di applicare il
+      // limit, e poi ri-ordiniamo in ascending prima di rispondere. Con l'ordinamento inverso
+      // (ascending + limit) la query restituiva sempre e solo i primi N messaggi in assoluto:
+      // superata quella soglia, tutto ciò che veniva scritto dopo spariva per sempre dalla
+      // risposta (la chat sembrava "bloccata"). Così facendo si ottengono sempre gli ultimi N
+      // messaggi esistenti, quindi il limite si "auto-ripristina" da solo se vecchi messaggi
+      // vengono cancellati (clearLog/deleteLogEntry): la finestra segue il conteggio reale delle
+      // righe rimaste, non un cursore fisso sui primi N mai scritti.
+      const LOG_FETCH_LIMIT = 2000; // 10x il precedente limite di 200
+
       if (threadUsername) {
         const { data, error } = await supabase
           .from('private_logs')
           .select('*')
           .eq('campaign_code', code)
           .eq('thread_username', threadUsername)
-          .order('id', { ascending: true })
-          .limit(200);
+          .order('id', { ascending: false })
+          .limit(LOG_FETCH_LIMIT);
         if (error) return res.status(500).json({ error: error.message });
-        return res.status(200).json({ log: data || [] });
+        return res.status(200).json({ log: (data || []).reverse() });
       }
 
       const { data, error } = await supabase
         .from('logs')
         .select('*')
         .eq('campaign_code', code)
-        .order('id', { ascending: true })
-        .limit(200);
+        .order('id', { ascending: false })
+        .limit(LOG_FETCH_LIMIT);
       if (error) return res.status(500).json({ error: error.message });
-      return res.status(200).json({ log: data || [] });
+      return res.status(200).json({ log: (data || []).reverse() });
     }
 
     if (req.method === 'POST') {
@@ -236,22 +244,14 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'PUT') {
-      const { code, thread, id, text, who, role, meta } = req.body || {};
+      const { code, thread, id, text } = req.body || {};
       const campaignCode = cleanCode(code);
       if (!campaignCode || !id || !text) return res.status(400).json({ error: 'missing code, id or text' });
-
-      // who/role/meta sono opzionali: se assenti si modifica solo il testo (comportamento
-      // invariato). Se presenti (dal Master, che riassegna "chi ha parlato" su un messaggio già
-      // inviato), aggiornano anche mittente/ruolo/avatar-colore, in entrambe le tabelle.
-      const updatePayload = { text: String(text).slice(0, 8000) };
-      if (who !== undefined) updatePayload.who = String(who).slice(0, 60);
-      if (role !== undefined) updatePayload.role = role;
-      if (meta !== undefined) updatePayload.meta = meta;
 
       if (thread) {
         const { error } = await supabase
           .from('private_logs')
-          .update(updatePayload)
+          .update({ text: String(text).slice(0, 8000) })
           .eq('campaign_code', campaignCode)
           .eq('thread_username', thread)
           .eq('id', id);
@@ -261,7 +261,7 @@ module.exports = async (req, res) => {
 
       const { error } = await supabase
         .from('logs')
-        .update(updatePayload)
+        .update({ text: String(text).slice(0, 8000) })
         .eq('campaign_code', campaignCode)
         .eq('id', id);
       if (error) return res.status(500).json({ error: error.message });
