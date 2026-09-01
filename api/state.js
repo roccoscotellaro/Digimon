@@ -14,7 +14,8 @@ const { supabase, cleanCode } = require('../lib/db');
 const TABLES = {
   combat: 'combat_state',
   progression: 'progression',
-  scene: 'scenes'
+  scene: 'scenes',
+  gameclock: 'game_clock'
 };
 
 // Il client manda i flag in camelCase (campaignLevel, blastEvolutionEnabled, ...) ma li rilegge
@@ -77,7 +78,7 @@ module.exports = async (req, res) => {
     const resource = query.resource || body.resource;
 
     if (!resource || !TABLES[resource]) {
-      return res.status(400).json({ error: 'resource mancante o non valida (usa combat, progression o scene)' });
+      return res.status(400).json({ error: 'resource mancante o non valida (usa combat, progression, scene o gameclock)' });
     }
     const table = TABLES[resource];
 
@@ -95,6 +96,9 @@ module.exports = async (req, res) => {
       if (resource === 'combat') {
         return res.status(200).json({ combat: data ? data.data : null });
       }
+      if (resource === 'gameclock') {
+        return res.status(200).json({ gameclock: data ? data.data : null });
+      }
       if (resource === 'progression') {
         return res.status(200).json({ progression: data || { milestone: 0, xp: 0, inspiration: 0 } });
       }
@@ -109,7 +113,7 @@ module.exports = async (req, res) => {
       await supabase.from('campaigns').upsert({ code: campaignCode }, { onConflict: 'code' });
 
       let row;
-      if (resource === 'combat') {
+      if (resource === 'combat' || resource === 'gameclock') {
         row = {
           campaign_code: campaignCode,
           data: body.data || {},
