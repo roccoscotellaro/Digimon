@@ -586,7 +586,7 @@
   async function getProgression(code){
     const d = await apiGet('/api/state?resource=progression&code=' + encodeURIComponent(code));
     const p = d ? d.progression : { milestone:0, xp:0, inspiration:0, campaign_level:'Standard' };
-    return { milestone: p.milestone||0, xp: p.xp||0, inspiration: p.inspiration||0, campaignLevel: p.campaign_level || 'Standard', attributeAdvantage: p.attributeAdvantage || p.attribute_advantage || '', naturalCriticalResults: !!(p.naturalCriticalResults || p.natural_critical_results), blastEvolutionEnabled: !!(p.blastEvolutionEnabled || p.blast_evolution_enabled), slideEvolutionEnabled: !!(p.slideEvolutionEnabled || p.slide_evolution_enabled), darkEvolutionEnabled: !!(p.darkEvolutionEnabled || p.dark_evolution_enabled), gameClock: p.gameClock || null };
+    return { milestone: p.milestone||0, xp: p.xp||0, inspiration: p.inspiration||0, campaignLevel: p.campaign_level || 'Standard', attributeAdvantage: p.attributeAdvantage || p.attribute_advantage || '', naturalCriticalResults: !!(p.naturalCriticalResults || p.natural_critical_results), blastEvolutionEnabled: !!(p.blastEvolutionEnabled || p.blast_evolution_enabled), slideEvolutionEnabled: !!(p.slideEvolutionEnabled || p.slide_evolution_enabled), darkEvolutionEnabled: !!(p.darkEvolutionEnabled || p.dark_evolution_enabled) };
   }
   async function saveProgression(code, data){ return apiPost('/api/state', { resource:'progression', code, ...data }); }
 
@@ -622,7 +622,7 @@
   }
 
   // ========== OROLOGIO DI GIOCO (In-Game Clock) ==========
-  // Persistito dentro cachedProgression.gameClock (salvato con saveProgression). Struttura:
+  // Persistito come resource dedicata 'gameclock' su /api/state (tabella game_clock). Struttura:
   //   { baseTime: "08:00", clocks: { "general":"08:25", "sub:abc":"08:10", "private:user":"08:15" } }
   // - baseTime: l'orario impostato dal Master come punto di partenza.
   // - clocks: orario corrente per ogni "canale" (generale, sottogruppo, privata). Ogni messaggio
@@ -632,17 +632,14 @@
 
   function defaultGameClock(){ return { baseTime:'08:00', clocks:{} }; }
 
-  // L'orologio è salvato dentro cachedProgression.gameClock (persistito con saveProgression).
-  // progression usa uno spread semplice (...data) e il server fa merge, quindi gameClock non
-  // viene perso da salvataggi di altri campi (milestone, xp, ecc.).
+  // L'orologio è salvato come resource dedicata 'gameclock' su /api/state (tabella game_clock
+  // su Supabase). Stessa struttura di combat: { data: { baseTime, clocks } }.
   async function getGameClock(code){
-    if(cachedProgression && cachedProgression.gameClock) return cachedProgression.gameClock;
-    return defaultGameClock();
+    const d = await apiGet('/api/state?resource=gameclock&code=' + encodeURIComponent(code));
+    return d && d.gameclock ? d.gameclock : defaultGameClock();
   }
   async function saveGameClock(code, data){
-    if(!cachedProgression) cachedProgression = await getProgression(code);
-    cachedProgression.gameClock = data;
-    return saveProgression(code, cachedProgression);
+    return apiPost('/api/state', { resource:'gameclock', code, data });
   }
 
   // Aggiunge `minutes` all'orologio di un canale specifico. channelKey = 'general' | 'sub:<id>' | 'private:<username>'
@@ -655,7 +652,7 @@
 
   async function advanceGameClock(channelKey, minutes){
     if(!session || !cachedScene) return;
-    if(!cachedGameClock) cachedGameClock = (cachedProgression && cachedProgression.gameClock) || defaultGameClock();
+    if(!cachedGameClock) cachedGameClock = await getGameClock(session.code);
     const gc = cachedGameClock;
     if(!gc.clocks) gc.clocks = {};
     const current = gc.clocks[channelKey] || gc.baseTime || '08:00';
@@ -2419,7 +2416,7 @@
     }
     if(slowCycle) cachedProgression = await getProgression(session.code);
     if(slowCycle){
-      cachedGameClock = (cachedProgression && cachedProgression.gameClock) || defaultGameClock();
+      cachedGameClock = await getGameClock(session.code);
       refreshGameClockDisplay();
     }
     if(slowCycle){
@@ -2678,7 +2675,7 @@
     cachedNpcs = await getNpcs(code);
     cachedCombat = await getCombat(code);
     cachedProgression = await getProgression(code);
-    cachedGameClock = (cachedProgression && cachedProgression.gameClock) || defaultGameClock();
+    cachedGameClock = await getGameClock(code);
 
     root.innerHTML = `
       ${topbar('Vista Giocatore')}
@@ -3612,7 +3609,7 @@
     cachedCombat = await getCombat(code);
     const players = cachedRoster.filter(m=>m.role==='player');
     cachedProgression = await getProgression(code);
-    cachedGameClock = (cachedProgression && cachedProgression.gameClock) || defaultGameClock();
+    cachedGameClock = await getGameClock(code);
 
     root.innerHTML = `
       ${topbar('Vista Master')}
