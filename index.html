@@ -305,6 +305,28 @@
       font-size:11px;color:var(--text-mute);cursor:pointer;padding:6px 0;
       -webkit-tap-highlight-color:transparent;
     }
+    /* ===== MINI-LOG nel tab Battle (mobile): ultimi 4 messaggi ===== */
+    #combat-mini-log{
+      max-height:180px;overflow-y:auto;font-size:12px;
+      border:1px solid var(--line);border-radius:6px;padding:6px 8px;
+      background:var(--panel);margin-bottom:10px;
+    }
+    #combat-mini-log .log-entry{padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04);}
+    #combat-mini-log .log-entry:last-child{border-bottom:none;}
+    #combat-mini-log .who-avatar{width:22px;height:22px;}
+    #combat-mini-log .log-entry .log-who{font-size:11px;}
+    #combat-mini-log .log-entry .log-text{font-size:12px;line-height:1.35;}
+
+    .combat-turn-chat-banner{
+      padding:8px 12px;margin-bottom:10px;border-radius:6px;
+      border:1px solid var(--cyan);background:rgba(53,232,201,0.08);
+      font-size:13px;color:var(--cyan);text-align:center;
+      animation:turnChatPulse 2s ease-in-out 3;
+    }
+    @keyframes turnChatPulse{
+      0%,100%{opacity:1;} 50%{opacity:0.6;}
+    }
+
     /* Log entry avatar più grandi su mobile */
     .who-avatar{width:36px;height:36px;}
     .log-entry.digimon .who-avatar{width:40px;height:40px;}
@@ -818,6 +840,9 @@
   // fissa di sottofondo nelle altre pagine: evita problemi con le richieste "Range" di alcuni host.
   let __combatMusicWasScenePlaying = false;
   let __combatMusicSynced = false;
+  // Traccia l'ultimo username a cui abbiamo già mostrato il banner "è il tuo turno, puoi parlare"
+  // nel tab Battle — così non lo ripetiamo ad ogni ciclo di polling.
+  let __lastTurnChatNotifiedUsername = null;
   async function startCombatMusic(scene){
     const url = getEffectiveCombatMusic(scene);
     if(!url) return; // nessuna musica da combattimento impostata: la normale continua a suonare
@@ -2268,6 +2293,39 @@
       combatSelf.innerHTML = combatSelfActionHTML(cachedCombat, session.username);
       bindCombatSelfActions(session.code, session.username);
     }
+    // ===== Mini-log nel tab Battle (mobile): mostra gli ultimi 4 messaggi della chat =====
+    if(session.role==='player'){
+      const miniLogEl = document.getElementById('combat-mini-log');
+      const miniLogCard = document.getElementById('combat-mini-log-card');
+      if(miniLogCard) miniLogCard.style.display = (cachedCombat && cachedCombat.active) ? '' : 'none';
+      if(miniLogEl && cachedLog && cachedLog.length > 0){
+        const last4 = cachedLog.slice(-4);
+        miniLogEl.innerHTML = typeof logHTML === 'function' ? logHTML(last4, false) : last4.map(e=>`<div style="padding:2px 0;font-size:12px;"><b style="color:var(--cyan);font-size:11px;">${escapeHTML(e.who||'')}</b> <span>${escapeHTML(e.text||'')}</span></div>`).join('');
+        miniLogEl.scrollTop = miniLogEl.scrollHeight;
+      }
+      // ===== Banner "È il tuo turno, ora puoi parlare!" nel tab Battle =====
+      const turnBannerEl = document.getElementById('combat-turn-chat-banner');
+      if(turnBannerEl){
+        const myTurnForBanner = isMyCombatTurn(cachedCombat, session.username);
+        if(myTurnForBanner && cachedCombat && cachedCombat.active){
+          const curP = currentTurnParticipant(cachedCombat);
+          const curUser = curP && curP.username;
+          if(curUser !== __lastTurnChatNotifiedUsername){
+            __lastTurnChatNotifiedUsername = curUser;
+            // Mostra il banner con animazione fresca (re-trigger rimuovendo e riaggungendo)
+            turnBannerEl.innerHTML = '';
+            turnBannerEl.offsetHeight; // force reflow
+            turnBannerEl.innerHTML = '<div class="combat-turn-chat-banner">⚔️ È il tuo turno! Ora puoi scrivere in chat 💬</div>';
+          }
+          // Mantieni visibile finché è il turno
+          if(!turnBannerEl.innerHTML) turnBannerEl.innerHTML = '<div class="combat-turn-chat-banner">⚔️ È il tuo turno! Ora puoi scrivere in chat 💬</div>';
+        } else {
+          turnBannerEl.innerHTML = '';
+          // Reset: se il combattimento finisce o cambia turno, la prossima volta si rinotifica
+          if(!cachedCombat || !cachedCombat.active) __lastTurnChatNotifiedUsername = null;
+        }
+      }
+    }
     // Blocca la chat pubblica (non quella privata col Master) fuori dal proprio turno, se in combattimento.
     // Blocca inoltre, per TUTTI (indipendentemente dal turno), la chat scelta dal Master come
     // "chat di combattimento" (chatLock) finché il Master non conclude lo scontro.
@@ -2400,6 +2458,7 @@
           </div>
 
           <div class="mobile-section" data-mobile-tab="combattimento">
+          <div id="combat-turn-chat-banner"></div>
           <div class="hud-frame card" id="attacks-card" style="${(cachedCombat && cachedCombat.active) ? '' : 'display:none;'}">
             <div class="section-title">Attacchi di ${escapeHTML(me.digimon.name || 'Digimon')}</div>
             <div id="attacks-card-inner">${attacksCardHTML(me, cachedCombat, session.username)}</div>
@@ -2409,6 +2468,11 @@
             <div class="section-title">Combattimento</div>
             <div id="combat-live">${combatDisplayHTML(cachedCombat, false)}</div>
             <div id="combat-self-actions">${combatSelfActionHTML(cachedCombat, session.username)}</div>
+          </div>
+
+          <div class="hud-frame card" id="combat-mini-log-card" style="${(cachedCombat && cachedCombat.active) ? '' : 'display:none;'}">
+            <div class="section-title" style="font-size:11px;margin-bottom:4px;">💬 Ultimi messaggi</div>
+            <div id="combat-mini-log"></div>
           </div>
           </div>
         </div>
@@ -2437,6 +2501,21 @@
     bindChatAttach('action', code, 'chat', ()=>pendingActionImageUrl, (url)=>{ pendingActionImageUrl = url; });
     bindMentionButton('action', code, 'action-text');
     renderChatArea(code, me, { forceScrollBottom:true }); // riempie il selettore location + il Registro (vedi sopra)
+    // Popola il mini-log nel tab Battle al primo render
+    {
+      const _ml = document.getElementById('combat-mini-log');
+      if(_ml && cachedLog && cachedLog.length > 0){
+        const _last4 = cachedLog.slice(-4);
+        _ml.innerHTML = typeof logHTML === 'function' ? logHTML(_last4, false) : _last4.map(e=>`<div style="padding:2px 0;font-size:12px;"><b style="color:var(--cyan);font-size:11px;">${escapeHTML(e.who||'')}</b> <span>${escapeHTML(e.text||'')}</span></div>`).join('');
+        _ml.scrollTop = _ml.scrollHeight;
+      }
+      // Banner turno iniziale
+      const _tb = document.getElementById('combat-turn-chat-banner');
+      if(_tb && cachedCombat && cachedCombat.active && isMyCombatTurn(cachedCombat, session.username)){
+        __lastTurnChatNotifiedUsername = currentTurnParticipant(cachedCombat)?.username || null;
+        _tb.innerHTML = '<div class="combat-turn-chat-banner">⚔️ È il tuo turno! Ora puoi scrivere in chat 💬</div>';
+      }
+    }
     document.getElementById('btn-correct').onclick = async ()=>{
       const ta = document.getElementById('action-text');
       const status = document.getElementById('correct-status');
