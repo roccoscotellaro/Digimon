@@ -253,6 +253,30 @@
   ::-webkit-scrollbar{width:6px;}
   ::-webkit-scrollbar-thumb{background:var(--cyan-dim);}
 
+  /* ===== Orologio di Gioco ===== */
+  .game-clock-display{display:inline-flex;align-items:center;gap:5px;font-family:'Share Tech Mono',monospace;font-size:13px;color:var(--amber);letter-spacing:0.04em;white-space:nowrap;}
+  .game-clock-display .clock-icon{font-size:14px;opacity:0.8;}
+  .game-clock-display .clock-time{font-size:15px;font-weight:700;text-shadow:0 0 8px rgba(255,138,61,0.4);}
+  .game-clock-display .clock-label{font-size:9px;color:var(--text-mute);text-transform:uppercase;}
+  .game-clock-master-panel{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;margin-bottom:12px;border:1px solid var(--line);background:var(--panel-2);border-radius:var(--radius);}
+  .game-clock-master-panel label{margin:0;font-size:10px;}
+  .game-clock-master-panel input[type=time]{width:110px;padding:4px 6px;font-size:13px;font-family:'Share Tech Mono',monospace;}
+  .game-clock-master-panel .btn{padding:4px 10px;font-size:10px;}
+  .game-clock-master-panel select{width:auto;min-width:120px;padding:4px 6px;font-size:11px;}
+  /* Badge giorno/notte sovrapposto alla scene-box */
+  .scene-daytime-badge{position:absolute;top:8px;left:10px;display:inline-flex;align-items:center;gap:5px;
+    font-family:'Share Tech Mono',monospace;font-size:12px;letter-spacing:0.04em;
+    padding:3px 10px 3px 6px;border-radius:12px;z-index:3;pointer-events:none;
+    backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}
+  .scene-daytime-badge .dt-icon{font-size:16px;line-height:1;}
+  .scene-daytime-badge .dt-label{text-transform:uppercase;font-size:10px;letter-spacing:0.08em;}
+  .scene-daytime-badge .dt-time{font-weight:700;font-size:13px;}
+  .scene-daytime-badge.dt-dawn{background:rgba(255,183,77,0.2);color:#ffb74d;border:1px solid rgba(255,183,77,0.35);}
+  .scene-daytime-badge.dt-day{background:rgba(255,236,130,0.18);color:#ffec82;border:1px solid rgba(255,236,130,0.3);}
+  .scene-daytime-badge.dt-dusk{background:rgba(255,138,101,0.2);color:#ff8a65;border:1px solid rgba(255,138,101,0.35);}
+  .scene-daytime-badge.dt-night{background:rgba(100,120,200,0.2);color:#90a4f4;border:1px solid rgba(100,120,200,0.35);}
+  .scene-daytime-badge.dt-midnight{background:rgba(70,70,140,0.22);color:#7e7ec8;border:1px solid rgba(70,70,140,0.35);}
+
   @media (max-width: 760px){
     .app{padding:6px;padding-bottom:calc(66px + env(safe-area-inset-bottom, 0px));}
     .topbar{flex-direction:column;align-items:flex-start;gap:6px;padding:8px 10px;margin-bottom:10px;}
@@ -597,6 +621,209 @@
     }
   }
 
+  // ========== OROLOGIO DI GIOCO (In-Game Clock) ==========
+  // Persistito come resource:'gameclock' su /api/state. Struttura:
+  //   { baseTime: "08:00", clocks: { "general":"08:25", "sub:abc":"08:10", "private:user":"08:15" } }
+  // - baseTime: l'orario impostato dal Master come punto di partenza.
+  // - clocks: orario corrente per ogni "canale" (generale, sottogruppo, privata). Ogni messaggio
+  //   in un canale avanza il suo orologio di 5 minuti; ogni round completato in combattimento
+  //   avanza di 1 minuto l'orologio del canale dove il combattimento è ancorato (chatLock).
+  let cachedGameClock = null;
+
+  function defaultGameClock(){ return { baseTime:'08:00', clocks:{} }; }
+
+  async function getGameClock(code){
+    const d = await apiGet('/api/state?resource=gameclock&code=' + encodeURIComponent(code));
+    return d && d.gameclock ? d.gameclock : defaultGameClock();
+  }
+  async function saveGameClock(code, data){
+    return apiPost('/api/state', { resource:'gameclock', code, data });
+  }
+
+  // Aggiunge `minutes` all'orologio di un canale specifico. channelKey = 'general' | 'sub:<id>' | 'private:<username>'
+  function clockAddMinutes(clockStr, minutes){
+    const [h,m] = (clockStr||'08:00').split(':').map(Number);
+    let total = h*60 + m + minutes;
+    total = ((total % 1440) + 1440) % 1440; // wrap 24h
+    return String(Math.floor(total/60)).padStart(2,'0') + ':' + String(total%60).padStart(2,'0');
+  }
+
+  async function advanceGameClock(channelKey, minutes){
+    if(!session) return;
+    if(!cachedGameClock) cachedGameClock = await getGameClock(session.code);
+    const gc = cachedGameClock;
+    if(!gc.clocks) gc.clocks = {};
+    const current = gc.clocks[channelKey] || gc.baseTime || '08:00';
+    gc.clocks[channelKey] = clockAddMinutes(current, minutes);
+    await saveGameClock(session.code, gc);
+    refreshGameClockDisplay();
+  }
+
+  // Determina il channelKey in base a dove sta scrivendo l'utente corrente.
+  function currentClockChannel(){
+    if(session && session.role==='player'){
+      if(typeof playerChatMode!=='undefined'){
+        if(playerChatMode==='subgroup' && typeof playerActiveSubgroupId!=='undefined' && playerActiveSubgroupId)
+          return 'sub:'+playerActiveSubgroupId;
+        if(playerChatMode==='private') return 'private:'+session.username;
+      }
+      return 'general';
+    }
+    // Master: scrive sempre in generale (il suo composer non ha private/subgroup toggle nella
+    // stessa forma, ma il canale del combattimento è gestito separatamente).
+    return 'general';
+  }
+
+  // Restituisce l'orario corrente per il canale indicato (o il canale attivo se non specificato).
+  function getClockTime(channelKey){
+    if(!cachedGameClock) return '??:??';
+    const gc = cachedGameClock;
+    const key = channelKey || currentClockChannel();
+    return (gc.clocks && gc.clocks[key]) || gc.baseTime || '08:00';
+  }
+
+  // Formatta il display dell'orologio (usato nel topbar e ovunque serve).
+  function gameClockHTML(channelKey){
+    const time = getClockTime(channelKey);
+    const dt = daytimeInfo(time);
+    return `<span class="game-clock-display"><span class="clock-icon">${dt.icon}</span><span class="clock-time">${escapeHTML(time)}</span><span class="clock-label">${escapeHTML(dt.label)}</span></span>`;
+  }
+
+  // Fascia oraria → icona, etichetta e classe CSS per il badge giorno/notte sulla scena.
+  // Le fasce sono:  00-04 Notte Fonda, 05-06 Alba, 07-11 Mattina, 12-16 Pomeriggio,
+  //                 17-18 Tramonto, 19-20 Sera, 21-23 Notte.
+  function daytimeInfo(clockStr){
+    const [h] = (clockStr||'08:00').split(':').map(Number);
+    if(h >= 0  && h < 5)  return { icon:'🌑', label:'Notte Fonda',  cls:'dt-midnight' };
+    if(h >= 5  && h < 7)  return { icon:'🌅', label:'Alba',         cls:'dt-dawn' };
+    if(h >= 7  && h < 12) return { icon:'☀️', label:'Mattina',       cls:'dt-day' };
+    if(h >= 12 && h < 17) return { icon:'🌤️', label:'Pomeriggio',   cls:'dt-day' };
+    if(h >= 17 && h < 19) return { icon:'🌇', label:'Tramonto',     cls:'dt-dusk' };
+    if(h >= 19 && h < 21) return { icon:'🌆', label:'Sera',         cls:'dt-dusk' };
+    return                        { icon:'🌙', label:'Notte',        cls:'dt-night' };
+  }
+
+  // HTML del badge giorno/notte, iniettato dentro la scene-box (position:absolute, top-left).
+  function sceneDaytimeBadgeHTML(channelKey){
+    const time = getClockTime(channelKey);
+    if(time==='??:??') return '';
+    const dt = daytimeInfo(time);
+    return `<div class="scene-daytime-badge ${dt.cls}"><span class="dt-icon">${dt.icon}</span><span class="dt-time">${escapeHTML(time)}</span><span class="dt-label">${escapeHTML(dt.label)}</span></div>`;
+  }
+
+  // Inietta (o aggiorna) il badge giorno/notte dentro la prima .scene-box trovata in pagina.
+  function refreshSceneDaytimeBadge(){
+    const box = document.querySelector('.scene-box');
+    if(!box) return;
+    let badge = box.querySelector('.scene-daytime-badge');
+    const html = sceneDaytimeBadgeHTML();
+    if(!html){ if(badge) badge.remove(); return; }
+    if(badge){
+      badge.outerHTML = html;
+    } else {
+      box.insertAdjacentHTML('afterbegin', html);
+    }
+  }
+
+  // Aggiorna il display dell'orologio già presente in pagina (chiamata dopo ogni avanzamento e polling).
+  function refreshGameClockDisplay(){
+    const el = document.getElementById('game-clock-live');
+    if(el) el.innerHTML = gameClockHTML();
+    // Badge giorno/notte sulla scena
+    refreshSceneDaytimeBadge();
+    // Aggiorna anche l'eventuale orologio nel pannello Master con tutti i canali
+    const panel = document.getElementById('game-clock-all-channels');
+    if(panel && cachedGameClock && cachedGameClock.clocks){
+      const gc = cachedGameClock;
+      const entries = Object.entries(gc.clocks);
+      if(entries.length===0){
+        panel.innerHTML = '<span class="muted">Nessun canale avanzato ancora.</span>';
+      } else {
+        panel.innerHTML = entries.map(([k,v])=>{
+          let label = k;
+          if(k==='general') label = '💬 Generale';
+          else if(k.startsWith('sub:')){
+            const gid = k.slice(4);
+            const g = (cachedSubgroups||[]).find(x=>x.id===gid);
+            label = '👥 '+(g?g.name:'Sottogruppo');
+          } else if(k.startsWith('private:')) label = '✉️ Privata ('+k.slice(8)+')';
+          return `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-size:12px;font-family:'Share Tech Mono',monospace;"><span style="color:var(--text-mute);">${escapeHTML(label)}</span> <b style="color:var(--amber);">${escapeHTML(v)}</b></span>`;
+        }).join('');
+      }
+    }
+  }
+
+  // Pannello Master per impostare l'orologio (inserito dal render del Master).
+  function gameClockMasterPanelHTML(){
+    const gc = cachedGameClock || defaultGameClock();
+    const channels = Object.keys(gc.clocks||{});
+    const channelOpts = channels.map(k=>{
+      let label = k;
+      if(k==='general') label = 'Generale';
+      else if(k.startsWith('sub:')){ const g=(cachedSubgroups||[]).find(x=>x.id===k.slice(4)); label=g?g.name:'Sottogruppo'; }
+      else if(k.startsWith('private:')) label='Privata ('+k.slice(8)+')';
+      return `<option value="${escapeAttr(k)}">${escapeHTML(label)}</option>`;
+    }).join('');
+    return `
+    <div class="game-clock-master-panel">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span style="font-size:16px;">🕐</span>
+        <label style="white-space:nowrap;">Ora Base</label>
+        <input type="time" id="gc-base-time" value="${escapeAttr(gc.baseTime||'08:00')}" />
+        <button class="btn small" id="gc-set-base">Imposta</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <label style="white-space:nowrap;">Canale</label>
+        <select id="gc-channel-select"><option value="__all__">Tutti</option>${channelOpts}</select>
+        <label style="white-space:nowrap;">Vai a</label>
+        <input type="time" id="gc-manual-time" value="${escapeAttr(gc.baseTime||'08:00')}" />
+        <button class="btn small" id="gc-set-channel">Imposta</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button class="btn small amber" id="gc-reset-all" title="Riporta tutti i canali all'Ora Base">🔄 Reset Tutti</button>
+      </div>
+    </div>
+    <div id="game-clock-all-channels" style="margin-bottom:10px;"></div>`;
+  }
+
+  function bindGameClockMasterPanel(){
+    const setBaseBtn = document.getElementById('gc-set-base');
+    if(setBaseBtn) setBaseBtn.onclick = async ()=>{
+      const val = document.getElementById('gc-base-time').value;
+      if(!val) return;
+      if(!cachedGameClock) cachedGameClock = defaultGameClock();
+      cachedGameClock.baseTime = val;
+      await saveGameClock(session.code, cachedGameClock);
+      refreshGameClockDisplay();
+    };
+    const setChBtn = document.getElementById('gc-set-channel');
+    if(setChBtn) setChBtn.onclick = async ()=>{
+      const ch = document.getElementById('gc-channel-select').value;
+      const val = document.getElementById('gc-manual-time').value;
+      if(!val) return;
+      if(!cachedGameClock) cachedGameClock = defaultGameClock();
+      if(!cachedGameClock.clocks) cachedGameClock.clocks = {};
+      if(ch==='__all__'){
+        Object.keys(cachedGameClock.clocks).forEach(k=>{ cachedGameClock.clocks[k]=val; });
+        cachedGameClock.baseTime = val;
+      } else {
+        cachedGameClock.clocks[ch] = val;
+      }
+      await saveGameClock(session.code, cachedGameClock);
+      refreshGameClockDisplay();
+    };
+    const resetBtn = document.getElementById('gc-reset-all');
+    if(resetBtn) resetBtn.onclick = async ()=>{
+      if(!cachedGameClock) cachedGameClock = defaultGameClock();
+      const base = cachedGameClock.baseTime || '08:00';
+      cachedGameClock.clocks = {};
+      await saveGameClock(session.code, cachedGameClock);
+      refreshGameClockDisplay();
+    };
+    refreshGameClockDisplay();
+  }
+  // ========== Fine Orologio di Gioco ==========
+
   // ---------- Blocco chat di combattimento (richiesta utente) ----------
   // Quando il Master avvia un combattimento può scegliere UNA chat (Generale o un Sottogruppo
   // esistente) dove: 1) viene inviato un avviso che spiega che la chat è bloccata; 2) i giocatori
@@ -767,6 +994,9 @@
       if(combat.currentIndex >= combat.order.length){
         combat.currentIndex = 0;
         combat.round++;
+        // Orologio di gioco: +1 min a fine round di combattimento
+        const combatClockKey = (combat.chatLock && combat.chatLock.location && combat.chatLock.location!=='general' && combat.chatLock.location.startsWith('sub:')) ? combat.chatLock.location : 'general';
+        advanceGameClock(combatClockKey, 1);
       }
       skipped++;
     } while(isParticipantDefeated(combat.participants.find(p=>p.id===combat.order[combat.currentIndex])) && skipped < combat.order.length);
@@ -1794,6 +2024,7 @@
       <div class="conn-ticker mono">
         <span>CAMPAGNA <b>${session ? session.code : '---'}</b></span> <span>|</span> <span>UTENTE <b>${session ? session.username : '---'}</b></span>
         ${session && cachedProgression ? `<span>|</span> <span>MILESTONE <b style="color:var(--cyan);">${cachedProgression.milestone}</b></span> <span>|</span> <span>INSP. <b style="color:var(--cyan);">${cachedProgression.inspiration}</b></span>` : ''}
+        ${session ? `<span id="game-clock-live">${typeof gameClockHTML==='function'?gameClockHTML():''}</span>` : ''}
         ${session ? `<button class="btn ghost small" id="topbar-chat-jump" style="position:relative;">💬 Registro<span id="topbar-chat-badge" style="display:${__topbarUnreadFlag?'inline-block':'none'};position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:var(--danger);box-shadow:0 0 4px var(--danger);"></span></button>` : ''}
         ${session ? `<a href="dex.html" target="_blank" class="btn ghost small" style="text-decoration:none;">📖 Digidex</a>` : ''}
         ${session ? `<a href="npc.html" target="_blank" class="btn ghost small" style="text-decoration:none;">🎭 NPC</a>` : ''}
@@ -2163,6 +2394,10 @@
     }
     if(slowCycle) cachedProgression = await getProgression(session.code);
     if(slowCycle){
+      cachedGameClock = await getGameClock(session.code);
+      refreshGameClockDisplay();
+    }
+    if(slowCycle){
       cachedSubgroups = await getSubgroups(session.code);
       if(session.role==='player') updateChatModeButtons(); // mostra/nasconde il bottone "👥 Gruppo" appena arrivano sottogruppi nuovi
     }
@@ -2180,6 +2415,7 @@
     if(sceneLive){
       const sceneViewer = session.role==='player' ? (cachedRoster.find(m=>m.username===session.username) || cachedMe) : null;
       sceneLive.innerHTML = `<div class="muted mono" style="margin-bottom:8px;">${onlineSummary(cachedRoster)}</div>` + sceneHTML(cachedScene, sceneViewer);
+      refreshSceneDaytimeBadge();
     }
     bindSceneAudio(cachedScene);
     if(missionsModalOpen) refreshMissionsModal();
@@ -2417,6 +2653,7 @@
     cachedNpcs = await getNpcs(code);
     cachedCombat = await getCombat(code);
     cachedProgression = await getProgression(code);
+    cachedGameClock = await getGameClock(code);
 
     root.innerHTML = `
       ${topbar('Vista Giocatore')}
@@ -2492,6 +2729,7 @@
     renderSidebar(me);
     bindSceneAudio(cachedScene);
     bindTopbarChatJump();
+    refreshSceneDaytimeBadge();
     document.getElementById('tab-scheda').onclick = ()=>{ sidebarTab='scheda'; renderSidebar(me); };
     document.getElementById('tab-inventario').onclick = ()=>{ sidebarTab='inventario'; renderSidebar(me); };
     document.getElementById('tab-bug').onclick = ()=>{ sidebarTab='bug'; renderSidebar(me); };
@@ -2540,6 +2778,7 @@
         // del gruppo intero, altrimenti un sottogruppo separato non viene mai "riconosciuto".
         subMeta.location = subgroupLocationKey((cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId));
         await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { who: displayName(me), role:'player', text: raw, meta: subMeta });
+        advanceGameClock('sub:'+playerActiveSubgroupId, 5); // +5min per messaggio sottogruppo
         ta.value='';
         pendingActionImageUrl = null;
         const ap = document.getElementById('action-img-preview');
@@ -2557,6 +2796,7 @@
         // dal gruppo), non quella del gruppo intero.
         privTextMeta.location = memberLocationKey(me);
         await pushPrivateLog(code, session.username, { who: displayName(me), role:'player', text: raw, meta: privTextMeta });
+        advanceGameClock('private:'+session.username, 5); // +5min per messaggio privato
         ta.value='';
         pendingActionImageUrl = null;
         const actionPreviewPriv = document.getElementById('action-img-preview');
@@ -2580,6 +2820,7 @@
         if(pendingActionImageUrl) textMeta.image = pendingActionImageUrl;
         await pushLog(code, { who: displayName(me), role:'player', text: raw, meta: Object.keys(textMeta).length ? textMeta : null });
       }
+      advanceGameClock('general', 5); // +5min per messaggio generale
       ta.value='';
       pendingActionImageUrl = null;
       const actionPreview = document.getElementById('action-img-preview');
@@ -3346,6 +3587,7 @@
     cachedCombat = await getCombat(code);
     const players = cachedRoster.filter(m=>m.role==='player');
     cachedProgression = await getProgression(code);
+    cachedGameClock = await getGameClock(code);
 
     root.innerHTML = `
       ${topbar('Vista Master')}
@@ -3354,6 +3596,10 @@
           <div class="mobile-section" data-mobile-tab="scena">
           <div class="hud-frame card">
             <div class="section-title">Composizione Scena</div>
+            <div style="margin-bottom:12px;">
+              <div style="font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;margin-bottom:6px;">🕐 Orologio di Gioco</div>
+              ${gameClockMasterPanelHTML()}
+            </div>
             <div id="scene-live">${sceneHTML(cachedScene)}</div>
             <div class="field" style="margin-top:10px;"><label>Titolo Scena</label><input type="text" id="scene-title" value="${escapeAttr(cachedScene.title)}" placeholder="es. Foresta di File" /></div>
             <div class="field"><label>URL Immagine di Sfondo</label><input type="text" id="scene-bg" value="${escapeAttr(cachedScene.background)}" placeholder="https://..." /></div>
@@ -3579,6 +3825,8 @@
     bindSceneAudioUpload(code);
     bindSceneCombatAudioUpload(code);
     bindTopbarChatJump();
+    bindGameClockMasterPanel();
+    refreshSceneDaytimeBadge();
     initMobileNav();
     document.getElementById('btn-logout').onclick = logout;
     document.getElementById('btn-open-missions').onclick = openMissionsModal;
@@ -3707,6 +3955,7 @@
         rememberNpc(code, { name: who, color: chosenColor, avatar });
       }
       await pushLog(code, { who, role, text, meta: Object.keys(meta).length ? meta : null });
+      advanceGameClock('general', 5); // +5min per messaggio Master in generale
       ta.value='';
       pendingGmImageUrl = null;
       const gmPreview = document.getElementById('gm-img-preview');
