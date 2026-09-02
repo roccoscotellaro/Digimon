@@ -1008,6 +1008,91 @@
     return { ok:true, def };
   }
 
+  // ---------- bonus reale ai dadi per le Azioni di supporto (Direct/Aid/Guard/Bolster) ----------
+  // Indice Regole 9.06a/9.06b: prima di questo blocco, queste Azioni spendevano solo Azioni e
+  // scrivevano una narrazione fissa -- nessun effetto vero sui tiri (l'utente ha verificato: "viene
+  // aumentato davvero il pool di dadi per gli attacchi?" -- risposta era no). Da qui in poi il
+  // bonus si accoda sul bersaglio (participant.pendingRollBonus) e si consuma da solo al primo tiro
+  // di Accuracy o Dodge che gli càpita addosso in performAttackRoll -- esattamente "al prossimo
+  // Accuracy/Dodge Pool" del manuale.
+  const SUPPORT_ACTION_KEYS = ['direct1','direct2','aid','guard','bolster_tamer','bolster_digimon'];
+  // Stat del Tamer che controlla p (per Direct/Bolster Tamer). I Nemici non hanno una scheda Tamer
+  // separata sul sito: stesso fallback fisso già usato per loro altrove (es. Finisher del Clash).
+  function ownerAttr(p, key){
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      return member ? Number(member.tamer[key]||0) : 1;
+    }
+    return Number(p[key]||1);
+  }
+  function participantSV(p){
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      return member ? stageIndex(member.digimon.stage)+1 : 1;
+    }
+    return 1;
+  }
+  function highestAttribute(p){
+    return Math.max(ownerAttr(p,'agility'), ownerAttr(p,'body'), ownerAttr(p,'charisma'), ownerAttr(p,'intelligence'), ownerAttr(p,'willpower'));
+  }
+  // Accoda un bonus al prossimo Pool Check del bersaglio. stat: 'either' (Direct/Aid/Bolster, che
+  // dicono "Accuracy/Dodge") o 'dodge' (Guard, che nel manuale è ristretto al solo Dodge). Se c'è
+  // già un bonus in coda si sommano gli importi (Bolster "potenzia" Direct/Aid/Guard già in coda),
+  // altrimenti quello nuovo sostituisce il tipo restando comunque la somma dei due importi.
+  function queuePendingRollBonus(target, amount, sourceLabel, stat){
+    stat = stat || 'either';
+    if(amount<=0) return;
+    if(target.pendingRollBonus){
+      target.pendingRollBonus.amount += amount;
+      target.pendingRollBonus.source += ' + ' + sourceLabel;
+      if(target.pendingRollBonus.stat!=='either') target.pendingRollBonus.stat = stat;
+    } else {
+      target.pendingRollBonus = { amount, source: sourceLabel, stat };
+    }
+  }
+  // Effetto MECCANICO reale di Direct/Aid/Guard/Bolster (oltre a trySpendAction, che resta
+  // responsabile solo del costo in Azioni). Ritorna { ok, note } da appendere alla narrazione.
+  // NOTA IMPLEMENTAZIONE: a differenza del testo di regolamento (bonus flat, garantito, per
+  // Direct/Guard/Bolster), Aid qui tira davvero un Pool Check (Nd6 pari a SV) e mette in coda il
+  // bonus SOLO se il tiro ottiene almeno 1 Successo -- così come richiesto esplicitamente
+  // dall'utente ("si fa il tiro di Aid e se il tiro riesce si aggiunge il bonus... in automatico").
+  // È una scelta di house-rule dichiarata per questa sola Azione: se non è quello che intendevi,
+  // dimmelo e lo riporto a bonus flat garantito come le altre tre.
+  async function applySupportActionEffect(actionKey, actor, target){
+    if(actionKey==='direct1' || actionKey==='direct2'){
+      if(!target) return { ok:false, note:'nessun bersaglio scelto: nessun bonus accodato.' };
+      const base = actionKey==='direct1' ? ownerAttr(actor,'charisma') : highestAttribute(actor);
+      const own = target.id===actor.id;
+      const amount = Math.max(0, base - (own?0:2));
+      queuePendingRollBonus(target, amount, 'Direct', 'either');
+      return { ok:true, note: `+${amount} Accuracy/Dodge in coda sul prossimo Pool Check di ${narratorName(target)}${own?'':' (-2: non è il proprio Digimon)'}.` };
+    }
+    if(actionKey==='guard'){
+      const sv = participantSV(actor);
+      queuePendingRollBonus(actor, sv, 'Guard', 'dodge');
+      return { ok:true, note: `+${sv} Dodge (SV) in coda sul proprio prossimo Pool Check di Dodge.` };
+    }
+    if(actionKey==='aid'){
+      if(!target) return { ok:false, note:'nessun bersaglio scelto: Aid non ha effetto.' };
+      const sv = participantSV(actor);
+      const roll = rollPool(sv);
+      if(roll.successes>=1){
+        queuePendingRollBonus(target, sv, 'Aid', 'either');
+        return { ok:true, note: `Tiro di Aid ${sv}d6[${roll.dice.join(',')}]=${roll.successes} succ. → RIUSCITO: +${sv} Accuracy/Dodge in coda sul prossimo Pool Check di ${narratorName(target)}.` };
+      }
+      return { ok:true, note: `Tiro di Aid ${sv}d6[${roll.dice.join(',')}]=${roll.successes} succ. → NON RIUSCITO: nessun bonus accodato.` };
+    }
+    if(actionKey==='bolster_tamer' || actionKey==='bolster_digimon'){
+      if(!target) return { ok:false, note:'nessun bersaglio scelto: nessun bonus accodato.' };
+      const amount = actionKey==='bolster_tamer' ? 2 : participantSV(actor);
+      const hadExisting = !!target.pendingRollBonus;
+      const existingStat = hadExisting ? target.pendingRollBonus.stat : 'either';
+      queuePendingRollBonus(target, amount, 'Bolster', existingStat);
+      return { ok:true, note: `+${amount} extra in coda sul prossimo Pool Check di ${narratorName(target)}${hadExisting?' (potenzia un bonus già in coda)':''} — totale in coda: +${target.pendingRollBonus.amount}.` };
+    }
+    return { ok:false, note:'' };
+  }
+
   // defaultCombat spostato in js/combat-engine.js
 
   // currentTurnParticipant/isMyCombatTurn spostati in js/combat-engine.js
@@ -1300,10 +1385,19 @@
         if(statusEl){ statusEl.style.color = 'var(--danger)'; statusEl.textContent = result.msg; }
         return;
       }
+      // Direct/Aid/Guard/Bolster: bersaglio riusato dallo stesso menu BERSAGLIO usato per gli
+      // Attacchi (self-target-select, vedi attacksCardHTML) -- Guard non ha bisogno di bersaglio.
+      let supportNote = '';
+      if(SUPPORT_ACTION_KEYS.includes(sel.value)){
+        const targetSel = document.getElementById('self-target-select');
+        const supportTarget = sel.value==='guard' ? p : (targetSel && targetSel.value ? cachedCombat.participants.find(x=>x.id===targetSel.value) : null);
+        const effect = await applySupportActionEffect(sel.value, p, supportTarget);
+        supportNote = ' ' + effect.note;
+      }
       await saveCombat(code, cachedCombat);
       const usedPoolLabel = result.def.pool==='tamer' ? 'Tamer' : 'Digimon';
       const usedPoolLeft = result.def.pool==='tamer' ? p.tamerActions : p.actions;
-      await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'player', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabel}) — restano ${usedPoolLeft}/2 Azioni (${usedPoolLabel}).`, meta:{avatar: resolveParticipantImage(p)} });
+      await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'player', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabel}) — restano ${usedPoolLeft}/2 Azioni (${usedPoolLabel}).${supportNote}`, meta:{avatar: resolveParticipantImage(p)} });
       refreshLiveParts();
     };
   }
@@ -4342,8 +4436,27 @@
     const aStats = getParticipantCombatStats(attacker);
     const tStats = getParticipantCombatStats(target);
     const zDist = zoneDistance(attacker.zone||'Medio', target.zone||'Medio');
-    const zPenalty = zonePenalty(zDist);
-    const effAccuracy = Math.max(0, aStats.accuracy + zPenalty);
+    // Point Blank (9.03, manuale reale): un Attacco [RANGE] contro un bersaglio nella propria
+    // stessa zona subisce -3 Accuracy, a meno che l'Attaccante non abbia Heavy Recoil (che ora la
+    // ignora davvero, non solo a parole). Non si applica a [MELEE] (che a distanza 0 è la norma).
+    const pointBlank = !!(atk && atk.shape==='Range' && zDist===0 && !aStats.heavyRecoil);
+    const zPenalty = zonePenalty(zDist, aStats.bit) + (pointBlank ? -3 : 0);
+    // Bonus reale in coda da Direct/Aid/Guard/Bolster (9.06a/9.06b) -- si consuma qui, sul primo
+    // dei due tiri che arriva (Accuracy per l'Attaccante, Dodge per il Bersaglio) -- vedi
+    // applySupportActionEffect/queuePendingRollBonus qui sopra.
+    let attackerBonus = 0, attackerBonusNote = '';
+    if(attacker.pendingRollBonus && (attacker.pendingRollBonus.stat==='either' || attacker.pendingRollBonus.stat==='accuracy')){
+      attackerBonus = attacker.pendingRollBonus.amount;
+      attackerBonusNote = ` [+${attackerBonus} Accuracy da ${attacker.pendingRollBonus.source}]`;
+      attacker.pendingRollBonus = null;
+    }
+    let targetBonus = 0, targetBonusNote = '';
+    if(target.pendingRollBonus && (target.pendingRollBonus.stat==='either' || target.pendingRollBonus.stat==='dodge')){
+      targetBonus = target.pendingRollBonus.amount;
+      targetBonusNote = ` [+${targetBonus} Dodge da ${target.pendingRollBonus.source}]`;
+      target.pendingRollBonus = null;
+    }
+    const effAccuracy = Math.max(0, aStats.accuracy + zPenalty + attackerBonus);
     const overpowerUsed = !!attacker.overpowerActive;
     const accRoll = rollPool(effAccuracy, overpowerUsed);
     if(overpowerUsed) attacker.overpowerActive = false;
@@ -4361,9 +4474,9 @@
         attrAdvNote = ' [Attribute Advantage (Major): +1 Successo automatico]';
       }
     }
-    const dodgeRoll = rollPool(tStats.dodge);
+    const dodgeRoll = rollPool(tStats.dodge + targetBonus);
     if(tStats.absoluteEvasion>0) dodgeRoll.successes += tStats.absoluteEvasion;
-    const zoneNote = (zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza: ${zoneLabel(attacker.zone||'Medio')}→${zoneLabel(target.zone||'Medio')})` : '') + (overpowerUsed ? ' [Overpower: 4 conta come Successo]' : '');
+    const zoneNote = (zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza${pointBlank?' inclusa Point Blank -3':''}: ${zoneLabel(attacker.zone||'Medio')}→${zoneLabel(target.zone||'Medio')})` : '') + (overpowerUsed ? ' [Overpower: 4 conta come Successo]' : '') + attackerBonusNote + targetBonusNote;
     const certainNote = (aStats.certainStrike>0 ? ` +${aStats.certainStrike} [CERTAIN]` : '') + attrAdvNote;
     const atkLabel = atk ? `${atk.name} ${attackTagsPlain(atk)}` : 'Attacco generico';
     // Nomi mascherati per i log tecnici: se il Digimon ha nameHidden, il log NON rivela il nome reale.
@@ -5564,9 +5677,18 @@
           if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; }
           return;
         }
+        // Direct/Aid/Guard/Bolster: bersaglio riusato dal select "Avvicina/Allontana" della stessa
+        // riga (data-zone-ref) -- Guard non ha bisogno di bersaglio, si applica sempre a se stesso.
+        let supportNote = '';
+        if(SUPPORT_ACTION_KEYS.includes(sel.value)){
+          const zoneRefSel = cardEl.querySelector(`[data-zone-ref="${id}"]`);
+          const supportTarget = sel.value==='guard' ? p : (zoneRefSel && zoneRefSel.value ? combat.participants.find(x=>x.id===zoneRefSel.value) : null);
+          const effect = await applySupportActionEffect(sel.value, p, supportTarget);
+          supportNote = ' ' + effect.note;
+        }
         const usedPoolLabelGM = result.def.pool==='tamer' ? 'Tamer' : 'Digimon';
         const usedPoolLeftGM = result.def.pool==='tamer' ? p.tamerActions : p.actions;
-        await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabelGM}) — restano ${usedPoolLeftGM}/2 Azioni (${usedPoolLabelGM}).`, meta:{avatar: resolveParticipantImage(p)} });
+        await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabelGM}) — restano ${usedPoolLeftGM}/2 Azioni (${usedPoolLabelGM}).${supportNote}`, meta:{avatar: resolveParticipantImage(p)} });
         await persistAndRefresh();
         refreshLiveParts();
       };

@@ -84,7 +84,19 @@
   const ZONES = ['Molto Corto','Corto','Medio','Lungo','Molto Lungo'];
   function zoneIndex(z){ const i = ZONES.indexOf(z); return i<0?2:i; }
   function zoneDistance(a,b){ return Math.abs(zoneIndex(a)-zoneIndex(b)); }
-  function zonePenalty(distance){ if(distance<=0) return 0; if(distance===1) return -2; return -4; }
+  // Formula BIT-based approvata (sostituisce il vecchio -2/-4 fisso "indipendente dal Reach", mai
+  // verificato contro il manuale vero): il manuale reale ha Range = 3+BIT (spazi senza malus) e
+  // Limite Effettivo = Range+SV, con -1 Accuracy per spazio oltre Range. Rescalato sulle 5 zone del
+  // sito: zone senza malus = 1 + BIT÷4 (arrotondato per difetto), poi -2 Accuracy per zona oltre
+  // quella soglia (il Reach dichiarato dall'Attacco resta comunque il limite assoluto, invariato,
+  // controllato a parte in validateAttackTargeting/index.html). Vedi claude/audit-regolamento-dda2e.md
+  // Critical Issue #1 e l'AskUserQuestion di conferma con l'utente.
+  function zoneNoMalusCount(bit){ return 1 + Math.floor(Math.max(0, Number(bit)||0)/4); }
+  function zonePenalty(distance, bit){
+    const free = zoneNoMalusCount(bit);
+    if(distance<=free) return 0;
+    return -2*(distance-free);
+  }
   // Etichetta numerica per la UI ("Range 3") invece del nome assoluto ("Medio") — i nomi sono relativi
   // e da soli non dicono nulla; il numero di posizione è più chiaro e coerente con "distanza in zone".
   function zoneLabel(z){ return 'Range ' + (zoneIndex(z)+1); }
@@ -322,6 +334,22 @@
     const mod = computeEffectModifiers(p);
     const nw = qMech.naturewalk || { accuracy:0, damage:0, dodge:0, armor:0 };
     const sc = qMech.supremeCode || 0;
+    // Stat Derivate (BIT/DOS/RAM/CPU) -- servono alla nuova soglia di malus da Range (zonePenalty)
+    // e, di riflesso, sistemano anche un bug preesistente e scollegato (il Finisher del Clash in
+    // index.html leggeva già cStats.bit/cStats.cpu da questa stessa funzione, ma non erano mai
+    // stati aggiunti al valore di ritorno: restavano sempre undefined/NaN).
+    let bit=0, dos=0, ram=0, cpu=0;
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      if(member){ const der = computeDerivedStats(member.digimon); bit=der.bit; dos=der.dos; ram=der.ram; cpu=der.cpu; }
+    } else {
+      // Nemici: nessuna Size/scheda Derived Stat separata sul sito -- stessa approssimazione già
+      // usata altrove per loro (getParticipantClashStats): dalle Stat Base salvate sul partecipante.
+      bit = Math.max(0, Math.floor(Number(p.accuracy||0)/3));
+      dos = Math.max(0, Math.floor(Number(p.damage||0)/3));
+      ram = Number(p.ram||0);
+      cpu = Math.max(0, Math.floor(Number(p.armor||0)/3));
+    }
     return {
       accuracy: Math.max(0, base.accuracy + mod.accuracy + stanceMod.accuracy + qMech.weapon + nw.accuracy + sc),
       damage: Math.max(0, base.damage + mod.damage + stanceMod.damage + qMech.weapon + nw.damage + sc),
@@ -330,7 +358,9 @@
       certainStrike: qMech.certainStrike,
       combatMonsterRank: qMech.combatMonster,
       monsterStrength: qMech.monsterStrength,
-      absoluteEvasion: qMech.absoluteEvasion||0
+      absoluteEvasion: qMech.absoluteEvasion||0,
+      heavyRecoil: !!qMech.heavyRecoil,
+      bit, dos, ram, cpu
     };
   }
 

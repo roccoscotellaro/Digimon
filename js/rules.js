@@ -33,7 +33,7 @@
 
   function computeQualityMechanics(qualities){
     const m = { certainStrike:0, weapon:0, ammoRank:0, combatMonster:0, monsterStrength:false, wrestlemania:false, resistance:0,
-      instinctDodge:0, wardenArmor:0, brawlerClash:0, supremeCode:0, absoluteEvasion:0, naturewalk:{ accuracy:0, damage:0, dodge:0, armor:0, health:0 } };
+      instinctDodge:0, wardenArmor:0, brawlerClash:0, supremeCode:0, absoluteEvasion:0, heavyRecoil:false, naturewalk:{ accuracy:0, damage:0, dodge:0, armor:0, health:0 } };
     (qualities||[]).forEach(q=>{
       if(q.mechanic==='certainStrike') m.certainStrike += Number(q.rank||1);
       if(q.mechanic==='weapon') m.weapon += Number(q.rank||1);
@@ -47,6 +47,10 @@
       if(q.mechanic==='dataOptBrawler') m.brawlerClash += Number(q.rank||1);
       if(q.mechanic==='supremeCode') m.supremeCode += Number(q.rank||1);
       if(q.mechanic==='absoluteEvasion') m.absoluteEvasion += Number(q.rank||1);
+      // Heavy Recoil (9.03/Qualities catalog): "un Attacco [RANGE] ignora la penalità di
+      // Melee-adiacenza" -- ora che quella penalità è un vero -3 Accuracy meccanico (vedi
+      // performAttackRoll in index.html), questo flag gli dà finalmente un effetto reale.
+      if(q.mechanic==='heavyRecoil') m.heavyRecoil = true;
       if(q.mechanic==='naturewalk'){
         const target = q.statTarget || 'accuracy';
         m.naturewalk[target] = (m.naturewalk[target]||0) + Number(q.rank||1);
