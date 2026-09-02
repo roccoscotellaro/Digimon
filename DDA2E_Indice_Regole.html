@@ -405,7 +405,7 @@
   <h2 class="rule-h2" id="pc-2-11">2.11 — Il Ruolo nel Party</h2>
   <p>I party in DDA sono tipicamente di 3-4 persone: questo lascia spazio per specializzarsi in Attributi e Special Order diversi, quindi conviene confrontarsi sui ruoli per evitare sovrapposizioni. Il punto di partenza di un personaggio non è indicativo di chi diventerà entro fine campagna — le statistiche iniziali riflettono solo la base di partenza.</p>
   <p>Comunica sempre con gli altri giocatori e con il GM su come i personaggi si relazioneranno tra loro nella storia, che sia rivalità o amicizia nascente.</p>
-  <div class="note">Per dettagli sui Twin Partner (un Tamer con due Digimon), vedi la sezione Variant Rules nel Game Master's Index.</div>
+  <div class="note">Per dettagli sui Dual Partners (un Tamer con due Digimon), vedi la sezione Variant Rules nel Game Master's Index (2.03a).</div>
 </section>
 
 <section class="content" id="pc-3">
@@ -725,8 +725,7 @@
   <div class="quality-card"><span class="qname">Mighty Blow</span><span class="qcost">3 DP</span><p>Attack/Trigger. Richiede Champion. [T:MIGHTY] su [MELEE][DAMAGE] (compatibile con un altro Tag di Effetto, tranne Effetti di Danno): se fa almeno 2 danno dopo Armor, Check CPU (Feats of Strength) TN 10+CPU bersaglio; Fallimento Critico = -1 Danno (min 1); Successo = [STUN]; Successo Critico = anche +2 Danno extra. TN +3 a ogni uso (salvo Signature Move). Su Area Attack, si applica al bersaglio più vicino.</p></div>
   <div class="quality-card"><span class="qname">Precise Focus</span><span class="qcost">1 DP</span><p>Attack. Richiede Champion. [FOCUS] su [RANGE]: doppio danno alle Wound Box Temporanee; con 1 Azione extra, Check RAM (Precision) TN 12+RAM bersaglio per bonus Accuracy crescente (Fallimento = +1, Successo = +3, Successo Critico = +5). Su Signature Move estende anche il Reach pari alla Battery. Nessun beneficio su Area Attack.</p></div>
   <div class="quality-card"><span class="qname">Feint Attack</span><span class="qcost">2 DP</span><p>Attack/Trigger. Richiede Champion; incompatibile con [PIERCING]/[STUN] sullo stesso Attacco, con l'attivazione di Counterattack, e non usabile in Clash. [T:FEINT] su [MELEE]: Check BIT (Manipulate) TN 10+BIT bersaglio; Fallimento Critico = il danno è comunque dimezzato dopo Armor; Successo = il bersaglio tira metà Dodge, il danno è dimezzato dopo Armor ([SUPPORT]: Durata -1); Successo Critico = come Successo ma il danno non è dimezzato. TN +3 a ogni uso (salvo Signature Move). Su Area Attack, si applica al bersaglio più vicino.</p></div>
-  <div class="quality-card"><span class="qname">Punishing Strike</span><span class="qcost">1 DP</span><p>Attack/Trigger. Richiede Champion e Rank di Combat Awareness. Necessaria per There is No Escape. [PUNISH] su [MELEE]: Interrupt Action contro chi si allontana volontariamente dal tuo Reach (non funziona contro il Teleport né contro spostamenti forzati da Effetti). Se un alleato Intercede per il bersaglio, il suo Armor contro questo Danno è dimezzato. Usi = Rank in Combat Awareness.</p></div>
-  <div class="quality-card"><span class="qname">There Is No Escape</span><span class="qcost">1 DP</span><p>Static. Richiede Punishing Strike. Con 2+ danno da [PUNISH], dimezza il Movement del bersaglio quel turno (azzerato con [ROOT]); funziona anche contro il Teleport volontario.</p></div>
+  <div class="note warn">Nota Changelog: Punishing Strike è stata rimossa; There Is No Escape è stata convertita in un upgrade di Counterattack (vedi <b>Counterattack</b>, 4.02). Al momento <b>Counterblow</b> resta l'unico upgrade mantenuto per la nuova versione di Counterattack — la formulazione esatta del nuovo There Is No Escape non è ancora stata specificata nel Changelog e verrà aggiunta qui appena disponibile.</div>
   <div class="quality-card"><span class="qname">Counterblow</span><span class="qcost">1 DP</span><p>Attack/Trigger. Richiede Champion e 1 Rank di Counterattack; incompatibile con Cross Counter/Return Fire. [COUNTER] su [MELEE]; attivando Counterattack, scegli: dimezza il Dodge del bersaglio, dimezza il suo Armor, o entrambi spendendo 2 usi.</p></div>
   <div class="quality-card"><span class="qname">Cross Counter</span><span class="qcost">2 DP</span><p>Attack/Trigger. Richiede Champion e Counterattack; incompatibile con Counterblow, Combat Monster, Return Fire, Instant Counter. Se un [MELEE] nemico infligge almeno Stage+1 danno dopo Armor, puoi attivare Counterattack anche fuori dal trigger standard (se attivato durante un'Intercede, il bersaglio non dimezza il Dodge contro il contrattacco).</p></div>
   <div class="quality-card"><span class="qname">Return Fire</span><span class="qcost">2 DP</span><p>Attack/Trigger. Richiede Champion e Counterattack; incompatibile con Counterblow/Cross Counter. [COUNTER] su [RANGE]; ignora la penalità di zona quando contrattacchi.</p></div>
@@ -1012,9 +1011,10 @@
   <h2 class="rule-h2" id="pc-9-02">9.02 — Attacchi e Come Funzionano</h2>
   <p><b>Un Digimon (o Tamer) non può fare più di un Attacco per round</b> (si azzera a fine turno; alcune Qualities come Ammo o Data Specialization: Flurry ignorano la regola). Attaccare è un Pool Check contrapposto: Accuracy dell'attaccante contro Dodge del bersaglio. Il Dodge Pool del bersaglio si riduce di 1 per ogni Attacco subito da quel momento in poi (si resetta a fine turno).</p>
   <h3 class="rule-h3" id="pc-9-02a">9.02a — Come Funziona un Attacco</h3>
+  <div class="note">Promemoria — Accuracy e Dodge si tirano come <b>Pool</b> (vedi 8.01c): si lancia un dado per ogni punto della Stat e <b>ogni 5 o 6 conta come 1 Successo</b>. "Tirare Accuracy/Dodge come Pool" nei passi qui sotto significa esattamente questo.</div>
   <ol>
-    <li>L'attaccante tira Accuracy come Pool, conta i Successi.</li>
-    <li>Il bersaglio tira Dodge come Pool, conta i Successi.</li>
+    <li>L'attaccante tira Accuracy come Pool (1d6 per punto di Accuracy; 5-6 = 1 Successo), conta i Successi.</li>
+    <li>Il bersaglio tira Dodge come Pool (stesso procedimento: 1d6 per punto di Dodge, 5-6 = 1 Successo), conta i Successi.</li>
     <li>Sottrai i Successi Dodge da quelli Accuracy.</li>
     <li><b>Se Accuracy ≥ Dodge, l'Attacco colpisce.</b> Se Dodge &gt; Accuracy (o Accuracy è 0), l'Attacco manca.</li>
     <li>I Successi Accuracy in eccesso dopo aver sottratto il Dodge si aggiungono al Danno.</li>
@@ -1027,7 +1027,7 @@
   <p>Il <b>Danno Unalterable</b> ignora l'Armor, colpendo direttamente Wound Box (anche Temporanee). Solo <b>Shining Digizoid Armor</b> può ridurlo. Non conta come "danno inflitto" ai fini di attivare Qualities/Effetti dell'attaccante.</p>
 
   <h2 class="rule-h2" id="pc-9-03">9.03 — Range</h2>
-  <p>Il campo di battaglia è diviso in <b>3 zone</b>: <b>Corto, Medio, Lungo</b>. Un Attacco <b>[MELEE]</b> richiede che il bersaglio sia nella stessa zona (Corto). Un Attacco <b>[RANGE]</b> ha un <b>Reach di 1 zona</b> (colpisce solo la zona adiacente) o <b>2 zone</b> (colpisce qualunque zona) a seconda dell'Attacco/Qualities possedute; se il bersaglio è oltre il Reach, l'Attacco non può essere tentato. Attaccare a distanza impone una penalità ad Accuracy pari a <b>-2</b> (1 zona di distanza) o <b>-4</b> (2 zone di distanza), indipendentemente dal Reach disponibile.</p>
+  <p>Il campo di battaglia è una singola linea condivisa di <b>5 zone</b>: <b>Molto Corto, Corto, Medio, Lungo, Molto Lungo</b> (o——o——o——o——o). Ogni pallino è una zona a sé: non ci sono conversioni, la distanza tra due partecipanti è semplicemente il numero di pallini che li separano. Un Attacco <b>[MELEE]</b> richiede che il bersaglio sia nella stessa zona (distanza 0). Un Attacco <b>[RANGE]</b> ha un <b>Reach di 1 zona</b> (colpisce solo un bersaglio a distanza 1) o <b>2 zone</b> (colpisce un bersaglio a distanza 1 o 2) a seconda dell'Attacco/Qualities possedute; se il bersaglio è oltre il Reach, l'Attacco non può essere tentato. Attaccare a distanza impone una penalità ad Accuracy pari a <b>-2</b> (distanza 1) o <b>-4</b> (distanza 2+), indipendentemente dal Reach disponibile. Un Muovi sposta di 1 zona (1 pallino) lungo la linea.</p>
 
   <h2 class="rule-h2" id="pc-9-04">9.04 — Tamer in Combattimento</h2>
   <p>Attaccare come Tamer è sconsigliato e pericoloso. Un Tamer che attacca a distanza raggiunge solo la zona adiacente (Reach 1 zona). Contro un altro Tamer: Check contrapposto Precision vs Evade. Contro un Digimon: Check Precision, TN 12 + doppio SV bersaglio. Il colpo infligge 1 Danno Unalterable (2 su Critico), ma <b>non ha effetto</b> su Digimon Huge/Gigantic/Mega o superiori.</p>
@@ -1910,107 +1910,6 @@ if(checkSharedSessionForGM()){
 buildSidebar();
 window.addEventListener('DOMContentLoaded', ()=> showSection('pc-1','1.0 - Introduzione', true));
 </script>
-
-
-<!-- ===== Widget Audio Persistente: musica di sottofondo (fissa) + suoni click ===== -->
-<audio id="dvos-bg-music" loop preload="none" style="display:none;"></audio>
-<div id="dvos-audio-widget" style="position:fixed;bottom:10px;right:10px;z-index:9999;background:var(--panel,#0f1115);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:6px 10px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text,#cfd6e4);box-shadow:0 2px 10px rgba(0,0,0,0.5);">
-  <button id="dvos-music-toggle" title="Musica di sottofondo: on/off" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;">🔊</button>
-  <input type="range" id="dvos-music-volume" min="0" max="100" value="50" style="width:64px;" title="Volume musica" />
-  <button id="dvos-click-toggle" title="Suoni click: on/off" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;">🖱️</button>
-</div>
-<script>
-(function(){
-  // URL della traccia di sottofondo fissa, caricata su Supabase Storage (bucket campaign-audio).
-  const FIXED_BG_MUSIC_URL = 'https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787069260083_hho28k.mpeg';
-  const musicEl = document.getElementById('dvos-bg-music');
-  // Scarichiamo il file per intero con fetch() invece di lasciare che sia <audio> a farlo in
-  // streaming: alcuni host (Supabase Storage incluso, in certe configurazioni) non gestiscono bene
-  // le richieste "Range" che il tag audio usa di default, causando riproduzione bloccata a 0:00/0:00
-  // anche se il file si scarica benissimo con una richiesta normale. Un Blob locale evita il problema.
-  if(musicEl && FIXED_BG_MUSIC_URL){
-    fetch(FIXED_BG_MUSIC_URL).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.blob(); })
-      .then(blob=>{
-        musicEl.src = URL.createObjectURL(blob);
-        if(!prefs.musicMuted && window.__dvosUnlocked) musicEl.play().catch(()=>{});
-      })
-      .catch(e=>{ console.warn('Musica di sottofondo: impossibile caricarla (' + e.message + ')'); });
-  }
-  const PREFS_KEY = 'dvos_audio_prefs_v1';
-  function loadPrefs(){
-    try{ return Object.assign({musicVolume:0.5, musicMuted:false, clickMuted:false}, JSON.parse(localStorage.getItem(PREFS_KEY)||'{}')); }
-    catch(e){ return {musicVolume:0.5, musicMuted:false, clickMuted:false}; }
-  }
-  function savePrefs(p){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(p)); }catch(e){} }
-  const prefs = loadPrefs();
-
-  const musicToggleBtn = document.getElementById('dvos-music-toggle');
-  const musicVolumeInp = document.getElementById('dvos-music-volume');
-  const clickToggleBtn = document.getElementById('dvos-click-toggle');
-
-  function applyMusicVolume(){
-    if(!musicEl) return;
-    musicEl.volume = prefs.musicMuted ? 0 : prefs.musicVolume;
-    if(prefs.musicMuted && !musicEl.paused) musicEl.pause();
-  }
-  function refreshUI(){
-    if(musicToggleBtn) musicToggleBtn.textContent = prefs.musicMuted ? '🔇' : '🔊';
-    if(musicVolumeInp) musicVolumeInp.value = Math.round(prefs.musicVolume*100);
-    if(clickToggleBtn) clickToggleBtn.style.opacity = prefs.clickMuted ? '0.4' : '1';
-    applyMusicVolume();
-  }
-  refreshUI();
-
-  if(musicToggleBtn) musicToggleBtn.onclick = ()=>{
-    prefs.musicMuted = !prefs.musicMuted;
-    savePrefs(prefs);
-    refreshUI();
-    if(!prefs.musicMuted && musicEl && musicEl.paused && musicEl.src) musicEl.play().catch(()=>{});
-  };
-  if(musicVolumeInp) musicVolumeInp.oninput = ()=>{
-    prefs.musicVolume = Number(musicVolumeInp.value)/100;
-    if(prefs.musicVolume>0) prefs.musicMuted = false;
-    savePrefs(prefs);
-    refreshUI();
-  };
-  if(clickToggleBtn) clickToggleBtn.onclick = ()=>{
-    prefs.clickMuted = !prefs.clickMuted;
-    savePrefs(prefs);
-    refreshUI();
-  };
-
-  // I browser bloccano l'autoplay finché l'utente non interagisce almeno una volta con la pagina:
-  // al primo click in assoluto proviamo a far partire la musica, se non mutata.
-  let unlocked = false;
-  function unlock(){
-    if(unlocked) return;
-    unlocked = true;
-    window.__dvosUnlocked = true;
-    if(!prefs.musicMuted && musicEl && musicEl.src) musicEl.play().catch(()=>{});
-    ['click','keydown','touchend'].forEach(ev=>document.removeEventListener(ev, unlock, true));
-  }
-  // Qualsiasi gesto valido per la policy autoplay del browser (click, tasto, tocco) sblocca subito,
-  // non solo il click — così parte alla primissima interazione, qualunque essa sia.
-  ['click','keydown','touchend'].forEach(ev=>document.addEventListener(ev, unlock, { capture:true }));
-
-  // Suono di click — stesso identico snippet già usato in index.html, riproposto qui
-  // per coerenza su tutte le pagine (nessun file esterno, tutto incorporato).
-  const CLICK_SFX_URL = "https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787070670792_1jktvp.mpeg";
-  function __playClickSfx(){
-    if(prefs.clickMuted) return;
-    try{
-      const a = new Audio(CLICK_SFX_URL);
-      a.volume = 0.5;
-      a.play().catch(()=>{});
-    }catch(e){}
-  }
-  document.addEventListener('click', function(e){
-    if(e.target.closest('input, textarea, select')) return;
-    __playClickSfx();
-  }, true);
-})();
-</script>
-<!-- ===== fine Widget Audio Persistente ===== -->
 
 </body>
 </html>

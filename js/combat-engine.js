@@ -62,6 +62,13 @@
       const pMember = p.isPC ? cachedRoster.find(m=>m.username===p.username) : null;
       p.actions = (pMember && pMember.digimon.hybridMode) ? 3 : 2;
       p.attackedThisRound = false;
+      // Pool separato del Tamer (Indice Regole 9.01: "ogni partecipante guadagna 2 Azioni --
+      // Tamer e Digimon separatamente"). Ogni elemento di combat.participants rappresenta un
+      // Digimon (agganciato al proprio Tamer via username per i PC): p.actions resta il pool del
+      // Digimon, p.tamerActions il pool separato del suo Tamer -- vedi trySpendAction/ACTION_DEFS
+      // in index.html e claude/audit-regolamento-dda2e.md, Addendum 3.
+      p.tamerActions = 2;
+      p.attackedThisRoundTamer = false;
     });
   }
   function getParticipantBattery(p){

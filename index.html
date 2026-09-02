@@ -932,24 +932,46 @@
 
   // buildInitiativeOrder spostato in js/combat-engine.js
 
+  // Ogni Azione appartiene al pool del Tamer o a quello del Digimon -- Indice Regole 9.01: "ogni
+  // partecipante guadagna 2 Azioni (Tamer e Digimon separatamente)". 'pool' indica quale contatore
+  // del partecipante viene scalato da trySpendAction: 'tamer' -> participant.tamerActions,
+  // 'digimon' -> participant.actions. Move/Difficult Move/Clash sono "Tamer o Digimon" a regolamento,
+  // ma il sito non modella il Tamer come entità fisica separata (niente zona/Accuracy/Dodge propri),
+  // quindi per ora restano sul pool del Digimon -- vedi claude/audit-regolamento-dda2e.md, Addendum 3.
   const ACTION_DEFS = [
-    { key:'move', label:'Muovi', cost:1 },
-    { key:'attack', label:'Attacca', cost:1, oncePerRound:true },
-    { key:'difficult_move', label:'Movimento Difficile', cost:2 },
-    { key:'holdback', label:'Trattieni Colpo', cost:1 },
-    { key:'skill_tamer', label:'Skill Check (Tamer)', cost:1 },
-    { key:'skill_digimon', label:'Skill Check (Digimon)', cost:2 },
-    { key:'stance', label:'Cambio Stance', cost:1 },
-    { key:'clash', label:'Clash', cost:1 },
-    { key:'bolster', label:'Bolster', cost:1 },
-    { key:'aid', label:'Aid', cost:1 },
-    { key:'other1', label:'Altro (1 Azione)', cost:1 },
-    { key:'other2', label:'Altro (2 Azioni)', cost:2 }
+    { key:'move', label:'Muovi', cost:1, pool:'digimon' },
+    { key:'attack', label:'Attacca (Digimon)', cost:1, oncePerRound:true, pool:'digimon' },
+    { key:'attack_tamer', label:'Attacca (Tamer)', cost:1, oncePerRoundTamer:true, pool:'tamer' },
+    { key:'difficult_move', label:'Movimento Difficile', cost:2, pool:'digimon' },
+    { key:'holdback', label:'Trattieni Colpo', cost:1, pool:'digimon' },
+    { key:'skill_tamer', label:'Skill Check (Tamer)', cost:1, pool:'tamer' },
+    { key:'skill_digimon', label:'Skill Check (Digimon)', cost:2, pool:'digimon' },
+    { key:'stance', label:'Cambio Stance', cost:1, pool:'digimon' },
+    { key:'clash', label:'Clash', cost:1, pool:'digimon' },
+    { key:'bolster_tamer', label:'Bolster (Tamer, +2)', cost:1, pool:'tamer' },
+    { key:'bolster_digimon', label:'Bolster (Digimon, +SV)', cost:1, pool:'digimon' },
+    { key:'aid', label:'Aid', cost:1, pool:'digimon' },
+    { key:'guard', label:'Guard', cost:1, pool:'digimon' },
+    { key:'resist1', label:'Resist (1 Az.)', cost:1, pool:'digimon' },
+    { key:'resist2', label:'Resist (2 Az.)', cost:2, pool:'digimon' },
+    { key:'direct1', label:'Direct (1 Az. — Charisma)', cost:1, pool:'tamer' },
+    { key:'direct2', label:'Direct (2 Az. — Highest Attribute)', cost:2, pool:'tamer' },
+    { key:'reinforce1', label:'Reinforce (1 Az. — Body)', cost:1, pool:'tamer' },
+    { key:'reinforce2', label:'Reinforce (2 Az. — Highest Attribute)', cost:2, pool:'tamer' },
+    { key:'reposition1', label:'Reposition (1 Az. — Agility)', cost:1, pool:'tamer' },
+    { key:'reposition2', label:'Reposition (2 Az. — Highest Attribute)', cost:2, pool:'tamer' },
+    { key:'hold_action', label:'Hold Action (Tamer, 2 Az.)', cost:2, pool:'tamer' },
+    { key:'hold_breath', label:'Hold Breath', cost:1, pool:'digimon' },
+    { key:'other1', label:'Altro (1 Azione, Digimon)', cost:1, pool:'digimon' },
+    { key:'other2', label:'Altro (2 Azioni, Digimon)', cost:2, pool:'digimon' },
+    { key:'other1_tamer', label:'Altro (1 Azione, Tamer)', cost:1, pool:'tamer' },
+    { key:'other2_tamer', label:'Altro (2 Azioni, Tamer)', cost:2, pool:'tamer' }
   ];
 
   function trySpendAction(participant, actionKey){
     const def = ACTION_DEFS.find(a=>a.key===actionKey);
     if(!def) return { ok:false, msg:'Azione non valida' };
+    const poolKey = def.pool==='tamer' ? 'tamerActions' : 'actions';
     if(actionKey==='move' && (participant.effects||[]).some(e=>e.key==='root')){
       return { ok:false, msg:'È sotto [ROOT]: non può usare Muovi finché l\'Effetto non termina.' };
     }
@@ -967,15 +989,21 @@
       }
       if(!hasAmmo) return { ok:false, msg:'Ha già usato Attacca questo round.' };
     }
-    if((participant.actions===undefined?2:participant.actions) < def.cost) return { ok:false, msg:'Azioni insufficienti.' };
-    if(participant.actions===undefined) participant.actions = 2;
-    participant.actions -= def.cost;
+    if(def.oncePerRoundTamer && participant.attackedThisRoundTamer){
+      return { ok:false, msg:'Il Tamer ha già usato Attacca questo round.' };
+    }
+    const current = participant[poolKey]===undefined ? 2 : participant[poolKey];
+    if(current < def.cost) return { ok:false, msg: poolKey==='tamerActions' ? 'Azioni del Tamer insufficienti.' : 'Azioni insufficienti.' };
+    participant[poolKey] = current - def.cost;
     if(def.oncePerRound){
       if(participant.attackedThisRound && participant.ammoUsesLeft>0){
         participant.ammoUsesLeft -= 1;
       } else {
         participant.attackedThisRound = true;
       }
+    }
+    if(def.oncePerRoundTamer){
+      participant.attackedThisRoundTamer = true;
     }
     return { ok:true, def };
   }
@@ -996,6 +1024,9 @@
       const fMemberEarly = finishing.isPC ? cachedRoster.find(m=>m.username===finishing.username) : null;
       finishing.actions = (fMemberEarly && fMemberEarly.digimon.hybridMode) ? 3 : 2;
       finishing.attackedThisRound = false;
+      // Pool separato del Tamer (Indice Regole 9.01) -- vedi commento su ACTION_DEFS/trySpendAction.
+      finishing.tamerActions = 2;
+      finishing.attackedThisRoundTamer = false;
       if(finishing.isPC){
         const fMember = cachedRoster.find(m=>m.username===finishing.username);
         if(fMember){
@@ -1232,12 +1263,13 @@
     const p = (combat.participants||[]).find(x=>x.username===username);
     if(!p) return '';
     const acts = p.actions===undefined?2:p.actions;
+    const tamerActs = p.tamerActions===undefined?2:p.tamerActions;
     const myTurn = isMyCombatTurn(combat, username);
     return `
       <div class="divider"></div>
-      <div class="muted" style="margin-bottom:6px;">Le tue Azioni: <span class="mono" style="color:var(--cyan);">${acts}/2</span></div>
+      <div class="muted" style="margin-bottom:6px;">Le tue Azioni — Digimon: <span class="mono" style="color:var(--cyan);">${acts}/2</span> · Tamer: <span class="mono" style="color:var(--amber);">${tamerActs}/2</span></div>
       <div class="row">
-        <select id="self-action-select" style="flex:2;" ${myTurn?'':'disabled'}>${SELF_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost})</option>`).join('')}</select>
+        <select id="self-action-select" style="flex:2;" ${myTurn?'':'disabled'}>${SELF_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az. ${a.pool==='tamer'?'Tamer':'Digimon'})</option>`).join('')}</select>
         <button class="btn small" id="btn-self-action-use" style="flex:1;" ${myTurn?'':'disabled'}>Usa</button>
       </div>
       <div class="muted" id="self-action-status" style="margin-top:4px;">${myTurn?'':'Disponibile solo durante il tuo turno.'}</div>
@@ -1269,7 +1301,9 @@
         return;
       }
       await saveCombat(code, cachedCombat);
-      await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'player', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i) — restano ${p.actions}/2 Azioni.`, meta:{avatar: resolveParticipantImage(p)} });
+      const usedPoolLabel = result.def.pool==='tamer' ? 'Tamer' : 'Digimon';
+      const usedPoolLeft = result.def.pool==='tamer' ? p.tamerActions : p.actions;
+      await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'player', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabel}) — restano ${usedPoolLeft}/2 Azioni (${usedPoolLabel}).`, meta:{avatar: resolveParticipantImage(p)} });
       refreshLiveParts();
     };
   }
@@ -1418,9 +1452,11 @@
       if(!isMyCombatTurn(cachedCombat, session.username)) return;
       const p = cachedCombat.participants.find(x=>x.username===session.username);
       const actsLeft = p ? (p.actions===undefined?2:p.actions) : 0;
-      // Conferma solo se ci sono Azioni non spese, per evitare che un tap accidentale le butti via
-      // senza preavviso — se sono già a 0/2 chiude subito, senza popup superfluo.
-      if(actsLeft>0 && !window.confirm(`Hai ancora ${actsLeft} Azion${actsLeft===1?'e':'i'} non spes${actsLeft===1?'a':'e'} questo turno: concluderlo comunque?`)) return;
+      const tamerActsLeft = p ? (p.tamerActions===undefined?2:p.tamerActions) : 0;
+      const totalActsLeft = actsLeft + tamerActsLeft;
+      // Conferma solo se ci sono Azioni non spese (Digimon o Tamer), per evitare che un tap
+      // accidentale le butti via senza preavviso — se sono già a 0/2+0/2 chiude subito, senza popup superfluo.
+      if(totalActsLeft>0 && !window.confirm(`Hai ancora ${actsLeft} Azion${actsLeft===1?'e':'i'} Digimon e ${tamerActsLeft} Azion${tamerActsLeft===1?'e':'i'} Tamer non spese questo turno: concluderlo comunque?`)) return;
       endTurnBtn.disabled = true;
       await advanceCombatTurn(code, (cachedRoster||[]).filter(m=>m.role==='player'));
       refreshLiveParts();
@@ -1844,7 +1880,7 @@
         <div style="padding:6px 8px;margin-bottom:4px;border-radius:4px;${i===combat.currentIndex?'background:rgba(53,232,201,0.15);border:1px solid var(--cyan);':'background:var(--panel-2);border:1px solid var(--line);'}${p.side==='enemy'?'border-left:3px solid var(--danger);':''}">
           <div class="flex-between">
             <span>${i===combat.currentIndex?'▶ ':''}<b>${escapeHTML(dispName)}</b> <span class="tag" style="margin-left:4px;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};">${p.side==='ally'?'Alleato':'Nemico'}</span></span>
-            <span class="mono">Iniz. ${p.initiative} · Az. ${p.actions===undefined?2:p.actions}/2 · <span style="color:var(--amber);">${zoneLabel(p.zone||'Medio')}</span></span>
+            <span class="mono">Iniz. ${p.initiative} · Az.Dig ${p.actions===undefined?2:p.actions}/2 · Az.Tam ${p.tamerActions===undefined?2:p.tamerActions}/2 · <span style="color:var(--amber);">${zoneLabel(p.zone||'Medio')}</span></span>
           </div>
           ${miniHpBarHTML(wounds.current, wounds.max, wounds.temp, 'HP')}
           ${battery ? `<div style="display:flex;align-items:center;gap:6px;margin-top:4px;"><span class="hp-mini-label">⚡</span>${batteryCellsHTML(battery.current, battery.max, true)}<span class="hp-mini-val">${battery.current}/${battery.max}</span></div>` : ''}
@@ -4709,12 +4745,13 @@
         ${combat.participants.length===0 ? '<div class="muted" style="margin-bottom:8px;">Nessun partecipante ancora aggiunto.</div>' : combat.participants.map((p,i)=>{
           const w = getParticipantWounds(p);
           const acts = p.actions===undefined?2:p.actions;
+          const tamerActs = p.tamerActions===undefined?2:p.tamerActions;
           const isCurrentTurn = !!(combat.order && combat.order.length && combat.order[combat.currentIndex]===p.id);
           const defeated = isParticipantDefeated(p);
           const expanded = isCurrentTurn || combatExpandedIds.has(p.id);
           const header = `
             <div class="flex-between">
-              <span>${isCurrentTurn?'▶ ':''}${escapeHTML(p.name)} <button class="tag" data-toggle-side="${p.id}" style="cursor:pointer;background:none;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};" title="Clicca per cambiare Alleato/Nemico">${p.side==='ally'?'Alleato':'Nemico'}</button> ${defeated?'<span class="tag" style="margin-left:4px;color:var(--danger);border-color:rgba(255,93,93,0.4);">🏳️ Sconfitto</span>':''} <span class="muted" style="margin-left:4px;font-size:10px;">${w.current}/${w.max} Ferite</span> <span style="margin-left:6px;font-size:12px;" title="Azioni rimaste: ${acts}/2">Az. ${Array.from({length:2}).map((_,i)=>i<acts?'<span style="color:var(--cyan);">●</span>':'<span style="color:var(--line);">○</span>').join('')}</span></span>
+              <span>${isCurrentTurn?'▶ ':''}${escapeHTML(p.name)} <button class="tag" data-toggle-side="${p.id}" style="cursor:pointer;background:none;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};" title="Clicca per cambiare Alleato/Nemico">${p.side==='ally'?'Alleato':'Nemico'}</button> ${defeated?'<span class="tag" style="margin-left:4px;color:var(--danger);border-color:rgba(255,93,93,0.4);">🏳️ Sconfitto</span>':''} <span class="muted" style="margin-left:4px;font-size:10px;">${w.current}/${w.max} Ferite</span> <span style="margin-left:6px;font-size:12px;" title="Azioni Digimon rimaste: ${acts}/2">Dig ${Array.from({length:2}).map((_,i)=>i<acts?'<span style="color:var(--cyan);">●</span>':'<span style="color:var(--line);">○</span>').join('')}</span> <span style="margin-left:4px;font-size:12px;" title="Azioni Tamer rimaste: ${tamerActs}/2">Tam ${Array.from({length:2}).map((_,i)=>i<tamerActs?'<span style="color:var(--amber);">●</span>':'<span style="color:var(--line);">○</span>').join('')}</span></span>
               <span style="display:flex;align-items:center;gap:6px;">
                 <input type="number" data-part-init="${p.id}" value="${p.initiative}" style="width:60px;padding:4px;" />
                 ${defeated ? `<button class="btn ghost small" data-part-reenter="${p.id}" title="Rientra a proprio rischio (a discrezione del Master)">↩️</button>` : ''}
@@ -4729,12 +4766,12 @@
           <div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line);${isCurrentTurn?'background:rgba(53,232,201,0.06);border-radius:6px;padding:8px;':''}">
             ${header}
             <div class="row" style="margin-top:6px;">
-              <select data-action-select="${p.id}" style="flex:2;">${ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost})</option>`).join('')}</select>
+              <select data-action-select="${p.id}" style="flex:2;">${ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az. ${a.pool==='tamer'?'Tamer':'Digimon'})</option>`).join('')}</select>
               <button class="btn small" data-action-use="${p.id}" style="flex:1;">Usa</button>
-              <button class="btn ghost small" data-action-reset="${p.id}" style="flex:1;">↺ 2</button>
+              <button class="btn ghost small" data-action-reset="${p.id}" style="flex:1;" title="Ripristina sia le Azioni Digimon che quelle Tamer a 2/2">↺ 2+2</button>
             </div>
             <div class="row" style="margin-top:4px;">
-              <button class="btn ghost small" data-action-refund="${p.id}" style="flex:1;" title="Es. Successo Critico su Reload/Battle Cry/Horde Duelist: 'riottieni l'Azione spesa'">+1 Azione</button>
+              <button class="btn ghost small" data-action-refund="${p.id}" style="flex:1;" title="Es. Successo Critico su Reload/Battle Cry/Horde Duelist: 'riottieni l'Azione spesa' (Digimon)">+1 Azione (Digimon)</button>
               <button class="btn ghost small" data-action-refund-attack="${p.id}" style="flex:1;" ${!p.attackedThisRound?'disabled':''} title="Es. Reload riuscito: 'riottieni l'uso dell'Attacco [AMMO]', ignora il limite di 1 Attacco a round">🔄 Restituisci Attacco</button>
             </div>
             <div class="row" style="margin-top:6px;">
@@ -4757,9 +4794,9 @@
                 <select data-order-select="${p.id}" style="flex:2;">${orders.map(o=>{
                   const used = pMember.tamer.specialOrdersUsed && pMember.tamer.specialOrdersUsed[o.order];
                   const blocked = o.once && used;
-                  return `<option value="${o.order}" ${blocked?'disabled':''}>${escapeHTML(o.name)} (${o.cost} Az.)${blocked?' — già usato':''}</option>`;
+                  return `<option value="${o.order}" ${blocked?'disabled':''}>${escapeHTML(o.name)} (${o.cost} Az. Tamer)${blocked?' — già usato':''}</option>`;
                 }).join('')}</select>
-                <button class="btn amber small" data-order-use="${p.id}" style="flex:1;">✦ Special Order</button>
+                <button class="btn amber small" data-order-use="${p.id}" style="flex:1;" title="I Special Order sono Tamer Talent: il costo si scala dalle Azioni del Tamer, non da quelle del Digimon">✦ Special Order</button>
               </div>`;
             })()}
             <div style="margin-top:6px;">${effectTagsHTML(p)}${(p.effects||[]).map((e,ei)=>`<button class="btn ghost small" data-effect-remove="${p.id}|${ei}" style="padding:1px 6px;margin-left:2px;">✕</button>`).join('')}</div>
@@ -5527,7 +5564,9 @@
           if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; }
           return;
         }
-        await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i) — restano ${p.actions}/2 Azioni.`, meta:{avatar: resolveParticipantImage(p)} });
+        const usedPoolLabelGM = result.def.pool==='tamer' ? 'Tamer' : 'Digimon';
+        const usedPoolLeftGM = result.def.pool==='tamer' ? p.tamerActions : p.actions;
+        await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabelGM}) — restano ${usedPoolLeftGM}/2 Azioni (${usedPoolLabelGM}).`, meta:{avatar: resolveParticipantImage(p)} });
         await persistAndRefresh();
         refreshLiveParts();
       };
@@ -5540,6 +5579,9 @@
           const pMember = p.isPC ? cachedRoster.find(m=>m.username===p.username) : null;
           p.actions = (pMember && pMember.digimon.hybridMode) ? 3 : 2;
           p.attackedThisRound = false;
+          // Pool separato del Tamer (Indice Regole 9.01) -- vedi commento su ACTION_DEFS/trySpendAction.
+          p.tamerActions = 2;
+          p.attackedThisRoundTamer = false;
         }
         await persistAndRefresh();
       };
@@ -5644,17 +5686,23 @@
           return;
         }
         if(talent.cost>0){
-          if((p.actions===undefined?2:p.actions) < talent.cost){
+          // I Special Order sono Tamer Talent (TALENT_DEFS è indicizzato su Attributi/Skill del
+          // Tamer): il loro costo in Azioni va scalato dal pool del Tamer, non da quello del Digimon
+          // -- vedi claude/audit-regolamento-dda2e.md, Addendum 3.
+          const tamerActsNow = p.tamerActions===undefined?2:p.tamerActions;
+          if(tamerActsNow < talent.cost){
             const statusEl = document.getElementById('combat-mgr-status');
-            if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = 'Azioni insufficienti per questo Special Order.'; }
+            if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = 'Azioni del Tamer insufficienti per questo Special Order.'; }
             return;
           }
-          p.actions -= talent.cost;
+          p.tamerActions = tamerActsNow - talent.cost;
         }
         let logText = `✦ ${p.name} usa Special Order "${talent.name}".`;
         if(orderKey==='strikeFast'){
-          p.actions += 1;
-          logText += ' Guadagna 1 Azione extra (da usare per Muovi).';
+          // Il costo (2 Azioni Tamer) è già stato scalato sopra da p.tamerActions; il beneficio
+          // concesso qui è invece 1 Azione extra al Digimon (da usare per Move/Difficult Move).
+          p.actions = (p.actions===undefined?2:p.actions) + 1;
+          logText += ' Il Digimon guadagna 1 Azione extra (da usare per Muovi).';
         } else if(orderKey==='energyBurst'){
           const heal = Number(member.digimon.tempWounds||0)>0 ? 2 : 1;
           member.digimon.currentWounds = Math.min(member.digimon.maxWounds, member.digimon.currentWounds+heal);
