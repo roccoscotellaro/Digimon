@@ -13,6 +13,8 @@
 // cachedProgression, apiGet/apiPost/apiPut/apiDelete/lastApiError, escapeHTML/escapeAttr/
 // displayName, DIE_FACES/rollPool/rollSkillCheck, SKILL_DEFS/evaluateVsTN/ATTR_ABBR/
 // prodigiousSkillBonus, encName, loadSavedNpcs/rememberNpc, speakAsFieldHTML/attachSpeakAsButton).
+// Espone anche promptAspectChoice(me), usata sia qui (evasione di un tiro richiesto dal Master)
+// sia da openSkillRollPanel in index.html (tiro libero dalla scheda).
 //
 // attachLogModeration/openEditLogModal NON chiamano più refreshLiveParts() direttamente (quella
 // funzione resta nella IIFE di index.html, troppo centrale per diventare globale): al suo posto
@@ -516,6 +518,53 @@
     };
   }
 
+  // promptAspectChoice(me): implementa per intero la 8.01b (Applying Aspects to Skill Checks) nel
+  // punto in cui un tiro Skill viene davvero eseguito — non solo il bonus (+4 Major/+2 Minor, uso
+  // limitato a sessione) ma anche la Negativa (-4/-2, che ricarica l'uso e per il Major dà 1 IP),
+  // dato che il regolamento esplicita che gli Aspect "do not always have to be used to your
+  // benefit". Mostra anche il testo e l'eventuale Origine (majorAspect.desc/minorAspect.desc,
+  // vedi player.html) così chi tira può giudicare se l'Aspect è davvero pertinente alla scena,
+  // invece di vedere solo l'etichetta "Major"/"Minor". Usata sia da attachLogModeration (tiro
+  // risposto in chat a una richiesta del Master) sia da openSkillRollPanel in index.html (tiro
+  // libero dalla scheda) — tenuta qui perché chat-log-engine.js è caricato prima di entrambi.
+  // Ritorna null se il giocatore non ha Aspect impostati, non ha scelto nulla, o annulla; altrimenti
+  // { delta, note, kind } dove kind è 'major-bonus'/'major-penalty'/'minor-bonus'/'minor-penalty'
+  // (usato da openSkillRollPanel per marcare la checkbox corrispondente come già "consumata").
+  function promptAspectChoice(me){
+    const major = me.tamer.majorAspect || {};
+    const minor = me.tamer.minorAspect || {};
+    const majorLeft = Number(major.usesLeft)||0;
+    const minorLeft = Number(minor.usesLeft)||0;
+    if(!major.text && !minor.text) return null;
+    const opts = [];
+    if(major.text){
+      if(majorLeft>0) opts.push({ key:String(opts.length+1), kind:'major-bonus', label:`+4 Major Aspect (${majorLeft} usi rimasti)`,
+        apply:()=>({ delta:4, note:` +4 Major Aspect (${major.text})`, mutate:()=>{ major.usesLeft = majorLeft-1; } }) });
+      opts.push({ key:String(opts.length+1), kind:'major-penalty', label:`−4 Major Aspect (Negativa: ricarica l'uso e dà 1 IP)`,
+        apply:()=>({ delta:-4, note:` -4 Major Aspect (${major.text}) → uso ricaricato, +1 IP`, mutate:()=>{ major.usesLeft = 1; me.tamer.inspirationPoints = (Number(me.tamer.inspirationPoints)||0)+1; } }) });
+    }
+    if(minor.text){
+      if(minorLeft>0) opts.push({ key:String(opts.length+1), kind:'minor-bonus', label:`+2 Minor Aspect (${minorLeft} usi rimasti)`,
+        apply:()=>({ delta:2, note:` +2 Minor Aspect (${minor.text})`, mutate:()=>{ minor.usesLeft = minorLeft-1; } }) });
+      opts.push({ key:String(opts.length+1), kind:'minor-penalty', label:`−2 Minor Aspect (Negativa: ricarica entrambi gli usi)`,
+        apply:()=>({ delta:-2, note:` -2 Minor Aspect (${minor.text}) → usi ricaricati`, mutate:()=>{ minor.usesLeft = 2; } }) });
+    }
+    if(!opts.length) return null;
+    const lines = [];
+    if(major.text) lines.push(`Major: "${major.text}"${major.desc?` — ${major.desc}`:''}`);
+    if(minor.text) lines.push(`Minor: "${minor.text}"${minor.desc?` — ${minor.desc}`:''}`);
+    lines.push('');
+    lines.push('Applicare un Aspect a questo Check? (il bonus/la Negativa vale solo se l\'Aspect è pertinente alla scena)');
+    opts.forEach(o=>lines.push(`${o.key}) ${o.label}`));
+    lines.push('(lascia vuoto per nessuno)');
+    const choice = window.prompt(lines.join('\n'), '');
+    const picked = opts.find(o=>o.key===String(choice||'').trim());
+    if(!picked) return null;
+    const result = picked.apply();
+    result.mutate();
+    return { delta: result.delta, note: result.note, kind: picked.kind };
+  }
+
   // onChanged (opzionale): invocato al posto della vecchia chiamata diretta a refreshLiveParts()
   // dopo edit/delete/tiro-evaso/spostamento-accettato — vedi nota di testa del file. Ereditato
   // anche da openEditLogModal (aperta dal bottone ✎).
@@ -566,19 +615,11 @@
             const { dice, total: baseTotal } = rollSkillCheck(attrVal, skillVal);
             let total = baseTotal;
             let aspectNote = digimonBonus>0 ? ` +${digimonBonus} dal Digimon (Prodigious Skill/Mind Over Matter)` : '';
-            const majorLeft = me.tamer.majorAspect ? (me.tamer.majorAspect.usesLeft||0) : 0;
-            const minorLeft = me.tamer.minorAspect ? (me.tamer.minorAspect.usesLeft||0) : 0;
-            if(majorLeft>0 || minorLeft>0){
-              const choice = window.prompt(`Usare un Aspect? Scrivi "major" (+4, ${majorLeft} usi), "minor" (+2, ${minorLeft} usi), o lascia vuoto per nessuno.`, '');
-              if(choice && choice.trim().toLowerCase().startsWith('major') && majorLeft>0){
-                total += 4; me.tamer.majorAspect.usesLeft -= 1;
-                aspectNote = ` +4 Major Aspect (${me.tamer.majorAspect.text})`;
-                await saveMember(session.code, me);
-              } else if(choice && choice.trim().toLowerCase().startsWith('minor') && minorLeft>0){
-                total += 2; me.tamer.minorAspect.usesLeft -= 1;
-                aspectNote = ` +2 Minor Aspect (${me.tamer.minorAspect.text})`;
-                await saveMember(session.code, me);
-              }
+            const aspectResult = promptAspectChoice(me);
+            if(aspectResult){
+              total += aspectResult.delta;
+              aspectNote = aspectResult.note;
+              await saveMember(session.code, me);
             }
             const verdict = evaluateVsTN(total, tn, dice);
             text = `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict?` vs TN ${tn} → ${verdict.label}`:'') + ' (richiesto dal Master)';

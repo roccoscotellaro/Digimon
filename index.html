@@ -2113,8 +2113,8 @@
     return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, imageUrl:'', currentWounds:null, inventory:[], skills: defaultSkills(), unspentGrowthPoints:0,
       inspirationPoints:0, tormentPenalty:0,
       torments: [],
-      majorAspect: { text:'', usesLeft:1 },
-      minorAspect: { text:'', usesLeft:2 },
+      majorAspect: { text:'', usesLeft:1, desc:'' },
+      minorAspect: { text:'', usesLeft:2, desc:'' },
       specialOrdersUsed: {},
       teamworkBonus: 0,
       built: false, // diventa true al completamento della Creazione Guidata — segnala che la scheda non è più "vuota"
@@ -2135,6 +2135,10 @@
     }
     if(m.tamer.currentWounds===null || m.tamer.currentWounds===undefined) m.tamer.currentWounds = 3+Number(m.tamer.skills.endurance||0);
     if(!Array.isArray(m.tamer.inventory)) m.tamer.inventory = [];
+    if(!m.tamer.majorAspect) m.tamer.majorAspect = { text:'', usesLeft:1, desc:'' };
+    if(!m.tamer.minorAspect) m.tamer.minorAspect = { text:'', usesLeft:2, desc:'' };
+    if(typeof m.tamer.majorAspect.desc === 'undefined') m.tamer.majorAspect.desc = '';
+    if(typeof m.tamer.minorAspect.desc === 'undefined') m.tamer.minorAspect.desc = '';
     m.digimon = Object.assign(defaultDigimon(), m.digimon||{});
     if(!m.digimon.attacks || !m.digimon.attacks.length) m.digimon.attacks = defaultDigimon().attacks;
     if(!Array.isArray(m.digimon.unlockedEvolutions)) m.digimon.unlockedEvolutions = [];
@@ -3576,8 +3580,6 @@
     const panel = document.getElementById('skill-roll-panel-'+containerId);
     if(!panel) return;
     let chosenAttr = def.attrs[0];
-    const majorLeft = me.tamer.majorAspect ? (me.tamer.majorAspect.usesLeft||0) : 0;
-    const minorLeft = me.tamer.minorAspect ? (me.tamer.minorAspect.usesLeft||0) : 0;
     const hasMiracle = computeUnlockedTalents(me.tamer).some(t=>t.order==='miracle');
     const ipAvailable = Number(me.tamer.inspirationPoints||0);
     const teamworkBonus = Number(me.tamer.teamworkBonus||0);
@@ -3597,13 +3599,6 @@
             <div class="field" style="margin-bottom:0;"><label>Dadi Extra (0-5)</label><input type="number" id="roll-stunt-dice-${containerId}" value="0" min="0" max="5" /></div>
           </div>
           ${teamworkBonus!==0 ? `<div class="muted" style="margin-bottom:8px;color:var(--cyan);">🤝 Bonus Teamwork attivo: ${teamworkBonus>0?'+':''}${teamworkBonus} (si applica automaticamente e si consuma con questo tiro)</div>` : ''}
-          ${majorLeft>0 || minorLeft>0 ? `
-            <div class="muted" style="margin-bottom:6px;">Aspects (applica bonus al tiro)</div>
-            <div class="row" style="margin-bottom:8px;">
-              ${majorLeft>0 ? `<label style="display:flex;align-items:center;gap:4px;font-size:11px;flex:1;"><input type="checkbox" id="roll-aspect-major-${containerId}" /> Major (+4, ${majorLeft} usi)</label>` : ''}
-              ${minorLeft>0 ? `<label style="display:flex;align-items:center;gap:4px;font-size:11px;flex:1;"><input type="checkbox" id="roll-aspect-minor-${containerId}" /> Minor (+2, ${minorLeft} usi)</label>` : ''}
-            </div>
-          ` : ''}
           ${hasMiracle && ipAvailable>=7 ? `
             <label style="display:flex;align-items:center;gap:4px;font-size:11px;margin-bottom:8px;"><input type="checkbox" id="roll-miracle-${containerId}" /> Miracle: +Willpower+5 (costa 7 IP, hai ${ipAvailable})</label>
           ` : ''}
@@ -3634,19 +3629,15 @@
           aspectNote += ` ${teamworkBonus>0?'+':''}${teamworkBonus} Teamwork`;
           me.tamer.teamworkBonus = 0;
         }
-        const majorBox = document.getElementById('roll-aspect-major-'+containerId);
-        const minorBox = document.getElementById('roll-aspect-minor-'+containerId);
+        // promptAspectChoice (js/chat-log-engine.js) copre sia il bonus (+4/+2) sia la Negativa
+        // (-4/-2, che ricarica l'uso e per il Major dà 1 IP — 8.01b) e mostra testo+Origine
+        // dell'Aspect prima di applicarlo, così il giocatore giudica se è pertinente alla scena.
+        const aspectResult = promptAspectChoice(me);
+        if(aspectResult){
+          total += aspectResult.delta;
+          aspectNote += aspectResult.note;
+        }
         const miracleBox = document.getElementById('roll-miracle-'+containerId);
-        if(majorBox && majorBox.checked){
-          total += 4;
-          me.tamer.majorAspect.usesLeft = Math.max(0,(me.tamer.majorAspect.usesLeft||0)-1);
-          aspectNote += ` +4 Major Aspect (${me.tamer.majorAspect.text})`;
-        }
-        if(minorBox && minorBox.checked){
-          total += 2;
-          me.tamer.minorAspect.usesLeft = Math.max(0,(me.tamer.minorAspect.usesLeft||0)-1);
-          aspectNote += ` +2 Minor Aspect (${me.tamer.minorAspect.text})`;
-        }
         if(miracleBox && miracleBox.checked && Number(me.tamer.inspirationPoints||0)>=7){
           const bonus = me.tamer.willpower + 5;
           total += bonus;

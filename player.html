@@ -649,14 +649,31 @@
 
   function aspectsBlockHTML(m, editable){
     const t = m.tamer;
+    // Testo dei pro/contro meccanici, identico a quello mostrato dal menu di promptAspectChoice
+    // (js/chat-log-engine.js) quando si tira — così la scheda anticipa esattamente cosa il
+    // giocatore vedrà al momento del tiro, invece di lasciarlo indovinare cosa fa "+4"/"-4".
+    const aspectProConHTML = (kind, usesLeft, maxUses)=>`
+      <div class="row" style="gap:8px;margin:4px 0 8px;">
+        <div style="flex:1;font-size:11px;padding:6px 8px;border:1px solid var(--cyan-dim);border-radius:4px;">
+          <b style="color:var(--cyan);">✓ Vantaggio</b><br/>
+          ${kind==='major' ? '+4 al Check' : '+2 al Check'} — ${usesLeft}/${maxUses} usi rimasti (si ricaricano a inizio sessione)
+        </div>
+        <div style="flex:1;font-size:11px;padding:6px 8px;border:1px solid rgba(255,138,61,0.4);border-radius:4px;">
+          <b style="color:var(--amber);">✗ Svantaggio</b><br/>
+          ${kind==='major' ? '-4 al Check' : '-2 al Check'} — sempre disponibile, ricarica ${kind==='major' ? "l'uso e dà 1 IP" : 'entrambi gli usi'}
+        </div>
+      </div>`;
     if(!editable){
       return `
       <div class="hud-frame card">
         <div class="section-title"><span>Aspetti</span></div>
         <div class="field"><label>Major Aspect</label><div>${escapeHTML(t.majorAspect.text||'—')} <span class="muted">(${t.majorAspect.usesLeft||0} usi)</span></div></div>
         ${t.majorAspect.desc ? `<div class="sub" style="margin:-4px 0 8px;">${escapeHTML(t.majorAspect.desc)}</div>` : ''}
+        ${t.majorAspect.text ? aspectProConHTML('major', t.majorAspect.usesLeft||0, 1) : ''}
         <div class="field"><label>Minor Aspect</label><div>${escapeHTML(t.minorAspect.text||'—')} <span class="muted">(${t.minorAspect.usesLeft||0} usi)</span></div></div>
         ${t.minorAspect.desc ? `<div class="sub" style="margin-top:-4px;">${escapeHTML(t.minorAspect.desc)}</div>` : ''}
+        ${t.minorAspect.text ? aspectProConHTML('minor', t.minorAspect.usesLeft||0, 2) : ''}
+        <div class="muted" style="font-size:10px;margin-top:2px;">Ricorda: un Aspect vale solo se pertinente alla scena — sta a te (o al Master) giudicarlo, non è un bonus automatico.</div>
       </div>`;
     }
     return `
@@ -667,11 +684,13 @@
         <div class="field" style="max-width:90px;"><label>Usi</label><input type="number" id="p-majorUses" value="${t.majorAspect.usesLeft||0}" /></div>
       </div>
       <div class="field"><label>Origine (da dove nasce)</label><textarea id="p-majorDesc" rows="2" placeholder="Cosa nella storia/personalità del Tamer giustifica questo Aspect...">${escapeHTML(t.majorAspect.desc||'')}</textarea></div>
+      ${t.majorAspect.text ? aspectProConHTML('major', t.majorAspect.usesLeft||0, 1) : ''}
       <div class="row">
         <div class="field"><label>Minor Aspect</label><input type="text" id="p-minorText" value="${escapeAttr(t.minorAspect.text||'')}" placeholder="es. Smarter Than They Act..." /></div>
         <div class="field" style="max-width:90px;"><label>Usi</label><input type="number" id="p-minorUses" value="${t.minorAspect.usesLeft||0}" /></div>
       </div>
       <div class="field"><label>Origine (da dove nasce)</label><textarea id="p-minorDesc" rows="2" placeholder="Cosa nella storia/personalità del Tamer giustifica questo Aspect...">${escapeHTML(t.minorAspect.desc||'')}</textarea></div>
+      ${t.minorAspect.text ? aspectProConHTML('minor', t.minorAspect.usesLeft||0, 2) : ''}
     </div>`;
   }
 
