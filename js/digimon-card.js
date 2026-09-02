@@ -73,26 +73,50 @@
     }catch(e){}
   }
 
+  // Tabella Size (regola 3.02a, fonte canonica "Player's Companion Beta.docx") -- allineata a
+  // digimon.html, che la usa correttamente da sempre. In precedenza questo file usava una tabella
+  // diversa (presa da una bozza più vecchia del manuale, "2E PC Reformatting.docx"), e la formula
+  // sottostante mancava del "+1" di base richiesto dal manuale: entrambe le cose falsavano BIT/
+  // DOS/RAM/CPU calcolati qui rispetto a quelli mostrati in digimon.html per lo stesso Digimon.
   const SIZE_DEFS = {
-    Small:    { ram:2, cpu:-1, bit:1 },
-    Medium:   { ram:1, bit:1 },
-    Large:    { cpu:1, bit:1 },
-    Huge:     { cpu:1, dos:1 },
-    Gigantic: { ram:-1, cpu:2, dos:1 },
-    Colossal: { ram:-1, cpu:2, dos:1 }
+    Small:    { bit:2, dos:1, ram:3, cpu:0 },
+    Medium:   { bit:2, dos:1, ram:2, cpu:1 },
+    Large:    { bit:2, dos:1, ram:1, cpu:2 },
+    Huge:     { bit:1, dos:2, ram:1, cpu:2 },
+    Gigantic: { bit:1, dos:2, ram:0, cpu:3 },
+    Colossal: { bit:1, dos:2, ram:0, cpu:3 }
   };
   function maxSizeIndexForStage(stage){ return Math.min(SIZES.length-1, stageIndex(stage)+1); }
   function allowedSizes(stage){ return SIZES.slice(0, maxSizeIndexForStage(stage)+1); }
 
   // stanceModifiers spostato in js/rules.js
 
+  // Companion 3.02a — bonus/malus automatico da System Boost (+1 per Rank) / System Error (-1 per
+  // Rank) a una singola Stat Derivata scelta alla presa della Quality (campo derivedTarget, es.
+  // 'BIT'). Specchio esatto della funzione omonima in digimon.html: le due pagine leggono e
+  // scrivono lo stesso array Qualities dei personaggi, quindi una entry aggiunta in una va
+  // applicata anche nell'altra -- prima di questa funzione, qui in digimon-card.js (e quindi in
+  // tutto index.html/combat-engine.js che usa computeDerivedStats) System Boost/Error erano solo
+  // narrative (mechanic:'') e non toccavano mai il numero calcolato, a differenza di digimon.html.
+  function qualityDerivedBonus(qualities){
+    const bonus = { BIT:0, DOS:0, RAM:0, CPU:0 };
+    (qualities||[]).forEach(q=>{
+      if(!q || !q.derivedTarget || !(q.mechanic==='systemBoost' || q.mechanic==='systemError')) return;
+      const amount = Number(q.rank)||1;
+      bonus[q.derivedTarget] = (bonus[q.derivedTarget]||0) + (q.mechanic==='systemError' ? -amount : amount);
+    });
+    return bonus;
+  }
+
   function computeDerivedStats(d){
     const sizeMod = SIZE_DEFS[d.size] || {};
+    const qBonus = qualityDerivedBonus(d.qualities);
+    const fromBase = v => 1 + Math.floor(Number(v||0)/3);
     return {
-      bit: Math.max(0, Math.floor(Number(d.baseAccuracy||0)/3) + (sizeMod.bit||0)),
-      dos: Math.max(0, Math.floor(Number(d.baseDamage||0)/3) + (sizeMod.dos||0)),
-      ram: Math.max(0, Math.floor(Number(d.baseDodge||0)/3) + (sizeMod.ram||0)),
-      cpu: Math.max(0, Math.floor(Number(d.baseArmor||0)/3) + (sizeMod.cpu||0))
+      bit: Math.max(0, fromBase(d.baseAccuracy) + (sizeMod.bit||0) + qBonus.BIT),
+      dos: Math.max(0, fromBase(d.baseDamage) + (sizeMod.dos||0) + qBonus.DOS),
+      ram: Math.max(0, fromBase(d.baseDodge) + (sizeMod.ram||0) + qBonus.RAM),
+      cpu: Math.max(0, fromBase(d.baseArmor) + (sizeMod.cpu||0) + qBonus.CPU)
     };
   }
 
@@ -243,15 +267,6 @@
       attacks: (Array.isArray(d.attacks) && d.attacks.length) ? d.attacks : prevAttacks
     };
   }
-
-  // Preferenza per-dispositivo (localStorage, come getEncImgLarge/setEncImgLarge in
-  // js/scene-encounters.js): mostrare o meno la transizione visiva di evoluzione. Attiva di
-  // default (comportamento preesistente). Richiesta dall'utente dopo che un giocatore ha riferito
-  // di non averla vista evolvendo dal bottone "Evolvi ora" della chat (vedi evoQuickBtn in
-  // js/chat-log-engine.js, che prima non la richiamava affatto) — non era un problema di "solo la
-  // prima volta", ma di un terzo punto di evoluzione che saltava del tutto la transizione.
-  function getEvoAnimEnabled(){ try{ const v = localStorage.getItem('digivice_evo_anim_enabled'); return v===null ? true : v==='1'; }catch(e){ return true; } }
-  function setEvoAnimEnabled(v){ try{ localStorage.setItem('digivice_evo_anim_enabled', v?'1':'0'); }catch(e){} }
 
   // Piccola transizione visiva di evoluzione: dissolvenza incrociata tra il ritratto vecchio e quello
   // nuovo (preferendo la GIF se il Digidex ne ha una), con un bagliore di sottofondo. "Un minimo" di
@@ -417,7 +432,7 @@
     { name:'Second Wind', category:'Trigger', dpPerRank:2, maxRank:3, mechanic:'', desc:'Rank max = Stage (fino a 3). Quando si tira l\'Iniziativa, ottieni usi pari ai Ranks. Ogni uso: Recovery Check come 1 Azione (max 1 volta a turno, non puoi Attaccare lo stesso turno). Gli usi non spesi si perdono a fine Combattimento, ma ogni uso non speso dà Caselle Ferita extra al Recovery Check di fine Combattimento. Tracciare gli usi a mano.' },
     { name:'Pack Master', category:'Trigger', dpPerRank:2, maxRank:1, mechanic:'', desc:'Se il Digimon è bersaglio di un Attacco, un Alleato adiacente può Intercedere come Azione Libera, una volta a round.' },
     { name:'Vital Energy', category:'Trigger', dpPerRank:1, maxRank:2, mechanic:'', desc:'Richiesta per Illness. Rank 1: una volta a round, ritira gli 1 usciti in un Check di Health. Rank 2: ritira anche i 2 sullo stesso tiro.' },
-    { name:'System Boost', category:'Static', dpPerRank:2, maxRank:4, mechanic:'', desc:'Rank max = Stage (fino a 4). Per Rank, scegli una Stat Derivata diversa (RAM/CPU/BIT/DOS): +1 a quella Stat. Sconto di 1 DP al primo acquisto.' },
+    { name:'System Boost', category:'Static', dpPerRank:2, maxRank:4, mechanic:'systemBoost', desc:'Rank max = Stage (fino a 4). Per Rank, scegli una Stat Derivata diversa (RAM/CPU/BIT/DOS): +1 a quella Stat, applicato in automatico. Sconto di 1 DP al primo acquisto (non applicato automaticamente: sottrailo a mano dal costo).' },
     { name:'Teleport', category:'Static', dpPerRank:3, maxRank:1, mechanic:'', desc:'Richiesta per Transporter. Teletrasporto istantaneo pari a Stage+2 spazi (serve linea di vista; +Ranks di Instinct, +1 con Data Optimization: Speedster — non gestito dal sito). Una volta a combattimento, come Azione Interrupt, può far fallire un Attacco nemico teletrasportandosi via (non attiva Contrattacchi), oppure come Azione di Clash per fuggire automaticamente dal Clash.' },
     { name:'Glamor', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'Incompatibile con Illusionary Overlay. Come 2 Azioni, applica un\'illusione d\'aspetto a bersagli entro metà BIT spazi con un Check BIT (Performance), penalità pari al numero di bersagli oltre il primo. Chi dubita può opporre un Check BIT pari al risultato per smascherarla. Dura finché non ne crei una nuova, sei portato a 0 Ferite, o perdi la Quality.' },
     { name:'Illusionary Overlay', category:'Trigger', dpPerRank:1, maxRank:1, mechanic:'', desc:'Come 2 Azioni entro range BIT, Check BIT (Manipulate) TN 8+Nemici in Combattimento, crea uno Shroud illusorio (con Naturewalk associato: chi non ce l\'ha è Accecato dentro, chi è fuori vede Oscurati i bersagli dentro) o Barriere illusorie (bloccano movimento/attacco finché non vengono scoperte). Un bersaglio può opporre un Check DOS (Awareness) TN pari ai Successi per smascherarla. TN sale di 3 a ogni uso successivo nello stesso Combattimento.' },
@@ -579,7 +594,7 @@
     { name:'Underwhelming', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Huge Power (max Ranks = quelli di Huge Power). Quando usi Huge Power, riduci i Successi finali di Accuracy di 1 per Rank qui. Huge Power non è più utilizzabile su un Attacco con [CERTAIN].' },
     { name:'Broadside', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Avoidance (max Ranks = quelli di Avoidance). Quando usi Avoidance, riduci i Successi finali di Dodge di 1 per Rank qui.' },
     { name:'Illness', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Vital Energy (max Ranks = quelli di Vital Energy). Quando usi Vital Energy, riduci i Successi finali di Health di 1 per Rank qui.' },
-    { name:'System Error', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di System Boost (max Ranks = quelli di System Boost). Per ogni Rank qui, riduci di 1 una Stat Derivata NON già toccata da System Boost.' },
+    { name:'System Error', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'systemError', desc:'NEGATIVA — Richiede 1+ Rank di System Boost (max Ranks = quelli di System Boost, non imposto dal tool). Per ogni Rank qui, riduci di 1 una Stat Derivata NON già toccata da System Boost, applicato in automatico.' },
     { name:'Natural Weakness', category:'Static', dpPerRank:-1, maxRank:2, mechanic:'', desc:'NEGATIVA — Richiede 1+ Rank di Naturewalk. Incompatibile con Elemental Myriad. Per ogni Rank, scegli 2 Elementi che NON hai da Naturewalk: subisci il doppio del bonus Danno di Elemental Force da quegli Elementi (max Ranks = quelli di Naturewalk).' },
     { name:'Exploitable Program', category:'Static', dpPerRank:-1, maxRank:1, mechanic:'', desc:'NEGATIVA — La TN di ogni Nemico che richiede una tua Stat Derivata (es. Mighty Blow, Substitute subiti) è ridotta di 3.' },
     { name:'Accuracy Converter [Nemico]', category:'Static', dpPerRank:0, maxRank:99, mechanic:'', desc:'CAP. 3.01 GM INDEX (solo Nemici, gratis, non conta nel limite Free) — Per Rank: -1 Accuracy, +1 BIT. Non puoi scendere sotto l\'Accuracy di partenza né superare il doppio del BIT senza questa Quality. Usare con moderazione: serve solo ad abbassare Stat totali "esagerate" mantenendo la Stat Derivata.' },
@@ -725,9 +740,6 @@
           <button class="btn ghost small" id="btn-force-evolve-${containerId}" style="flex:1;">⚡ Forza</button>
         </div>
         <div class="muted" id="evo-status-${containerId}" style="margin-top:4px;"></div>
-        <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-mute);margin-top:6px;">
-          <input type="checkbox" id="evo-anim-toggle-${containerId}" ${getEvoAnimEnabled()?'checked':''} /> ✨ Mostra l'animazione di evoluzione (schermo intero + suono)
-        </label>
         `}
         ${(cachedProgression && cachedProgression.blastEvolutionEnabled) ? `
         <div class="divider"></div>
@@ -825,10 +837,6 @@
           if(onChanged) onChanged();
         };
       }
-      const evoAnimToggle = document.getElementById('evo-anim-toggle-'+containerId);
-      if(evoAnimToggle){
-        evoAnimToggle.onchange = ()=>{ setEvoAnimEnabled(evoAnimToggle.checked); };
-      }
       const evoTargetSel = document.getElementById('evo-target-'+containerId);
       if(evoTargetSel){
         const updateEvoReadyGlow = ()=>{
@@ -876,23 +884,13 @@
           // Regola 8.05: un Digimon che evolve recupera tutte le Wound Box.
           me.digimon.currentWounds = me.digimon.maxWounds;
           await saveMember(session.code, me);
-          const __newImg = bestDigimonImage(null, me.digimon.name, me.digimon.imageUrl);
           // BUGFIX: mostrava lo Stage target (es. "Fresh") invece del nome specifico del nuovo
           // Digimon (es. "Tsunomon") raggiunto — che a questo punto è già in me.digimon.name grazie
           // ad applyStageChange, dato che il guard sopra garantisce che lo Stage sia già costruito.
-          // Richiesta dell'utente: oltre al testo, la narrazione ora porta anche l'immagine del
-          // nuovo Digimon (stesso campo meta.image già usato dagli allegati di chat normali — vedi
-          // js/chat-composer.js/pendingGmImageUrl — renderizzato da logHTML come <img class="log-image">).
-          await pushPlayerNarration(session.code, me, { who: displayName(me), role:'player', text: `✨ ${oldName} è avvolto da un bagliore di dati... e digivolve in ${me.digimon.name||target}!${cost>0?` (spesi ${cost} Evolution Points)`:''} — Stat aggiornate automaticamente. Ricorda di segnare 1 Azione spesa.`, meta: __newImg ? { image: __newImg } : null });
+          await pushPlayerNarration(session.code, me, { who: displayName(me), role:'player', text: `✨ ${oldName} è avvolto da un bagliore di dati... e digivolve in ${me.digimon.name||target}!${cost>0?` (spesi ${cost} Evolution Points)`:''} — Stat aggiornate automaticamente. Ricorda di segnare 1 Azione spesa.` });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Evoluzione applicata, Stat aggiornate.';
-          // L'animazione (schermo intero + suono) è ora garantita ad OGNI evoluzione riuscita, non
-          // solo "la prima" — l'utente aveva segnalato di non vederla, causa reale: il bottone
-          // "Evolvi ora" della chat (evoQuickBtn, js/chat-log-engine.js) non la richiamava affatto,
-          // vedi commento lì. Rispetta comunque la preferenza per-dispositivo (checkbox qui sopra).
-          if(getEvoAnimEnabled()){
-            try{ __playEvolutionSfx('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787073018875_mziu9s.mpeg'); }catch(e){}
-            showEvolutionTransition(__oldImg, __newImg, me.digimon.name);
-          }
+          try{ __playEvolutionSfx('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787073018875_mziu9s.mpeg'); }catch(e){}
+          showEvolutionTransition(__oldImg, bestDigimonImage(null, me.digimon.name, me.digimon.imageUrl), me.digimon.name);
           renderDigimonCard(me, containerId, onChanged, renderTamerCardFn);
           if(onChanged) onChanged();
         };
@@ -937,15 +935,11 @@
             outcomeText = `${verdict.label}. Nessuna evoluzione forzata — possibili conseguenze pericolose a discrezione del Master.`;
           }
           await saveMember(session.code, me);
-          const evolved = verdict.cls==='crit-success' || verdict.cls==='success';
-          const __newImg = evolved ? bestDigimonImage(null, me.digimon.name, me.digimon.imageUrl) : null;
-          // Come per "Evolvi": l'immagine del nuovo Digimon va in chat insieme al testo, ma solo
-          // quando l'evoluzione forzata riesce davvero (nessuna immagine su un fallimento).
-          await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: `⚡ Forza Evoluzione (TN ${tn}): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText}`, meta: __newImg ? { dice, image: __newImg } : { dice } });
+          await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: `⚡ Forza Evoluzione (TN ${tn}): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText}`, meta:{ dice } });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = outcomeText;
-          if(evolved && getEvoAnimEnabled()){
+          if(verdict.cls==='crit-success' || verdict.cls==='success'){
             try{ __playEvolutionSfx('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787073018875_mziu9s.mpeg'); }catch(e){}
-            showEvolutionTransition(__oldImg, __newImg, me.digimon.name);
+            showEvolutionTransition(__oldImg, bestDigimonImage(null, me.digimon.name, me.digimon.imageUrl), me.digimon.name);
           }
           renderDigimonCard(me, containerId, onChanged, renderTamerCardFn);
           if(renderTamerCardFn) renderTamerCardFn(me, siblingCardId(containerId,'tamer'));
@@ -1256,6 +1250,12 @@
             <option value="armor">+1 Armor</option>
             <option value="health">+1 Health (manuale)</option>
           </select>
+          <select id="e-d-qual-derived-${containerId}" style="flex:1;" title="Solo per System Boost/System Error: quale Stat Derivata modificare">
+            <option value="BIT">BIT</option>
+            <option value="DOS">DOS</option>
+            <option value="RAM">RAM</option>
+            <option value="CPU">CPU</option>
+          </select>
         </div>
         <div class="row" style="margin-top:6px;">
           <input type="text" id="e-d-qual-name-${containerId}" placeholder="Nome (se personalizzata)" style="flex:2;" />
@@ -1266,6 +1266,7 @@
           <input type="text" id="e-d-qual-desc-${containerId}" placeholder="Descrizione (opz.)" style="flex:2;" />
           <button class="btn small" id="btn-add-qual-${containerId}" style="flex:1;">Aggiungi</button>
         </div>
+        <div class="err" id="qual-add-err-${containerId}" style="margin-top:4px;"></div>
         <div class="row" style="margin-top:10px;">
           <button class="btn ghost" id="btn-cancel-digimon-${containerId}">Annulla</button>
           <button class="btn solid" id="btn-save-digimon-${containerId}">Salva</button>
@@ -1408,6 +1409,8 @@
       };
       bindQualRemove();
       document.getElementById('btn-add-qual-'+containerId).onclick = ()=>{
+        const errEl = document.getElementById('qual-add-err-'+containerId);
+        if(errEl) errEl.textContent = '';
         const catalogIdx = document.getElementById('e-d-qual-catalog-'+containerId).value;
         const rank = Math.max(1, Number(document.getElementById('e-d-qual-rank-'+containerId).value)||1);
         let name, cost, category, description, mechanic='';
@@ -1416,8 +1419,19 @@
           if(!q) return;
           const clampedRank = Math.min(q.maxRank, rank);
           const statTarget = document.getElementById('e-d-qual-stat-'+containerId).value;
+          const derivedTarget = document.getElementById('e-d-qual-derived-'+containerId).value;
           const statLabels = { accuracy:'Accuracy', damage:'Damage', dodge:'Dodge', armor:'Armor', health:'Health (manuale)' };
-          name = `${q.name}${q.maxRank>1?` (Rank ${clampedRank})`:''}${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}`;
+          // System Boost: non permettere due Ranks sulla stessa Stat Derivata (specchio del
+          // controllo equivalente in digimon.html, buildQualityEntry) -- System Error non ha
+          // questo vincolo (può in teoria colpire qualunque Stat, la regola "non già toccata da
+          // System Boost" resta a discrezione del Master/giocatore, come per altri prerequisiti
+          // di Quality non imposti meccanicamente in questo file).
+          if(q.mechanic==='systemBoost' && (d.qualities||[]).some(e=>e.mechanic==='systemBoost' && e.derivedTarget===derivedTarget)){
+            if(errEl) errEl.textContent = `Hai già un Rank di System Boost su ${derivedTarget}: scegli un'altra Stat Derivata.`;
+            return;
+          }
+          const derivedLabel = q.mechanic==='systemError' ? `-1 ${derivedTarget}` : `+1 ${derivedTarget}`;
+          name = `${q.name}${q.maxRank>1?` (Rank ${clampedRank})`:''}${q.mechanic==='naturewalk'?` [+1 ${statLabels[statTarget]}]`:''}${(q.mechanic==='systemBoost'||q.mechanic==='systemError')?` [${derivedLabel}]`:''}`;
           cost = q.dpPerRank * clampedRank;
           category = q.category;
           description = q.desc;
@@ -1425,6 +1439,7 @@
           if(!d.qualities) d.qualities = [];
           const qualityEntry = { name, cost, category, description, mechanic, rank: clampedRank };
           if(q.mechanic==='naturewalk') qualityEntry.statTarget = statTarget;
+          if(q.mechanic==='systemBoost' || q.mechanic==='systemError') qualityEntry.derivedTarget = derivedTarget;
           d.qualities.push(qualityEntry);
           applyQualityStatBonusToForm(qualityEntry, 1);
         } else {
