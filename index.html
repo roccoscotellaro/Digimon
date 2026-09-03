@@ -1022,6 +1022,17 @@
     if(def.oncePerRoundTamer){
       participant.attackedThisRoundTamer = true;
     }
+    // Passa turno automatico dopo 5 minuti (richiesta utente, solo per PC -- mai per un Nemico
+    // creato dal Master): timbra il momento in cui ENTRAMBI i pool di Azioni (Digimon e Tamer) si
+    // esauriscono, così il conto alla rovescia parte da lì. Controllato/consumato in
+    // refreshLiveParts (gira ogni 15s su ogni client); azzerato di nuovo non appena il
+    // partecipante riottiene un'Azione in uno qualsiasi dei due pool (bottoni +1 Azione/↺ 2+2,
+    // o il reset automatico a inizio turno in applyEndOfTurnEffects).
+    const actsLeftNow = participant.actions===undefined?2:participant.actions;
+    const tamerActsLeftNow = participant.tamerActions===undefined?2:participant.tamerActions;
+    if(actsLeftNow<=0 && tamerActsLeftNow<=0 && !participant.actionsExhaustedAt){
+      participant.actionsExhaustedAt = new Date().toISOString();
+    }
     return { ok:true, def };
   }
 
@@ -1226,6 +1237,9 @@
     // Pool separato del Tamer (Indice Regole 9.01) -- vedi commento su ACTION_DEFS/trySpendAction.
     finishing.tamerActions = 2;
     finishing.attackedThisRoundTamer = false;
+    // Vedi trySpendAction: azzera il conto alla rovescia del "Passa turno automatico dopo 5
+    // minuti" -- chi lascia il turno riparte con Azioni piene, quindi non è più "esaurito".
+    finishing.actionsExhaustedAt = null;
     if(finishing.isPC){
       const fMember = cachedRoster.find(m=>m.username===finishing.username);
       if(fMember){
@@ -1241,6 +1255,19 @@
   // dell'Evoluzione Forzata). Estratta per lo stesso motivo di applyEndOfTurnEffects sopra.
   async function applyStartOfTurnEffects(code, combat, starting){
     if(!starting) return;
+    // Vedi trySpendAction/"Passa turno automatico dopo 5 minuti": chi RICEVE il turno riparte
+    // sempre con un conto alla rovescia azzerato, anche se aveva già Azioni esaurite da un salto
+    // manuale del Master (➜ Vai al turno / ⏮ Turno Precedente, che non ripristinano le Azioni) --
+    // altrimenti un vecchio timestamp già scaduto potrebbe far scattare l'avanzamento automatico
+    // quasi subito dopo che il Master gli ha appena (ri)dato manualmente il turno. Se il
+    // partecipante è ancora davvero a 0/0 Azioni in questo preciso istante (es. un salto manuale
+    // del Master che non le ha ripristinate), il conto alla rovescia riparte da ORA invece di
+    // restare disarmato per sempre -- trySpendAction non avrebbe più occasione di ritimbrarlo da
+    // solo, dato che il partecipante non ha più nulla da spendere.
+    starting.actionsExhaustedAt = null;
+    const startActsNow = starting.actions===undefined?2:starting.actions;
+    const startTamerActsNow = starting.tamerActions===undefined?2:starting.tamerActions;
+    if(startActsNow<=0 && startTamerActsNow<=0) starting.actionsExhaustedAt = new Date().toISOString();
     const tickLogs = await tickEffectsForParticipant(code, combat, starting);
     for(const line of tickLogs){
       await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: line });
@@ -2873,6 +2900,29 @@
         Object.assign(cachedCombat, freshCombat);
       } else {
         cachedCombat = freshCombat;
+      }
+    }
+    // Passa turno automatico dopo 5 minuti (richiesta utente): solo per un PC (mai per un Nemico
+    // creato dal Master) che ha esaurito ENTRAMBI i pool di Azioni -- vedi trySpendAction, che
+    // timbra participant.actionsExhaustedAt nel momento in cui questo succede, e i vari punti che
+    // lo azzerano quando l'Azione torna disponibile (bottoni +1 Azione/↺ 2+2, inizio di un nuovo
+    // turno). Nessun cron lato server: il controllo gira qui, dentro il polling di ogni client,
+    // ogni 15s. Per evitare che più client tentino l'avanzamento in contemporanea (nessun lock
+    // reale lato server -- stesso compromesso già accettato altrove, vedi combatActionPending/nota
+    // su /api/state in claude/split-status.md) il tentativo è limitato al client del Master e a
+    // quello del giocatore di turno stesso: gli unici due punti di vista per cui ha senso che
+    // scatti da solo, senza bisogno che sia il Master a intervenire manualmente.
+    if(cachedCombat && cachedCombat.active && !combatActionPending){
+      const curTurnP = currentTurnParticipant(cachedCombat);
+      const iAmMaster = session.role==='master';
+      const iAmTurnPlayer = !!(curTurnP && session.role==='player' && curTurnP.isPC && session.username===curTurnP.username);
+      if(curTurnP && curTurnP.isPC && curTurnP.actionsExhaustedAt && (iAmMaster || iAmTurnPlayer)){
+        const elapsedMs = Date.now() - new Date(curTurnP.actionsExhaustedAt).getTime();
+        if(elapsedMs >= 5*60*1000){
+          const stuckName = combatDisplayName(curTurnP, false);
+          await pushCombatNarration(cachedCombat, { who:'Sistema', role:'gm', text: `⏱ Turno di ${stuckName} passato automaticamente: Azioni esaurite da oltre 5 minuti senza altre azioni.` });
+          await advanceCombatTurn(session.code, (cachedRoster||[]).filter(m=>m.role==='player'));
+        }
       }
     }
     if(slowCycle) cachedProgression = await getProgression(session.code);
@@ -5244,6 +5294,17 @@
           return `
           <div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line);${isCurrentTurn?'background:rgba(53,232,201,0.06);border-radius:6px;padding:8px;':''}">
             ${header}
+            <!-- Richiesta utente: "manca un modo per danneggiare manualmente i digimon nemici" --
+                 funziona su QUALSIASI partecipante (non solo Nemici: utile anche per correggere le
+                 Ferite di un Alleato/PC per un Effetto/Trappola/terreno non coperto da un'Azione
+                 automatizzata), riusando applyDamageToParticipant/applyDefeatIfNeeded -- stessa
+                 funzione già usata dalla risoluzione automatica degli Attacchi, quindi Shield/tempWounds
+                 assorbe per primo e il controllo Sconfitto scatta identico. -->
+            <div class="row" style="margin-top:2px;margin-bottom:6px;align-items:center;">
+              <input type="number" data-manual-wound-amt="${p.id}" value="1" min="1" style="width:56px;flex:0 0 auto;" />
+              <button class="btn ghost small" data-manual-damage="${p.id}" style="flex:1;" title="Applica Danno manuale (es. Effetto/Trappola/Terreno non coperto da un'Azione automatizzata)">🩸 Danno</button>
+              <button class="btn ghost small" data-manual-heal="${p.id}" style="flex:1;" title="Cura manuale (es. Regen/Cleanse non automatizzati)">💚 Cura</button>
+            </div>
             <div class="muted" style="font-size:11px;margin-top:6px;margin-bottom:2px;color:var(--cyan);">Azione Digimon</div>
             <div class="row">
               <select data-daction-select="${p.id}" style="flex:2;">${DIGIMON_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az.)</option>`).join('')}</select>
@@ -5263,6 +5324,9 @@
             <div class="row" style="margin-top:4px;">
               <button class="btn ghost small" data-action-reset="${p.id}" style="flex:1;" title="Ripristina sia le Azioni Digimon che quelle Tamer a 2/2">↺ 2+2</button>
               <button class="btn ghost small" data-action-refund="${p.id}" style="flex:1;" title="Es. Successo Critico su Reload/Battle Cry/Horde Duelist: 'riottieni l'Azione spesa' (Digimon)">+1 Azione (Digimon)</button>
+              <button class="btn ghost small" data-action-refund-tamer="${p.id}" style="flex:1;" title="Restituisci 1 Azione al pool del Tamer (es. Azione data per sbaglio, correzione manuale)">+1 Azione (Tamer)</button>
+            </div>
+            <div class="row" style="margin-top:4px;">
               <button class="btn ghost small" data-action-refund-attack="${p.id}" style="flex:1;" ${!p.attackedThisRound?'disabled':''} title="Es. Reload riuscito: 'riottieni l'uso dell'Attacco [AMMO]', ignora il limite di 1 Attacco a round">🔄 Restituisci Attacco</button>
             </div>
             <div class="row" style="margin-top:6px;">
@@ -6154,6 +6218,9 @@
           // Pool separato del Tamer (Indice Regole 9.01) -- vedi commento su ACTION_DEFS/trySpendAction.
           p.tamerActions = 2;
           p.attackedThisRoundTamer = false;
+          // Vedi trySpendAction: chi riottiene Azioni non è più "esaurito" -- azzera il conto alla
+          // rovescia del "Passa turno automatico dopo 5 minuti".
+          p.actionsExhaustedAt = null;
         }
         await persistAndRefresh();
       };
@@ -6166,10 +6233,67 @@
         const max = (p.isPC && (cachedRoster.find(m=>m.username===p.username)||{}).digimon||{}).hybridMode ? 3 : 2;
         const before = p.actions===undefined?2:p.actions;
         p.actions = Math.min(max, before+1);
+        p.actionsExhaustedAt = null;
         await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${narratorName(p)} riottiene 1 Azione (es. Reload/Battle Cry/Horde Duelist riuscito) — ora ${p.actions}/2.` });
         await persistAndRefresh();
       };
     });
+    // Richiesta utente: "tasto per restituire azioni al tamer" -- gemello del bottone sopra ma per
+    // il pool Azioni del Tamer (p.tamerActions), che prima non aveva alcun modo di essere
+    // restituito manualmente (solo il reset completo "↺ 2+2" lo toccava). Il pool Tamer non ha un
+    // equivalente di hybridMode (quello riguarda solo il Digimon), quindi il massimo resta sempre 2.
+    cardEl.querySelectorAll('[data-action-refund-tamer]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-action-refund-tamer');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p) return;
+        const before = p.tamerActions===undefined?2:p.tamerActions;
+        p.tamerActions = Math.min(2, before+1);
+        p.actionsExhaustedAt = null;
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${narratorName(p)} riottiene 1 Azione (Tamer) — ora ${p.tamerActions}/2.` });
+        await persistAndRefresh();
+      };
+    });
+    // Richiesta utente: "manca un modo per danneggiare manualmente i digimon nemici" -- generalizzato
+    // a QUALSIASI partecipante (anche Alleati/PC, utile per un Effetto/Trappola/Terreno non coperto
+    // da un'Azione automatizzata), riusando applyDamageToParticipant/applyDefeatIfNeeded -- le stesse
+    // funzioni già usate dalla risoluzione automatica degli Attacchi: Shield/Ferite Temporanee
+    // assorbono per primi (danno) e il controllo Sconfitto scatta identico. Per la Cura l'importo
+    // viene limitato al massimo delle Ferite (applyDamageToParticipant di per sé non lo limita,
+    // essendo pensata per la Cura "1 Casella" fissa di Revitalize).
+    const bindManualWound = (attr, sign)=>{
+      cardEl.querySelectorAll(`[${attr}]`).forEach(btn=>{
+        btn.onclick = async ()=>{
+          const id = btn.getAttribute(attr);
+          const p = combat.participants.find(x=>x.id===id);
+          if(!p) return;
+          const amtInput = cardEl.querySelector(`[data-manual-wound-amt="${id}"]`);
+          let amount = Math.max(0, Math.floor(Number(amtInput && amtInput.value) || 0));
+          if(amount<=0) return;
+          if(sign<0){
+            const wBefore = getParticipantWounds(p);
+            amount = Math.min(amount, Math.max(0, wBefore.max - wBefore.current));
+            if(amount<=0) return;
+          }
+          await applyDamageToParticipant(code, combat, p, sign*amount);
+          const w = getParticipantWounds(p);
+          let note = `${narratorName(p)} ${sign>0?'subisce':'recupera'} ${amount} Ferit${amount===1?'a':'e'} (manuale) — ora ${w.current}/${w.max}.`;
+          if(sign>0){
+            const defeatInfo = await applyDefeatIfNeeded(code, p);
+            if(defeatInfo){
+              const defName = p.nameHidden ? hiddenParticipantLabel(p) : defeatInfo.name;
+              note += defeatInfo.digitama
+                ? ` 🥚 ${defName} è Sconfitto ed è già al Default Stage minimo: da regolamento diventerebbe Digitama — gestiscilo a mano.`
+                : (defeatInfo.enemy ? ` 🏳️ ${defName} è Sconfitto!` : ` 🏳️ ${defName} è Sconfitto! Retrocede a ${defeatInfo.toStage} con 1 Ferita.`);
+            }
+          }
+          await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: note, meta:{avatar: resolveParticipantImage(p)} });
+          await persistAndRefresh();
+        };
+      });
+    };
+    bindManualWound('data-manual-damage', 1);
+    bindManualWound('data-manual-heal', -1);
     cardEl.querySelectorAll('[data-action-refund-attack]').forEach(btn=>{
       btn.onclick = async ()=>{
         const id = btn.getAttribute('data-action-refund-attack');
