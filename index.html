@@ -3695,7 +3695,7 @@
 
     const def = SKILL_DEFS.find(d=>d.label.toLowerCase()===query || d.label.toLowerCase().startsWith(query) || query.startsWith(d.label.toLowerCase()));
     if(def){
-      const attr = def.attrs[0];
+      const attr = def.attrs.reduce((best,a)=> (Number(me.tamer[a])||0) > (Number(me.tamer[best])||0) ? a : best, def.attrs[0]);
       const attrVal = me.tamer[attr];
       const digimonBonus = prodigiousSkillBonus(me, def);
       const skillVal = Number(me.tamer.skills[def.key]||0) + digimonBonus;
