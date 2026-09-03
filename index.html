@@ -3026,6 +3026,20 @@
     // proprio turno (vedi zoneLineHTML/bindZoneLineArrows) — bindZoneLineArrows è comunque un
     // no-op sicuro quando non ci sono bottoni [data-zoneline-move] nel DOM.
     bindZoneLineArrows(session.code, (cachedRoster||[]).filter(m=>m.role==='player'));
+    // BUGFIX: il pannello Gestione Combattimento del Master (#combat-mgr-card, con le righe
+    // dettagliate per partecipante) non veniva MAI ridisegnato dal polling -- solo dopo un click
+    // su un suo stesso bottone. cachedCombat/cachedRoster invece si aggiornano ogni ~15s come il
+    // resto (vedi sopra): il risultato erano nomi (es. dopo un'Evoluzione fatta dal GIOCATORE dalla
+    // propria Scheda), Ferite, Azioni ecc. rimasti "congelati" nel pannello del Master finché non
+    // interagiva lui stesso con quella riga. Ridisegnato qui ad ogni poll, saltando il refresh SOLO
+    // se il Master ha il focus su un campo di input/select/textarea dentro il pannello in questo
+    // momento (es. sta digitando un importo Danno manuale) per non perdere quello che sta scrivendo.
+    if(isMasterRole && cachedCombat && cachedCombat.active){
+      const mgrCard = document.getElementById('combat-mgr-card');
+      const activeEl = document.activeElement;
+      const typingInMgr = !!(mgrCard && activeEl && mgrCard.contains(activeEl) && /^(INPUT|SELECT|TEXTAREA)$/.test(activeEl.tagName));
+      if(mgrCard && !typingInMgr) renderCombatManager(session.code, (cachedRoster||[]).filter(m=>m.role==='player'));
+    }
     const attacksCard = document.getElementById('attacks-card');
     if(attacksCard) attacksCard.style.display = (cachedCombat && cachedCombat.active) ? '' : 'none';
     if(session.role==='player'){
@@ -3067,8 +3081,21 @@
       const miniLogEl = document.getElementById('combat-mini-log');
       const miniLogCard = document.getElementById('combat-mini-log-card');
       if(miniLogCard) miniLogCard.style.display = (cachedCombat && cachedCombat.active) ? '' : 'none';
-      if(miniLogEl && cachedLog && cachedLog.length > 0){
-        const last4 = cachedLog.slice(-4);
+      // BUGFIX: mostrava sempre cachedLog (Chat Generale), ma pushCombatNarration instrada la
+      // narrazione di combattimento verso il Sottogruppo scelto dal Master quando combat.chatLock
+      // è impostato su "sub:<id>" -- in quel caso il mini-log restava vuoto/con messaggi vecchi
+      // nonostante il combattimento stesse effettivamente narrando altrove. Stessa fonte di
+      // pushCombatNarration: Generale se nessun chatLock (o "general"), altrimenti il thread del
+      // Sottogruppo bloccato -- letto solo se il giocatore ne fa parte (getPrivateLog risponde
+      // comunque solo con ciò a cui il thread dà accesso, stesso canale già usato dalla sua Chat
+      // "Gruppo" quando ci entra volontariamente).
+      const miniLogLock = cachedCombat && cachedCombat.chatLock && cachedCombat.chatLock.location;
+      let miniLogSource = cachedLog;
+      if(miniLogLock && miniLogLock.startsWith('sub:')){
+        try{ miniLogSource = await getPrivateLog(session.code, 'subgroup:'+miniLogLock.slice(4)); }catch(e){ miniLogSource = cachedLog; }
+      }
+      if(miniLogEl && miniLogSource && miniLogSource.length > 0){
+        const last4 = miniLogSource.slice(-4);
         miniLogEl.innerHTML = typeof logHTML === 'function' ? logHTML(last4, false) : last4.map(e=>`<div style="padding:2px 0;font-size:12px;"><b style="color:var(--cyan);font-size:11px;">${escapeHTML(e.who||'')}</b> <span>${escapeHTML(e.text||'')}</span></div>`).join('');
         miniLogEl.scrollTop = miniLogEl.scrollHeight;
       }
@@ -4945,7 +4972,7 @@
   let combatPresetTargetId = null;
   let combatSelectedAttackIndex = null;
 
-  async function grantMilestoneRewards(code, milestoneNumber, reason){
+  async function grantMilestoneRewards(code, prog, milestoneNumber, reason, xpConsumed){
     const players = cachedRoster.filter(m=>m.role==='player');
     for(const p of players){
       p.tamer.unspentGrowthPoints = Number(p.tamer.unspentGrowthPoints||0) + 3;
@@ -4956,6 +4983,23 @@
       p.digimon.bonusDpLog = Array.isArray(p.digimon.bonusDpLog) ? p.digimon.bonusDpLog : [];
       p.digimon.bonusDpLog.push({ amount: 3, milestone: milestoneNumber, date: new Date().toISOString(), reason: reason || 'Milestone' });
       await saveMember(code, p);
+    }
+    // Richiesta utente: poter annullare l'ULTIMA Milestone consegnata per errore. Registra qui
+    // (unico punto in cui una Milestone viene davvero concessa, sia da XP sia Narrativa) un
+    // istantanea di cosa è stato dato, così "btn-milestone-undo" può ripetere esattamente
+    // l'operazione inversa senza dover indovinare — sovrascritta a ogni nuova Milestone (solo
+    // l'ULTIMA è annullabile, non uno storico completo). `xpConsumed` è i 7 XP tolti dal pool per
+    // arrivare a questa Milestone (0 per una Milestone Narrativa, che non tocca gli XP) — da
+    // restituire se annullata, altrimenti gli XP "spariscono" insieme alla Milestone.
+    if(prog){
+      prog.lastMilestoneGrant = {
+        milestone: milestoneNumber,
+        reason: reason || 'Milestone',
+        at: new Date().toISOString(),
+        xpConsumed: xpConsumed || 0,
+        playerUsernames: players.map(p=>p.username)
+      };
+      await saveProgression(code, prog);
     }
   }
 
@@ -5015,6 +5059,7 @@
         <button class="btn small" data-xp-add="1" data-xp-label="Torment Box rimosso">+1 Torment</button>
       </div>
       <button class="btn amber" id="btn-milestone-narrative" style="width:100%;margin-bottom:6px;">🌟 Assegna Milestone (Narrativo)</button>
+      ${prog.lastMilestoneGrant ? `<button class="btn ghost" id="btn-milestone-undo" style="width:100%;margin-bottom:6px;" title="Annulla la Milestone ${escapeAttr(String(prog.lastMilestoneGrant.milestone))} (${escapeAttr(prog.lastMilestoneGrant.reason)}), consegnata il ${escapeAttr(new Date(prog.lastMilestoneGrant.at).toLocaleString('it-IT'))}">↩️ Annulla ultima Milestone (${escapeHTML(String(prog.lastMilestoneGrant.milestone))})</button>` : ''}
       <div class="divider"></div>
       <div class="muted" style="margin-bottom:6px;">Downtime del Party (8.04)</div>
       <div class="row" style="margin-bottom:8px;">
@@ -5045,7 +5090,7 @@
       cachedProgression = prog;
       await pushLog(code, { who:'Sistema', role:'gm', text: `+${amount} XP (${label}). XP: ${prog.xp}/7.` });
       if(hitMilestone){
-        await grantMilestoneRewards(code, prog.milestone, 'XP');
+        await grantMilestoneRewards(code, prog, prog.milestone, 'XP', 7);
         await pushLog(code, { who:'Sistema', role:'gm', text: `🌟 Milestone ${prog.milestone} raggiunta! Ogni giocatore riceve 3 Growth Points, 1 IP, e il proprio Digimon 3 DP Bonus. Il party guadagna 1 Punto Ispirazione.` });
       }
       renderProgressionMaster(code);
@@ -5106,11 +5151,44 @@
       prog.inspiration = Number(prog.inspiration||0) + 1;
       await saveProgression(code, prog);
       cachedProgression = prog;
-      await grantMilestoneRewards(code, prog.milestone, 'Narrativa');
+      await grantMilestoneRewards(code, prog, prog.milestone, 'Narrativa', 0);
       await pushLog(code, { who:'Sistema', role:'gm', text: `🌟 Milestone ${prog.milestone} raggiunta (narrativa)! Ogni giocatore riceve 3 Growth Points, 1 IP, e il proprio Digimon 3 DP Bonus. Il party guadagna 1 Punto Ispirazione.` });
       renderProgressionMaster(code);
       refreshLiveParts();
     };
+    // Richiesta utente: "un modo per tornare indietro e recuperare l'ultima milestone consegnata
+    // per errore". Ripete al contrario esattamente ciò che grantMilestoneRewards ha registrato in
+    // prog.lastMilestoneGrant (unica Milestone annullabile: l'ultima, non uno storico completo —
+    // sovrascritto ad ogni nuova concessione).
+    const undoBtn = document.getElementById('btn-milestone-undo');
+    if(undoBtn){
+      undoBtn.onclick = async ()=>{
+        const grant = prog.lastMilestoneGrant;
+        if(!grant) return;
+        if(!window.confirm(`Annullare la Milestone ${grant.milestone} (${grant.reason})? Toglierà 3 Growth Points, 1 IP e 3 DP Bonus a ogni giocatore che l'aveva ricevuta, e riporterà indietro Milestone/Ispirazione di party${grant.xpConsumed?` (e ${grant.xpConsumed} XP)`:''}. Se un giocatore ha già SPESO quei Growth Points/DP, non è possibile recuperarli indietro automaticamente — resterà a 0 invece che in negativo, da sistemare a mano.`)) return;
+        for(const username of (grant.playerUsernames||[])){
+          const p = cachedRoster.find(m=>m.role==='player' && m.username===username);
+          if(!p) continue; // giocatore non più nel roster: nulla da annullare per lui
+          p.tamer.unspentGrowthPoints = Math.max(0, Number(p.tamer.unspentGrowthPoints||0) - 3);
+          p.tamer.inspirationPoints = Math.max(0, Number(p.tamer.inspirationPoints||0) - 1);
+          p.digimon.unspentBonusDP = Math.max(0, Number(p.digimon.unspentBonusDP||0) - 3);
+          if(Array.isArray(p.digimon.bonusDpLog)){
+            const idx = p.digimon.bonusDpLog.map((e,i)=>({e,i})).filter(x=>x.e && x.e.milestone===grant.milestone).map(x=>x.i).pop();
+            if(idx!==undefined) p.digimon.bonusDpLog.splice(idx, 1);
+          }
+          await saveMember(code, p);
+        }
+        prog.milestone = Math.max(0, Number(prog.milestone||0) - 1);
+        prog.inspiration = Math.max(0, Number(prog.inspiration||0) - 1);
+        if(grant.xpConsumed) prog.xp = Number(prog.xp||0) + grant.xpConsumed;
+        prog.lastMilestoneGrant = null;
+        await saveProgression(code, prog);
+        cachedProgression = prog;
+        await pushLog(code, { who:'Sistema', role:'gm', text: `↩️ Milestone ${grant.milestone} annullata (era stata consegnata per: ${grant.reason}). Growth Points/IP/DP Bonus tolti a ogni giocatore, Milestone/Ispirazione di party riportate indietro${grant.xpConsumed?`, ${grant.xpConsumed} XP restituiti al pool`:''}.` });
+        renderProgressionMaster(code);
+        refreshLiveParts();
+      };
+    }
     document.getElementById('btn-take-break').onclick = async ()=>{
       const players = cachedRoster.filter(m=>m.role==='player');
       for(const p of players){

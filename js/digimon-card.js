@@ -93,6 +93,16 @@
     const combatLive = document.getElementById('combat-live');
     if(combatLive && typeof combatDisplayHTML==='function') combatLive.innerHTML = combatDisplayHTML(cachedCombat, !!(session && session.role==='master'));
     if(typeof renderCombatManager==='function') renderCombatManager(session.code, (cachedRoster||[]).filter(m=>m.role==='player'));
+    // Sul client di CHI STA EVOLVENDO, aggiorna subito anche la propria Scheda Attacchi (tab
+    // Battaglia: intestazione "Attacchi di [nome]" + il proprio nome nel menu bersaglio) invece di
+    // aspettare il prossimo poll (~15s) -- prima restava con il nome vecchio per quella finestra.
+    const attacksCardInner = document.getElementById('attacks-card-inner');
+    if(attacksCardInner && typeof attacksCardHTML==='function' && typeof session!=='undefined' && session){
+      attacksCardInner.innerHTML = attacksCardHTML(me, cachedCombat, session.username);
+      if(typeof bindAttacksCard==='function') bindAttacksCard(session.code, me);
+    }
+    const attacksCardTitle = document.querySelector('#attacks-card .section-title');
+    if(attacksCardTitle) attacksCardTitle.textContent = `Attacchi di ${me.digimon.name || 'Digimon'}`;
   }
 
   // Tabella Size (regola 3.02a, fonte canonica "Player's Companion Beta.docx") -- allineata a
