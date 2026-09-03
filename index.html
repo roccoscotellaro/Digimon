@@ -1419,7 +1419,25 @@
 
   // 'move' e 'attack' hanno ora un pannello dedicato (movimento relativo + attacco con Dodge automatico);
   // qui restano solo le altre Azioni narrative/di supporto.
-  const SELF_ACTION_DEFS = ACTION_DEFS.filter(a=>a.key!=='move' && a.key!=='attack');
+  // Richiesta utente (dopo il primo giro con un menu unico): "dividi le azioni del digimon da quelle
+  // del tamer in due menu diversi" -- due liste separate invece di un unico select misto pool
+  // Digimon/Tamer, per evitare di dover leggere "(Az. Tamer)"/"(Az. Digimon)" su ogni riga per capire
+  // a chi appartiene un'azione.
+  // 'move' esce anche dal menu Digimon: i movimenti restano SOLO negli strumenti "sotto alla linea"
+  // (Avvicina/Allontana/Imposta zona, lato Master; pannello Attacco/Movimento self-service, lato
+  // giocatore) -- resta invece 'difficult_move' ("quello difficile"), perché quegli strumenti spendono
+  // sempre e solo 1 Azione 'move' semplice e non coprono il costo/caso del Movimento Difficile.
+  const DIGIMON_ACTION_DEFS = ACTION_DEFS.filter(a=>a.pool==='digimon' && a.key!=='move');
+  // 'attack_tamer' esce dal menu Tamer -- richiesta utente: "non mettere ... né i suoi attacchi,
+  // lascia solo le restanti azioni". Come le altre voci Tamer già puramente di bookkeeping (Skill
+  // Check, Reinforce, Reposition, Hold Action...), un Attacco del Tamer può comunque essere tracciato
+  // con "Altro (Tamer)" narrando il dettaglio a parte.
+  const TAMER_ACTION_DEFS = ACTION_DEFS.filter(a=>a.pool==='tamer' && a.key!=='attack_tamer');
+  // Il giocatore ha già un pannello Attacco sempre visibile (attacksCardHTML) per il proprio Digimon:
+  // 'attack' qui sarebbe un secondo modo ridondante di aprirlo. Il Master invece lo mantiene (vedi
+  // DIGIMON_ACTION_DEFS sopra) perché per lui è l'unica scorciatoia per preselezionare un
+  // partecipante come attaccante nel proprio pannello "⚔ Risolvi Attacco".
+  const SELF_DIGIMON_ACTION_DEFS = DIGIMON_ACTION_DEFS.filter(a=>a.key!=='attack');
 
   function combatSelfActionHTML(combat, username){
     if(!combat || !combat.active) return '';
@@ -1431,28 +1449,38 @@
     return `
       <div class="divider"></div>
       <div class="muted" style="margin-bottom:6px;">Le tue Azioni — Digimon: <span class="mono" style="color:var(--cyan);">${acts}/2</span> · Tamer: <span class="mono" style="color:var(--amber);">${tamerActs}/2</span></div>
+      <div class="muted" style="font-size:11px;margin-bottom:2px;color:var(--cyan);">Azione Digimon</div>
       <div class="row">
-        <select id="self-action-select" style="flex:2;" ${myTurn?'':'disabled'}>${SELF_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az. ${a.pool==='tamer'?'Tamer':'Digimon'})</option>`).join('')}</select>
-        <button class="btn small" id="btn-self-action-use" style="flex:1;" ${myTurn?'':'disabled'}>Usa</button>
+        <select id="self-daction-select" style="flex:2;" ${myTurn?'':'disabled'}>${SELF_DIGIMON_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az.)</option>`).join('')}</select>
+        <button class="btn small" id="btn-self-daction-use" style="flex:1;" ${myTurn?'':'disabled'}>Usa</button>
       </div>
-      <div class="muted" id="self-action-desc" style="margin-top:4px;font-size:11px;">${escapeHTML((SELF_ACTION_DEFS[0]&&SELF_ACTION_DEFS[0].desc)||'')}</div>
+      <div class="muted" id="self-daction-desc" style="margin:2px 0 6px;font-size:11px;">${escapeHTML((SELF_DIGIMON_ACTION_DEFS[0]&&SELF_DIGIMON_ACTION_DEFS[0].desc)||'')}</div>
+      <div class="muted" style="font-size:11px;margin-bottom:2px;color:var(--amber);">Azione Tamer</div>
+      <div class="row">
+        <select id="self-taction-select" style="flex:2;" ${myTurn?'':'disabled'}>${TAMER_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az.)</option>`).join('')}</select>
+        <button class="btn small" id="btn-self-taction-use" style="flex:1;" ${myTurn?'':'disabled'}>Usa</button>
+      </div>
+      <div class="muted" id="self-taction-desc" style="margin:2px 0 4px;font-size:11px;">${escapeHTML((TAMER_ACTION_DEFS[0]&&TAMER_ACTION_DEFS[0].desc)||'')}</div>
       <div class="muted" id="self-action-status" style="margin-top:4px;">${myTurn?'':'Disponibile solo durante il tuo turno.'}</div>
     `;
   }
 
   function bindCombatSelfActions(code, username){
-    const sel = document.getElementById('self-action-select');
-    const descEl = document.getElementById('self-action-desc');
     // Richiesta utente: "le scelte del tamer non si capiscono minimamente quali siano" -- mostra
-    // la descrizione in chiaro dell'Azione scelta, aggiornata ad ogni cambio di selezione.
-    if(sel && descEl){
-      const updateDesc = ()=>{ const def = SELF_ACTION_DEFS.find(a=>a.key===sel.value); descEl.textContent = (def && def.desc) || ''; };
+    // la descrizione in chiaro dell'Azione scelta, aggiornata ad ogni cambio di selezione, per
+    // entrambi i menu (ora separati Digimon/Tamer).
+    const bindDesc = (selId, descId, defs)=>{
+      const sel = document.getElementById(selId);
+      const descEl = document.getElementById(descId);
+      if(!sel || !descEl) return;
+      const updateDesc = ()=>{ const def = defs.find(a=>a.key===sel.value); descEl.textContent = (def && def.desc) || ''; };
       sel.onchange = updateDesc;
       updateDesc();
-    }
-    const btn = document.getElementById('btn-self-action-use');
-    if(!btn) return;
-    btn.onclick = async ()=>{
+    };
+    bindDesc('self-daction-select', 'self-daction-desc', SELF_DIGIMON_ACTION_DEFS);
+    bindDesc('self-taction-select', 'self-taction-desc', TAMER_ACTION_DEFS);
+
+    const spendSelfAction = async (selectId)=>{
       if(!cachedCombat || !cachedCombat.active) return;
       const p = cachedCombat.participants.find(x=>x.username===username);
       if(!p) return;
@@ -1467,7 +1495,8 @@
         if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Non è il tuo turno.'; }
         return;
       }
-      const sel = document.getElementById('self-action-select');
+      const sel = document.getElementById(selectId);
+      if(!sel) return;
       const result = trySpendAction(p, sel.value);
       if(!result.ok){
         if(statusEl){ statusEl.style.color = 'var(--danger)'; statusEl.textContent = result.msg; }
@@ -1486,8 +1515,13 @@
       const usedPoolLabel = result.def.pool==='tamer' ? 'Tamer' : 'Digimon';
       const usedPoolLeft = result.def.pool==='tamer' ? p.tamerActions : p.actions;
       await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'player', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabel}) — restano ${usedPoolLeft}/2 Azioni (${usedPoolLabel}).${supportNote}`, meta:{avatar: resolveParticipantImage(p)} });
+      if(statusEl){ statusEl.style.color=''; statusEl.textContent=''; }
       refreshLiveParts();
     };
+    const dBtn = document.getElementById('btn-self-daction-use');
+    if(dBtn) dBtn.onclick = ()=> spendSelfAction('self-daction-select');
+    const tBtn = document.getElementById('btn-self-taction-use');
+    if(tBtn) tBtn.onclick = ()=> spendSelfAction('self-taction-select');
   }
 
   // ---------- pannello Attacco/Movimento self-service del giocatore (solo nel proprio turno) ----------
@@ -5031,13 +5065,20 @@
           return `
           <div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line);${isCurrentTurn?'background:rgba(53,232,201,0.06);border-radius:6px;padding:8px;':''}">
             ${header}
-            <div class="row" style="margin-top:6px;">
-              <select data-action-select="${p.id}" style="flex:2;">${ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az. ${a.pool==='tamer'?'Tamer':'Digimon'})</option>`).join('')}</select>
-              <button class="btn small" data-action-use="${p.id}" style="flex:1;">Usa</button>
-              <button class="btn ghost small" data-action-reset="${p.id}" style="flex:1;" title="Ripristina sia le Azioni Digimon che quelle Tamer a 2/2">↺ 2+2</button>
+            <div class="muted" style="font-size:11px;margin-top:6px;margin-bottom:2px;color:var(--cyan);">Azione Digimon</div>
+            <div class="row">
+              <select data-daction-select="${p.id}" style="flex:2;">${DIGIMON_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az.)</option>`).join('')}</select>
+              <button class="btn small" data-daction-use="${p.id}" style="flex:1;">Usa</button>
             </div>
-            <div class="muted" data-action-desc="${p.id}" style="margin-top:2px;font-size:11px;">${escapeHTML((ACTION_DEFS[0]&&ACTION_DEFS[0].desc)||'')}</div>
+            <div class="muted" data-daction-desc="${p.id}" style="margin:2px 0;font-size:11px;">${escapeHTML((DIGIMON_ACTION_DEFS[0]&&DIGIMON_ACTION_DEFS[0].desc)||'')}</div>
+            <div class="muted" style="font-size:11px;margin-top:4px;margin-bottom:2px;color:var(--amber);">Azione Tamer</div>
+            <div class="row">
+              <select data-taction-select="${p.id}" style="flex:2;">${TAMER_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az.)</option>`).join('')}</select>
+              <button class="btn small" data-taction-use="${p.id}" style="flex:1;">Usa</button>
+            </div>
+            <div class="muted" data-taction-desc="${p.id}" style="margin:2px 0;font-size:11px;">${escapeHTML((TAMER_ACTION_DEFS[0]&&TAMER_ACTION_DEFS[0].desc)||'')}</div>
             <div class="row" style="margin-top:4px;">
+              <button class="btn ghost small" data-action-reset="${p.id}" style="flex:1;" title="Ripristina sia le Azioni Digimon che quelle Tamer a 2/2">↺ 2+2</button>
               <button class="btn ghost small" data-action-refund="${p.id}" style="flex:1;" title="Es. Successo Critico su Reload/Battle Cry/Horde Duelist: 'riottieni l'Azione spesa' (Digimon)">+1 Azione (Digimon)</button>
               <button class="btn ghost small" data-action-refund-attack="${p.id}" style="flex:1;" ${!p.attackedThisRound?'disabled':''} title="Es. Reload riuscito: 'riottieni l'uso dell'Attacco [AMMO]', ignora il limite di 1 Attacco a round">🔄 Restituisci Attacco</button>
             </div>
@@ -5818,51 +5859,63 @@
     }
     // Richiesta utente: "le scelte del tamer non si capiscono minimamente quali siano" -- mostra la
     // descrizione in chiaro dell'Azione scelta anche nella riga del Master, aggiornata ad ogni cambio.
-    cardEl.querySelectorAll('[data-action-select]').forEach(sel=>{
-      const id = sel.getAttribute('data-action-select');
-      const descEl = cardEl.querySelector(`[data-action-desc="${id}"]`);
-      if(!descEl) return;
-      const updateDesc = ()=>{ const def = ACTION_DEFS.find(a=>a.key===sel.value); descEl.textContent = (def && def.desc) || ''; };
-      sel.onchange = updateDesc;
-      updateDesc();
-    });
-    cardEl.querySelectorAll('[data-action-use]').forEach(btn=>{
-      btn.onclick = async ()=>{
-        const id = btn.getAttribute('data-action-use');
-        const p = combat.participants.find(x=>x.id===id);
-        const sel = cardEl.querySelector(`[data-action-select="${id}"]`);
-        if(!p || !sel) return;
-        if(sel.value==='attack'){
-          // L'Azione "Attacca" viene spesa al momento della risoluzione effettiva nel pannello
-          // "⚔ Risolvi Attacco" (che applica lì il limite di 1 Attacco a round) — qui apro solo il pannello.
-          combatAttackPanelOpen = true;
-          combatPresetAttackerId = p.id;
-          combatSelectedAttackIndex = null;
-          renderCombatManager(code, players);
-          return;
-        }
-        const result = trySpendAction(p, sel.value);
-        const statusEl = document.getElementById('combat-mgr-status');
-        if(!result.ok){
-          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; }
-          return;
-        }
-        // Direct/Aid/Guard/Bolster: bersaglio riusato dal select "Avvicina/Allontana" della stessa
-        // riga (data-zone-ref) -- Guard non ha bisogno di bersaglio, si applica sempre a se stesso.
-        let supportNote = '';
-        if(SUPPORT_ACTION_KEYS.includes(sel.value)){
-          const zoneRefSel = cardEl.querySelector(`[data-zone-ref="${id}"]`);
-          const supportTarget = sel.value==='guard' ? p : (zoneRefSel && zoneRefSel.value ? combat.participants.find(x=>x.id===zoneRefSel.value) : null);
-          const effect = await applySupportActionEffect(sel.value, p, supportTarget);
-          supportNote = ' ' + effect.note;
-        }
-        const usedPoolLabelGM = result.def.pool==='tamer' ? 'Tamer' : 'Digimon';
-        const usedPoolLeftGM = result.def.pool==='tamer' ? p.tamerActions : p.actions;
-        await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabelGM}) — restano ${usedPoolLeftGM}/2 Azioni (${usedPoolLabelGM}).${supportNote}`, meta:{avatar: resolveParticipantImage(p)} });
-        await persistAndRefresh();
-        refreshLiveParts();
-      };
-    });
+    // Richiesta successiva: "dividi le azioni del digimon da quelle del tamer in due menu diversi" --
+    // ora ci sono due select per riga (data-daction-select/data-taction-select), stessa logica di
+    // binding applicata a entrambi tramite bindActionDesc.
+    const bindActionDesc = (attr, descAttr, defs)=>{
+      cardEl.querySelectorAll(`[${attr}]`).forEach(sel=>{
+        const id = sel.getAttribute(attr);
+        const descEl = cardEl.querySelector(`[${descAttr}="${id}"]`);
+        if(!descEl) return;
+        const updateDesc = ()=>{ const def = defs.find(a=>a.key===sel.value); descEl.textContent = (def && def.desc) || ''; };
+        sel.onchange = updateDesc;
+        updateDesc();
+      });
+    };
+    bindActionDesc('data-daction-select', 'data-daction-desc', DIGIMON_ACTION_DEFS);
+    bindActionDesc('data-taction-select', 'data-taction-desc', TAMER_ACTION_DEFS);
+
+    const bindActionUse = (useAttr, selectAttr)=>{
+      cardEl.querySelectorAll(`[${useAttr}]`).forEach(btn=>{
+        btn.onclick = async ()=>{
+          const id = btn.getAttribute(useAttr);
+          const p = combat.participants.find(x=>x.id===id);
+          const sel = cardEl.querySelector(`[${selectAttr}="${id}"]`);
+          if(!p || !sel) return;
+          if(sel.value==='attack'){
+            // L'Azione "Attacca" viene spesa al momento della risoluzione effettiva nel pannello
+            // "⚔ Risolvi Attacco" (che applica lì il limite di 1 Attacco a round) — qui apro solo il pannello.
+            combatAttackPanelOpen = true;
+            combatPresetAttackerId = p.id;
+            combatSelectedAttackIndex = null;
+            renderCombatManager(code, players);
+            return;
+          }
+          const result = trySpendAction(p, sel.value);
+          const statusEl = document.getElementById('combat-mgr-status');
+          if(!result.ok){
+            if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; }
+            return;
+          }
+          // Direct/Aid/Guard/Bolster: bersaglio riusato dal select "Avvicina/Allontana" della stessa
+          // riga (data-zone-ref) -- Guard non ha bisogno di bersaglio, si applica sempre a se stesso.
+          let supportNote = '';
+          if(SUPPORT_ACTION_KEYS.includes(sel.value)){
+            const zoneRefSel = cardEl.querySelector(`[data-zone-ref="${id}"]`);
+            const supportTarget = sel.value==='guard' ? p : (zoneRefSel && zoneRefSel.value ? combat.participants.find(x=>x.id===zoneRefSel.value) : null);
+            const effect = await applySupportActionEffect(sel.value, p, supportTarget);
+            supportNote = ' ' + effect.note;
+          }
+          const usedPoolLabelGM = result.def.pool==='tamer' ? 'Tamer' : 'Digimon';
+          const usedPoolLeftGM = result.def.pool==='tamer' ? p.tamerActions : p.actions;
+          await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabelGM}) — restano ${usedPoolLeftGM}/2 Azioni (${usedPoolLabelGM}).${supportNote}`, meta:{avatar: resolveParticipantImage(p)} });
+          await persistAndRefresh();
+          refreshLiveParts();
+        };
+      });
+    };
+    bindActionUse('data-daction-use', 'data-daction-select');
+    bindActionUse('data-taction-use', 'data-taction-select');
     cardEl.querySelectorAll('[data-action-reset]').forEach(btn=>{
       btn.onclick = async ()=>{
         const id = btn.getAttribute('data-action-reset');
