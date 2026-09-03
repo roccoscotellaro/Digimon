@@ -984,6 +984,14 @@
     if(actionKey==='move' && (participant.effects||[]).some(e=>e.key==='root')){
       return { ok:false, msg:'È sotto [ROOT]: non può usare Muovi finché l\'Effetto non termina.' };
     }
+    // Reposition (Tamer) riuscito: 1 spostamento gratuito attraverso gli strumenti già esistenti
+    // (frecce linea/Avvicina/Allontana/Imposta zona, tutti chiamano trySpendAction(p,'move')) --
+    // finanziato dall'Azione Tamer già spesa per Reposition invece che da un'altra Azione Digimon.
+    // Vedi applyActionMechanic per dove p.repositionFree viene guadagnato.
+    if(actionKey==='move' && Number(participant.repositionFree||0)>0){
+      participant.repositionFree -= 1;
+      return { ok:true, def, freeReposition:true };
+    }
     if(def.oncePerRound && participant.attackedThisRound){
       let hasAmmo = false;
       if(participant.isPC){
@@ -1098,6 +1106,102 @@
       const existingStat = hadExisting ? target.pendingRollBonus.stat : 'either';
       queuePendingRollBonus(target, amount, 'Bolster', existingStat);
       return { ok:true, note: `+${amount} extra in coda sul prossimo Pool Check di ${narratorName(target)}${hadExisting?' (potenzia un bonus già in coda)':''} — totale in coda: +${target.pendingRollBonus.amount}.` };
+    }
+    return { ok:false, note:'' };
+  }
+
+  // Chiavi delle Azioni gestite da applyActionMechanic qui sotto (richiesta utente:
+  // "automatizziamo tutto" — prima queste voci erano puro bookkeeping: spendevano solo le Azioni e
+  // scrivevano una riga di log generica, senza applicare alcun effetto di gioco vero).
+  const MECHANIC_ACTION_KEYS = ['reinforce1','reinforce2','reposition1','reposition2','resist1','resist2','stance','skill_tamer','skill_digimon','clash'];
+  // Effetto MECCANICO reale delle Azioni sopra. Stesso spirito di applySupportActionEffect: qui sopra
+  // trySpendAction resta responsabile solo del costo in Azioni, questa funzione applica l'effetto
+  // vero. extra porta dati scelti dall'utente nell'interfaccia (stance, skillKey) quando servono.
+  // NOTA: Hold Action e Hold Breath restano bookkeeping puro (non incluse in MECHANIC_ACTION_KEYS) —
+  // Hold Action dichiara un trigger condizionale futuro (nessun sistema di eventi nel sito per
+  // rilevarlo in automatico), Hold Breath userebbe una risorsa "aria" mai modellata sul sito. Idem
+  // per "Altro" (libere per definizione) e Attacca Tamer (rimosso dal menu su richiesta utente).
+  async function applyActionMechanic(actionKey, actor, target, extra){
+    extra = extra || {};
+    // ---- Reinforce: Pool Check di Body (1 Az.) o Attributo più alto (2 Az.) del TAMER -> il
+    // Digimon ottiene Wound Box Temporanee pari ai successi (tempWounds, stesso campo già usato
+    // dallo Shield/dagli Effetti — vedi getParticipantWounds).
+    if(actionKey==='reinforce1' || actionKey==='reinforce2'){
+      const pool = actionKey==='reinforce1' ? ownerAttr(actor,'body') : highestAttribute(actor);
+      const roll = rollPool(pool);
+      if(actor.isPC){
+        const member = cachedRoster.find(m=>m.username===actor.username);
+        if(member) member.digimon.tempWounds = Number(member.digimon.tempWounds||0) + roll.successes;
+      } else {
+        actor.tempWounds = Number(actor.tempWounds||0) + roll.successes;
+      }
+      return { ok:true, note: `Pool Check Reinforce ${pool}d6[${roll.dice.join(',')}]=${roll.successes} succ. → +${roll.successes} Wound Box Temporanee.` };
+    }
+    // ---- Reposition: Pool Check di Agility (1 Az.) o Attributo più alto (2 Az.) del TAMER -> se
+    // riesce (≥1 successo, stessa convenzione di Aid), il Digimon ottiene 1 spostamento gratuito
+    // tramite gli strumenti già esistenti (frecce linea/Avvicina/Allontana/Imposta zona) -- vedi
+    // trySpendAction più sopra, che consuma p.repositionFree al posto di una vera Azione Digimon.
+    if(actionKey==='reposition1' || actionKey==='reposition2'){
+      const pool = actionKey==='reposition1' ? ownerAttr(actor,'agility') : highestAttribute(actor);
+      const roll = rollPool(pool);
+      if(roll.successes>=1){
+        actor.repositionFree = Number(actor.repositionFree||0) + 1;
+        return { ok:true, note: `Pool Check Reposition ${pool}d6[${roll.dice.join(',')}]=${roll.successes} succ. → RIUSCITO: 1 spostamento gratuito disponibile (frecce linea/Avvicina/Allontana/Imposta zona).` };
+      }
+      return { ok:true, note: `Pool Check Reposition ${pool}d6[${roll.dice.join(',')}]=${roll.successes} succ. → NON RIUSCITO: nessuno spostamento gratuito.` };
+    }
+    // ---- Resist: riduce la Potenza di TUTTI gli Effetti attivi sul Digimon (1 Az. -1, 2 Az. -2);
+    // a Potenza 0 l'Effetto termina — vedi EFFECT_DEFS/computeEffectModifiers (js/combat-engine.js).
+    if(actionKey==='resist1' || actionKey==='resist2'){
+      const amount = actionKey==='resist1' ? 1 : 2;
+      if(!actor.effects || actor.effects.length===0) return { ok:true, note:'Nessun Effetto attivo su cui agire.' };
+      const before = actor.effects.map(e=>`${e.key} ${e.potency}`).join(', ');
+      actor.effects.forEach(e=>{ e.potency = Number(e.potency||1) - amount; });
+      const expired = actor.effects.filter(e=>e.potency<=0).map(e=>e.key);
+      actor.effects = actor.effects.filter(e=>e.potency>0);
+      return { ok:true, note: `-${amount} Potenza a tutti gli Effetti attivi (erano: ${before}).${expired.length?` Terminati: ${expired.join(', ')}.`:''}` };
+    }
+    // ---- Cambio Stance: imposta davvero la Stance sul Digimon (extra.stance, dal selettore che
+    // compare quando questa voce è selezionata) -- già meccanicamente applicata in
+    // getParticipantCombatStats/stanceModifiers (js/rules.js + js/combat-engine.js) per i PC. Per i
+    // Nemici resta solo narrativo: il sito non modella Stance per loro (nessuna Scheda separata).
+    if(actionKey==='stance'){
+      const newStance = extra.stance || 'Neutral';
+      if(actor.isPC){
+        const member = cachedRoster.find(m=>m.username===actor.username);
+        if(member) member.digimon.stance = newStance;
+      }
+      actor.stance = newStance;
+      return { ok:true, note: `Stance impostata su ${newStance}${actor.isPC?'':' (narrativo: i Nemici non hanno Stance modellata meccanicamente sul sito)'}.` };
+    }
+    // ---- Skill Check (Tamer): tiro reale con le 2 Attribute della Skill scelta (extra.skillKey,
+    // dal selettore che compare quando questa voce è selezionata) + eventuale bonus da Prodigious
+    // Skill/Mind Over Matter -- stesso motore già usato dalla Scheda Skills del Tamer
+    // (rollSkillCheck/SKILL_DEFS/prodigiousSkillBonus, js/rules.js + js/dice.js).
+    if(actionKey==='skill_tamer'){
+      const def = SKILL_DEFS.find(s=>s.key===extra.skillKey) || SKILL_DEFS[0];
+      const member = actor.isPC ? cachedRoster.find(m=>m.username===actor.username) : null;
+      const a1 = member ? Number(member.tamer[def.attrs[0]]||0) : 1;
+      const a2 = def.attrs[1] ? (member ? Number(member.tamer[def.attrs[1]]||0) : 1) : 0;
+      const bonus = member ? prodigiousSkillBonus(member, def) : 0;
+      const roll = rollSkillCheck(a1, a2);
+      const total = roll.total + bonus;
+      return { ok:true, note: `Skill Check (${def.label}): 3d6[${roll.dice.join(',')}]+${a1}${def.attrs[1]?`+${a2}`:''}${bonus?`+${bonus} (Prodigious)`:''} = ${total} totale.` };
+    }
+    // ---- Skill Check (Digimon): il regolamento non gli assegna una lista di Skill proprie sul
+    // sito -- Pool Check generico con dadi pari al proprio SV, stessa convenzione già usata per
+    // Aid/Guard (successi riportati, il Master valuta il grado di riuscita).
+    if(actionKey==='skill_digimon'){
+      const sv = participantSV(actor);
+      const roll = rollPool(sv);
+      return { ok:true, note: `Pool Check ${sv}d6[${roll.dice.join(',')}]=${roll.successes} succ.` };
+    }
+    // ---- Clash: la vera contesa (Inizia/Contesa, Pin, Lancio, Finisher...) vive nel pannello
+    // "⚔ Risolvi Attacco" del Master (stessi chip Attaccante/Bersaglio) -- qui ci limitiamo a
+    // preselezionare l'Attaccante, esattamente come fa già 'attack' (vedi bindActionUse). Non
+    // disponibile lato giocatore: nessun pannello Clash nella sua UI (vedi SELF_DIGIMON_ACTION_DEFS).
+    if(actionKey==='clash'){
+      return { ok:true, note:'Attaccante preselezionato per il Clash qui sotto (Inizia/Contesa).', presetAttacker:true };
     }
     return { ok:false, note:'' };
   }
@@ -1315,6 +1419,18 @@
     __combatMusicWasScenePlaying = false;
   }
 
+  // Bug utente (settembre 2026): "la parte AI di narrazione non parte mai". Diagnosticato sui
+  // Runtime Logs di Vercel: /api/ai non aveva NESSUN timeout sul fetch verso Gemini, quindi una
+  // chiamata bloccata restava appesa fino al limite duro della piattaforma (300s, vedi ai.js) --
+  // ma qui il client aspettava solo 6 SECONDI prima di scartare il risultato, quindi anche le
+  // risposte Gemini arrivate correttamente ma non entro 6s venivano comunque buttate via: la
+  // narrazione AI, di fatto, non si vedeva praticamente mai. Il messaggio base è già visibile in
+  // chat SUBITO in ogni caso (vedi pushCombatNarration più sotto) — non c'è alcun costo UX ad
+  // aspettare di più prima di arrendersi, quindi qui la finestra è stata allungata a 30s (oltre il
+  // timeout di 25s ora impostato lato server in ai.js, cosicché il server faccia sempre in tempo a
+  // rispondere, con successo o errore, prima che il client rinunci).
+  const AI_NARRATION_TIMEOUT_MS = 30000;
+
   // Chiede una frase narrativa variabile all'AI per il risultato di un attacco (endpoint già esistente,
   // mode:'narrazione-attacco'), usata per il risultato compatto nel Combat Manager. In caso di errore
   // di rete o API non configurata, ritorna null e il chiamante mostra una frase di fallback.
@@ -1437,7 +1553,32 @@
   // 'attack' qui sarebbe un secondo modo ridondante di aprirlo. Il Master invece lo mantiene (vedi
   // DIGIMON_ACTION_DEFS sopra) perché per lui è l'unica scorciatoia per preselezionare un
   // partecipante come attaccante nel proprio pannello "⚔ Risolvi Attacco".
-  const SELF_DIGIMON_ACTION_DEFS = DIGIMON_ACTION_DEFS.filter(a=>a.key!=='attack');
+  // 'clash' escluso anche qui: nessun pannello Clash lato giocatore (nessuna picker Attaccante/
+  // Bersaglio, nessun bottone Inizia/Contesa) -- stesso motivo di 'attack' sopra: senza un modo di
+  // seguirla, sarebbe una voce "morta" nel suo menu. Il giocatore può comunque narrare l'intenzione
+  // in chat e lasciare che sia il Master ad avviarla dal proprio pannello.
+  const SELF_DIGIMON_ACTION_DEFS = DIGIMON_ACTION_DEFS.filter(a=>a.key!=='attack' && a.key!=='clash');
+  // Opzioni Stance (Cambio Stance): stesso elenco dello <select> Stance sulla Scheda Digimon
+  // (js/digimon-card.js) -- non ogni Stance è sempre utilizzabile (Fierce/Brave/Sentry/Martial/
+  // Anticipate richiedono la Quality corrispondente), ma il vincolo è già segnalato lì sulla
+  // Scheda; qui il Master/giocatore la sceglie liberamente, come già oggi sulla Scheda stessa.
+  const STANCE_OPTIONS = ['Neutral','Offensive','Defensive','Fierce','Brave','Sentry','Martial','Anticipate'];
+  // Icona "❓" cliccabile accanto a un select Azione: mostra la regola/il funzionamento completo
+  // dell'Azione attualmente selezionata -- richiesta utente: "cliccando su un'icona spiegasse la
+  // regola e il funzionamento" (le descrizioni sotto al select bastavano ma erano poco appariscenti,
+  // soprattutto su mobile). defs è l'elenco (SELF_DIGIMON_ACTION_DEFS/DIGIMON_ACTION_DEFS/
+  // TAMER_ACTION_DEFS) in cui cercare la voce corrente.
+  function actionInfoIconHTML(id){
+    return `<button type="button" class="btn ghost small" data-action-info="${id}" title="Spiega questa Azione" style="flex:0 0 auto;padding:4px 8px;">❓</button>`;
+  }
+  function bindActionInfoIcon(btn, sel, defs){
+    if(!btn || !sel) return;
+    btn.onclick = ()=>{
+      const def = defs.find(a=>a.key===sel.value);
+      if(!def){ window.alert('Nessuna Azione selezionata.'); return; }
+      window.alert(`${def.label} (${def.cost} Azione${def.cost>1?'i':''}, ${def.pool==='tamer'?'Tamer':'Digimon'})\n\n${def.desc||'(nessuna descrizione)'}`);
+    };
+  }
 
   function combatSelfActionHTML(combat, username){
     if(!combat || !combat.active) return '';
@@ -1453,13 +1594,17 @@
       <div class="row">
         <select id="self-daction-select" style="flex:2;" ${myTurn?'':'disabled'}>${SELF_DIGIMON_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az.)</option>`).join('')}</select>
         <button class="btn small" id="btn-self-daction-use" style="flex:1;" ${myTurn?'':'disabled'}>Usa</button>
+        ${actionInfoIconHTML('self-d')}
       </div>
+      <select id="self-stance-pick" style="display:none;margin-top:4px;width:100%;">${STANCE_OPTIONS.map(s=>`<option value="${s}">${s}</option>`).join('')}</select>
       <div class="muted" id="self-daction-desc" style="margin:2px 0 6px;font-size:11px;">${escapeHTML((SELF_DIGIMON_ACTION_DEFS[0]&&SELF_DIGIMON_ACTION_DEFS[0].desc)||'')}</div>
       <div class="muted" style="font-size:11px;margin-bottom:2px;color:var(--amber);">Azione Tamer</div>
       <div class="row">
         <select id="self-taction-select" style="flex:2;" ${myTurn?'':'disabled'}>${TAMER_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az.)</option>`).join('')}</select>
         <button class="btn small" id="btn-self-taction-use" style="flex:1;" ${myTurn?'':'disabled'}>Usa</button>
+        ${actionInfoIconHTML('self-t')}
       </div>
+      <select id="self-skill-pick" style="display:none;margin-top:4px;width:100%;">${SKILL_DEFS.map(s=>`<option value="${s.key}">${escapeHTML(s.label)}</option>`).join('')}</select>
       <div class="muted" id="self-taction-desc" style="margin:2px 0 4px;font-size:11px;">${escapeHTML((TAMER_ACTION_DEFS[0]&&TAMER_ACTION_DEFS[0].desc)||'')}</div>
       <div class="muted" id="self-action-status" style="margin-top:4px;">${myTurn?'':'Disponibile solo durante il tuo turno.'}</div>
     `;
@@ -1468,17 +1613,26 @@
   function bindCombatSelfActions(code, username){
     // Richiesta utente: "le scelte del tamer non si capiscono minimamente quali siano" -- mostra
     // la descrizione in chiaro dell'Azione scelta, aggiornata ad ogni cambio di selezione, per
-    // entrambi i menu (ora separati Digimon/Tamer).
-    const bindDesc = (selId, descId, defs)=>{
+    // entrambi i menu (ora separati Digimon/Tamer). Mostra/nasconde anche il selettore Stance/Skill
+    // quando serve (Cambio Stance / Skill Check Tamer) -- vedi applyActionMechanic.
+    const bindDesc = (selId, descId, defs, pickId, pickShowKey)=>{
       const sel = document.getElementById(selId);
       const descEl = document.getElementById(descId);
+      const pickEl = pickId ? document.getElementById(pickId) : null;
       if(!sel || !descEl) return;
-      const updateDesc = ()=>{ const def = defs.find(a=>a.key===sel.value); descEl.textContent = (def && def.desc) || ''; };
+      const updateDesc = ()=>{
+        const def = defs.find(a=>a.key===sel.value);
+        descEl.textContent = (def && def.desc) || '';
+        if(pickEl) pickEl.style.display = (sel.value===pickShowKey) ? '' : 'none';
+      };
       sel.onchange = updateDesc;
       updateDesc();
+      return sel;
     };
-    bindDesc('self-daction-select', 'self-daction-desc', SELF_DIGIMON_ACTION_DEFS);
-    bindDesc('self-taction-select', 'self-taction-desc', TAMER_ACTION_DEFS);
+    const dSel = bindDesc('self-daction-select', 'self-daction-desc', SELF_DIGIMON_ACTION_DEFS, 'self-stance-pick', 'stance');
+    const tSel = bindDesc('self-taction-select', 'self-taction-desc', TAMER_ACTION_DEFS, 'self-skill-pick', 'skill_tamer');
+    bindActionInfoIcon(document.querySelector('[data-action-info="self-d"]'), dSel, SELF_DIGIMON_ACTION_DEFS);
+    bindActionInfoIcon(document.querySelector('[data-action-info="self-t"]'), tSel, TAMER_ACTION_DEFS);
 
     const spendSelfAction = async (selectId)=>{
       if(!cachedCombat || !cachedCombat.active) return;
@@ -1509,6 +1663,17 @@
         const targetSel = document.getElementById('self-target-select');
         const supportTarget = sel.value==='guard' ? p : (targetSel && targetSel.value ? cachedCombat.participants.find(x=>x.id===targetSel.value) : null);
         const effect = await applySupportActionEffect(sel.value, p, supportTarget);
+        supportNote = ' ' + effect.note;
+      } else if(MECHANIC_ACTION_KEYS.includes(sel.value)){
+        // Reinforce/Reposition/Resist/Stance/Skill Check: tutte azioni su se stessi (nessun
+        // bersaglio esterno) -- vedi applyActionMechanic. Stance/Skill Tamer leggono la scelta
+        // dai due selettori dedicati che compaiono sotto al menu (self-stance-pick/self-skill-pick,
+        // vedi bindDesc/combatSelfActionHTML). Clash resta escluso da SELF_DIGIMON_ACTION_DEFS: il
+        // giocatore non ha un pannello Clash nella propria UI.
+        const stancePick = document.getElementById('self-stance-pick');
+        const skillPick = document.getElementById('self-skill-pick');
+        const extra = { stance: stancePick ? stancePick.value : undefined, skillKey: skillPick ? skillPick.value : undefined };
+        const effect = await applyActionMechanic(sel.value, p, null, extra);
         supportNote = ' ' + effect.note;
       }
       await saveCombat(code, cachedCombat);
@@ -1719,7 +1884,7 @@
         await saveCombat(code, cachedCombat);
         // Stesso schema del Master (btn-combat-attack, vedi commento lì): frase di base subito
         // visibile in chat, dettagli tecnici (Accuracy/Dodge, tiri) dietro ::TECH:: — sostituita
-        // dalla narrazione AI se arriva in tempo (narrateAttack, timeout 6s).
+        // dalla narrazione AI se arriva in tempo (narrateAttack, vedi AI_NARRATION_TIMEOUT_MS).
         const baseNarr = basicAttackNarration(p, target, atk, hit, dealt, defeatInfo);
         const pushed = await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'roll', text: `${baseNarr}::TECH::${logText}`, meta:{ dice: accRoll.dice.concat(dodgeRoll.dice), avatar: resolveParticipantImage(p) } });
         const rollEntryId = pushed && pushed.entry && pushed.entry.id;
@@ -1731,7 +1896,7 @@
           await pushCombatNarration(cachedCombat, { who:'Sistema', role:'gm', text: noticeText });
         }
         refreshLiveParts();
-        const narrTimeout = new Promise(resolve=>setTimeout(()=>resolve(null), 6000));
+        const narrTimeout = new Promise(resolve=>setTimeout(()=>resolve(null), AI_NARRATION_TIMEOUT_MS));
         Promise.race([narrateAttack(p, target, atk, hit, dealt, defeatInfo), narrTimeout]).then(async (narrLine)=>{
           if(!narrLine || !rollEntryId) return;
           await editLogEntry(code, rollEntryId, `${narrLine}::TECH::${logText}`, combatNarrationThread(cachedCombat));
@@ -2067,7 +2232,9 @@
         // partenza/arrivo, Azioni residue) dietro ::TECH::, poi eventualmente sostituita dalla
         // narrazione AI (narrateMovement) se arriva in tempo.
         const moveBaseNarr = `${moveDispName} si sposta verso ${zoneLabel(newZone)}.`;
-        const moveTechDetail = `${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.`;
+        const moveTechDetail = result.freeReposition
+          ? `${zoneLabel(from)} → ${zoneLabel(newZone)} (gratuito: Reposition) — restano ${p.actions}/2 Azioni.`
+          : `${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.`;
         const movePushed = await pushCombatNarration(cachedCombat, { who: narratorName(p), role: isMasterNow?'gm':'player', text: `${moveBaseNarr}::TECH::${moveTechDetail}`, meta:{ avatar: resolveParticipantImage(p) } });
         const moveEntryId = movePushed && movePushed.entry && movePushed.entry.id;
         const combatLive = document.getElementById('combat-live');
@@ -2078,7 +2245,7 @@
         bindZoneLineArrows(code, players);
         if(typeof renderCombatManager==='function' && document.getElementById('combat-mgr-card')) renderCombatManager(code, players);
         if(!p.nameHidden){
-          const moveNarrTimeout = new Promise(resolve=>setTimeout(()=>resolve(null), 6000));
+          const moveNarrTimeout = new Promise(resolve=>setTimeout(()=>resolve(null), AI_NARRATION_TIMEOUT_MS));
           Promise.race([narrateMovement(p, from, newZone), moveNarrTimeout]).then(async (narrLine)=>{
             if(!narrLine || !moveEntryId) return;
             await editLogEntry(code, moveEntryId, `${narrLine}::TECH::${moveTechDetail}`, combatNarrationThread(cachedCombat));
@@ -5069,14 +5236,18 @@
             <div class="row">
               <select data-daction-select="${p.id}" style="flex:2;">${DIGIMON_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az.)</option>`).join('')}</select>
               <button class="btn small" data-daction-use="${p.id}" style="flex:1;">Usa</button>
+              <button type="button" class="btn ghost small" data-action-info="d-${p.id}" title="Spiega questa Azione" style="flex:0 0 auto;padding:4px 8px;">❓</button>
             </div>
             <div class="muted" data-daction-desc="${p.id}" style="margin:2px 0;font-size:11px;">${escapeHTML((DIGIMON_ACTION_DEFS[0]&&DIGIMON_ACTION_DEFS[0].desc)||'')}</div>
+            <select data-stance-pick="${p.id}" style="display:none;margin-bottom:4px;width:100%;">${STANCE_OPTIONS.map(s=>`<option value="${s}">${s}</option>`).join('')}</select>
             <div class="muted" style="font-size:11px;margin-top:4px;margin-bottom:2px;color:var(--amber);">Azione Tamer</div>
             <div class="row">
               <select data-taction-select="${p.id}" style="flex:2;">${TAMER_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az.)</option>`).join('')}</select>
               <button class="btn small" data-taction-use="${p.id}" style="flex:1;">Usa</button>
+              <button type="button" class="btn ghost small" data-action-info="t-${p.id}" title="Spiega questa Azione" style="flex:0 0 auto;padding:4px 8px;">❓</button>
             </div>
             <div class="muted" data-taction-desc="${p.id}" style="margin:2px 0;font-size:11px;">${escapeHTML((TAMER_ACTION_DEFS[0]&&TAMER_ACTION_DEFS[0].desc)||'')}</div>
+            <select data-skill-pick="${p.id}" style="display:none;margin-bottom:4px;width:100%;">${SKILL_DEFS.map(s=>`<option value="${s.key}">${escapeHTML(s.label)}</option>`).join('')}</select>
             <div class="row" style="margin-top:4px;">
               <button class="btn ghost small" data-action-reset="${p.id}" style="flex:1;" title="Ripristina sia le Azioni Digimon che quelle Tamer a 2/2">↺ 2+2</button>
               <button class="btn ghost small" data-action-refund="${p.id}" style="flex:1;" title="Es. Successo Critico su Reload/Battle Cry/Horde Duelist: 'riottieni l'Azione spesa' (Digimon)">+1 Azione (Digimon)</button>
@@ -5545,9 +5716,10 @@
         // riapplico subito il risultato (dadi/danno) — non aspetta l'AI, così il tiro non resta mai bloccato.
         const resEl2 = document.getElementById('combat-attack-result');
         if(resEl2) resEl2.innerHTML = fallbackCompact;
-        // Narrazione AI: gareggia con un timeout di 6s. Se arriva in tempo, sostituisce la frase di base
-        // come testo principale dello STESSO messaggio (i dettagli tecnici restano invariati dietro l'espandi).
-        const narrTimeout = new Promise(resolve=>setTimeout(()=>resolve(null), 6000));
+        // Narrazione AI: gareggia con un timeout (vedi AI_NARRATION_TIMEOUT_MS). Se arriva in tempo,
+        // sostituisce la frase di base come testo principale dello STESSO messaggio (i dettagli
+        // tecnici restano invariati dietro l'espandi).
+        const narrTimeout = new Promise(resolve=>setTimeout(()=>resolve(null), AI_NARRATION_TIMEOUT_MS));
         Promise.race([narrateAttack(attacker, target, atk, hit, dealt, defeatInfo), narrTimeout]).then(async (narrLine)=>{
           if(!narrLine || !rollEntryId) return;
           await editLogEntry(code, rollEntryId, `${narrLine}::TECH::${logText}`, combatNarrationThread(combat));
@@ -5862,18 +6034,33 @@
     // Richiesta successiva: "dividi le azioni del digimon da quelle del tamer in due menu diversi" --
     // ora ci sono due select per riga (data-daction-select/data-taction-select), stessa logica di
     // binding applicata a entrambi tramite bindActionDesc.
-    const bindActionDesc = (attr, descAttr, defs)=>{
+    // pickAttr/pickShowKey: come lato giocatore (bindDesc in bindCombatSelfActions), mostra il
+    // selettore Stance/Skill dedicato solo quando l'Azione che lo richiede è selezionata.
+    const bindActionDesc = (attr, descAttr, defs, pickAttr, pickShowKey)=>{
       cardEl.querySelectorAll(`[${attr}]`).forEach(sel=>{
         const id = sel.getAttribute(attr);
         const descEl = cardEl.querySelector(`[${descAttr}="${id}"]`);
+        const pickEl = pickAttr ? cardEl.querySelector(`[${pickAttr}="${id}"]`) : null;
         if(!descEl) return;
-        const updateDesc = ()=>{ const def = defs.find(a=>a.key===sel.value); descEl.textContent = (def && def.desc) || ''; };
+        const updateDesc = ()=>{
+          const def = defs.find(a=>a.key===sel.value);
+          descEl.textContent = (def && def.desc) || '';
+          if(pickEl) pickEl.style.display = (sel.value===pickShowKey) ? '' : 'none';
+        };
         sel.onchange = updateDesc;
         updateDesc();
       });
     };
-    bindActionDesc('data-daction-select', 'data-daction-desc', DIGIMON_ACTION_DEFS);
-    bindActionDesc('data-taction-select', 'data-taction-desc', TAMER_ACTION_DEFS);
+    bindActionDesc('data-daction-select', 'data-daction-desc', DIGIMON_ACTION_DEFS, 'data-stance-pick', 'stance');
+    bindActionDesc('data-taction-select', 'data-taction-desc', TAMER_ACTION_DEFS, 'data-skill-pick', 'skill_tamer');
+    cardEl.querySelectorAll('[data-action-info]').forEach(btn=>{
+      const infoId = btn.getAttribute('data-action-info');
+      const isDigimon = infoId.startsWith('d-');
+      const pid = infoId.slice(2);
+      const sel = cardEl.querySelector(`[${isDigimon?'data-daction-select':'data-taction-select'}="${pid}"]`);
+      const defs = isDigimon ? DIGIMON_ACTION_DEFS : TAMER_ACTION_DEFS;
+      bindActionInfoIcon(btn, sel, defs);
+    });
 
     const bindActionUse = (useAttr, selectAttr)=>{
       cardEl.querySelectorAll(`[${useAttr}]`).forEach(btn=>{
@@ -5900,15 +6087,36 @@
           // Direct/Aid/Guard/Bolster: bersaglio riusato dal select "Avvicina/Allontana" della stessa
           // riga (data-zone-ref) -- Guard non ha bisogno di bersaglio, si applica sempre a se stesso.
           let supportNote = '';
+          let presetAttacker = false;
           if(SUPPORT_ACTION_KEYS.includes(sel.value)){
             const zoneRefSel = cardEl.querySelector(`[data-zone-ref="${id}"]`);
             const supportTarget = sel.value==='guard' ? p : (zoneRefSel && zoneRefSel.value ? combat.participants.find(x=>x.id===zoneRefSel.value) : null);
             const effect = await applySupportActionEffect(sel.value, p, supportTarget);
             supportNote = ' ' + effect.note;
+          } else if(MECHANIC_ACTION_KEYS.includes(sel.value)){
+            // Reinforce/Reposition/Resist/Stance/Skill Check/Clash: tutte azioni su se stessi (nessun
+            // bersaglio esterno) -- vedi applyActionMechanic. Stance/Skill Tamer leggono la scelta dai
+            // due selettori dedicati della riga (data-stance-pick/data-skill-pick).
+            const stancePick = cardEl.querySelector(`[data-stance-pick="${id}"]`);
+            const skillPick = cardEl.querySelector(`[data-skill-pick="${id}"]`);
+            const extra = { stance: stancePick ? stancePick.value : undefined, skillKey: skillPick ? skillPick.value : undefined };
+            const effect = await applyActionMechanic(sel.value, p, null, extra);
+            supportNote = ' ' + effect.note;
+            presetAttacker = !!effect.presetAttacker;
           }
           const usedPoolLabelGM = result.def.pool==='tamer' ? 'Tamer' : 'Digimon';
           const usedPoolLeftGM = result.def.pool==='tamer' ? p.tamerActions : p.actions;
           await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabelGM}) — restano ${usedPoolLeftGM}/2 Azioni (${usedPoolLabelGM}).${supportNote}`, meta:{avatar: resolveParticipantImage(p)} });
+          // Clash: preseleziona l'Attaccante nel pannello "⚔ Risolvi Attacco" (Inizia/Contesa), stesso
+          // comportamento già esistente per 'attack' più sopra -- qui il costo va comunque spesato
+          // normalmente (a differenza di 'attack', il cui costo è dedotto più tardi nella risoluzione).
+          // Impostato PRIMA di persistAndRefresh così il re-render che segue riflette già la preselezione
+          // (evita un secondo render separato).
+          if(presetAttacker){
+            combatAttackPanelOpen = true;
+            combatPresetAttackerId = p.id;
+            combatSelectedAttackIndex = null;
+          }
           await persistAndRefresh();
           refreshLiveParts();
         };
@@ -5969,7 +6177,7 @@
         if(!result.ok){ showLocal(result.msg, false); return; }
         const from = p.zone||'Medio';
         p.zone = newZone;
-        await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} si avvicina a ${narratorName(ref)}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}`, meta:{avatar: resolveParticipantImage(p)} });
+        await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} si avvicina a ${narratorName(ref)}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (${result.freeReposition?'gratuito: Reposition':'1 Azione'}) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}`, meta:{avatar: resolveParticipantImage(p)} });
         await persistAndRefresh();
       };
     });
@@ -5989,7 +6197,7 @@
         if(!result.ok){ showLocal(result.msg, false); return; }
         const from = p.zone||'Medio';
         p.zone = newZone;
-        await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} si allontana da ${narratorName(ref)}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (1 Azione) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}`, meta:{avatar: resolveParticipantImage(p)} });
+        await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} si allontana da ${narratorName(ref)}: ${zoneLabel(from)} → ${zoneLabel(newZone)} (${result.freeReposition?'gratuito: Reposition':'1 Azione'}) — restano ${p.actions}/2 Azioni.${zoneSideEffectsNote(combat.participants, p.id, ref.id, from, newZone)}`, meta:{avatar: resolveParticipantImage(p)} });
         await persistAndRefresh();
       };
     });
@@ -6009,7 +6217,7 @@
         }
         const from = p.zone||'Medio';
         p.zone = target;
-        await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} viene posizionato in ${zoneLabel(target)} (${zoneLabel(from)} → ${zoneLabel(target)}, 1 Azione, senza riferimento a un bersaglio specifico) — restano ${p.actions}/2 Azioni.`, meta:{avatar: resolveParticipantImage(p)} });
+        await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} viene posizionato in ${zoneLabel(target)} (${zoneLabel(from)} → ${zoneLabel(target)}, ${result.freeReposition?'gratuito: Reposition':'1 Azione'}, senza riferimento a un bersaglio specifico) — restano ${p.actions}/2 Azioni.`, meta:{avatar: resolveParticipantImage(p)} });
         await persistAndRefresh();
       };
     });
