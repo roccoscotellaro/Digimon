@@ -73,6 +73,28 @@
     }catch(e){}
   }
 
+  // Richiesta utente: "quando i Digimon si evolvono in combattimento i nomi non si aggiornano".
+  // A differenza di Stat/Ferite/Ritratto, che il combattimento legge sempre dal vivo da cachedRoster
+  // (vedi getParticipantAttacks/Wounds/... in js/combat-engine.js), il nome mostrato in combattimento
+  // (combat.participants[].name -- usato ovunque da combatDisplayName/techLogName/
+  // participantChipHTML/le select Attaccante-Bersaglio del Master) viene copiato UNA SOLA VOLTA
+  // quando il Digimon entra in combattimento (vedi "btn-combat-add-fromscene" in index.html) e non
+  // veniva più risincronizzato. Da richiamare subito dopo ogni cambio di me.digimon.name durante il
+  // combattimento (Evolvi/Forza Evoluzione/Blast/Slide/Dark Evolution/Armor Form) così il nome resta
+  // aggiornato anche a combattimento già in corso. Nessun effetto se il Digimon non è in un
+  // combattimento attivo, o se non è cambiato nulla.
+  async function syncCombatParticipantName(me){
+    if(typeof cachedCombat==='undefined' || !cachedCombat || !Array.isArray(cachedCombat.participants)) return;
+    const p = cachedCombat.participants.find(x=>x.isPC && x.username===me.username);
+    if(!p || p.name===me.digimon.name) return;
+    p.name = me.digimon.name;
+    if(me.digimon.imageUrl) p.imageUrl = me.digimon.imageUrl;
+    if(typeof saveCombat==='function') await saveCombat(session.code, cachedCombat);
+    const combatLive = document.getElementById('combat-live');
+    if(combatLive && typeof combatDisplayHTML==='function') combatLive.innerHTML = combatDisplayHTML(cachedCombat, !!(session && session.role==='master'));
+    if(typeof renderCombatManager==='function') renderCombatManager(session.code, (cachedRoster||[]).filter(m=>m.role==='player'));
+  }
+
   // Tabella Size (regola 3.02a, fonte canonica "Player's Companion Beta.docx") -- allineata a
   // digimon.html, che la usa correttamente da sempre. In precedenza questo file usava una tabella
   // diversa (presa da una bozza più vecchia del manuale, "2E PC Reformatting.docx"), e la formula
@@ -884,6 +906,7 @@
           // Regola 8.05: un Digimon che evolve recupera tutte le Wound Box.
           me.digimon.currentWounds = me.digimon.maxWounds;
           await saveMember(session.code, me);
+          await syncCombatParticipantName(me);
           // BUGFIX: mostrava lo Stage target (es. "Fresh") invece del nome specifico del nuovo
           // Digimon (es. "Tsunomon") raggiunto — che a questo punto è già in me.digimon.name grazie
           // ad applyStageChange, dato che il guard sopra garantisce che lo Stage sia già costruito.
@@ -907,6 +930,11 @@
           }
           const cost = evolutionCost(me.digimon, target);
           const tn = 18 + cost;
+          // Richiesta utente: la Forza Evoluzione deve chiedere conferma prima di tirare il dado e
+          // mandare il risultato in chat -- un fallimento ha "possibili conseguenze pericolose a
+          // discrezione del Master" (vedi outcomeText sotto), quindi non deve poter partire per un
+          // click accidentale, a differenza del normale "Evolvi" che non ha questo rischio.
+          if(!window.confirm(`Forzare l'Evoluzione di ${me.digimon.name||'il Digimon'} a ${target}? Verrà tirato subito un Check di Willpower (TN ${tn}) e il risultato sarà mandato in chat. Un fallimento può avere conseguenze pericolose a discrezione del Master.`)) return;
           const willVal = me.tamer.willpower;
           const { dice, total } = rollSkillCheck(willVal, 0);
           const verdict = evaluateVsTN(total, tn, dice);
@@ -935,6 +963,7 @@
             outcomeText = `${verdict.label}. Nessuna evoluzione forzata — possibili conseguenze pericolose a discrezione del Master.`;
           }
           await saveMember(session.code, me);
+          await syncCombatParticipantName(me);
           await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: `⚡ Forza Evoluzione (TN ${tn}): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText}`, meta:{ dice } });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = outcomeText;
           if(verdict.cls==='crit-success' || verdict.cls==='success'){
@@ -1024,6 +1053,7 @@
             outcomeText = `Fallimento. Scende a ${STAGES[revertIdx]} (sotto il Default Stage) e non può Evolvere per il resto del Combattimento.`;
           }
           await saveMember(session.code, me);
+          await syncCombatParticipantName(me);
           await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: `💥 Blast Evolution a ${target} — Willpower Check (TN ${tn}): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText} (Usi rimasti: ${me.digimon.blastEvolutionUses})`, meta:{ dice } });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = outcomeText;
           renderDigimonCard(me, containerId, onChanged, renderTamerCardFn);
@@ -1046,6 +1076,7 @@
             me.digimon.currentWounds = Math.max(0, Math.min(me.digimon.maxWounds, Number(me.digimon.currentWounds||0) + woundDiff));
           }
           await saveMember(session.code, me);
+          await syncCombatParticipantName(me);
           await pushPlayerNarration(session.code, me, { who: displayName(me), role:'player', text: `🔀 ${me.digimon.name} usa Slide Evolution (stesso Stage, 1 Evolution Point speso)${woundDiff!==0?`, Ferite Massime ${woundDiff>0?'+':''}${woundDiff}`:''}.` });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = `Slide Evolution completata: ora sei ${newName}.`;
           renderDigimonCard(me, containerId, onChanged, renderTamerCardFn);
@@ -1065,6 +1096,7 @@
           }
           me.digimon.resolveCurrent = me.digimon.resolveMax || 4;
           await saveMember(session.code, me);
+          await syncCombatParticipantName(me);
           await pushPlayerNarration(session.code, me, { who:'Sistema', role:'gm', text: `🌑 ${me.digimon.name} subisce Dark Evolution! Il Master ne prende il controllo: attacca chiunque si muova finché non sconfigge tutti, viene sconfitto, passano ${target} turni, o il Tamer supera un Check Willpower TN 20. Il Tamer guadagna 1 nuovo Torment (Marked pari allo Stage).` });
           statusEl.style.color='var(--danger)'; statusEl.textContent = 'Dark Evolution attiva.';
           renderDigimonCard(me, containerId, onChanged, renderTamerCardFn);
@@ -1078,6 +1110,7 @@
           applyStageChange(me.digimon, me.digimon.stage, me.digimon.defaultStage);
           me.digimon.darkEvolutionActive = false;
           await saveMember(session.code, me);
+          await syncCombatParticipantName(me);
           await pushPlayerNarration(session.code, me, { who:'Sistema', role:'gm', text: `${me.digimon.name} rientra dalla Dark Evolution, tornando a ${me.digimon.defaultStage}.` });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Dark Evolution terminata.';
           renderDigimonCard(me, containerId, onChanged, renderTamerCardFn);
@@ -1096,6 +1129,7 @@
           });
           af.usedThisRest = true;
           await saveMember(session.code, me);
+          await syncCombatParticipantName(me);
           await pushPlayerNarration(session.code, me, { who: displayName(me), role:'player', text: `${me.digimon.name||'Il Digimon'} usa il Digimental "${af.digimentalName}" per Armor Evolvere in ${af.name} (${af.stage}, 0 Evolution Points).` });
           renderDigimonCard(me, containerId, onChanged, renderTamerCardFn);
           if(onChanged) onChanged();
@@ -1109,6 +1143,7 @@
           applyStageChange(me.digimon, me.digimon.stage, me.digimon.defaultStage);
           me.digimon.qualities = (me.digimon.qualities||[]).filter(q=>q.armorSource!==af.name);
           await saveMember(session.code, me);
+          await syncCombatParticipantName(me);
           await pushPlayerNarration(session.code, me, { who: displayName(me), role:'player', text: `${me.digimon.name||'Il Digimon'} torna al Default Stage (${me.digimon.defaultStage}), lasciando la forma ${af.name}.` });
           renderDigimonCard(me, containerId, onChanged, renderTamerCardFn);
           if(onChanged) onChanged();

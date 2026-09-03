@@ -944,34 +944,37 @@
   // 'digimon' -> participant.actions. Move/Difficult Move/Clash sono "Tamer o Digimon" a regolamento,
   // ma il sito non modella il Tamer come entità fisica separata (niente zona/Accuracy/Dodge propri),
   // quindi per ora restano sul pool del Digimon -- vedi claude/audit-regolamento-dda2e.md, Addendum 3.
+  // Ogni voce ha ora anche 'desc': testo semplice mostrato sotto ai due select di scelta Azione
+  // (pannello Giocatore e riga del Master) -- richiesta utente: "le scelte del tamer non si capiscono
+  // minimamente quali siano". Vedi combatSelfActionHTML/bindCombatSelfActions e renderCombatManager.
   const ACTION_DEFS = [
-    { key:'move', label:'Muovi', cost:1, pool:'digimon' },
-    { key:'attack', label:'Attacca (Digimon)', cost:1, oncePerRound:true, pool:'digimon' },
-    { key:'attack_tamer', label:'Attacca (Tamer)', cost:1, oncePerRoundTamer:true, pool:'tamer' },
-    { key:'difficult_move', label:'Movimento Difficile', cost:2, pool:'digimon' },
-    { key:'holdback', label:'Trattieni Colpo', cost:1, pool:'digimon' },
-    { key:'skill_tamer', label:'Skill Check (Tamer)', cost:1, pool:'tamer' },
-    { key:'skill_digimon', label:'Skill Check (Digimon)', cost:2, pool:'digimon' },
-    { key:'stance', label:'Cambio Stance', cost:1, pool:'digimon' },
-    { key:'clash', label:'Clash', cost:1, pool:'digimon' },
-    { key:'bolster_tamer', label:'Bolster (Tamer, +2)', cost:1, pool:'tamer' },
-    { key:'bolster_digimon', label:'Bolster (Digimon, +SV)', cost:1, pool:'digimon' },
-    { key:'aid', label:'Aid', cost:1, pool:'digimon' },
-    { key:'guard', label:'Guard', cost:1, pool:'digimon' },
-    { key:'resist1', label:'Resist (1 Az.)', cost:1, pool:'digimon' },
-    { key:'resist2', label:'Resist (2 Az.)', cost:2, pool:'digimon' },
-    { key:'direct1', label:'Direct (1 Az. — Charisma)', cost:1, pool:'tamer' },
-    { key:'direct2', label:'Direct (2 Az. — Highest Attribute)', cost:2, pool:'tamer' },
-    { key:'reinforce1', label:'Reinforce (1 Az. — Body)', cost:1, pool:'tamer' },
-    { key:'reinforce2', label:'Reinforce (2 Az. — Highest Attribute)', cost:2, pool:'tamer' },
-    { key:'reposition1', label:'Reposition (1 Az. — Agility)', cost:1, pool:'tamer' },
-    { key:'reposition2', label:'Reposition (2 Az. — Highest Attribute)', cost:2, pool:'tamer' },
-    { key:'hold_action', label:'Hold Action (Tamer, 2 Az.)', cost:2, pool:'tamer' },
-    { key:'hold_breath', label:'Hold Breath', cost:1, pool:'digimon' },
-    { key:'other1', label:'Altro (1 Azione, Digimon)', cost:1, pool:'digimon' },
-    { key:'other2', label:'Altro (2 Azioni, Digimon)', cost:2, pool:'digimon' },
-    { key:'other1_tamer', label:'Altro (1 Azione, Tamer)', cost:1, pool:'tamer' },
-    { key:'other2_tamer', label:'Altro (2 Azioni, Tamer)', cost:2, pool:'tamer' }
+    { key:'move', label:'Muovi', cost:1, pool:'digimon', desc:'Sposta il Digimon di 1 zona lungo la linea delle distanze.' },
+    { key:'attack', label:'Attacca (Digimon)', cost:1, oncePerRound:true, pool:'digimon', desc:'Il Digimon usa uno dei suoi Attacchi (tira Accuracy, il bersaglio tira Dodge). Una sola volta a round.' },
+    { key:'attack_tamer', label:'Attacca (Tamer)', cost:1, oncePerRoundTamer:true, pool:'tamer', desc:'Il Tamer stesso attacca (tiro di Precision, 1-2 Danni se riesce) — non consuma l\'Attacco del Digimon.' },
+    { key:'difficult_move', label:'Movimento Difficile', cost:2, pool:'digimon', desc:'Come Muovi, ma può attraversare Terreno Difficile.' },
+    { key:'holdback', label:'Trattieni Colpo', cost:1, pool:'digimon', desc:'Attacco non letale: se ridurrebbe il bersaglio a 0 Ferite, resta a 1 ma incapacitato per il resto dello scontro. Non disponibile in Stance Offensiva/Fierce o con Attacchi [HAZARD].' },
+    { key:'skill_tamer', label:'Skill Check (Tamer)', cost:1, pool:'tamer', desc:'Il Tamer tenta una Prova di Abilità a sua scelta (es. persuadere, cercare indizi).' },
+    { key:'skill_digimon', label:'Skill Check (Digimon)', cost:2, pool:'digimon', desc:'Il Digimon tenta una Prova di Abilità a sua scelta (costa 2 Azioni Digimon).' },
+    { key:'stance', label:'Cambio Stance', cost:1, pool:'digimon', desc:'Il Digimon cambia Stance di combattimento (Neutrale/Offensiva/Difensiva). Una volta a turno.' },
+    { key:'clash', label:'Clash', cost:1, pool:'digimon', desc:'Avvia un Clash (contrasto diretto) contro un bersaglio. Una volta a turno contro lo stesso bersaglio.' },
+    { key:'bolster_tamer', label:'Bolster (Tamer, +2)', cost:1, pool:'tamer', desc:'Trasforma 1 Azione con Pool Check in 2 Azioni: +2 dadi al Pool Check (anche per potenziare Direct/Aid/Guard).' },
+    { key:'bolster_digimon', label:'Bolster (Digimon, +SV)', cost:1, pool:'digimon', desc:'Come sopra, ma per il Digimon: il bonus è pari al suo SV più alto nel Default Range invece di +2.' },
+    { key:'aid', label:'Aid', cost:1, pool:'digimon', desc:'Il Digimon tenta di aiutare un alleato entro il proprio Reach: su questo tavolo si tira un vero Pool Check (Nd6 = Stage) e, se riesce almeno 1 successo, l\'alleato ottiene il bonus prima del suo prossimo turno (variante rispetto al bonus garantito da regolamento). Una volta a turno.' },
+    { key:'guard', label:'Guard', cost:1, pool:'digimon', desc:'Il Digimon si prepara: ottiene un bonus pari al proprio SV al prossimo Dodge Pool prima del suo prossimo turno (non conta ai fini delle penalità da Dodge ripetuto). Una volta a turno.' },
+    { key:'resist1', label:'Resist (1 Az.)', cost:1, pool:'digimon', desc:'Riduce di 1 la Potenza di tutti gli Effetti attivi sul Digimon (a 0 l\'Effetto termina).' },
+    { key:'resist2', label:'Resist (2 Az.)', cost:2, pool:'digimon', desc:'Come sopra, ma riduce la Potenza di 2 (2 Azioni spese).' },
+    { key:'direct1', label:'Direct (1 Az. — Charisma)', cost:1, pool:'tamer', desc:'Il Tamer incita un Digimon: aggiunge dadi pari a Charisma al suo prossimo Accuracy/Dodge Pool (-2 se non è il proprio partner). Dura finché non viene usato o il Tamer ripete l\'Azione. Una volta a turno.' },
+    { key:'direct2', label:'Direct (2 Az. — Highest Attribute)', cost:2, pool:'tamer', desc:'Come Direct (1 Az.), ma il bonus è pari all\'Attributo più alto del Tamer invece di Charisma.' },
+    { key:'reinforce1', label:'Reinforce (1 Az. — Body)', cost:1, pool:'tamer', desc:'Il Tamer tira un Pool Check di Body: il Digimon ottiene Wound Box Temporanee pari ai successi, fino al prossimo turno del Tamer. Una volta a turno.' },
+    { key:'reinforce2', label:'Reinforce (2 Az. — Highest Attribute)', cost:2, pool:'tamer', desc:'Come Reinforce (1 Az.), ma il Pool Check usa l\'Attributo più alto del Tamer invece di Body.' },
+    { key:'reposition1', label:'Reposition (1 Az. — Agility)', cost:1, pool:'tamer', desc:'Il Tamer aiuta il Digimon a riposizionarsi sulla linea delle distanze con un Pool Check di Agility.' },
+    { key:'reposition2', label:'Reposition (2 Az. — Highest Attribute)', cost:2, pool:'tamer', desc:'Come Reposition (1 Az.), ma il Pool Check usa l\'Attributo più alto del Tamer invece di Agility.' },
+    { key:'hold_action', label:'Hold Action (Tamer, 2 Az.)', cost:2, pool:'tamer', desc:'Il Tamer dichiara un trigger specifico e un\'Azione da 1 che il Digimon eseguirà se quel trigger si verifica prima del prossimo turno (con +Intelligence del Tamer al tiro). Se il trigger non si verifica, non succede nulla.' },
+    { key:'hold_breath', label:'Hold Breath', cost:1, pool:'digimon', desc:'Evita il danno da annegamento per quel turno. Usi limitati per combattimento; se usata mentre si ha ancora aria, non consuma un utilizzo.' },
+    { key:'other1', label:'Altro (1 Azione, Digimon)', cost:1, pool:'digimon', desc:'Azione libera del Digimon non elencata sopra (es. effetto di una Quality), costo 1 Azione.' },
+    { key:'other2', label:'Altro (2 Azioni, Digimon)', cost:2, pool:'digimon', desc:'Come sopra, ma da 2 Azioni Digimon.' },
+    { key:'other1_tamer', label:'Altro (1 Azione, Tamer)', cost:1, pool:'tamer', desc:'Azione libera del Tamer non elencata sopra, costo 1 Azione Tamer.' },
+    { key:'other2_tamer', label:'Altro (2 Azioni, Tamer)', cost:2, pool:'tamer', desc:'Come sopra, ma da 2 Azioni Tamer.' }
   ];
 
   function trySpendAction(participant, actionKey){
@@ -1105,30 +1108,62 @@
 
   // isParticipantDefeated spostato in js/combat-engine.js (il commento sopra restava valido: 'Avanza il turno...' resta come nota per advanceCombatTurn qui sotto)
 
+  // Applica gli effetti "di fine turno" a chi lascia il turno (reset Azioni Digimon/Tamer, e per i
+  // PC il guadagno di 1 Battery -- regola 3.04 -- a meno che non abbia dichiarato la Signature Move
+  // in quel turno con il tasto ⚡ della Scheda Digimon, che imposta usedSigMoveThisTurn). Estratta da
+  // advanceCombatTurn così sia jumpToCombatTurn (salto manuale) sia l'avanzamento normale la
+  // applicano allo stesso modo -- prima esisteva solo dentro advanceCombatTurn, quindi qualunque
+  // altro modo di cambiare turno (nessuno, finché non c'era jumpToCombatTurn) l'avrebbe saltata.
+  async function applyEndOfTurnEffects(code, finishing){
+    if(!finishing) return;
+    const fMemberEarly = finishing.isPC ? cachedRoster.find(m=>m.username===finishing.username) : null;
+    finishing.actions = (fMemberEarly && fMemberEarly.digimon.hybridMode) ? 3 : 2;
+    finishing.attackedThisRound = false;
+    // Pool separato del Tamer (Indice Regole 9.01) -- vedi commento su ACTION_DEFS/trySpendAction.
+    finishing.tamerActions = 2;
+    finishing.attackedThisRoundTamer = false;
+    if(finishing.isPC){
+      const fMember = cachedRoster.find(m=>m.username===finishing.username);
+      if(fMember){
+        if(!fMember.digimon.usedSigMoveThisTurn){
+          fMember.digimon.battery = Math.min(batteryCap(fMember.digimon.stage), Number(fMember.digimon.battery||0)+1);
+        }
+        fMember.digimon.usedSigMoveThisTurn = false;
+        await saveMember(code, fMember);
+      }
+    }
+  }
+  // Applica gli effetti "di inizio turno" a chi riceve il turno (tick Effetti attivi, countdown
+  // dell'Evoluzione Forzata). Estratta per lo stesso motivo di applyEndOfTurnEffects sopra.
+  async function applyStartOfTurnEffects(code, combat, starting){
+    if(!starting) return;
+    const tickLogs = await tickEffectsForParticipant(code, combat, starting);
+    for(const line of tickLogs){
+      await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: line });
+    }
+    if(starting.isPC){
+      const member = cachedRoster.find(m=>m.username===starting.username);
+      if(member){
+        if(member.digimon.forcedEvoRoundsLeft > 0){
+          member.digimon.forcedEvoRoundsLeft -= 1;
+          if(member.digimon.forcedEvoRoundsLeft <= 0){
+            const revertIdx = Math.max(0, stageIndex(member.digimon.defaultStage)-1);
+            const revertStage = STAGES[revertIdx];
+            applyStageChange(member.digimon, member.digimon.stage, revertStage);
+            await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${member.digimon.name||displayName(member)} torna a ${member.digimon.stage} (fine Evoluzione Forzata) — Stat aggiornate.` });
+          }
+        }
+        await saveMember(code, member);
+      }
+    }
+  }
   async function advanceCombatTurn(code, players){
     const combat = cachedCombat;
     if(!combat || !combat.order || combat.order.length===0) return;
     combatPresetAttackerId = null;
     combatSelectedAttackIndex = null;
     const finishing = combat.participants.find(p=>p.id===combat.order[combat.currentIndex]);
-    if(finishing){
-      const fMemberEarly = finishing.isPC ? cachedRoster.find(m=>m.username===finishing.username) : null;
-      finishing.actions = (fMemberEarly && fMemberEarly.digimon.hybridMode) ? 3 : 2;
-      finishing.attackedThisRound = false;
-      // Pool separato del Tamer (Indice Regole 9.01) -- vedi commento su ACTION_DEFS/trySpendAction.
-      finishing.tamerActions = 2;
-      finishing.attackedThisRoundTamer = false;
-      if(finishing.isPC){
-        const fMember = cachedRoster.find(m=>m.username===finishing.username);
-        if(fMember){
-          if(!fMember.digimon.usedSigMoveThisTurn){
-            fMember.digimon.battery = Math.min(batteryCap(fMember.digimon.stage), Number(fMember.digimon.battery||0)+1);
-          }
-          fMember.digimon.usedSigMoveThisTurn = false;
-          await saveMember(code, fMember);
-        }
-      }
-    }
+    await applyEndOfTurnEffects(code, finishing);
     // Regola 9.12a: chi è Sconfitto viene ignorato per il resto del combattimento — si salta
     // automaticamente il suo turno. Il Master può comunque farlo "rientrare a rischio" con il
     // tasto ↩️ sulla sua riga, il che lo rimette in lista qui.
@@ -1148,27 +1183,7 @@
     // Timer 24h (richiesta utente): riparte da zero ad ogni cambio di turno, non solo al primo —
     // vedi combatTurnTimerLabel/combatDisplayHTML.
     combat.turnStartedAt = new Date().toISOString();
-    if(starting){
-      const tickLogs = await tickEffectsForParticipant(code, combat, starting);
-      for(const line of tickLogs){
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: line });
-      }
-      if(starting.isPC){
-        const member = cachedRoster.find(m=>m.username===starting.username);
-        if(member){
-          if(member.digimon.forcedEvoRoundsLeft > 0){
-            member.digimon.forcedEvoRoundsLeft -= 1;
-            if(member.digimon.forcedEvoRoundsLeft <= 0){
-              const revertIdx = Math.max(0, stageIndex(member.digimon.defaultStage)-1);
-              const revertStage = STAGES[revertIdx];
-              applyStageChange(member.digimon, member.digimon.stage, revertStage);
-              await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${member.digimon.name||displayName(member)} torna a ${member.digimon.stage} (fine Evoluzione Forzata) — Stat aggiornate.` });
-            }
-          }
-          await saveMember(code, member);
-        }
-      }
-    }
+    await applyStartOfTurnEffects(code, combat, starting);
     await saveCombat(code, combat);
 
     // Notifica al giocatore specifico quando tocca a lui: invia un messaggio di sistema nella
@@ -1184,6 +1199,63 @@
     // advanceCombatTurn è condivisa tra il bottone "Turno Successivo" del Master e "Fine Turno" del
     // Giocatore (bindAttacksCard) — un `true` fisso smascererebbe qui nomi/Digimon nascosti al
     // Giocatore ogni volta che chiude il proprio turno.
+    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, !!(session && session.role==='master'));
+    bindZoneLineArrows(code, players);
+  }
+  // Richiesta utente: il Master deve poter spostare manualmente il turno su un partecipante a
+  // scelta SENZA ricalcolare tutto l'ordine (che azzererebbe Azioni/Battery/round di tutti, vedi
+  // recalcCombatOrder) -- es. per correggere un errore, o far agire qualcuno fuori sequenza. A
+  // differenza di advanceCombatTurn, non tocca combat.round né l'orologio di gioco: sposta solo il
+  // puntatore, applicando gli stessi effetti di fine/inizio turno di chi lascia/riceve il turno.
+  async function jumpToCombatTurn(code, players, targetParticipantId){
+    const combat = cachedCombat;
+    if(!combat || !combat.order || combat.order.length===0) return;
+    const targetIdx = combat.order.indexOf(targetParticipantId);
+    if(targetIdx===-1) return;
+    combatPresetAttackerId = null;
+    combatSelectedAttackIndex = null;
+    const finishing = combat.participants.find(p=>p.id===combat.order[combat.currentIndex]);
+    if(finishing && finishing.id!==targetParticipantId){
+      await applyEndOfTurnEffects(code, finishing);
+    }
+    combat.currentIndex = targetIdx;
+    const starting = combat.participants.find(p=>p.id===targetParticipantId);
+    combat.turnStartedAt = new Date().toISOString();
+    await applyStartOfTurnEffects(code, combat, starting);
+    await saveCombat(code, combat);
+    if(starting && starting.isPC && starting.username){
+      const turnDispName = combatDisplayName(starting, false);
+      await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `⚔️ ${turnDispName}, è il tuo turno! (turno spostato manualmente dal Master)` });
+    }
+    renderCombatManager(code, players);
+    const combatLive = document.getElementById('combat-live');
+    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, !!(session && session.role==='master'));
+    bindZoneLineArrows(code, players);
+  }
+  // Richiesta utente: poter "tornare indietro di turni" per correggere un errore di sequenza.
+  // A differenza di advanceCombatTurn/jumpToCombatTurn, questa funzione NON applica gli effetti di
+  // fine/inizio turno (Battery, tick Effetti, countdown Evoluzione Forzata): tornare indietro serve
+  // a correggere IL PUNTATORE, non a disfare le conseguenze di un turno già giocato (che andrebbero
+  // corrette a mano dal Master caso per caso). Sposta solo combat.currentIndex (e combat.round se
+  // serve tornare al round precedente), senza ricalcolare l'ordine.
+  async function previousCombatTurn(code, players){
+    const combat = cachedCombat;
+    if(!combat || !combat.order || combat.order.length===0) return;
+    combatPresetAttackerId = null;
+    combatSelectedAttackIndex = null;
+    let skipped = 0;
+    do {
+      combat.currentIndex--;
+      if(combat.currentIndex < 0){
+        combat.currentIndex = combat.order.length-1;
+        combat.round = Math.max(1, combat.round-1);
+      }
+      skipped++;
+    } while(isParticipantDefeated(combat.participants.find(p=>p.id===combat.order[combat.currentIndex])) && skipped < combat.order.length);
+    combat.turnStartedAt = new Date().toISOString();
+    await saveCombat(code, combat);
+    renderCombatManager(code, players);
+    const combatLive = document.getElementById('combat-live');
     if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, !!(session && session.role==='master'));
     bindZoneLineArrows(code, players);
   }
@@ -1363,11 +1435,21 @@
         <select id="self-action-select" style="flex:2;" ${myTurn?'':'disabled'}>${SELF_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az. ${a.pool==='tamer'?'Tamer':'Digimon'})</option>`).join('')}</select>
         <button class="btn small" id="btn-self-action-use" style="flex:1;" ${myTurn?'':'disabled'}>Usa</button>
       </div>
+      <div class="muted" id="self-action-desc" style="margin-top:4px;font-size:11px;">${escapeHTML((SELF_ACTION_DEFS[0]&&SELF_ACTION_DEFS[0].desc)||'')}</div>
       <div class="muted" id="self-action-status" style="margin-top:4px;">${myTurn?'':'Disponibile solo durante il tuo turno.'}</div>
     `;
   }
 
   function bindCombatSelfActions(code, username){
+    const sel = document.getElementById('self-action-select');
+    const descEl = document.getElementById('self-action-desc');
+    // Richiesta utente: "le scelte del tamer non si capiscono minimamente quali siano" -- mostra
+    // la descrizione in chiaro dell'Azione scelta, aggiornata ad ogni cambio di selezione.
+    if(sel && descEl){
+      const updateDesc = ()=>{ const def = SELF_ACTION_DEFS.find(a=>a.key===sel.value); descEl.textContent = (def && def.desc) || ''; };
+      sel.onchange = updateDesc;
+      updateDesc();
+    }
     const btn = document.getElementById('btn-self-action-use');
     if(!btn) return;
     btn.onclick = async ()=>{
@@ -1446,6 +1528,10 @@
     const firstOther = others[0];
     const targetItemsHTML = others.map(x=>{
       const dispName = combatDisplayName(x, isMasterView);
+      // Richiesta utente: distingue con un numerino (es. " #2") i Digimon che condividono lo stesso
+      // nome visualizzato — vedi duplicateNameSuffix. Tenuto separato da dispName perché il confronto
+      // isMasked qui sotto deve restare sul nome "puro", non sul nome+numero.
+      const dupSuffix = duplicateNameSuffix(combat, x, isMasterView);
       const sideTag = x.side==='enemy' ? '(Nemico)' : '(Alleato)';
       const zone = zoneLabel(x.zone||'Medio');
       const img = resolveParticipantImage(x, true);
@@ -1456,12 +1542,13 @@
         : `<div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:var(--panel-2);border-radius:5px;flex-shrink:0;color:var(--text-mute);font-size:13px;">❔</div>`;
       return `<div class="target-dropdown-item" data-target-id="${escapeAttr(x.id)}" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;">
         ${portraitEl}
-        <span style="flex:1;min-width:0;"><span style="font-size:12px;">${escapeHTML(dispName)}</span> <span class="muted" style="font-size:10px;">${escapeHTML(sideTag)} — ${escapeHTML(zone)}</span></span>
+        <span style="flex:1;min-width:0;"><span style="font-size:12px;">${escapeHTML(dispName)}</span>${dupSuffix?`<span class="mono" style="font-size:11px;color:var(--amber);">${escapeHTML(dupSuffix)}</span>`:''} <span class="muted" style="font-size:10px;">${escapeHTML(sideTag)} — ${escapeHTML(zone)}</span></span>
       </div>`;
     }).join('');
     const selDisplay = (()=>{
       if(!firstOther) return '(nessun altro partecipante)';
       const dn = combatDisplayName(firstOther, isMasterView);
+      const dnSuffix = duplicateNameSuffix(combat, firstOther, isMasterView);
       const st = firstOther.side==='enemy' ? '(Nemico)' : '(Alleato)';
       const zn = zoneLabel(firstOther.zone||'Medio');
       const im = resolveParticipantImage(firstOther, true);
@@ -1470,7 +1557,7 @@
       const pEl = showI && im
         ? `<img src="${escapeAttr(im)}" onerror="this.style.display='none'" style="width:24px;height:24px;object-fit:cover;border-radius:4px;flex-shrink:0;" />`
         : `<div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:var(--panel-2);border-radius:4px;flex-shrink:0;color:var(--text-mute);font-size:11px;">❔</div>`;
-      return `${pEl} <span style="flex:1;min-width:0;font-size:12px;">${escapeHTML(dn)} <span class="muted" style="font-size:10px;">${escapeHTML(st)} — ${escapeHTML(zn)}</span></span>`;
+      return `${pEl} <span style="flex:1;min-width:0;font-size:12px;">${escapeHTML(dn)}${dnSuffix?`<span class="mono" style="color:var(--amber);">${escapeHTML(dnSuffix)}</span>`:''} <span class="muted" style="font-size:10px;">${escapeHTML(st)} — ${escapeHTML(zn)}</span></span>`;
     })();
     return `
       ${turnBannerHTML(combat, username)}
@@ -1801,6 +1888,28 @@
     return p.name;
   }
 
+  // Richiesta utente: quando più Digimon nello stesso combattimento condividono lo stesso nome
+  // visualizzato (es. più membri di un gruppo con Digimon della stessa specie), soprattutto nel
+  // menu di scelta del bersaglio "non si capiva che Digimon si stesse attaccando" (oltre alle
+  // barrette vita andrebbe indicato un numerino, come già avviene per "Nemico 1/2/3"). A differenza
+  // di p.hiddenLabelNum (assignHiddenLabelNum in js/encounters.js), QUI il numero non è persistito
+  // sul partecipante: viene ricalcolato a ogni chiamata in base al testo effettivamente mostrato al
+  // viewer corrente (isMaster), sull'ordine stabile di combat.participants -- così resta corretto
+  // anche se un Digimon cambia nome a metà combattimento (evoluzione, vedi syncCombatParticipantName)
+  // senza bisogno di tenerlo sincronizzato altrove. Nomi già mascherati/nascosti non collidono quasi
+  // mai perché hiddenParticipantLabel li numera già diversamente ("❔ Nemico 1" vs "❔ Nemico 2").
+  // Ritorna una stringa vuota se il nome di p non è condiviso da nessun altro partecipante visibile
+  // allo stesso viewer, altrimenti " #N" (con lo spazio iniziale, pronta da appendere al nome).
+  function duplicateNameSuffix(combat, p, isMaster){
+    if(!combat || !Array.isArray(combat.participants) || !p) return '';
+    const dispName = combatDisplayName(p, isMaster);
+    if(!dispName) return '';
+    const sameName = combat.participants.filter(x=>combatDisplayName(x, isMaster)===dispName);
+    if(sameName.length<2) return '';
+    const idx = sameName.indexOf(p);
+    return idx>=0 ? ` #${idx+1}` : '';
+  }
+
   // Linea visiva delle 5 posizioni (Molto Corto—Molto Lungo) coi ritratti dei partecipanti piazzati
   // dove si trovano davvero — usa le stesse immagini già mostrate altrove (resolveParticipantImage),
   // niente di nuovo da caricare. Le GIF animate (vedi Wikimon Story Sprites) sono un possibile upgrade
@@ -1976,10 +2085,13 @@
         const wounds = getParticipantWounds(p);
         const battery = getParticipantBattery(p);
         const dispName = combatDisplayName(p, isMaster);
+        // Richiesta utente: un numerino accanto al nome (vicino alla barretta vita) per distinguere
+        // Digimon con lo stesso nome nello stesso combattimento — vedi duplicateNameSuffix.
+        const dupSuffix = duplicateNameSuffix(combat, p, isMaster);
         return `
         <div style="padding:6px 8px;margin-bottom:4px;border-radius:4px;${i===combat.currentIndex?'background:rgba(53,232,201,0.15);border:1px solid var(--cyan);':'background:var(--panel-2);border:1px solid var(--line);'}${p.side==='enemy'?'border-left:3px solid var(--danger);':''}">
           <div class="flex-between">
-            <span>${i===combat.currentIndex?'▶ ':''}<b>${escapeHTML(dispName)}</b> <span class="tag" style="margin-left:4px;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};">${p.side==='ally'?'Alleato':'Nemico'}</span></span>
+            <span>${i===combat.currentIndex?'▶ ':''}<b>${escapeHTML(dispName)}</b>${dupSuffix?`<span class="mono" style="color:var(--amber);">${escapeHTML(dupSuffix)}</span>`:''} <span class="tag" style="margin-left:4px;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};">${p.side==='ally'?'Alleato':'Nemico'}</span></span>
             <span class="mono">Iniz. ${p.initiative} · Az.Dig ${p.actions===undefined?2:p.actions}/2 · Az.Tam ${p.tamerActions===undefined?2:p.tamerActions}/2 · <span style="color:var(--amber);">${zoneLabel(p.zone||'Medio')}</span></span>
           </div>
           ${miniHpBarHTML(wounds.current, wounds.max, wounds.temp, 'HP')}
@@ -3873,6 +3985,7 @@
             <div class="section-title">Combattimento</div>
             <div id="combat-live">${combatDisplayHTML(cachedCombat, true)}</div>
             <div class="row" style="margin-top:8px;" id="combat-live-turn-controls">
+              <button class="btn ghost" id="btn-combat-prev-turn-top" style="flex:1;" title="Sposta indietro il puntatore del turno di 1 posizione, senza ricalcolare l'ordine né toccare Azioni/Battery/Effetti — solo per correggere un errore di sequenza.">⏮ Turno Precedente</button>
               <button class="btn amber" id="btn-combat-next-turn-top" style="flex:1;">Turno Successivo</button>
               <button class="btn ghost" id="btn-combat-end-top" style="flex:1;">Termina</button>
             </div>
@@ -3962,6 +4075,7 @@
       ${masterMobileNavHTML()}
     `;
 
+    document.getElementById('btn-combat-prev-turn-top').onclick = ()=> previousCombatTurn(code, players);
     document.getElementById('btn-combat-next-turn-top').onclick = ()=> advanceCombatTurn(code, players);
     document.getElementById('btn-combat-end-top').onclick = ()=> endCombatNow(code, players);
     bindZoneLineArrows(code, players);
@@ -4312,12 +4426,15 @@
     }
     return bestDigimonImage(null, p.name, p.imageUrl, preferStatic);
   }
-  function participantChipHTML(p, role, selected){
+  function participantChipHTML(p, role, selected, combat){
     const color = participantSideColor(p);
     const defeated = isParticipantDefeated(p);
-    return `<button type="button" data-chip-role="${role}" data-chip-id="${p.id}" title="${escapeAttr(p.name)} — ${p.side==='ally'?'Alleato':'Nemico'}" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:3px;width:52px;border-radius:8px;border:2px solid ${selected?color:'transparent'};background:${selected?'rgba(255,255,255,0.05)':'transparent'};cursor:pointer;opacity:${defeated?'0.45':'1'};">
+    // Richiesta utente: numerino per distinguere Digimon con lo stesso nome (vedi duplicateNameSuffix)
+    // -- qui il Master vede sempre i nomi reali (isMaster=true), coerente col resto del suo pannello.
+    const dupSuffix = combat ? duplicateNameSuffix(combat, p, true) : '';
+    return `<button type="button" data-chip-role="${role}" data-chip-id="${p.id}" title="${escapeAttr(p.name+dupSuffix)} — ${p.side==='ally'?'Alleato':'Nemico'}" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:3px;width:52px;border-radius:8px;border:2px solid ${selected?color:'transparent'};background:${selected?'rgba(255,255,255,0.05)':'transparent'};cursor:pointer;opacity:${defeated?'0.45':'1'};">
       <div style="width:32px;height:32px;border-radius:6px;overflow:hidden;border:1px solid ${color};">${portraitHTML(resolveParticipantImage(p), p.name, 'sm', 'width:100%;height:100%;object-fit:contain;background:transparent;')}</div>
-      <span style="font-size:9px;max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${color};">${escapeHTML(p.name)}</span>
+      <span style="font-size:9px;max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${color};">${escapeHTML(p.name)}${dupSuffix?`<b style="color:var(--amber);">${escapeHTML(dupSuffix)}</b>`:''}</span>
     </button>`;
   }
   // (getParticipantAttacks/getParticipantWounds/EFFECT_ICONS/effectIcon/effectExplanationText/EFFECT_TAG_ALIASES/EFFECT_DEFS/EFFECT_QUALITY_MAP/hasAttributeAdvantage/getParticipantAttribute/hasEffectQuality) spostato in js/combat-engine.js
@@ -4895,9 +5012,12 @@
           const isCurrentTurn = !!(combat.order && combat.order.length && combat.order[combat.currentIndex]===p.id);
           const defeated = isParticipantDefeated(p);
           const expanded = isCurrentTurn || combatExpandedIds.has(p.id);
+          // Richiesta utente: numerino accanto al nome (vicino alle Ferite) per distinguere Digimon
+          // con lo stesso nome — vedi duplicateNameSuffix. Il Master vede sempre i nomi reali.
+          const dupSuffix = duplicateNameSuffix(combat, p, true);
           const header = `
             <div class="flex-between">
-              <span>${isCurrentTurn?'▶ ':''}${escapeHTML(p.name)} <button class="tag" data-toggle-side="${p.id}" style="cursor:pointer;background:none;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};" title="Clicca per cambiare Alleato/Nemico">${p.side==='ally'?'Alleato':'Nemico'}</button> ${defeated?'<span class="tag" style="margin-left:4px;color:var(--danger);border-color:rgba(255,93,93,0.4);">🏳️ Sconfitto</span>':''} <span class="muted" style="margin-left:4px;font-size:10px;">${w.current}/${w.max} Ferite</span> <span style="margin-left:6px;font-size:12px;" title="Azioni Digimon rimaste: ${acts}/2">Dig ${Array.from({length:2}).map((_,i)=>i<acts?'<span style="color:var(--cyan);">●</span>':'<span style="color:var(--line);">○</span>').join('')}</span> <span style="margin-left:4px;font-size:12px;" title="Azioni Tamer rimaste: ${tamerActs}/2">Tam ${Array.from({length:2}).map((_,i)=>i<tamerActs?'<span style="color:var(--amber);">●</span>':'<span style="color:var(--line);">○</span>').join('')}</span></span>
+              <span>${isCurrentTurn?'▶ ':''}${escapeHTML(p.name)}${dupSuffix?`<b style="color:var(--amber);">${escapeHTML(dupSuffix)}</b>`:''} <button class="tag" data-toggle-side="${p.id}" style="cursor:pointer;background:none;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};" title="Clicca per cambiare Alleato/Nemico">${p.side==='ally'?'Alleato':'Nemico'}</button> ${defeated?'<span class="tag" style="margin-left:4px;color:var(--danger);border-color:rgba(255,93,93,0.4);">🏳️ Sconfitto</span>':''} <span class="muted" style="margin-left:4px;font-size:10px;">${w.current}/${w.max} Ferite</span> <span style="margin-left:6px;font-size:12px;" title="Azioni Digimon rimaste: ${acts}/2">Dig ${Array.from({length:2}).map((_,i)=>i<acts?'<span style="color:var(--cyan);">●</span>':'<span style="color:var(--line);">○</span>').join('')}</span> <span style="margin-left:4px;font-size:12px;" title="Azioni Tamer rimaste: ${tamerActs}/2">Tam ${Array.from({length:2}).map((_,i)=>i<tamerActs?'<span style="color:var(--amber);">●</span>':'<span style="color:var(--line);">○</span>').join('')}</span></span>
               <span style="display:flex;align-items:center;gap:6px;">
                 <input type="number" data-part-init="${p.id}" value="${p.initiative}" style="width:60px;padding:4px;" />
                 ${defeated ? `<button class="btn ghost small" data-part-reenter="${p.id}" title="Rientra a proprio rischio (a discrezione del Master)">↩️</button>` : ''}
@@ -4916,12 +5036,13 @@
               <button class="btn small" data-action-use="${p.id}" style="flex:1;">Usa</button>
               <button class="btn ghost small" data-action-reset="${p.id}" style="flex:1;" title="Ripristina sia le Azioni Digimon che quelle Tamer a 2/2">↺ 2+2</button>
             </div>
+            <div class="muted" data-action-desc="${p.id}" style="margin-top:2px;font-size:11px;">${escapeHTML((ACTION_DEFS[0]&&ACTION_DEFS[0].desc)||'')}</div>
             <div class="row" style="margin-top:4px;">
               <button class="btn ghost small" data-action-refund="${p.id}" style="flex:1;" title="Es. Successo Critico su Reload/Battle Cry/Horde Duelist: 'riottieni l'Azione spesa' (Digimon)">+1 Azione (Digimon)</button>
               <button class="btn ghost small" data-action-refund-attack="${p.id}" style="flex:1;" ${!p.attackedThisRound?'disabled':''} title="Es. Reload riuscito: 'riottieni l'uso dell'Attacco [AMMO]', ignora il limite di 1 Attacco a round">🔄 Restituisci Attacco</button>
             </div>
             <div class="row" style="margin-top:6px;">
-              <select data-zone-ref="${p.id}" style="flex:2;">${combat.participants.filter(o=>o.id!==p.id).map(o=>`<option value="${o.id}">${escapeHTML(o.name)}</option>`).join('') || '<option value="">(nessun altro partecipante)</option>'}</select>
+              <select data-zone-ref="${p.id}" style="flex:2;">${combat.participants.filter(o=>o.id!==p.id).map(o=>`<option value="${o.id}">${escapeHTML(o.name+duplicateNameSuffix(combat, o, true))}</option>`).join('') || '<option value="">(nessun altro partecipante)</option>'}</select>
               <button class="btn small" data-zone-closer="${p.id}" style="flex:1;">➡️ Avvicina</button>
               <button class="btn ghost small" data-zone-away="${p.id}" style="flex:1;">⬅️ Allontana</button>
             </div>
@@ -4958,11 +5079,11 @@
       <div class="divider"></div>
       <div class="muted" style="font-size:10px;margin-bottom:2px;">Attaccante:</div>
       <div id="combat-attacker-picker" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
-        ${combat.participants.map(p=>participantChipHTML(p,'attacker', combatPresetAttackerId===p.id)).join('') || '<span class="muted" style="font-size:11px;">Nessun partecipante.</span>'}
+        ${combat.participants.map(p=>participantChipHTML(p,'attacker', combatPresetAttackerId===p.id, combat)).join('') || '<span class="muted" style="font-size:11px;">Nessun partecipante.</span>'}
       </div>
       <div class="muted" style="font-size:10px;margin-bottom:2px;">Bersaglio:</div>
       <div id="combat-target-picker" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
-        ${combat.participants.map(p=>participantChipHTML(p,'target', combatPresetTargetId===p.id)).join('') || '<span class="muted" style="font-size:11px;">Nessun partecipante.</span>'}
+        ${combat.participants.map(p=>participantChipHTML(p,'target', combatPresetTargetId===p.id, combat)).join('') || '<span class="muted" style="font-size:11px;">Nessun partecipante.</span>'}
       </div>
       <select id="combat-attacker" style="display:none;">${combat.participants.map(p=>`<option value="${p.id}" ${combatPresetAttackerId===p.id?'selected':''}>${escapeHTML(p.name)}</option>`).join('')}</select>
       <select id="combat-target" style="display:none;">${combat.participants.map(p=>`<option value="${p.id}" ${combatPresetTargetId===p.id?'selected':''}>${escapeHTML(p.name)}</option>`).join('')}</select>
@@ -5045,7 +5166,13 @@
       <div class="divider"></div>
       <button class="btn" id="btn-combat-roll-all" style="width:100%;margin-bottom:8px;">🎲 Tira Iniziativa per Tutti</button>
       <button class="btn solid" id="btn-combat-calc-order" style="width:100%;margin-bottom:8px;">Calcola Ordine</button>
-      <div class="muted" style="margin-bottom:6px;">I tasti "Turno Successivo" / "Termina" si trovano nella scheda "Combattimento" qui sopra.</div>
+      ${(combat.order && combat.order.length>0) ? `
+      <div class="row" style="margin-bottom:8px;" title="Sposta il puntatore del turno direttamente su un partecipante a scelta, SENZA ricalcolare l'ordine (Azioni/Battery/round di tutti gli altri restano come sono) — utile per correggere un errore o far agire qualcuno fuori sequenza.">
+        <select id="combat-jump-turn-select" style="flex:2;">${combat.order.map(pid=>{ const pp = combat.participants.find(x=>x.id===pid); if(!pp) return ''; return `<option value="${pid}">${escapeHTML(combatDisplayName(pp, true)+duplicateNameSuffix(combat, pp, true))}${pp.id===combat.order[combat.currentIndex]?' (turno attuale)':''}</option>`; }).join('')}</select>
+        <button class="btn ghost small" id="btn-combat-jump-turn" style="flex:1;">➜ Vai al turno</button>
+      </div>
+      ` : ''}
+      <div class="muted" style="margin-bottom:6px;">I tasti "Turno Successivo" / "Turno Precedente" / "Termina" si trovano nella scheda "Combattimento" qui sopra.</div>
       <div class="muted" id="combat-mgr-status" style="margin-top:6px;"></div>
     `;
 
@@ -5689,6 +5816,16 @@
         renderCombatManager(code, players);
       };
     }
+    // Richiesta utente: "le scelte del tamer non si capiscono minimamente quali siano" -- mostra la
+    // descrizione in chiaro dell'Azione scelta anche nella riga del Master, aggiornata ad ogni cambio.
+    cardEl.querySelectorAll('[data-action-select]').forEach(sel=>{
+      const id = sel.getAttribute('data-action-select');
+      const descEl = cardEl.querySelector(`[data-action-desc="${id}"]`);
+      if(!descEl) return;
+      const updateDesc = ()=>{ const def = ACTION_DEFS.find(a=>a.key===sel.value); descEl.textContent = (def && def.desc) || ''; };
+      sel.onchange = updateDesc;
+      updateDesc();
+    });
     cardEl.querySelectorAll('[data-action-use]').forEach(btn=>{
       btn.onclick = async ()=>{
         const id = btn.getAttribute('data-action-use');
@@ -6074,6 +6211,14 @@
       const orderNames = (combat.order||[]).map(id=>{ const p = combat.participants.find(x=>x.id===id); return p ? p.name : '?'; });
       if(statusEl) statusEl.innerHTML = orderNames.length ? `✅ Ordine dei turni calcolato: ${orderNames.map(escapeHTML).join(' → ')}<br><span class="muted">Vedi la scheda "Combattimento — Ordine dei Turni" qui sopra.</span>` : '<span class="err">Nessun ordine calcolabile.</span>';
     };
+    const jumpTurnBtn = document.getElementById('btn-combat-jump-turn');
+    if(jumpTurnBtn){
+      jumpTurnBtn.onclick = async ()=>{
+        const sel = document.getElementById('combat-jump-turn-select');
+        if(!sel || !sel.value) return;
+        await jumpToCombatTurn(code, players, sel.value);
+      };
+    }
   }
 
   function rosterItemHTML(p, i){
