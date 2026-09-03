@@ -1725,13 +1725,25 @@
     // facilitando l'identificazione su mobile quando i nomi sono nascosti ("Nemico 1", "Nemico 2").
     // Il valore selezionato è sincronizzato con un <input type="hidden" id="self-target-select">.
     const firstOther = others[0];
-    const targetItemsHTML = others.map(x=>{
+    // Bersaglio "te stesso" (richiesta utente: "non possono selezionare se stessi per potenziarsi"):
+    // questo stesso menu BERSAGLIO è riusato anche da Direct/Aid/Bolster (vedi spendSelfAction più
+    // sotto), che possono legittimamente avere come bersaglio il proprio Digimon -- Direct in
+    // particolare non ha nemmeno la penalità -2 quando il bersaglio è "il proprio partner" (vedi
+    // applySupportActionEffect: `own = target.id===actor.id`), quindi escluderlo dal menu impediva
+    // proprio il caso d'uso più comune. Aggiunto in fondo alla lista, MAI come default (il valore
+    // iniziale del bersaglio resta firstOther, un altro partecipante) per non rischiare un Attacco
+    // su se stessi per sbaglio -- un tentativo di Attacco su se stessi resta comunque bloccato da
+    // validateAttackTargeting ("Scegli attaccante e bersaglio diversi."), quindi includerlo qui è
+    // sicuro anche per il pannello Attacco, non solo per Direct/Aid/Bolster.
+    const targetChoices = p ? others.concat([p]) : others;
+    const targetItemsHTML = targetChoices.map(x=>{
+      const isSelf = !!(p && x.id===p.id);
       const dispName = combatDisplayName(x, isMasterView);
       // Richiesta utente: distingue con un numerino (es. " #2") i Digimon che condividono lo stesso
       // nome visualizzato — vedi duplicateNameSuffix. Tenuto separato da dispName perché il confronto
       // isMasked qui sotto deve restare sul nome "puro", non sul nome+numero.
       const dupSuffix = duplicateNameSuffix(combat, x, isMasterView);
-      const sideTag = x.side==='enemy' ? '(Nemico)' : '(Alleato)';
+      const sideTag = isSelf ? '(te stesso)' : (x.side==='enemy' ? '(Nemico)' : '(Alleato)');
       const zone = zoneLabel(x.zone||'Medio');
       const img = resolveParticipantImage(x, true);
       const isMasked = dispName !== x.name;
@@ -1739,9 +1751,9 @@
       const portraitEl = showImg && img
         ? `<img src="${escapeAttr(img)}" onerror="this.style.display='none'" style="width:28px;height:28px;object-fit:cover;border-radius:5px;flex-shrink:0;" />`
         : `<div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:var(--panel-2);border-radius:5px;flex-shrink:0;color:var(--text-mute);font-size:13px;">❔</div>`;
-      return `<div class="target-dropdown-item" data-target-id="${escapeAttr(x.id)}" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;">
+      return `<div class="target-dropdown-item" data-target-id="${escapeAttr(x.id)}" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;${isSelf?'border-top:1px solid var(--line);':''}">
         ${portraitEl}
-        <span style="flex:1;min-width:0;"><span style="font-size:12px;">${escapeHTML(dispName)}</span>${dupSuffix?`<span class="mono" style="font-size:11px;color:var(--amber);">${escapeHTML(dupSuffix)}</span>`:''} <span class="muted" style="font-size:10px;">${escapeHTML(sideTag)} — ${escapeHTML(zone)}</span></span>
+        <span style="flex:1;min-width:0;"><span style="font-size:12px;">${escapeHTML(dispName)}</span>${dupSuffix?`<span class="mono" style="font-size:11px;color:var(--amber);">${escapeHTML(dupSuffix)}</span>`:''} <span class="muted" style="font-size:10px;">${escapeHTML(sideTag)}${isSelf?'':` — ${escapeHTML(zone)}`}</span></span>
       </div>`;
     }).join('');
     const selDisplay = (()=>{
@@ -5254,7 +5266,14 @@
               <button class="btn ghost small" data-action-refund-attack="${p.id}" style="flex:1;" ${!p.attackedThisRound?'disabled':''} title="Es. Reload riuscito: 'riottieni l'uso dell'Attacco [AMMO]', ignora il limite di 1 Attacco a round">🔄 Restituisci Attacco</button>
             </div>
             <div class="row" style="margin-top:6px;">
-              <select data-zone-ref="${p.id}" style="flex:2;">${combat.participants.filter(o=>o.id!==p.id).map(o=>`<option value="${o.id}">${escapeHTML(o.name+duplicateNameSuffix(combat, o, true))}</option>`).join('') || '<option value="">(nessun altro partecipante)</option>'}</select>
+              <!-- Richiesta utente: "non possono selezionare se stessi per potenziarsi" -- questo
+                   select (di riferimento per Avvicina/Allontana) è riusato anche da bindActionUse
+                   come bersaglio di Direct/Aid/Bolster (data-zone-ref), che possono legittimamente
+                   avere come bersaglio il proprio Digimon (Direct sul proprio partner non ha
+                   nemmeno la penalità -2, vedi applySupportActionEffect). Aggiunta "(te stesso)" in
+                   fondo alla lista -- innocuo anche per Avvicina/Allontana (selezionare se stessi
+                   come riferimento mostra solo "già alla stessa posizione", nessun crash). -->
+              <select data-zone-ref="${p.id}" style="flex:2;">${combat.participants.filter(o=>o.id!==p.id).map(o=>`<option value="${o.id}">${escapeHTML(o.name+duplicateNameSuffix(combat, o, true))}</option>`).join('') || '<option value="">(nessun altro partecipante)</option>'}<option value="${p.id}">${escapeHTML(p.name+duplicateNameSuffix(combat, p, true))} (te stesso)</option></select>
               <button class="btn small" data-zone-closer="${p.id}" style="flex:1;">➡️ Avvicina</button>
               <button class="btn ghost small" data-zone-away="${p.id}" style="flex:1;">⬅️ Allontana</button>
             </div>
