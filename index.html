@@ -3695,7 +3695,7 @@
 
     const def = SKILL_DEFS.find(d=>d.label.toLowerCase()===query || d.label.toLowerCase().startsWith(query) || query.startsWith(d.label.toLowerCase()));
     if(def){
-      const attr = def.attrs.reduce((best,a)=> (Number(me.tamer[a])||0) > (Number(me.tamer[best])||0) ? a : best, def.attrs[0]);
+      const attr = def.attrs[0];
       const attrVal = me.tamer[attr];
       const digimonBonus = prodigiousSkillBonus(me, def);
       const skillVal = Number(me.tamer.skills[def.key]||0) + digimonBonus;
@@ -4811,6 +4811,27 @@
         </div>
         <button class="btn solid" id="btn-combat-start" style="width:100%;margin-top:6px;">Inizia Combattimento</button>
       `;
+      // FIX: al primo render della vista Master, cachedSubgroups può essere ancora vuota (si popola
+      // solo dentro refreshLiveParts, che gira in modo asincrono DOPO questo render) — così il
+      // <select> qui sopra mostrava solo "Chat Generale" finché non scattava un giro di polling che
+      // però non re-invoca mai renderCombatManager a combattimento inattivo. Stesso identico bug già
+      // risolto per il <select> "Quale sottogruppo" della richiesta di tiro (vedi più sopra in questo
+      // file): rinfreschiamo i sottogruppi al volo con un fetch fresco e, se sono arrivati gruppi non
+      // ancora presenti nel <select>, ricostruiamo solo le sue opzioni (senza toccare zone/messaggio
+      // già eventualmente compilati dall'utente).
+      getSubgroups(code).then(groups=>{
+        cachedSubgroups = groups;
+        const sel = document.getElementById('combat-start-chatlock');
+        if(!sel) return;
+        const current = new Set(Array.from(sel.options).map(o=>o.value));
+        const missing = (groups||[]).some(g=>!current.has('sub:'+g.id));
+        if(missing){
+          const prevVal = sel.value;
+          sel.innerHTML = `<option value="general">Chat Generale</option>` +
+            (groups||[]).map(g=>`<option value="sub:${g.id}">Sottogruppo: ${escapeHTML(g.name)}</option>`).join('');
+          if(current.has(prevVal)) sel.value = prevVal;
+        }
+      });
       document.getElementById('btn-combat-start').onclick = async ()=>{
         const startZoneAllySel = document.getElementById('combat-start-zone-ally');
         const startZoneEnemySel = document.getElementById('combat-start-zone-enemy');
