@@ -906,8 +906,14 @@
   // eventuale sottogruppo attivo) è proprio quello bloccato da un combattimento in corso — usata
   // sia per disabilitare visivamente il campo (renderChatArea) sia come controllo definitivo
   // prima dell'invio (bottone "Invia"), così non è aggirabile anche se la UI fosse rimasta stale.
-  function combatChatLockLocationMatches(chatMode, subgroupId){
+  // myTurnNow (opzionale): se true, la chat si considera SBLOCCATA anche se coincide con quella
+  // scelta come "chat di combattimento" — durante il proprio turno si può sempre parlare lì,
+  // indipendentemente da quale fosse la chat bloccata dal Master. Chiamare senza questo parametro
+  // (o con false/undefined) per sapere se una data chat È quella scelta come chatLock a prescindere
+  // dal turno — utile per mostrare il messaggio "è il tuo turno" solo in quella chat specifica.
+  function combatChatLockLocationMatches(chatMode, subgroupId, myTurnNow){
     if(!cachedCombat || !cachedCombat.active || !cachedCombat.chatLock) return false;
+    if(myTurnNow) return false;
     const loc = cachedCombat.chatLock.location;
     if(!loc) return false;
     if(loc==='general') return chatMode==='public';
@@ -2720,7 +2726,11 @@
     if(session.role==='player'){
       const myTurnNow = isMyCombatTurn(cachedCombat, session.username);
       const turnLockPublicChat = !!(cachedCombat && cachedCombat.active) && playerChatMode!=='private' && playerChatMode!=='subgroup' && !myTurnNow;
-      const chatLocked = combatChatLockLocationMatches(playerChatMode, playerActiveSubgroupId);
+      const chatLocked = combatChatLockLocationMatches(playerChatMode, playerActiveSubgroupId, myTurnNow);
+      // Serve solo per sapere se QUESTA è la chat scelta dal Master come "chat di combattimento",
+      // a prescindere dal turno — usato per mostrare il messaggio "è il tuo turno" proprio lì, dove
+      // prima compariva il lucchetto 🔒 (ora sbloccato per il turno di myTurnNow, vedi sopra).
+      const isCombatLockChat = combatChatLockLocationMatches(playerChatMode, playerActiveSubgroupId, false);
       const lockPublicChat = turnLockPublicChat || chatLocked;
       ['action-text','btn-send-action','btn-correct','action-img-btn'].forEach(id=>{
         const el = document.getElementById(id);
@@ -2730,9 +2740,11 @@
       if(actionHintEl){
         actionHintEl.innerHTML = chatLocked
           ? '<span style="color:var(--danger);">🔒 Questa chat è bloccata: è in corso un combattimento. Puoi comunque scrivere in privato al Master.</span>'
-          : turnLockPublicChat
-            ? '<span style="color:var(--danger);">⛔ Sei in combattimento: la chat pubblica è bloccata fuori dal tuo turno. Puoi comunque scrivere in privato al Master.</span>'
-            : ACTION_HINT_DEFAULT_TEXT;
+          : (isCombatLockChat && myTurnNow)
+            ? `<span style="color:var(--cyan);">⚔️ È il tuo turno, ${escapeHTML(displayNameFor(session.username))}! Ora puoi parlare e fare azioni.</span>`
+            : turnLockPublicChat
+              ? '<span style="color:var(--danger);">⛔ Sei in combattimento: la chat pubblica è bloccata fuori dal tuo turno. Puoi comunque scrivere in privato al Master.</span>'
+              : ACTION_HINT_DEFAULT_TEXT;
       }
     }
     const privateLogLiveMaster = document.getElementById('private-log-live-master');
@@ -2918,7 +2930,7 @@
       const ta = document.getElementById('action-text');
       const raw = ta.value.trim();
       if(!raw) return;
-      if(combatChatLockLocationMatches(playerChatMode, playerActiveSubgroupId)){
+      if(combatChatLockLocationMatches(playerChatMode, playerActiveSubgroupId, isMyCombatTurn(cachedCombat, session.username))){
         const actionHintEl = document.getElementById('action-hint');
         if(actionHintEl) actionHintEl.innerHTML = '<span style="color:var(--danger);">🔒 Questa chat è bloccata: è in corso un combattimento.</span>';
         return;
