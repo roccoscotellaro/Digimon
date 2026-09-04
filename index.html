@@ -1741,7 +1741,12 @@
     const p = (combat.participants||[]).find(x=>x.username===username);
     const alreadyAttacked = !!(p && p.attackedThisRound);
     const actsLeft = p ? (p.actions===undefined?2:p.actions) : 0;
-    const others = (combat.participants||[]).filter(x=>!p || x.id!==p.id);
+    // Richiesta utente: gli NPC Sconfitti spariscono dalla fase di Battaglia lato Giocatore -- questa
+    // funzione è SEMPRE vista Giocatore (mai richiamata per il Master, vedi i due punti di chiamata),
+    // quindi qui il filtro è incondizionato: altrimenti un NPC ormai sparito dalla lista partecipanti
+    // e dalla linea dei Range resterebbe comunque scegliibile come Bersaglio in questo menu, un
+    // fantasma incoerente col resto della vista.
+    const others = (combat.participants||[]).filter(x=>!p || x.id!==p.id).filter(x=> x.isPC || !isParticipantDefeated(x));
     // combatDisplayName maschera il nome con "🥚 (Uovo)" per chi non è Master né il proprietario,
     // se il Digimon in questione non è ancora stato approvato — stessa logica già usata nella
     // lista partecipanti e nella linea delle zone, qui applicata anche al menu del bersaglio.
@@ -1816,6 +1821,19 @@
            Master, mostrate sotto la linea delle distanze qui sopra (zoneLineHTML) quando è il tuo
            turno. Il select resta: serve solo più a scegliere il Bersaglio dell'Attacco qui sotto. -->
       <div class="divider"></div>
+      ${(()=>{
+        // BUGFIX (segnalato dall'utente: "la battery sugli attacchi non viene calcolata
+        // correttamente"): prima la Battery non veniva MAI applicata a nessun tiro, a prescindere
+        // da quante tacche avesse il Digimon (vedi performAttackRoll). Non è automatica per
+        // regolamento ("il giocatore può scegliere di dichiararla... non è automatico"), quindi qui
+        // è una spunta esplicita: se selezionata E la mossa cliccata è una Signature Move, si
+        // applica alla PROSSIMA mossa cliccata (poi sparisce da sola, perché la Battery si azzera).
+        const bat = Number(me.digimon.battery||0);
+        if(bat<=0) return '';
+        return `<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-mute);margin-bottom:8px;">
+          <input type="checkbox" id="self-use-battery" /> 🔋 Usa Battery (${bat}) sulla prossima Signature Move: +${bat} Accuracy e +${bat} Danno (o Potenza se Support), poi si azzera. Nessun effetto sulle mosse non-Signature.
+        </label>`;
+      })()}
       <div class="moves-grid">
         ${(me.digimon.attacks||[]).map((a,i)=>{
           const enabled = canAct && !alreadyAttacked;
@@ -1915,7 +1933,9 @@
           if(resEl) resEl.innerHTML = `<div class="err">${spend.msg}</div>`;
           return;
         }
-        const { logText, dealt, accRoll, dodgeRoll, defeatInfo } = await performAttackRoll(code, cachedCombat, p, target, atk);
+        const useBatteryCb = document.getElementById('self-use-battery');
+        const useBattery = !!(useBatteryCb && useBatteryCb.checked);
+        const { logText, dealt, accRoll, dodgeRoll, defeatInfo } = await performAttackRoll(code, cachedCombat, p, target, atk, { useBattery });
         const hit = accRoll.successes > 0 && accRoll.successes >= dodgeRoll.successes;
         if(resEl){
           resEl.innerHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">vs</span>${diceRowHTML(dodgeRoll.dice)}${dealt>0?`<span class="roll-total">${dealt} danno</span>`:''}`;
@@ -2167,7 +2187,11 @@
         <div style="position:relative;display:flex;justify-content:space-between;align-items:flex-end;">
           <div style="position:absolute;top:14px;left:5%;right:5%;height:2px;background:var(--line);z-index:0;"></div>
           ${ZONES.map((z,zi)=>{
-            const here = combat.participants.filter(p=>(p.zone||'Medio')===z);
+            // Richiesta utente: gli NPC Sconfitti (isPC false, .defeated true -- Master o Nemici in
+            // generale, non i PC che invece per regolamento restano in campo retrocessi) spariscono
+            // dalla linea dei Range per tutti, Master incluso: non sono più bersagli validi, e la
+            // linea resta leggibile senza icone di partecipanti ormai fuori combattimento.
+            const here = combat.participants.filter(p=>(p.zone||'Medio')===z && !(!p.isPC && isParticipantDefeated(p)));
             let label = '';
             if(active!==null){
               if(zi===activeIdx) label = `<span style="color:var(--cyan);">★ Qui</span>`;
@@ -2322,6 +2346,13 @@
       ${timer && activeP ? `<div class="muted" style="margin-bottom:8px;font-size:11px;${timer.expired?'color:var(--danger);':''}">⏳ Turno di <b>${escapeHTML(combatDisplayName(activeP, isMaster))}</b>: ${timer.expired ? `scaduto da ${escapeHTML(timer.overText)} — ${isMaster?'puoi agire tu al posto suo dalla Gestione Combattimento qui sotto':'il Master può ormai agire al posto tuo'}.` : `${escapeHTML(timer.text)} rimasti prima che il Master possa agire al posto suo.`}</div>` : ''}
       ${zoneLineHTML(combat, !!isMaster)}
       ${orderList.length===0 ? '<div class="muted">Ordine non ancora calcolato.</div>' : orderList.map((p,i)=>{
+        // Richiesta utente: gli NPC Sconfitti spariscono dalla fase di Battaglia, ma SOLO lato
+        // Giocatore -- il Master deve continuare a vederli (es. per "Ripristina Sconfitta" più sotto
+        // nella Gestione Combattimento, o per gestirli a mano). Il ritorno di stringa vuota (invece
+        // di filtrare l'array PRIMA della map) mantiene l'indice i allineato a combat.currentIndex,
+        // usato subito sotto per evidenziare chi è di turno -- filtrare prima avrebbe spostato gli
+        // indici e rotto l'evidenziazione del turno attivo.
+        if(!isMaster && !p.isPC && isParticipantDefeated(p)) return '';
         const wounds = getParticipantWounds(p);
         const battery = getParticipantBattery(p);
         const dispName = combatDisplayName(p, isMaster);
@@ -4858,9 +4889,31 @@
   // in chat il giocatore non vede il vero nome del Digimon.
   function techLogName(p){ return (p && p.nameHidden) ? hiddenParticipantLabel(p) : (p ? p.name : ''); }
 
-  async function performAttackRoll(code, combat, attacker, target, atk){
+  async function performAttackRoll(code, combat, attacker, target, atk, opts){
     const aStats = getParticipantCombatStats(attacker);
     const tStats = getParticipantCombatStats(target);
+    // BUGFIX (segnalato dall'utente: "la battery sugli attacchi non viene calcolata correttamente"):
+    // il testo sulla Scheda Digimon (attacksBlockHTML) promette da tempo "ogni punto di Battery si
+    // aggiunge ad Accuracy e Danno (o Potenza, se Support) quando la usi -- consuma tutta la Battery
+    // all'uso", ma questo motore non l'ha MAI implementato: getParticipantCombatStats non legge mai
+    // battery, quindi il bonus non veniva applicato a nessun tiro, a prescindere da quante tacche
+    // avesse il Digimon. Qui la Battery si applica SOLO se il chiamante passa opts.useBattery=true
+    // (scelta esplicita di chi attacca -- vedi il commento sulla card: "il giocatore può scegliere
+    // di dichiararla e spendere Battery per potenziarla -- non è automatico"), solo su un Attacco
+    // Signature Move, e solo se l'Attaccante ha davvero Battery > 0 in quel momento. Si azzera subito
+    // dopo essere stata letta (viene "consumata all'uso" per regolamento, sia che l'Attacco vada a
+    // segno sia che venga schivato -- il Digimon l'ha comunque spesa nel tentativo).
+    let batteryBonus = 0, batteryNote = '';
+    if(opts && opts.useBattery && atk && atk.signature && attacker.isPC){
+      const aMemberForBattery = cachedRoster.find(m=>m.username===attacker.username);
+      const curBattery = aMemberForBattery ? Number(aMemberForBattery.digimon.battery||0) : 0;
+      if(curBattery>0){
+        batteryBonus = curBattery;
+        batteryNote = ` [+${batteryBonus} Battery su Signature Move, azzerata]`;
+        aMemberForBattery.digimon.battery = 0;
+        await saveMember(code, aMemberForBattery);
+      }
+    }
     const zDist = zoneDistance(attacker.zone||'Medio', target.zone||'Medio');
     // Point Blank (9.03, manuale reale): un Attacco [RANGE] contro un bersaglio nella propria
     // stessa zona subisce -3 Accuracy, a meno che l'Attaccante non abbia Heavy Recoil (che ora la
@@ -4882,7 +4935,7 @@
       targetBonusNote = ` [+${targetBonus} Dodge da ${target.pendingRollBonus.source}]`;
       target.pendingRollBonus = null;
     }
-    const effAccuracy = Math.max(0, aStats.accuracy + zPenalty + attackerBonus);
+    const effAccuracy = Math.max(0, aStats.accuracy + zPenalty + attackerBonus + batteryBonus);
     const overpowerUsed = !!attacker.overpowerActive;
     const accRoll = rollPool(effAccuracy, overpowerUsed);
     if(overpowerUsed) attacker.overpowerActive = false;
@@ -4902,7 +4955,7 @@
     }
     const dodgeRoll = rollPool(tStats.dodge + targetBonus);
     if(tStats.absoluteEvasion>0) dodgeRoll.successes += tStats.absoluteEvasion;
-    const zoneNote = (zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza${pointBlank?' inclusa Point Blank -3':''}: ${zoneLabel(attacker.zone||'Medio')}→${zoneLabel(target.zone||'Medio')})` : '') + (overpowerUsed ? ' [Overpower: 4 conta come Successo]' : '') + attackerBonusNote + targetBonusNote;
+    const zoneNote = (zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza${pointBlank?' inclusa Point Blank -3':''}: ${zoneLabel(attacker.zone||'Medio')}→${zoneLabel(target.zone||'Medio')})` : '') + (overpowerUsed ? ' [Overpower: 4 conta come Successo]' : '') + attackerBonusNote + targetBonusNote + batteryNote;
     const certainNote = (aStats.certainStrike>0 ? ` +${aStats.certainStrike} [CERTAIN]` : '') + attrAdvNote;
     const atkLabel = atk ? `${atk.name} ${attackTagsPlain(atk)}` : 'Attacco generico';
     // Nomi mascherati per i log tecnici: se il Digimon ha nameHidden, il log NON rivela il nome reale.
@@ -4922,7 +4975,9 @@
         // Potenza 1 / Durata 3 di default (stessi valori dello strumento manuale "+Effetto" sulla riga
         // partecipante) — niente popup nativi del browser, che stonavano col resto dell'interfaccia.
         // Il Master può correggerli in un secondo momento rimuovendo e riapplicando l'Effetto a mano.
-        const potency = 1;
+        // + Battery (se usata su questa Signature Move Support, vedi batteryBonus più sopra): sulla
+        // card viene promesso che la Battery si applica "ad Accuracy e Danno (o Potenza, se Support)".
+        const potency = 1 + batteryBonus;
         if(def && def.instant){
           const msg = await applyInstantEffect(code, target, atk.effectKey, potency);
           logText = `✨ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → ${resultTag}! ${msg}`;
@@ -4940,7 +4995,7 @@
         logText = `⚔ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO (schivato)`;
       } else {
         const excess = accRoll.successes - dodgeRoll.successes;
-        let raw = excess + aStats.damage;
+        let raw = excess + aStats.damage + batteryBonus;
         let combatMonsterNote = '';
         if(attacker.isPC){
           const aMember = cachedRoster.find(m=>m.username===attacker.username);
@@ -4963,7 +5018,7 @@
             ? ` 🥚 ${defName} è Sconfitto ed è già al Default Stage minimo: da regolamento diventerebbe Digitama — gestiscilo a mano.`
             : ` 🏳️ ${defName} è Sconfitto! Retrocede a ${defeatInfo.toStage} con 1 Ferita.`;
         }
-        logText = `⚔ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! (${excess}+DMG ${aStats.damage})${combatMonsterNote}-ARM ${tStats.armor} = ${dealt} danno → ${tName} ${w.current}/${w.max} Ferite${defeatNote}`;
+        logText = `⚔ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! (${excess}+DMG ${aStats.damage}${batteryBonus>0?`+${batteryBonus} Battery`:''})${combatMonsterNote}-ARM ${tStats.armor} = ${dealt} danno → ${tName} ${w.current}/${w.max} Ferite${defeatNote}`;
         return { logText, dealt, accRoll, dodgeRoll, atkLabel, defeatInfo };
       }
     }
@@ -5500,6 +5555,9 @@
         <div class="section-title" style="font-size:11px;">⚔ Risolvi Attacco</div>
         <select id="combat-attack-choice" style="display:none;"><option value="">— scegli un Attacco —</option></select>
         <div id="combat-attack-buttons" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;"></div>
+        <label id="combat-battery-toggle-wrap" style="display:none;align-items:center;gap:6px;font-size:11px;color:var(--text-mute);margin:6px 0 0;">
+          <input type="checkbox" id="combat-battery-toggle" /> <span id="combat-battery-toggle-label"></span>
+        </label>
         <button class="btn amber" id="btn-combat-attack" style="width:100%;margin-top:6px;">⚔ Risolvi Attacco</button>
         <button class="btn" id="btn-combat-attack-area" style="width:100%;margin-top:6px;display:none;">🌪 Risolvi come Area (colpisce tutti nella zona del bersaglio)</button>
         <div id="combat-attack-result" style="margin-top:8px;"></div>
@@ -5677,6 +5735,20 @@
         atk = getParticipantAttacks(attacker)[Number(sel.value)];
       }
       areaBtn.style.display = (atk && atk.areaAttack) ? 'block' : 'none';
+      // BUGFIX (segnalato dall'utente: "la battery sugli attacchi non viene calcolata
+      // correttamente"): mostra la spunta "Usa Battery" solo quando ha davvero senso -- Attacco
+      // selezionato è una Signature Move E l'Attaccante ha Battery > 0 in questo momento -- così il
+      // Master vede subito quanto sta per aggiungere, invece di scoprirlo solo nel log dopo il tiro.
+      const batWrap = document.getElementById('combat-battery-toggle-wrap');
+      const batLabel = document.getElementById('combat-battery-toggle-label');
+      const batCb = document.getElementById('combat-battery-toggle');
+      if(batWrap && batCb){
+        const bat = attacker ? getParticipantBattery(attacker) : null;
+        const show = !!(atk && atk.signature && bat && bat.current>0);
+        batWrap.style.display = show ? 'flex' : 'none';
+        if(!show){ batCb.checked = false; }
+        else if(batLabel){ batLabel.textContent = `🔋 Usa Battery (${bat.current}/${bat.max}) su questa Signature Move: +${bat.current} Accuracy e +${bat.current} Danno (o Potenza se Support), poi si azzera.`; }
+      }
     }
     const attackerSel = document.getElementById('combat-attacker');
     const targetSel = document.getElementById('combat-target');
@@ -5890,7 +5962,9 @@
           return;
         }
         if(resEl) resEl.innerHTML = '<div class="muted" style="font-size:11px;">Tiro...</div>';
-        const { logText, dealt, accRoll, dodgeRoll, defeatInfo } = await performAttackRoll(code, combat, attacker, target, atk);
+        const batteryCb = document.getElementById('combat-battery-toggle');
+        const useBattery = !!(batteryCb && batteryCb.checked);
+        const { logText, dealt, accRoll, dodgeRoll, defeatInfo } = await performAttackRoll(code, combat, attacker, target, atk, { useBattery });
         const hit = accRoll.successes > 0 && accRoll.successes >= dodgeRoll.successes;
         const detailHTML = `${diceRowHTML(accRoll.dice)}<span class="muted">vs</span>${diceRowHTML(dodgeRoll.dice)}<div class="muted" style="margin-top:4px;font-size:10.5px;">${escapeHTML(logText)}</div>`;
         const fallbackCompact = attackResultCompactHTML(null, hit, dealt, detailHTML);
