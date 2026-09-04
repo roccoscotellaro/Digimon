@@ -38,9 +38,6 @@
      schermo LCD (.ep-dv-screen) posizionato in percentuale sul foro trasparente del PNG, dentro cui
      scorrono le "barrette" orizzontali degli EP disponibili. */
   .ep-digivice{display:inline-flex;flex-direction:column;align-items:center;gap:4px;--dv-w:110px;vertical-align:middle;}
-  .dv-hero .ep-digivice{--dv-w:150px;}
-  .dv-hero .ep-dv-label{font-size:13px;}
-  .dv-hero .ep-dv-label b{font-size:18px;}
   .ep-digivice.mini{--dv-w:58px;gap:2px;}
   .ep-dv-frame{position:relative;width:var(--dv-w);aspect-ratio:33/30;flex-shrink:0;
     background-image:url('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-images/FRONTIER1/1787672473672_rpmfhm.png');
@@ -108,10 +105,6 @@
     .grid-stats{grid-template-columns:repeat(3,1fr);}
     .grid-3{grid-template-columns:1fr 1fr;}
     .app{padding:10px;}
-    .topbar{flex-direction:column;align-items:flex-start;gap:6px;padding:8px 10px;}
-    .conn-ticker{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;font-size:10px;}
-    .portrait-wrap{flex-direction:column;align-items:stretch;}
-    .portrait-wrap .portrait, .portrait-wrap .portrait-placeholder{width:100%;height:auto;max-height:280px;aspect-ratio:1;}
     .hud-frame.card > .section-title{cursor:pointer;user-select:none;}
     .hud-frame.card > .section-title .fold-icon{transition:transform .15s;display:inline-block;}
     .hud-frame.card.collapsed > .section-title .fold-icon{transform:rotate(-90deg);}
@@ -1140,15 +1133,10 @@
         </div>
         <div class="field"><label>Personalità</label><textarea id="d-personality" placeholder="descrivi la personalità...">${escapeHTML(d.personality||'')}</textarea></div>
         ` : `
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;">
-          <div style="flex:1;min-width:160px;">
-            <div class="pixel-title" style="font-size:22px;color:var(--dchroma);text-shadow:0 0 10px rgba(200,150,255,0.4);">${escapeHTML(d.name || '— nessun Digimon —')}</div>
-            <div class="muted" style="margin-top:2px;">${escapeHTML(d.stage||'')}${d.attribute ? ` · ${attributeIconHTML(d.attribute, 15)} ${escapeHTML(d.attribute)}` : ''} · Partner di ${escapeHTML(displayName(m))}</div>
-            ${d.personality ? `<div class="muted" style="margin-top:8px;font-style:italic;line-height:1.5;">${escapeHTML(d.personality)}</div>` : ''}
-            ${stageSwitchInnerHTML(m, isMaster)}
-          </div>
-          <div class="dv-hero">${epDigiviceHTML(d.evolutionPoints||0, cachedProgression ? Number(cachedProgression.milestone||0) : null, {})}</div>
-        </div>
+        <div class="pixel-title" style="font-size:22px;color:var(--dchroma);text-shadow:0 0 10px rgba(200,150,255,0.4);">${escapeHTML(d.name || '— nessun Digimon —')}</div>
+        <div class="muted" style="margin-top:2px;">${escapeHTML(d.stage||'')}${d.attribute ? ` · ${attributeIconHTML(d.attribute, 15)} ${escapeHTML(d.attribute)}` : ''} · Partner di ${escapeHTML(displayName(m))}</div>
+        ${d.personality ? `<div class="muted" style="margin-top:6px;">${escapeHTML(d.personality)}</div>` : ''}
+        ${stageSwitchInnerHTML(m, isMaster)}
         `}
         ${editable ? `
         <div class="field" style="margin-top:12px;">
@@ -1597,6 +1585,7 @@
       `).join('')}
       ${editable ? `
       <div class="add-row">
+        <div class="mono" id="d-a-dpbudget" style="font-size:11px;margin-bottom:6px;"></div>
         <div class="row">
           <div class="field"><label>Nome Mossa</label><input type="text" id="d-a-name" placeholder="nome mossa" /></div>
           <div class="field" style="max-width:110px;"><label>Forma</label>
@@ -1607,13 +1596,105 @@
           </div>
         </div>
         <div class="row">
-          <div class="field"><label>Reach (se Range)</label><input type="number" id="d-a-reach" value="1" min="0" /></div>
+          <div class="field" id="d-a-reach-field" style="display:none;"><label>Reach (se Range)</label><input type="number" id="d-a-reach" value="1" min="0" /></div>
           <div class="field" style="max-width:140px;"><label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="d-a-signature" style="width:auto;" /> Signature Move</label></div>
         </div>
-        <div class="field"><label>Descrizione</label><textarea id="d-a-desc" placeholder="effetto della mossa..."></textarea></div>
+        <div class="field"><label>Altri Tag (opzionale)</label><input type="text" id="d-a-extra" placeholder="es. [WEAPON 2]" /></div>
+        <div class="flex-between" style="margin-top:2px;">
+          <div id="d-a-hints" style="flex:1;display:flex;flex-wrap:wrap;gap:4px;"></div>
+          <span class="mono" id="d-a-tagcount" style="font-size:10px;white-space:nowrap;margin-left:6px;"></span>
+        </div>
+        <div class="field" style="margin-top:6px;"><label>Descrizione</label><textarea id="d-a-desc" placeholder="effetto della mossa..."></textarea></div>
         <button class="btn ghost small" id="d-a-add" style="width:100%;">+ Aggiungi Mossa</button>
       </div>` : ''}
     </div>`;
+  }
+
+  // Richiesta utente (stesso tool già presente nella Scheda Digimon condivisa, js/digimon-card.js —
+  // qui replicato perché digimon.html ha una propria form Attacchi separata/indipendente): suggerisce
+  // i Tag da Quality corretti in base a cosa il Digimon possiede DAVVERO (Rank letto dalla Quality
+  // reale, non a memoria), e tiene d'occhio Reach/slot/budget DP dello Stage. extraTags resta testo
+  // libero mai interpretato dal motore — è un aiuto a scriverlo giusto, non un vincolo meccanico.
+  const ATTACK_TAG_HINTS = [
+    { qualityPrefix:'Weapon',            tag:q=>`[WEAPON ${q.rank||1}]`, note:'Bonus Accuracy/Danno automatico da Weapon' },
+    { qualityPrefix:'Certain Strike',    tag:q=>`[CERTAIN ${q.rank||1}]`, note:'Successi automatici garantiti su Accuracy', onlyType:'Damage' },
+    { qualityPrefix:'Armor Piercing',    tag:q=>`[PIERCING ${q.rank||1}]`, note:'Danno Unalterable extra' },
+    { qualityPrefix:'Mighty Blow',       tag:()=>'[MIGHTY]', note:'Possibile [STUN] (richiede min 2 Danno dopo Armor)', onlyShape:'Melee', onlyType:'Damage' },
+    { qualityPrefix:'Precise Focus',     tag:()=>'[FOCUS]', note:'Doppio effetto su Ferite Temporanee', onlyShape:'Range' },
+    { qualityPrefix:'Feint Attack',      tag:()=>'[T:FEINT]', note:'Dimezza Dodge/Armor del bersaglio', onlyShape:'Melee' },
+    { qualityPrefix:'Ammo',              tag:()=>'[AMMO]', note:'Ignora "un Attacco a round"' },
+    { qualityPrefix:'Charge Attack',     tag:()=>'[CHARGE]', note:'Muovi+Attacca nella stessa Azione', onlyShape:'Melee' },
+    { qualityPrefix:'Simplified Strike', tag:()=>'[SIMPLE]', note:'Costa 1 Azione in meno (min 1)' },
+    { qualityPrefix:'Sneak Attack',      tag:()=>'[SNEAK]', note:'+RAM Accuracy se Nascosto dal bersaglio', onlyShape:'Range', rangeNote:'su Range richiede 1 Azione extra' }
+  ];
+  function digizoidWeaponryReminder(qualities){
+    const q = (qualities||[]).find(x=>x.name && /Digizoid Weaponry$/.test(x.name));
+    return q ? `${q.name}: i tuoi Attacchi [WEAPON] hanno anche i suoi bonus automatici (vedi la Quality per il dettaglio).` : '';
+  }
+
+  // Aggancia l'assistente Tag/Reach/budget DP al form Attacchi di questa pagina. Chiamata dopo che
+  // attacksBlockHTML è stata inserita nel DOM. Isolata in try/catch (come in js/digimon-card.js) così
+  // un problema qui — solo un aiuto non bloccante — non può impedire il salvataggio/aggiunta Attacchi.
+  function bindAttackTagAssistant(target){
+    try{
+      const d = target.digimon;
+      const shapeSel = document.getElementById('d-a-shape');
+      const typeSel = document.getElementById('d-a-type');
+      const reachField = document.getElementById('d-a-reach-field');
+      const extraInput = document.getElementById('d-a-extra');
+      const hintsEl = document.getElementById('d-a-hints');
+      const tagCountEl = document.getElementById('d-a-tagcount');
+      const dpBudgetEl = document.getElementById('d-a-dpbudget');
+      if(!shapeSel || !typeSel || !extraInput) return;
+      const updateReachVisibility = ()=>{ if(reachField) reachField.style.display = shapeSel.value==='Range' ? '' : 'none'; };
+      const updateDpBudget = ()=>{
+        if(!dpBudgetEl) return;
+        const spent = (d.qualities||[]).reduce((s,q)=>s+(Number(q.cost)||0),0);
+        const total = qualityDpBudget(d);
+        dpBudgetEl.style.color = spent>total ? 'var(--danger)' : 'var(--text-mute)';
+        dpBudgetEl.textContent = `Stage ${d.stage||'?'} — Quality DP: ${spent}/${total}${spent>total?' ⚠ sopra budget':''}`;
+      };
+      const updateTagCount = ()=>{
+        if(!tagCountEl) return;
+        const n = (extraInput.value.match(/\[[^\]]+\]/g)||[]).length;
+        tagCountEl.style.color = n>3 ? 'var(--danger)' : 'var(--text-mute)';
+        tagCountEl.textContent = `Tag da Quality: ${n}/3`;
+      };
+      const renderTagHints = ()=>{
+        if(!hintsEl) return;
+        const shape = shapeSel.value, type = typeSel.value;
+        const existing = extraInput.value;
+        const chips = ATTACK_TAG_HINTS
+          .map(hint=>{
+            const q = (d.qualities||[]).find(x=>x.name && x.name.indexOf(hint.qualityPrefix)===0);
+            if(!q) return null;
+            if(hint.onlyShape && hint.onlyShape!==shape) return null;
+            if(hint.onlyType && hint.onlyType!==type) return null;
+            return { tagStr: hint.tag(q), note: hint.note + (hint.rangeNote && shape==='Range' ? ` (${hint.rangeNote})` : '') };
+          })
+          .filter(Boolean);
+        const reminder = digizoidWeaponryReminder(d.qualities);
+        hintsEl.innerHTML = chips.map(c=>`<button type="button" class="btn ghost small" data-atk-tag-chip="${escapeAttr(c.tagStr)}" title="${escapeAttr(c.note)}" style="font-size:10px;padding:2px 6px;${existing.includes(c.tagStr)?'opacity:0.4;':''}">${escapeHTML(c.tagStr)}</button>`).join('')
+          + (reminder ? `<div class="muted" style="font-size:10px;width:100%;margin-top:2px;">${escapeHTML(reminder)}</div>` : '');
+        hintsEl.querySelectorAll('[data-atk-tag-chip]').forEach(btn=>{
+          btn.onclick = ()=>{
+            const tagStr = btn.getAttribute('data-atk-tag-chip');
+            if(!extraInput.value.includes(tagStr)) extraInput.value = (extraInput.value.trim() ? extraInput.value.trim()+' ' : '') + tagStr;
+            renderTagHints();
+            updateTagCount();
+          };
+        });
+      };
+      updateReachVisibility();
+      updateDpBudget();
+      renderTagHints();
+      updateTagCount();
+      shapeSel.onchange = ()=>{ updateReachVisibility(); renderTagHints(); };
+      typeSel.onchange = renderTagHints;
+      extraInput.oninput = ()=>{ renderTagHints(); updateTagCount(); };
+    }catch(atkToolErr){
+      console.error('Errore assistente tag Attacchi (non bloccante):', atkToolErr);
+    }
   }
 
   // ---------- Creazione Guidata: Digimon (incorporata direttamente in questa pagina) ----------
@@ -3022,13 +3103,20 @@
       if(!name) return;
       const shape = document.getElementById('d-a-shape').value;
       const type = document.getElementById('d-a-type').value;
-      const reach = Number(document.getElementById('d-a-reach').value)||0;
+      const reach = shape==='Range' ? (Number(document.getElementById('d-a-reach').value)||1) : 0;
       const signature = document.getElementById('d-a-signature').checked;
+      const extraTagsEl = document.getElementById('d-a-extra');
+      const extraTags = extraTagsEl ? extraTagsEl.value.trim() : '';
       const desc = document.getElementById('d-a-desc').value.trim();
-      target.digimon.attacks.push({ name, shape, type, effectKey:'', extraTags:'', desc, signature, reach, areaAttack:false });
+      target.digimon.attacks.push({ name, shape, type, effectKey:'', extraTags, desc, signature, reach, areaAttack:false });
+      document.getElementById('d-a-name').value='';
+      if(extraTagsEl) extraTagsEl.value='';
+      document.getElementById('d-a-desc').value='';
+      document.getElementById('d-a-signature').checked=false;
       await saveMember(session.code, target);
       renderPage();
     };
+    bindAttackTagAssistant(target);
   }
 
   function bindImageUpload(target){
