@@ -2619,6 +2619,7 @@
   function startPolling(){
     if(pollTimer) clearInterval(pollTimer);
     if(!session) return;
+    ensureCombatUiTapListener();
     // Heartbeat ("chi è online") disattivato: generava una POST verso /api/roster ogni 15s
     // per OGNI client connesso, pesando sul Fast Origin Transfer di Vercel senza un reale
     // beneficio. onlineSummary()/rosterItemHTML() restano nel codice ma ora non ricevono più
@@ -3038,14 +3039,20 @@
       const mgrCard = document.getElementById('combat-mgr-card');
       const activeEl = document.activeElement;
       const typingInMgr = !!(mgrCard && activeEl && mgrCard.contains(activeEl) && /^(INPUT|SELECT|TEXTAREA)$/.test(activeEl.tagName));
-      if(mgrCard && !typingInMgr) renderCombatManager(session.code, (cachedRoster||[]).filter(m=>m.role==='player'));
+      // Vedi ensureCombatUiTapListener/lastCombatUiTapAt più sopra: evita di ricostruire la card
+      // esattamente mentre il Master sta toccando un chip Attaccante/Bersaglio o un bottone Azione.
+      const recentTapInMgr = (Date.now() - lastCombatUiTapAt) < 2500;
+      if(mgrCard && !typingInMgr && !recentTapInMgr) renderCombatManager(session.code, (cachedRoster||[]).filter(m=>m.role==='player'));
     }
     const attacksCard = document.getElementById('attacks-card');
     if(attacksCard) attacksCard.style.display = (cachedCombat && cachedCombat.active) ? '' : 'none';
     if(session.role==='player'){
       cachedMe = cachedRoster.find(m=>m.username===session.username) || cachedMe;
       const attacksCardInner = document.getElementById('attacks-card-inner');
-      if(attacksCardInner && cachedMe){
+      // Vedi ensureCombatUiTapListener/lastCombatUiTapAt più sopra: stessa guardia anti-race del
+      // pannello Master, qui per il pulsante Bersaglio/Attacco del Giocatore.
+      const recentTapInAttacks = (Date.now() - lastCombatUiTapAt) < 2500;
+      if(attacksCardInner && cachedMe && !recentTapInAttacks){
         // Bug mobile: il poll (ogni 15s) ricostruisce da zero l'HTML di questa card, quindi
         // sostituisce anche <select id="self-target-select"> con un elemento nuovo che riparte
         // dalla prima opzione. Se il giocatore aveva già scelto un bersaglio e il poll scattava
@@ -4971,6 +4978,33 @@
   let combatPresetAttackerId = null;
   let combatPresetTargetId = null;
   let combatSelectedAttackIndex = null;
+
+  // BUGFIX (segnalato dall'utente): "durante la selezione attacchi la pagina refresha e spesso
+  // gli fa selezionare il digimon sbagliato". Sia il pannello Master (#combat-mgr-card, chip
+  // Attaccante/Bersaglio) sia il pannello Giocatore (#attacks-card, dropdown Bersaglio custom)
+  // vengono ricostruiti da zero (innerHTML) ad ogni giro di polling (ogni 15s, vedi
+  // refreshLiveParts) per tenere nomi/Ferite/Azioni aggiornati senza intervento manuale. Su
+  // mobile un tap impiega qualche decina/centinaio di ms tra touchstart e touchend: se il poll
+  // scatta esattamente in quella finestra, il nodo DOM toccato viene distrutto e ricreato, e il
+  // touchend finisce per "cliccare" qualunque elemento occupi ORA quella posizione -- cioè spesso
+  // il chip/pulsante di un Digimon diverso da quello voluto. Le variabili di stato persistente
+  // (combatPresetAttackerId ecc., self-target-select) sopravvivono al ridisegno, ma non bastano a
+  // evitare che il TAP STESSO finisca sul bersaglio sbagliato durante il ridisegno. Qui teniamo
+  // traccia dell'ultima interazione (pointerdown/touchstart) dentro le due card e, se troppo
+  // recente, saltiamo il ridisegno automatico di quel giro di polling: il tap ha tutto il tempo
+  // di completarsi, e i dati si aggiornano comunque al giro successivo.
+  let lastCombatUiTapAt = 0;
+  let combatUiTapListenerBound = false;
+  function ensureCombatUiTapListener(){
+    if(combatUiTapListenerBound) return;
+    combatUiTapListenerBound = true;
+    const mark = (ev)=>{
+      const t = ev.target;
+      if(t && t.closest && (t.closest('#combat-mgr-card') || t.closest('#attacks-card'))) lastCombatUiTapAt = Date.now();
+    };
+    document.addEventListener('pointerdown', mark, true);
+    document.addEventListener('touchstart', mark, true);
+  }
 
   async function grantMilestoneRewards(code, prog, milestoneNumber, reason, xpConsumed){
     const players = cachedRoster.filter(m=>m.role==='player');

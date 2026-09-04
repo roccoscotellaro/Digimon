@@ -373,6 +373,35 @@
     return pushLog(code, entry);
   }
 
+  // Richiesta utente: un piccolo tool "guidato" per creare Attacchi nella Scheda Digimon, che
+  // suggerisca i Tag da Quality corretti (invece di doverli ricordare/scrivere a mano in Extra Tag)
+  // e tenga d'occhio Reach/slot/budget DP dello Stage per non eccedere. Il motore vero e proprio
+  // (performAttackRoll, applyActionMechanic ecc.) NON legge/parsa mai extraTags — è testo libero
+  // puramente di riferimento per il tavolo — quindi questi suggerimenti sono un aiuto a scriverlo
+  // giusto, non un vincolo meccanico: qui puntiamo alla PRECISIONE del testo (Rank corretto letto
+  // dalla Quality realmente posseduta), non a bloccare nulla. Solo le Quality con un Tag esplicito
+  // e non ambiguo nella propria descrizione (QUALITY_CATALOG sopra) sono presenti in tabella, per
+  // non suggerire un Tag inventato/mai citato dal regolamento.
+  const ATTACK_TAG_HINTS = [
+    { qualityPrefix:'Weapon',            tag:q=>`[WEAPON ${q.rank||1}]`, note:'Bonus Accuracy/Danno automatico da Weapon' },
+    { qualityPrefix:'Certain Strike',    tag:q=>`[CERTAIN ${q.rank||1}]`, note:'Successi automatici garantiti su Accuracy', onlyType:'Damage' },
+    { qualityPrefix:'Armor Piercing',    tag:q=>`[PIERCING ${q.rank||1}]`, note:'Danno Unalterable extra' },
+    { qualityPrefix:'Mighty Blow',       tag:()=>'[MIGHTY]', note:'Possibile [STUN] (richiede min 2 Danno dopo Armor)', onlyShape:'Melee', onlyType:'Damage' },
+    { qualityPrefix:'Precise Focus',     tag:()=>'[FOCUS]', note:'Doppio effetto su Ferite Temporanee', onlyShape:'Range' },
+    { qualityPrefix:'Feint Attack',      tag:()=>'[T:FEINT]', note:'Dimezza Dodge/Armor del bersaglio', onlyShape:'Melee' },
+    { qualityPrefix:'Ammo',              tag:()=>'[AMMO]', note:'Ignora "un Attacco a round"' },
+    { qualityPrefix:'Charge Attack',     tag:()=>'[CHARGE]', note:'Muovi+Attacca nella stessa Azione', onlyShape:'Melee' },
+    { qualityPrefix:'Simplified Strike', tag:()=>'[SIMPLE]', note:'Costa 1 Azione in meno (min 1)' },
+    { qualityPrefix:'Sneak Attack',      tag:()=>'[SNEAK]', note:'+RAM Accuracy se Nascosto dal bersaglio', onlyShape:'Range', rangeNote:'su Range richiede 1 Azione extra' }
+  ];
+  // Qualities che potenziano genericamente gli Attacchi [WEAPON] senza un proprio Tag separato
+  // (i vari tier di Digizoid Weaponry) — mostrate come promemoria testuale, non come chip da
+  // inserire (il bonus è automatico su QUALSIASI Attacco con [WEAPON], non un Tag a parte).
+  function digizoidWeaponryReminder(qualities){
+    const q = (qualities||[]).find(x=>x.name && /Digizoid Weaponry$/.test(x.name));
+    return q ? `${q.name}: i tuoi Attacchi [WEAPON] hanno anche i suoi bonus automatici (vedi la Quality per il dettaglio).` : '';
+  }
+
   function attackTagsPlain(a){
     const tags = [`[${a.shape.toUpperCase()}${a.shape==='Range'?' '+(a.reach||1):''}]`, `[${a.type.toUpperCase()}]`];
     if(a.areaAttack) tags.push('[AREA]');
@@ -1215,16 +1244,17 @@
         </div>
         <div class="field"><label>Health (base)</label><input type="number" id="e-d-hp-${containerId}" value="${d.baseHealth}" min="0" /></div>
         <div class="divider"></div>
-        <div class="flex-between" style="margin-bottom:6px;">
+        <div class="flex-between" style="margin-bottom:2px;">
           <span class="muted">Attacchi (Tag: [MELEE]/[RANGE] + [DAMAGE]/[SUPPORT])</span>
           <span class="mono" id="atk-slots-${containerId}" style="font-size:11px;"></span>
         </div>
+        <div class="mono" id="atk-dp-budget-${containerId}" style="font-size:11px;margin-bottom:6px;"></div>
         <div id="atk-list-${containerId}"></div>
         <div class="row">
           <input type="text" id="atk-name-${containerId}" placeholder="Nome Attacco" style="flex:2;" />
           <select id="atk-shape-${containerId}" style="flex:1;"><option>Melee</option><option>Range</option></select>
           <select id="atk-type-${containerId}" style="flex:1;"><option>Damage</option><option>Support</option></select>
-          <select id="atk-reach-${containerId}" style="flex:1;"><option value="1">Portata 1 zona</option><option value="2">Portata 2 zone</option></select>
+          <select id="atk-reach-${containerId}" style="flex:1;display:none;"><option value="1">Portata 1 zona</option><option value="2">Portata 2 zone</option></select>
         </div>
         <div class="row" style="margin-top:6px;">
           <select id="atk-effect-${containerId}" style="flex:1;">
@@ -1232,6 +1262,10 @@
             ${EFFECT_DEFS.map(e=>`<option value="${e.key}">${e.label}</option>`).join('')}
           </select>
           <input type="text" id="atk-extra-${containerId}" placeholder="Altri Tag (es. [WEAPON 2])" style="flex:1;" />
+        </div>
+        <div class="flex-between" style="margin-top:2px;">
+          <div id="atk-tag-hints-${containerId}" style="flex:1;display:flex;flex-wrap:wrap;gap:4px;"></div>
+          <span class="mono" id="atk-tagcount-${containerId}" style="font-size:10px;white-space:nowrap;margin-left:6px;"></span>
         </div>
         <div class="row" style="margin-top:6px;">
           <input type="text" id="atk-desc-${containerId}" placeholder="Descrizione breve" style="flex:2;" />
@@ -1330,6 +1364,17 @@
           slotsEl.style.color = count>maxSlots ? 'var(--danger)' : 'var(--dchroma)';
           slotsEl.innerHTML = `⭐ ${sigCount===0?'<span style="color:var(--danger);">nessuna</span>':sigCount} · Extra ${extraCount}/${extraMax}`;
         }
+        // Richiesta utente: tenere sott'occhio "il livello del Digimon" mentre si costruiscono gli
+        // Attacchi -- promemoria dello stesso budget DP Quality mostrato più sopra nella Scheda
+        // (computeDpSpent/d.dpTotal), così non serve scorrere su e giù per ricordarselo mentre si
+        // valuta se comprare una Quality nuova prima di poterne scrivere il Tag su un Attacco.
+        const dpBudgetEl = document.getElementById('atk-dp-budget-'+containerId);
+        if(dpBudgetEl){
+          const spent = computeDpSpent(d.qualities);
+          const total = Number(d.dpTotal||0);
+          dpBudgetEl.style.color = spent>total ? 'var(--danger)' : 'var(--text-mute)';
+          dpBudgetEl.textContent = `Stage ${d.stage||'?'} — Quality DP: ${spent}/${total}${spent>total?' ⚠ sopra budget':''}`;
+        }
         listEl.innerHTML = (d.attacks||[]).length===0 ? '<div class="muted" style="margin-bottom:6px;">Nessun Attacco.</div>' : d.attacks.map((a,i)=>`
           <div class="flex-between" style="margin-bottom:6px;padding:4px 6px;${a.signature?'border:1px solid var(--dchroma);border-radius:4px;':''}">
             <span>${a.signature?'⭐ ':''}<b>${escapeHTML(a.name)}</b>${a.signature?' <span class="tag" style="color:var(--dchroma);border-color:var(--dchroma);" title="Il giocatore può scegliere di dichiararla e spendere Battery per potenziarla — non è automatico.">SIGNATURE MOVE</span>':''} ${attackTagsHTML(a)}</span>
@@ -1347,6 +1392,73 @@
         });
       };
       renderAtkList();
+      // Assistente Tag (richiesta utente): mostra come chip cliccabili SOLO i Tag da Quality che il
+      // Digimon possiede davvero (Rank corretto letto dalla Quality, non a memoria/mano) e pertinenti
+      // alla combinazione Melee/Range + Damage/Support scelta in questo momento nel form; un click
+      // li aggiunge (senza duplicarli) al campo Extra Tag. Il contatore accanto stima quanti Tag da
+      // Quality sono già nel campo (regola 3.03: max 3 per Attacco, i 4 Tag base MELEE/RANGE/
+      // DAMAGE/SUPPORT non contano) -- SOLO un promemoria non bloccante, in stile con l'avviso già
+      // esistente sopra "sopra il limite ... slot": qui come lì si avvisa, non si impedisce nulla,
+      // dato che extraTags resta testo libero mai interpretato dal motore di gioco.
+      // BUGFIX (segnalato dall'utente: "non riuscire a salvare la scheda digimon"): tutto questo
+      // blocco (assistente Tag/Reach/budget DP per gli Attacchi) gira SINCRONO durante il render
+      // del form, PRIMA che venga agganciato il bottone "Salva" (vedi btn-save-digimon- più sotto).
+      // Se una qualunque riga qui dentro lancia un'eccezione imprevista (es. un Digimon con dati
+      // vecchi/mancanti che non ci aspettavamo), l'intera funzione si interrompe a metà e TUTTI i
+      // bottoni ancora da agganciare — incluso Salva — restano inerti, senza nessun errore visibile
+      // per il giocatore: sembra semplicemente che "il tasto non faccia niente". Isolato in un
+      // try/catch così un problema qui dentro (assistente, solo un aiuto non bloccante) non può più
+      // impedire il salvataggio della Scheda.
+      try{
+      const reachSel = document.getElementById('atk-reach-'+containerId);
+      const shapeSel = document.getElementById('atk-shape-'+containerId);
+      const typeSel = document.getElementById('atk-type-'+containerId);
+      const extraInput = document.getElementById('atk-extra-'+containerId);
+      const hintsEl = document.getElementById('atk-tag-hints-'+containerId);
+      const tagCountEl = document.getElementById('atk-tagcount-'+containerId);
+      const updateReachVisibility = ()=>{ if(reachSel && shapeSel) reachSel.style.display = shapeSel.value==='Range' ? '' : 'none'; };
+      const updateTagCount = ()=>{
+        if(!tagCountEl) return;
+        const bracketCount = (extraInput.value.match(/\[[^\]]+\]/g)||[]).length;
+        const effectSel = document.getElementById('atk-effect-'+containerId);
+        const extra = (typeSel.value==='Support' && effectSel && effectSel.value ? 1 : 0) + (document.getElementById('atk-area-'+containerId).checked ? 1 : 0);
+        const n = bracketCount + extra;
+        tagCountEl.style.color = n>3 ? 'var(--danger)' : 'var(--text-mute)';
+        tagCountEl.textContent = `Tag da Quality: ${n}/3`;
+      };
+      const renderTagHints = ()=>{
+        if(!hintsEl) return;
+        const shape = shapeSel.value, type = typeSel.value;
+        const existing = extraInput.value;
+        const chips = ATTACK_TAG_HINTS
+          .map(hint=>{
+            const q = (d.qualities||[]).find(x=>x.name && x.name.indexOf(hint.qualityPrefix)===0);
+            if(!q) return null;
+            if(hint.onlyShape && hint.onlyShape!==shape) return null;
+            if(hint.onlyType && hint.onlyType!==type) return null;
+            return { tagStr: hint.tag(q), note: hint.note + (hint.rangeNote && shape==='Range' ? ` (${hint.rangeNote})` : '') };
+          })
+          .filter(Boolean);
+        const reminder = digizoidWeaponryReminder(d.qualities);
+        hintsEl.innerHTML = chips.map(c=>`<button type="button" class="btn ghost small" data-atk-tag-chip="${escapeAttr(c.tagStr)}" title="${escapeAttr(c.note)}" style="font-size:10px;padding:2px 6px;${existing.includes(c.tagStr)?'opacity:0.4;':''}">${escapeHTML(c.tagStr)}</button>`).join('')
+          + (reminder ? `<div class="muted" style="font-size:10px;width:100%;margin-top:2px;">${escapeHTML(reminder)}</div>` : '');
+        hintsEl.querySelectorAll('[data-atk-tag-chip]').forEach(btn=>{
+          btn.onclick = ()=>{
+            const tagStr = btn.getAttribute('data-atk-tag-chip');
+            if(!extraInput.value.includes(tagStr)) extraInput.value = (extraInput.value.trim() ? extraInput.value.trim()+' ' : '') + tagStr;
+            renderTagHints();
+            updateTagCount();
+          };
+        });
+      };
+      updateReachVisibility();
+      renderTagHints();
+      updateTagCount();
+      shapeSel.onchange = ()=>{ updateReachVisibility(); renderTagHints(); };
+      typeSel.onchange = renderTagHints;
+      document.getElementById('atk-effect-'+containerId).onchange = updateTagCount;
+      document.getElementById('atk-area-'+containerId).onchange = updateTagCount;
+      extraInput.oninput = ()=>{ renderTagHints(); updateTagCount(); };
       document.getElementById('btn-atk-add-'+containerId).onclick = ()=>{
         const errEl = document.getElementById('atk-add-err-'+containerId);
         if(errEl) errEl.textContent = '';
@@ -1375,7 +1487,12 @@
         document.getElementById('atk-sig-'+containerId).checked=false;
         document.getElementById('atk-area-'+containerId).checked=false;
         renderAtkList();
+        renderTagHints();
+        updateTagCount();
       };
+      }catch(atkToolErr){
+        console.error('Errore assistente tag Attacchi (non bloccante, il resto della Scheda funziona comunque):', atkToolErr);
+      }
       let armorDraftQualities = [];
       const renderArmorList = ()=>{
         const listEl = document.getElementById('armor-list-'+containerId);
@@ -1506,6 +1623,13 @@
       };
       document.getElementById('btn-cancel-digimon-'+containerId).onclick = ()=>{ editingDigimon = false; renderDigimonCard(me, containerId, onChanged, renderTamerCardFn); };
       document.getElementById('btn-save-digimon-'+containerId).onclick = async ()=>{
+        // BUGFIX (segnalato dall'utente: "non riuscire a salvare la scheda digimon"): prima non
+        // c'era nessun try/catch qui -- un'eccezione imprevista durante la lettura dei campi o il
+        // salvataggio finiva per bloccare tutto SENZA nessun messaggio, lasciando il giocatore
+        // bloccato su "Salva" senza sapere perché. Ora un eventuale errore viene sempre mostrato
+        // nello stato sotto al bottone invece di sparire nel nulla.
+        const stErrEl = document.getElementById('save-status-digimon-'+containerId);
+        try{
         me.digimon.name = document.getElementById('e-d-name-'+containerId).value;
         me.digimon.imageUrl = document.getElementById('e-d-img-'+containerId).value.trim();
         me.digimon.stage = document.getElementById('e-d-stage-'+containerId).value;
@@ -1539,6 +1663,10 @@
         st.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
         st.textContent = ok ? 'Salvato.' : ('Errore: '+(lastApiError||''));
         if(ok){ editingDigimon = false; renderDigimonCard(me, containerId, onChanged, renderTamerCardFn); }
+        }catch(saveErr){
+          console.error('Errore durante il salvataggio della Scheda Digimon:', saveErr);
+          if(stErrEl){ stErrEl.style.color = 'var(--danger)'; stErrEl.textContent = 'Errore imprevisto durante il salvataggio: ' + (saveErr && saveErr.message ? saveErr.message : saveErr); }
+        }
       };
     }
   }
