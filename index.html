@@ -495,8 +495,7 @@
   .hp-mini-val{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-mute);white-space:nowrap;}
   .hp-mini-label{font-size:9px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-mute);margin-right:2px;}
   .enc-card-mini{display:flex;flex-direction:column;align-items:center;}
-  .target-dropdown-item:active{background:var(--panel-2);}
-  .target-dropdown-item+.target-dropdown-item{border-top:1px solid var(--line);}
+  .self-target-chip:active{background:rgba(255,255,255,0.1) !important;}
 
   .view-mode .field-static{margin-bottom:10px;}
   .field-static label{margin-bottom:2px;}
@@ -1768,53 +1767,56 @@
     // validateAttackTargeting ("Scegli attaccante e bersaglio diversi."), quindi includerlo qui è
     // sicuro anche per il pannello Attacco, non solo per Direct/Aid/Bolster.
     const targetChoices = p ? others.concat([p]) : others;
-    const targetItemsHTML = targetChoices.map(x=>{
+    // Richiesta utente: "vedono solo il menu a tendina dove scegliere il nemico, poco pratico" --
+    // il vecchio dropdown (apri, scorri, tocca la riga) è stato sostituito da una griglia di
+    // ritratti toccabili, come quella che il Master usa già per Attaccante/Bersaglio: un solo tap
+    // seleziona il Bersaglio, niente da aprire prima. #self-target-select resta l'input nascosto
+    // con la fonte di verità (letto da bindAttacksCard/bindCombatSelfActions al momento del click
+    // su Attacca/Direct/Aid/Bolster), qui solo il modo di impostarlo cambia.
+    const targetChipsHTML = targetChoices.map(x=>{
       const isSelf = !!(p && x.id===p.id);
       const dispName = combatDisplayName(x, isMasterView);
       // Richiesta utente: distingue con un numerino (es. " #2") i Digimon che condividono lo stesso
       // nome visualizzato — vedi duplicateNameSuffix. Tenuto separato da dispName perché il confronto
       // isMasked qui sotto deve restare sul nome "puro", non sul nome+numero.
       const dupSuffix = duplicateNameSuffix(combat, x, isMasterView);
-      const sideTag = isSelf ? '(te stesso)' : (x.side==='enemy' ? '(Nemico)' : '(Alleato)');
+      const sideTag = isSelf ? 'Te stesso' : (x.side==='enemy' ? 'Nemico' : 'Alleato');
       const zone = zoneLabel(x.zone||'Medio');
       const img = resolveParticipantImage(x, true);
       const isMasked = dispName !== x.name;
       const showImg = !isMasked || !!x.nameHidden; // nameHidden mostra immagine, altre maschere no
       const portraitEl = showImg && img
-        ? `<img src="${escapeAttr(img)}" onerror="this.style.display='none'" style="width:28px;height:28px;object-fit:cover;border-radius:5px;flex-shrink:0;" />`
-        : `<div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:var(--panel-2);border-radius:5px;flex-shrink:0;color:var(--text-mute);font-size:13px;">❔</div>`;
-      return `<div class="target-dropdown-item" data-target-id="${escapeAttr(x.id)}" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;${isSelf?'border-top:1px solid var(--line);':''}">
-        ${portraitEl}
-        <span style="flex:1;min-width:0;"><span style="font-size:12px;">${escapeHTML(dispName)}</span>${dupSuffix?`<span class="mono" style="font-size:11px;color:var(--amber);">${escapeHTML(dupSuffix)}</span>`:''} <span class="muted" style="font-size:10px;">${escapeHTML(sideTag)}${isSelf?'':` — ${escapeHTML(zone)}`}</span></span>
-      </div>`;
+        ? `<img src="${escapeAttr(img)}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover;" />`
+        : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--panel-2);color:var(--text-mute);font-size:13px;">❔</div>`;
+      const color = isSelf ? 'var(--text-mute)' : (x.side==='ally' ? 'var(--cyan)' : 'var(--danger)');
+      const selected = firstOther ? x.id===firstOther.id : false;
+      // Testo GREZZO (non pre-escapato): finisce in data-target-detail via escapeAttr() qui sotto,
+      // che lo escapa una volta sola -- l'attributo HTML lo ri-decodifica da solo alla lettura
+      // (chip.getAttribute), quindi un doppio escapeHTML qui produrrebbe entità doppie (es. "&amp;"
+      // diventerebbe "&amp;amp;") per nomi con caratteri speciali.
+      const detail = `${dispName}${dupSuffix||''} — ${sideTag}${isSelf?'':` — ${zone}`}`;
+      return `<button type="button" class="self-target-chip" data-target-id="${escapeAttr(x.id)}" data-target-detail="${escapeAttr(detail)}" title="${escapeAttr(dispName+dupSuffix)} — ${escapeAttr(sideTag)}" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:3px;width:56px;border-radius:8px;border:2px solid ${selected?color:'transparent'};background:${selected?'rgba(255,255,255,0.06)':'var(--panel-2)'};cursor:pointer;">
+        <div style="width:34px;height:34px;border-radius:6px;overflow:hidden;border:1px solid ${color};">${portraitEl}</div>
+        <span style="font-size:9px;max-width:54px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${color};">${escapeHTML(dispName)}${dupSuffix?`<b style="color:var(--amber);">${escapeHTML(dupSuffix)}</b>`:''}</span>
+      </button>`;
     }).join('');
-    const selDisplay = (()=>{
+    const firstOtherDetail = (()=>{
       if(!firstOther) return '(nessun altro partecipante)';
       const dn = combatDisplayName(firstOther, isMasterView);
       const dnSuffix = duplicateNameSuffix(combat, firstOther, isMasterView);
-      const st = firstOther.side==='enemy' ? '(Nemico)' : '(Alleato)';
+      const st = firstOther.side==='enemy' ? 'Nemico' : 'Alleato';
       const zn = zoneLabel(firstOther.zone||'Medio');
-      const im = resolveParticipantImage(firstOther, true);
-      const isMask = dn !== firstOther.name;
-      const showI = !isMask || !!firstOther.nameHidden;
-      const pEl = showI && im
-        ? `<img src="${escapeAttr(im)}" onerror="this.style.display='none'" style="width:24px;height:24px;object-fit:cover;border-radius:4px;flex-shrink:0;" />`
-        : `<div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:var(--panel-2);border-radius:4px;flex-shrink:0;color:var(--text-mute);font-size:11px;">❔</div>`;
-      return `${pEl} <span style="flex:1;min-width:0;font-size:12px;">${escapeHTML(dn)}${dnSuffix?`<span class="mono" style="color:var(--amber);">${escapeHTML(dnSuffix)}</span>`:''} <span class="muted" style="font-size:10px;">${escapeHTML(st)} — ${escapeHTML(zn)}</span></span>`;
+      return `${escapeHTML(dn)}${dnSuffix?escapeHTML(dnSuffix):''} — ${escapeHTML(st)} — ${escapeHTML(zn)}`;
     })();
     return `
       ${turnBannerHTML(combat, username)}
       ${p ? `<div class="muted" style="margin-bottom:8px;">Zona attuale: <b style="color:var(--amber);">${zoneLabel(p.zone||'Medio')}</b> · Azioni: <span class="mono">${actsLeft}/2</span></div>` : ''}
       <div class="field"><label>BERSAGLIO</label>
         <input type="hidden" id="self-target-select" value="${firstOther?escapeAttr(firstOther.id):''}">
-        <div id="target-dropdown-wrapper" style="position:relative;${canAct?'':'opacity:0.5;pointer-events:none;'}">
-          <div id="target-dropdown-toggle" style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;cursor:pointer;min-height:36px;">
-            ${selDisplay} <span style="margin-left:auto;color:var(--text-mute);">▾</span>
-          </div>
-          <div id="target-dropdown-list" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-top:2px;max-height:220px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.5);">
-            ${targetItemsHTML || '<div class="muted" style="padding:10px;">(nessun altro partecipante)</div>'}
-          </div>
+        <div id="self-target-chips" style="display:flex;flex-wrap:wrap;gap:6px;${canAct?'':'opacity:0.5;pointer-events:none;'}">
+          ${targetChipsHTML || '<div class="muted" style="font-size:11px;">(nessun altro partecipante)</div>'}
         </div>
+        <div class="muted" id="self-target-selected-line" style="font-size:10px;margin-top:4px;">${firstOtherDetail}</div>
       </div>
       <!-- I vecchi bottoni "Avvicinati/Allontanati" (relativi a un bersaglio scelto qui sopra) sono
            stati tolti perché poco intuitivi — il movimento ora si fa con le stesse frecce ◀/▶ del
@@ -1854,26 +1856,31 @@
     const targetSel = document.getElementById('self-target-select');
     const resEl = document.getElementById('self-attack-result');
 
-    // Binding dropdown custom bersaglio (ritratto + nome)
-    const ddToggle = document.getElementById('target-dropdown-toggle');
-    const ddList = document.getElementById('target-dropdown-list');
-    if(ddToggle && ddList){
-      ddToggle.onclick = ()=>{ ddList.style.display = ddList.style.display==='none' ? 'block' : 'none'; };
-      ddList.querySelectorAll('.target-dropdown-item').forEach(item=>{
-        item.onmouseenter = ()=>{ item.style.background='var(--panel-2)'; };
-        item.onmouseleave = ()=>{ item.style.background=''; };
-        item.onclick = ()=>{
-          const id = item.getAttribute('data-target-id');
+    // Binding griglia ritratti Bersaglio (richiesta utente: sostituisce il vecchio dropdown "poco
+    // pratico" su mobile -- un tap seleziona direttamente, senza aprire/scorrere un elenco prima).
+    // Aggiornamento leggero: sposta solo il bordo/sfondo "selezionato" tra i chip e la riga di
+    // dettaglio sotto, senza ricostruire l'intera card -- stesso spirito del guard anti-race già
+    // presente nel poll (vedi refreshLiveParts più sotto, che ora legge/ripristina il chip invece
+    // del vecchio toggle dropdown).
+    const chipsWrap = document.getElementById('self-target-chips');
+    const detailLine = document.getElementById('self-target-selected-line');
+    if(chipsWrap){
+      chipsWrap.querySelectorAll('.self-target-chip').forEach(chip=>{
+        chip.onclick = ()=>{
+          const id = chip.getAttribute('data-target-id');
           if(targetSel) targetSel.value = id;
-          // Aggiorna la riga visualizzata nel toggle copiando il contenuto dell'item scelto
-          ddToggle.innerHTML = item.innerHTML + ' <span style="margin-left:auto;color:var(--text-mute);">▾</span>';
-          ddList.style.display = 'none';
+          chipsWrap.querySelectorAll('.self-target-chip').forEach(c=>{
+            const isThis = c===chip;
+            // Il colore del bordo selezionato ricalca quello già scritto sul nome (span figlio) al
+            // render -- Alleato/Nemico/Te stesso hanno ciascuno il proprio colore, invariato qui.
+            const nameEl = c.querySelector('span');
+            const col = nameEl ? nameEl.style.color : 'var(--line)';
+            c.style.border = `2px solid ${isThis?col:'transparent'}`;
+            c.style.background = isThis ? 'rgba(255,255,255,0.06)' : 'var(--panel-2)';
+          });
+          if(detailLine) detailLine.textContent = chip.getAttribute('data-target-detail') || '';
         };
       });
-      // Chiudi dropdown cliccando fuori
-      document.addEventListener('click', (ev)=>{
-        if(!ev.target.closest('#target-dropdown-wrapper')) ddList.style.display = 'none';
-      }, { once: false });
     }
 
     // I vecchi bottoni "Avvicinati/Allontanati" (e la doMove che li gestiva) sono stati tolti da
@@ -1923,7 +1930,7 @@
         const atk = me.digimon.attacks[idx];
         const targetId = targetSel ? targetSel.value : '';
         const target = cachedCombat.participants.find(x=>x.id===targetId);
-        const validation = validateAttackTargeting(p, target, atk);
+        const validation = validateAttackTargeting(p, target, atk, { restrictFriendlyFire: true });
         if(!validation.ok){
           if(resEl) resEl.innerHTML = `<div class="err">${validation.error}</div>`;
           return;
@@ -3097,14 +3104,21 @@
         bindAttacksCard(session.code, cachedMe);
         if(prevTargetVal){
           const newTargetSel = document.getElementById('self-target-select');
-          // self-target-select è ora un <input type="hidden">: basta verificare che il bersaglio
-          // esista ancora tra gli item del dropdown custom.
-          const matchItem = document.querySelector(`.target-dropdown-item[data-target-id="${CSS.escape(prevTargetVal)}"]`);
-          if(newTargetSel && matchItem){
+          // self-target-select è ora impostato da un tap sui chip ritratto (non più un dropdown):
+          // basta verificare che il bersaglio esista ancora tra i chip appena ridisegnati e
+          // spostargli sopra l'evidenziazione "selezionato", coerente col binding in bindAttacksCard.
+          const matchChip = document.querySelector(`.self-target-chip[data-target-id="${CSS.escape(prevTargetVal)}"]`);
+          if(newTargetSel && matchChip){
             newTargetSel.value = prevTargetVal;
-            // Aggiorna anche la riga visibile nel toggle
-            const ddToggle = document.getElementById('target-dropdown-toggle');
-            if(ddToggle) ddToggle.innerHTML = matchItem.innerHTML + ' <span style="margin-left:auto;color:var(--text-mute);">▾</span>';
+            document.querySelectorAll('.self-target-chip').forEach(c=>{
+              const isThis = c===matchChip;
+              const nameEl = c.querySelector('span');
+              const col = nameEl ? nameEl.style.color : 'var(--line)';
+              c.style.border = `2px solid ${isThis?col:'transparent'}`;
+              c.style.background = isThis ? 'rgba(255,255,255,0.06)' : 'var(--panel-2)';
+            });
+            const detailLine = document.getElementById('self-target-selected-line');
+            if(detailLine) detailLine.textContent = matchChip.getAttribute('data-target-detail') || '';
           }
         }
       }
@@ -4868,9 +4882,20 @@
   }
 
   // ---------- shared attack resolution (usato sia dal Combat Manager del Master sia dall'attacco in self-service del giocatore) ----------
-  function validateAttackTargeting(attacker, target, atk){
+  function validateAttackTargeting(attacker, target, atk, opts){
     if(!attacker || !target || attacker.id===target.id){
       return { ok:false, error:'Scegli attaccante e bersaglio diversi.' };
+    }
+    // Richiesta utente: "togli ai giocatori la possibilità di colpire propri compagni o alleati
+    // salvo se lo fanno con attacchi che hanno il tag support" -- SOLO per i Giocatori
+    // (opts.restrictFriendlyFire, passato solo dal pannello Attacchi del Giocatore più sotto): il
+    // Master resta libero di risolvere qualunque combinazione Attaccante/Bersaglio dalla Gestione
+    // Combattimento (narrazione, NPC che si scontrano tra loro, ecc. restano scelte sue). Il fuoco
+    // amico resta permesso solo con [SUPPORT] -- controllato sul Tipo dell'Attacco, non sull'Effetto
+    // collegato, per restare semplice e prevedibile (una [SUPPORT] senza Effetto o con Effetto
+    // negativo su un alleato è comunque una scelta strana del giocatore, ma resta sua).
+    if(opts && opts.restrictFriendlyFire && atk && atk.type!=='Support' && target.side===attacker.side){
+      return { ok:false, error:`${atk.name} non ha il Tag [SUPPORT]: non puoi colpire un alleato con un Attacco [${(atk.type||'DAMAGE').toUpperCase()}]. Scegli un bersaglio Nemico, oppure usa un Attacco [SUPPORT] su un alleato.` };
     }
     const zDist = zoneDistance(attacker.zone||'Medio', target.zone||'Medio');
     if(atk && atk.shape==='Melee' && zDist>0){
