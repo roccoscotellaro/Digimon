@@ -919,6 +919,31 @@
     if(loc.startsWith('sub:')) return chatMode==='subgroup' && subgroupId===loc.slice(4);
     return false;
   }
+  // Richiesta utente: "solo i partecipanti a quella chat vedessero il combattimento e che solo a
+  // loro venga bloccata la chat" -- quando il Master ancora un combattimento a un Sottogruppo
+  // specifico (combat.chatLock.location === 'sub:<id>', vedi sopra), i giocatori che NON fanno
+  // parte di quel Sottogruppo non devono nemmeno accorgersi che è in corso uno scontro: caso
+  // tipico "party diviso", dove l'altro gruppo sta affrontando qualcosa altrove nella stessa
+  // scena. Se invece il combattimento è ancorato alla Chat Generale (o non ha affatto un
+  // chatLock -- combattimento "vecchio stile", campo message lasciato vuoto all'avvio) resta
+  // visibile a tutti come sempre: la Generale non ha esclusioni di appartenenza.
+  //
+  // Usata sia per nascondere il contenuto del tab Battaglia del Giocatore (renderPlayer/
+  // refreshLiveParts, passando null al posto di cachedCombat alle funzioni di rendering se questa
+  // torna false) sia per decidere se la chat pubblica va bloccata "fuori dal proprio turno"
+  // (quel blocco, PRIMA di questa modifica, scattava per QUALSIASI giocatore mentre un
+  // combattimento qualunque era attivo, anche per chi non c'entrava nulla con quello scontro --
+  // vedi il call site in refreshLiveParts).
+  function canPlayerSeeCombat(combat, username){
+    if(!combat || !combat.active) return false;
+    const lock = combat.chatLock;
+    if(!lock || !lock.location || lock.location==='general') return true;
+    if(lock.location.startsWith('sub:')){
+      const g = (cachedSubgroups||[]).find(x=>x.id===lock.location.slice(4));
+      return !!(g && Array.isArray(g.members) && g.members.includes(username));
+    }
+    return true;
+  }
   // Countdown/scadenza delle 24h dall'inizio del turno attuale (combat.turnStartedAt, impostato
   // quando il Master calcola l'ordine dei turni e ad ogni "Turno Successivo" — vedi
   // advanceCombatTurn/btn-combat-calc-order): puramente informativo, un promemoria di quanto tempo
@@ -1328,8 +1353,14 @@
     const combatLive = document.getElementById('combat-live');
     // advanceCombatTurn è condivisa tra il bottone "Turno Successivo" del Master e "Fine Turno" del
     // Giocatore (bindAttacksCard) — un `true` fisso smascererebbe qui nomi/Digimon nascosti al
-    // Giocatore ogni volta che chiude il proprio turno.
-    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, !!(session && session.role==='master'));
+    // Giocatore ogni volta che chiude il proprio turno. Stessa cautela per canPlayerSeeCombat: se
+    // per qualunque motivo questa venisse invocata lato Giocatore mentre non fa (più) parte della
+    // chat a cui il combattimento è ancorato, non deve rivedere lo scontro riapparire qui.
+    {
+      const __isMasterNow = !!(session && session.role==='master');
+      const __combatForLive = __isMasterNow ? cachedCombat : (canPlayerSeeCombat(cachedCombat, session.username) ? cachedCombat : null);
+      if(combatLive) combatLive.innerHTML = combatDisplayHTML(__combatForLive, __isMasterNow);
+    }
     bindZoneLineArrows(code, players);
   }
   // Richiesta utente: il Master deve poter spostare manualmente il turno su un partecipante a
@@ -3060,7 +3091,13 @@
     if(dexLive && dexEditOpenId===null){ dexLive.innerHTML = dexListHTML(cachedDex, session.role==='master'); if(session.role==='master') bindDexEditButtons(session.code); }
     const combatLive = document.getElementById('combat-live');
     const isMasterRole = session && session.role==='master';
-    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, isMasterRole);
+    // Richiesta utente: nasconde il combattimento a chi non fa parte della chat/Sottogruppo a cui
+    // il Master lo ha ancorato (vedi canPlayerSeeCombat) -- il Master vede sempre tutto, invariato.
+    // combatForMe è null per un Giocatore escluso: tutte le funzioni di rendering più sotto (già
+    // scritte per gestire "nessun combattimento attivo") mostrano quindi "Nessun combattimento in
+    // corso" esattamente come se lo scontro non fosse mai iniziato.
+    const combatForMe = isMasterRole ? cachedCombat : (canPlayerSeeCombat(cachedCombat, session.username) ? cachedCombat : null);
+    if(combatLive) combatLive.innerHTML = combatDisplayHTML(combatForMe, isMasterRole);
     // Prima si legava solo per il Master: ora le frecce ◀/▶ compaiono anche al Giocatore nel
     // proprio turno (vedi zoneLineHTML/bindZoneLineArrows) — bindZoneLineArrows è comunque un
     // no-op sicuro quando non ci sono bottoni [data-zoneline-move] nel DOM.
@@ -3083,7 +3120,7 @@
       if(mgrCard && !typingInMgr && !recentTapInMgr) renderCombatManager(session.code, (cachedRoster||[]).filter(m=>m.role==='player'));
     }
     const attacksCard = document.getElementById('attacks-card');
-    if(attacksCard) attacksCard.style.display = (cachedCombat && cachedCombat.active) ? '' : 'none';
+    if(attacksCard) attacksCard.style.display = (combatForMe && combatForMe.active) ? '' : 'none';
     if(session.role==='player'){
       cachedMe = cachedRoster.find(m=>m.username===session.username) || cachedMe;
       const attacksCardInner = document.getElementById('attacks-card-inner');
@@ -3100,7 +3137,7 @@
         // partecipanti.
         const prevTargetSel = document.getElementById('self-target-select');
         const prevTargetVal = prevTargetSel ? prevTargetSel.value : null;
-        attacksCardInner.innerHTML = attacksCardHTML(cachedMe, cachedCombat, session.username);
+        attacksCardInner.innerHTML = attacksCardHTML(cachedMe, combatForMe, session.username);
         bindAttacksCard(session.code, cachedMe);
         if(prevTargetVal){
           const newTargetSel = document.getElementById('self-target-select');
@@ -3125,14 +3162,14 @@
     }
     const combatSelf = document.getElementById('combat-self-actions');
     if(combatSelf && session.role==='player'){
-      combatSelf.innerHTML = combatSelfActionHTML(cachedCombat, session.username);
+      combatSelf.innerHTML = combatSelfActionHTML(combatForMe, session.username);
       bindCombatSelfActions(session.code, session.username);
     }
     // ===== Mini-log nel tab Battle (mobile): mostra gli ultimi 4 messaggi della chat =====
     if(session.role==='player'){
       const miniLogEl = document.getElementById('combat-mini-log');
       const miniLogCard = document.getElementById('combat-mini-log-card');
-      if(miniLogCard) miniLogCard.style.display = (cachedCombat && cachedCombat.active) ? '' : 'none';
+      if(miniLogCard) miniLogCard.style.display = (combatForMe && combatForMe.active) ? '' : 'none';
       // BUGFIX: mostrava sempre cachedLog (Chat Generale), ma pushCombatNarration instrada la
       // narrazione di combattimento verso il Sottogruppo scelto dal Master quando combat.chatLock
       // è impostato su "sub:<id>" -- in quel caso il mini-log restava vuoto/con messaggi vecchi
@@ -3140,23 +3177,26 @@
       // pushCombatNarration: Generale se nessun chatLock (o "general"), altrimenti il thread del
       // Sottogruppo bloccato -- letto solo se il giocatore ne fa parte (getPrivateLog risponde
       // comunque solo con ciò a cui il thread dà accesso, stesso canale già usato dalla sua Chat
-      // "Gruppo" quando ci entra volontariamente).
-      const miniLogLock = cachedCombat && cachedCombat.chatLock && cachedCombat.chatLock.location;
+      // "Gruppo" quando ci entra volontariamente). Usa combatForMe: chi non vede il combattimento
+      // non deve nemmeno vedere il mini-log della sua narrazione.
+      const miniLogLock = combatForMe && combatForMe.chatLock && combatForMe.chatLock.location;
       let miniLogSource = cachedLog;
       if(miniLogLock && miniLogLock.startsWith('sub:')){
         try{ miniLogSource = await getPrivateLog(session.code, 'subgroup:'+miniLogLock.slice(4)); }catch(e){ miniLogSource = cachedLog; }
       }
-      if(miniLogEl && miniLogSource && miniLogSource.length > 0){
+      if(miniLogEl && combatForMe && miniLogSource && miniLogSource.length > 0){
         const last4 = miniLogSource.slice(-4);
         miniLogEl.innerHTML = typeof logHTML === 'function' ? logHTML(last4, false) : last4.map(e=>`<div style="padding:2px 0;font-size:12px;"><b style="color:var(--cyan);font-size:11px;">${escapeHTML(e.who||'')}</b> <span>${escapeHTML(e.text||'')}</span></div>`).join('');
         miniLogEl.scrollTop = miniLogEl.scrollHeight;
+      } else if(miniLogEl && !combatForMe){
+        miniLogEl.innerHTML = '';
       }
       // ===== Banner "È il tuo turno, ora puoi parlare!" nel tab Battle =====
       const turnBannerEl = document.getElementById('combat-turn-chat-banner');
       if(turnBannerEl){
-        const myTurnForBanner = isMyCombatTurn(cachedCombat, session.username);
-        if(myTurnForBanner && cachedCombat && cachedCombat.active){
-          const curP = currentTurnParticipant(cachedCombat);
+        const myTurnForBanner = isMyCombatTurn(combatForMe, session.username);
+        if(myTurnForBanner && combatForMe && combatForMe.active){
+          const curP = currentTurnParticipant(combatForMe);
           const curUser = curP && curP.username;
           if(curUser !== __lastTurnChatNotifiedUsername){
             __lastTurnChatNotifiedUsername = curUser;
@@ -3170,16 +3210,21 @@
         } else {
           turnBannerEl.innerHTML = '';
           // Reset: se il combattimento finisce o cambia turno, la prossima volta si rinotifica
-          if(!cachedCombat || !cachedCombat.active) __lastTurnChatNotifiedUsername = null;
+          if(!combatForMe || !combatForMe.active) __lastTurnChatNotifiedUsername = null;
         }
       }
     }
     // Blocca la chat pubblica (non quella privata col Master) fuori dal proprio turno, se in combattimento.
     // Blocca inoltre, per TUTTI (indipendentemente dal turno), la chat scelta dal Master come
     // "chat di combattimento" (chatLock) finché il Master non conclude lo scontro.
+    // Richiesta utente: "solo a loro [i partecipanti a quella chat] venga bloccata la chat" -- usa
+    // combatForMe (già null per chi non fa parte del Sottogruppo bloccato) al posto di cachedCombat,
+    // altrimenti PRIMA di questa modifica qualunque combattimento attivo bloccava la chat pubblica
+    // di TUTTI i giocatori, anche di chi non c'entrava nulla con quello scontro (mai "il proprio
+    // turno" per definizione, quindi sempre bloccato).
     if(session.role==='player'){
-      const myTurnNow = isMyCombatTurn(cachedCombat, session.username);
-      const turnLockPublicChat = !!(cachedCombat && cachedCombat.active) && playerChatMode!=='private' && playerChatMode!=='subgroup' && !myTurnNow;
+      const myTurnNow = isMyCombatTurn(combatForMe, session.username);
+      const turnLockPublicChat = !!(combatForMe && combatForMe.active) && playerChatMode!=='private' && playerChatMode!=='subgroup' && !myTurnNow;
       const chatLocked = combatChatLockLocationMatches(playerChatMode, playerActiveSubgroupId, myTurnNow);
       // Serve solo per sapere se QUESTA è la chat scelta dal Master come "chat di combattimento",
       // a prescindere dal turno — usato per mostrare il messaggio "è il tuo turno" proprio lì, dove
@@ -3272,6 +3317,14 @@
     cachedCombat = await getCombat(code);
     cachedProgression = await getProgression(code);
     cachedGameClock = await getGameClock(code);
+    // Serve SUBITO a canPlayerSeeCombat qui sotto (appartenenza ai Sottogruppi) -- senza questa
+    // fetch, cachedSubgroups resterebbe vuota fino al primo giro di polling "slowCycle" dentro
+    // refreshLiveParts, e un giocatore che FA parte del Sottogruppo a cui è ancorato il
+    // combattimento vedrebbe per qualche secondo "Nessun combattimento in corso" per errore
+    // (stesso identico bug già risolto altrove per il selettore Sottogruppo -- vedi
+    // ensurePlayerSubgroupPicker più sopra).
+    cachedSubgroups = await getSubgroups(code);
+    const combatForMe = canPlayerSeeCombat(cachedCombat, session.username) ? cachedCombat : null;
 
     root.innerHTML = `
       ${topbar('Vista Giocatore')}
@@ -3314,18 +3367,18 @@
 
           <div class="mobile-section" data-mobile-tab="combattimento">
           <div id="combat-turn-chat-banner"></div>
-          <div class="hud-frame card" id="attacks-card" style="${(cachedCombat && cachedCombat.active) ? '' : 'display:none;'}">
+          <div class="hud-frame card" id="attacks-card" style="${(combatForMe && combatForMe.active) ? '' : 'display:none;'}">
             <div class="section-title">Attacchi di ${escapeHTML(me.digimon.name || 'Digimon')}</div>
-            <div id="attacks-card-inner">${attacksCardHTML(me, cachedCombat, session.username)}</div>
+            <div id="attacks-card-inner">${attacksCardHTML(me, combatForMe, session.username)}</div>
           </div>
 
           <div class="hud-frame card">
             <div class="section-title">Combattimento</div>
-            <div id="combat-live">${combatDisplayHTML(cachedCombat, false)}</div>
-            <div id="combat-self-actions">${combatSelfActionHTML(cachedCombat, session.username)}</div>
+            <div id="combat-live">${combatDisplayHTML(combatForMe, false)}</div>
+            <div id="combat-self-actions">${combatSelfActionHTML(combatForMe, session.username)}</div>
           </div>
 
-          <div class="hud-frame card" id="combat-mini-log-card" style="${(cachedCombat && cachedCombat.active) ? '' : 'display:none;'}">
+          <div class="hud-frame card" id="combat-mini-log-card" style="${(combatForMe && combatForMe.active) ? '' : 'display:none;'}">
             <div class="section-title" style="font-size:11px;margin-bottom:4px;">💬 Ultimi messaggi</div>
             <div id="combat-mini-log"></div>
           </div>
