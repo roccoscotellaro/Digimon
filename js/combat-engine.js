@@ -69,6 +69,11 @@
       // in index.html e claude/audit-regolamento-dda2e.md, Addendum 3.
       p.tamerActions = 2;
       p.attackedThisRoundTamer = false;
+      // Reminder di turno ogni 2 ore (richiesta utente): riparte da zero per TUTTI a ogni calcolo/
+      // ricalcolo dell'ordine (inizio combattimento) -- vedi il conteggio vero e proprio in
+      // refreshLiveParts (index.html), e il reset "per il solo partecipante che riceve il turno" in
+      // advanceCombatTurn/jumpToCombatTurn/previousCombatTurn.
+      p.turnReminderCount = 0;
     });
   }
   function getParticipantBattery(p){

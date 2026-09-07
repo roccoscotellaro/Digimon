@@ -10,11 +10,17 @@
 // file grande, nessun cambiamento di comportamento.
 
   // ---------- SCENE ENCOUNTERS: name-only strings (legacy) vs full Dex-linked objects ----------
+  // sectorId/luogoId (fase 21): posizione facoltativa dell'Incontro dentro la Scena. null/assente
+  // = "Ovunque nella scena" (comportamento storico, retrocompatibile con tutti gli Incontri creati
+  // prima di questa fase: restano visibili a chiunque, indipendentemente da dove si trova). Se
+  // impostato, l'Incontro si vede solo a chi (giocatore o gruppo) si trova in quel Settore (con
+  // luogoId nullo = ovunque in quel Settore) o esattamente in quel Luogo (con luogoId impostato).
+  // Vedi encounterMatchesLocation in js/scene-encounters.js.
   function normalizeEncounter(e){
     if(typeof e === 'string'){
-      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null, disposition:'enemy', nameHidden:false };
+      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null, disposition:'enemy', nameHidden:false, sectorId:null, luogoId:null };
     }
-    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null, disposition:'enemy', nameHidden:false }, e);
+    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null, disposition:'enemy', nameHidden:false, sectorId:null, luogoId:null }, e);
   }
   const ENCOUNTER_DISPOSITIONS = { enemy:{label:'Nemico', color:'var(--danger)', icon:'⚔️'}, ally:{label:'Alleato', color:'var(--cyan)', icon:'🤝'}, neutral:{label:'Neutrale', color:'var(--text-mute)', icon:'❔'} };
 

@@ -25,6 +25,15 @@
 // fase 13) quindi richiamate qui direttamente. Fino alla fase 13 questo passava per un hook
 // globale temporaneo (window.__dvosRefreshDexPanel), necessario perché a quel punto
 // dexListHTML/bindDexEditButtons erano ancora IIFE-local a index.html.
+//
+// Posizione degli Incontri (fase 21): ogni Incontro può avere un sectorId/luogoId facoltativo
+// (vedi normalizeEncounter in js/encounters.js) che lo lega a un punto preciso della Scena, così
+// ogni giocatore vede in Scena SOLO i Digimon presenti nella SUA posizione effettiva (o in quella
+// del gruppo), invece che tutti gli Incontri della campagna indipendentemente da dove si trovi —
+// vedi encounterMatchesLocation/encounterLocationLabel/locationOptionsHTML qui sotto ed
+// encountersReadonlyHTML/sceneHTML per l'uso lato lettura, encountersEditableHTML/
+// bindEncountersInnerActions/renderEncounterDraftCard/bindEncounterDraftCard per l'assegnazione
+// lato Master.
 
 // ---------- data layer (spostate da index.html: thin wrapper su apiPost/apiPut, self-contained) ----------
   async function saveScene(code, scene){ const d = await apiPost('/api/state', { resource:'scene', code, ...scene }); return !!(d && d.ok); }
@@ -63,6 +72,51 @@
     if(dexId) match = cachedDex.find(d=>d.id===dexId);
     if(!match && name) match = cachedDex.find(d=>String(d.name).trim().toLowerCase()===String(name).trim().toLowerCase());
     return match ? (match.attribute || '') : '';
+  }
+
+  // ---------- Posizione degli Incontri (fase 21) ----------
+  // Un Incontro senza sectorId (null/assente, il default per tutto ciò che esisteva prima di
+  // questa fase) è "Ovunque nella scena": lo vedono tutti, sempre — esattamente il comportamento
+  // di prima. Un Incontro con sectorId impostato si vede solo a chi si trova (effettivamente,
+  // gruppo o singolo separato) in quel Settore; se ha anche luogoId, serve essere esattamente in
+  // quel Luogo, non basta il solo Settore.
+  function encounterMatchesLocation(e, viewSectorId, viewLuogoId){
+    if(!e || !e.sectorId) return true;
+    if(e.sectorId !== viewSectorId) return false;
+    if(e.luogoId && e.luogoId !== viewLuogoId) return false;
+    return true;
+  }
+
+  // Etichetta leggibile ("Macroscena → Settore → Luogo") della posizione assegnata a un Incontro,
+  // usata sia nel pannello di gestione del Master sia per titolare le opzioni del selettore
+  // posizione. Cerca il Settore in TUTTE le Macroscene (non solo quella attiva), perché un
+  // Incontro può restare assegnato a un Settore anche dopo che il Master è passato a un'altra
+  // Macroscena.
+  function encounterLocationLabel(e){
+    if(!e || !e.sectorId) return '🌐 Ovunque nella scena';
+    const found = findSectorAnywhere(cachedScene, e.sectorId);
+    if(!found) return '🌐 Ovunque nella scena';
+    const lg = e.luogoId ? (found.sector.luoghi||[]).find(l=>l.id===e.luogoId) : null;
+    return '📍 ' + [found.macro.name, found.sector.name, lg?lg.name:null].filter(Boolean).map(escapeHTML).join(' → ');
+  }
+
+  // Opzioni del <select> di posizione: "Ovunque nella scena" + ogni Settore di ogni Macroscena +
+  // ogni Luogo di ogni Settore (valore "sectorId" o "sectorId:luogoId"). Usato sia nella card di
+  // creazione (renderEncounterDraftCard) sia nella riga di ogni Incontro già esistente
+  // (encountersEditableHTML).
+  function locationOptionsHTML(selectedSectorId, selectedLuogoId){
+    const macros = cachedScene.macroScenes || [];
+    let opts = `<option value="">🌐 Ovunque nella scena</option>`;
+    macros.forEach(m=>{
+      (m.sectors||[]).forEach(s=>{
+        opts += `<option value="${escapeAttr(s.id)}" ${(selectedSectorId===s.id && !selectedLuogoId)?'selected':''}>${escapeHTML(m.name)} → ${escapeHTML(s.name)}</option>`;
+        (s.luoghi||[]).forEach(lg=>{
+          const val = `${s.id}:${lg.id}`;
+          opts += `<option value="${escapeAttr(val)}" ${(selectedSectorId===s.id && selectedLuogoId===lg.id)?'selected':''}>${escapeHTML(m.name)} → ${escapeHTML(s.name)} → ${escapeHTML(lg.name)}</option>`;
+        });
+      });
+    });
+    return opts;
   }
 
   function getGridSize(macro){
@@ -787,6 +841,8 @@
   // il SUO Settore/Luogo effettivo (memberEffectiveSectorId/LuogoId) invece di quello del gruppo —
   // così un giocatore separato dal gruppo vede davvero l'immagine e la descrizione di dove si
   // trova lui, non quelle del resto del party. Senza viewerMember (vista Master) mostra il gruppo.
+  // Gli Incontri mostrati (encountersReadonlyHTML) sono filtrati sulla STESSA posizione effettiva
+  // (effSectorId/effLuogoId) qui calcolata — vedi fase 21.
   function sceneHTML(scene, viewerMember){
     const macroScenes = (scene && Array.isArray(scene.macroScenes)) ? scene.macroScenes : [];
     const groupMacro = scene && scene.currentMacroSceneId ? macroScenes.find(m=>m.id===scene.currentMacroSceneId) : null;
@@ -815,7 +871,7 @@
     ` : '';
     const bgImage = (currentLuogo && currentLuogo.image) || (current && current.image) || (scene && scene.background) || '';
     if(!scene || (!bgImage && !scene.title)){
-      return `<div class="scene-box"><div class="scene-empty">Nessuna scena impostata dal Master</div></div>` + sectorHTML + encountersReadonlyHTML(scene);
+      return `<div class="scene-box"><div class="scene-empty">Nessuna scena impostata dal Master</div></div>` + sectorHTML + encountersReadonlyHTML(scene, effSectorId, effLuogoId);
     }
     return `
       <div class="scene-box" ${bgImage?`data-scene-img-expand="${escapeAttr(bgImage)}"`:''}>
@@ -824,7 +880,7 @@
         ${bgImage ? `<div class="scene-expand-hint">🔍</div>` : ''}
         ${scene.title ? `<div class="title">${escapeHTML(scene.title)}</div>` : ''}
       </div>
-    ` + sectorHTML + encountersReadonlyHTML(scene);
+    ` + sectorHTML + encountersReadonlyHTML(scene, effSectorId, effLuogoId);
   }
 
   function getEncImgLarge(){ try{ return localStorage.getItem('digivice_enc_img_large')==='1'; }catch(e){ return false; } }
@@ -838,9 +894,14 @@
     return true;
   }
 
-  function encountersReadonlyHTML(scene){
+  // viewSectorId/viewLuogoId (fase 21): posizione effettiva di chi guarda (già calcolata da
+  // sceneHTML) — usata per nascondere gli Incontri assegnati a un Settore/Luogo diverso dal suo,
+  // così ogni giocatore vede in Scena solo i Digimon del punto in cui si trova davvero. Un
+  // Incontro senza posizione assegnata (sectorId nullo, il default storico) resta visibile a
+  // chiunque, come sempre.
+  function encountersReadonlyHTML(scene, viewSectorId, viewLuogoId){
     const enc = (scene && Array.isArray(scene.encounters)) ? scene.encounters.map(normalizeEncounter) : [];
-    const visible = enc.filter(e=>e.revealed!==false);
+    const visible = enc.filter(e=>e.revealed!==false && encounterMatchesLocation(e, viewSectorId, viewLuogoId));
     if(visible.length===0) return '';
     const isMasterView = !!(session && session.role==='master');
     // Group visually-identical entries (same name/stage/image/nameHidden) so duplicates show a
@@ -915,7 +976,12 @@
           ${(()=>{ const img = bestDigimonImage(e.dexId, e.name, e.gif || e.image); return img ? `<img src="${escapeAttr(img)}" onerror="this.style.display='none'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0;" />` : ''; })()}
           <div style="flex:1;min-width:140px;">
             <div><b>${escapeHTML(e.name)}</b> ${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}${attributeIconHTML(dexAttributeFor(e.dexId, e.name), 14)}<button class="tag" data-cycle-disposition="${i}" style="cursor:pointer;color:${disp.color};border-color:${disp.color};background:none;" title="Clicca per cambiare (Nemico/Alleato/Neutrale) — si riflette nell'aggiunta al combattimento">${disp.icon} ${disp.label}</button>${e.isBoss?`<span class="tag" style="color:var(--danger);border-color:var(--danger);">👑 Boss</span>`:''}${e.nameHidden?`<span class="tag" style="color:var(--violet, #b98cf0);border-color:var(--violet, #b98cf0);">🎭 Nome Nascosto</span>`:''}${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>
-            <div class="muted" style="font-size:11px;">${visible ? '👁️ Visibile ai giocatori' : '🙈 Nascosto — solo il Master lo vede'}${visible ? (e.nameHidden ? ' · 🎭 Presenza visibile, nome e descrizione nascosti ai giocatori' : '') : ''}</div>
+            <div class="muted" style="font-size:11px;">${visible ? '👁️ Visibile ai giocatori' : '🙈 Nascosto — solo il Master lo vede'}${visible ? (e.nameHidden ? ' · 🎭 Presenza visibile, nome e descrizione nascosti ai giocatori' : '') : ''} · ${encounterLocationLabel(e)}</div>
+            <div style="margin-top:4px;">
+              <select data-enc-location="${i}" style="font-size:10px;padding:2px 4px;max-width:260px;" title="Dove si trova questo Digimon nella Scena — i giocatori lo vedranno in Scena solo quando la loro posizione corrisponde. 'Ovunque' = comportamento di prima, sempre visibile.">
+                ${locationOptionsHTML(e.sectorId, e.luogoId)}
+              </select>
+            </div>
             <div style="display:flex;align-items:center;gap:6px;max-width:220px;">
               ${miniHpBarHTML(curW, maxW)}
               <div class="bar-controls" style="margin-top:5px;">
@@ -973,6 +1039,9 @@
         </div>
         <div class="field"><label>URL Immagine</label><input type="text" id="draft-image" value="${escapeAttr(d.image)}" placeholder="https://..." /></div>
         <div class="field"><label>Descrizione</label><textarea id="draft-desc" rows="2">${escapeHTML(d.description)}</textarea></div>
+        <div class="field" style="margin-top:6px;"><label>📍 Dove si trova (i giocatori lo vedranno in Scena solo da lì — "Ovunque" = comportamento di prima, sempre visibile)</label>
+          <select id="draft-location">${locationOptionsHTML(cachedScene.currentSectorId, cachedScene.currentLuogoId)}</select>
+        </div>
         <div class="muted" style="margin:6px 0 4px;">Stat base (puoi lasciarle a 0 e completarle dopo)</div>
         <div class="row">
           <div class="field"><label>Accuracy</label><input type="number" id="draft-acc" value="${d.baseStats.baseAccuracy||0}" min="0" /></div>
@@ -1004,6 +1073,10 @@
       const description = document.getElementById('draft-desc').value.trim();
       const stage = document.getElementById('draft-stage').value;
       const isBoss = document.getElementById('draft-isboss').checked;
+      const locEl = document.getElementById('draft-location');
+      const locVal = locEl ? locEl.value : '';
+      const sectorId = locVal ? locVal.split(':')[0] : null;
+      const luogoId = (locVal && locVal.includes(':')) ? locVal.split(':')[1] : null;
       const baseStats = {
         baseAccuracy: Number(document.getElementById('draft-acc').value)||0,
         baseDamage: Number(document.getElementById('draft-dmg').value)||0,
@@ -1011,7 +1084,7 @@
         baseArmor: Number(document.getElementById('draft-arm').value)||0,
         baseHealth: Number(document.getElementById('draft-hp').value)||0
       };
-      const finalEncounter = { id: encounterDraft.id, name, dexId: encounterDraft.dexId, stage, categories, image, description, baseStats, attacks: encounterDraft.attacks || [], revealed:false, isBoss };
+      const finalEncounter = { id: encounterDraft.id, name, dexId: encounterDraft.dexId, stage, categories, image, description, baseStats, attacks: encounterDraft.attacks || [], revealed:false, isBoss, sectorId, luogoId };
       cachedScene.encounters = cachedScene.encounters || [];
       cachedScene.encounters.push(finalEncounter);
       encounterDraft = null;
@@ -1101,6 +1174,26 @@
         if(!e) return;
         const isVisible = e.revealed!==false;
         e.revealed = !isVisible;
+        await saveScene(code, cachedScene);
+        live.innerHTML = encountersEditableHTML(cachedScene.encounters);
+        bindEncountersInnerActions(code, username, onChanged);
+        if(onChanged) onChanged();
+      };
+    });
+    // Posizione dell'Incontro (fase 21): valore "" = Ovunque nella scena, "sectorId" = quel
+    // Settore (qualunque Luogo), "sectorId:luogoId" = esattamente quel Luogo.
+    live.querySelectorAll('[data-enc-location]').forEach(sel=>{
+      sel.onchange = async ()=>{
+        const idx = Number(sel.getAttribute('data-enc-location'));
+        const e = cachedScene.encounters[idx];
+        if(!e) return;
+        const val = sel.value;
+        if(!val){ e.sectorId = null; e.luogoId = null; }
+        else {
+          const [sectorId, luogoId] = val.split(':');
+          e.sectorId = sectorId;
+          e.luogoId = luogoId || null;
+        }
         await saveScene(code, cachedScene);
         live.innerHTML = encountersEditableHTML(cachedScene.encounters);
         bindEncountersInnerActions(code, username, onChanged);

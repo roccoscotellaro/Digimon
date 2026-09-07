@@ -1338,6 +1338,12 @@
     // Timer 24h (richiesta utente): riparte da zero ad ogni cambio di turno, non solo al primo —
     // vedi combatTurnTimerLabel/combatDisplayHTML.
     combat.turnStartedAt = new Date().toISOString();
+    // Reminder di turno ogni 2 ore (richiesta utente): azzerato ad ogni cambio di turno, stesso
+    // spirito di actionsExhaustedAt qui sotto -- altrimenti chi tiene di nuovo il turno più tardi
+    // erediterebbe il conteggio di reminder già inviati l'ultima volta che gli è toccato, e i primi
+    // avvisi del nuovo turno non partirebbero finché non si supera quel vecchio conteggio. Vedi il
+    // conteggio vero e proprio in refreshLiveParts.
+    if(starting) starting.turnReminderCount = 0;
     await applyStartOfTurnEffects(code, combat, starting);
     await saveCombat(code, combat);
 
@@ -1382,6 +1388,9 @@
     combat.currentIndex = targetIdx;
     const starting = combat.participants.find(p=>p.id===targetParticipantId);
     combat.turnStartedAt = new Date().toISOString();
+    // Reminder di turno ogni 2 ore (richiesta utente): stesso azzeramento di advanceCombatTurn qui
+    // sopra -- vedi il commento lì per il perché.
+    if(starting) starting.turnReminderCount = 0;
     await applyStartOfTurnEffects(code, combat, starting);
     await saveCombat(code, combat);
     if(starting && starting.isPC && starting.username){
@@ -1414,6 +1423,10 @@
       skipped++;
     } while(isParticipantDefeated(combat.participants.find(p=>p.id===combat.order[combat.currentIndex])) && skipped < combat.order.length);
     combat.turnStartedAt = new Date().toISOString();
+    // Reminder di turno ogni 2 ore (richiesta utente): stesso azzeramento di advanceCombatTurn/
+    // jumpToCombatTurn -- chi riceve il turno tornando indietro riparte da un conteggio pulito.
+    const backTo = combat.participants.find(p=>p.id===combat.order[combat.currentIndex]);
+    if(backTo) backTo.turnReminderCount = 0;
     await saveCombat(code, combat);
     renderCombatManager(code, players);
     const combatLive = document.getElementById('combat-live');
@@ -1576,6 +1589,81 @@
     return `${attackerName} colpisce ${targetName} con ${atkName} (${dealt}).`;
   }
 
+  // Richiesta utente: "renderei tutti i messaggi tecnici di azione, come guard aid e via
+  // discorrendo più narrativi con espansione e descrizione tecnica, esattamente come per
+  // attacchi" -- stesso schema già usato per gli Attacchi (basicAttackNarration/narrateAttack,
+  // qui sopra): una frase narrativa SENZA numeri/dadi, visibile subito, con la vecchia riga
+  // tecnica (Pool Check, dadi, Azioni residue, bonus accodati) spostata dietro ::TECH:: (vedi
+  // logHTML) invece di stare in chiaro nel messaggio. `extra.failed` (opzionale) distingue le
+  // uniche due Azioni di questo gruppo il cui effetto è condizionato a un tiro (Aid, Reposition)
+  // -- dedotto dal testo already-generato di applySupportActionEffect/applyActionMechanic
+  // ("→ NON RIUSCITO"), senza toccarne la firma per non rischiare di rompere gli altri usi.
+  function basicActionNarration(actor, def, target, extra){
+    extra = extra || {};
+    const name = narratorName(actor);
+    const own = !!(target && target.id===actor.id);
+    const targetName = target ? (own ? null : narratorName(target)) : null;
+    switch(def.key){
+      case 'guard':
+        return `${name} si mette sulla difensiva, pronto/a a incassare o schivare il prossimo colpo.`;
+      case 'aid':
+        return extra.failed
+          ? `${name} tenta di dare una mano a ${targetName||'un alleato'}, ma il momento non è quello giusto.`
+          : `${name} si lancia in aiuto di ${targetName||'un alleato'}.`;
+      case 'direct1':
+      case 'direct2':
+        return `${name} dirige ${targetName || 'il proprio Digimon'} con voce ferma, indicando la mossa giusta.`;
+      case 'bolster_tamer':
+      case 'bolster_digimon':
+        return `${name} si spinge oltre il limite per dare tutto in questa azione${targetName?`, spronando ${targetName}`:''}.`;
+      case 'reinforce1':
+      case 'reinforce2':
+        return `${name} rinforza le proprie difese in vista del prossimo colpo.`;
+      case 'reposition1':
+      case 'reposition2':
+        return extra.failed
+          ? `${name} cerca un varco per riposizionarsi, ma non lo trova in tempo.`
+          : `${name} si riposiziona con un movimento rapido e calcolato.`;
+      case 'resist1':
+      case 'resist2':
+        return `${name} lotta per scrollarsi di dosso gli Effetti che lo/la affliggono.`;
+      case 'stance':
+        return `${name} cambia postura in vista della prossima mossa.`;
+      case 'skill_tamer':
+      case 'skill_digimon':
+        return `${name} tenta una Prova di Abilità, concentrandosi sul da farsi.`;
+      case 'clash':
+        return `${name} si prepara ad affrontare l'avversario in un Clash diretto.`;
+      default:
+        return targetName ? `${name} usa ${def.label} su ${targetName}.` : `${name} usa ${def.label}.`;
+    }
+  }
+
+  // Chiede una frase narrativa variabile all'AI per un'Azione di supporto/meccanica (Guard, Aid,
+  // Direct, Bolster, Reinforce, Reposition, Resist, Cambio Stance, Skill Check...), stesso schema
+  // di narrateAttack/narrateMovement qui sopra (endpoint /api/ai, mode:'narrazione-azione', nuovo).
+  // In caso di errore di rete o API non configurata ritorna null e il chiamante mostra
+  // basicActionNarration come frase di fallback -- nessun numero/dado passato all'AI, solo
+  // l'esito in linguaggio semplice (coerente con narrateMovement, che fa lo stesso per gli
+  // spostamenti).
+  async function narrateAction(actor, def, target, extra){
+    try{
+      extra = extra || {};
+      const aDispName = techLogName(actor);
+      const own = !!(target && target.id===actor.id);
+      const tDispName = target ? (own ? null : techLogName(target)) : null;
+      let personality = 'Nemico feroce e imprevedibile.';
+      if(actor.isPC){
+        const member = cachedRoster.find(m=>m.username===actor.username);
+        if(member && member.tamer && member.tamer.personality) personality = member.tamer.personality;
+      }
+      const esito = extra.failed ? 'Il tentativo non riesce.' : 'L\'Azione riesce.';
+      const context = `Azione usata: ${def.label}\nDescrizione di riferimento: ${def.desc||''}${tDispName?`\nBersaglio: ${tDispName}`:''}\nEsito: ${esito}`;
+      const d = await apiPost('/api/ai', { mode:'narrazione-azione', digimonName: aDispName, personality, context });
+      return (d && Array.isArray(d.lines) && d.lines[0]) ? d.lines[0] : null;
+    }catch(e){ return null; }
+  }
+
   function attackResultCompactHTML(narrLine, hit, dealt, detailHTML){
     const fallback = hit ? 'Colpito!' : 'Mancato.';
     const dmgTag = (hit && dealt>0) ? ` <b style="color:var(--cyan);">(${dealt})</b>` : '';
@@ -1716,11 +1804,15 @@
       // Direct/Aid/Guard/Bolster: bersaglio riusato dallo stesso menu BERSAGLIO usato per gli
       // Attacchi (self-target-select, vedi attacksCardHTML) -- Guard non ha bisogno di bersaglio.
       let supportNote = '';
+      let narrTarget = null;
+      let narrFailed = false;
       if(SUPPORT_ACTION_KEYS.includes(sel.value)){
         const targetSel = document.getElementById('self-target-select');
         const supportTarget = sel.value==='guard' ? p : (targetSel && targetSel.value ? cachedCombat.participants.find(x=>x.id===targetSel.value) : null);
         const effect = await applySupportActionEffect(sel.value, p, supportTarget);
         supportNote = ' ' + effect.note;
+        narrTarget = supportTarget;
+        narrFailed = /NON RIUSCITO/.test(effect.note||'');
       } else if(MECHANIC_ACTION_KEYS.includes(sel.value)){
         // Reinforce/Reposition/Resist/Stance/Skill Check: tutte azioni su se stessi (nessun
         // bersaglio esterno) -- vedi applyActionMechanic. Stance/Skill Tamer leggono la scelta
@@ -1732,13 +1824,28 @@
         const extra = { stance: stancePick ? stancePick.value : undefined, skillKey: skillPick ? skillPick.value : undefined };
         const effect = await applyActionMechanic(sel.value, p, null, extra);
         supportNote = ' ' + effect.note;
+        narrFailed = /NON RIUSCITO/.test(effect.note||'');
       }
       await saveCombat(code, cachedCombat);
       const usedPoolLabel = result.def.pool==='tamer' ? 'Tamer' : 'Digimon';
       const usedPoolLeft = result.def.pool==='tamer' ? p.tamerActions : p.actions;
-      await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'player', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabel}) — restano ${usedPoolLeft}/2 Azioni (${usedPoolLabel}).${supportNote}`, meta:{avatar: resolveParticipantImage(p)} });
+      // Richiesta utente: messaggi tecnici delle Azioni (Guard, Aid, ecc.) più narrativi, con
+      // espansione e dettaglio tecnico -- stesso schema di basicAttackNarration/narrateAttack per
+      // gli Attacchi: una frase narrativa subito visibile, i numeri (Pool Check, dadi, Azioni
+      // residue, bonus accodati) dietro ::TECH:: (vedi logHTML), eventualmente sostituita dalla
+      // narrazione AI se arriva in tempo (narrateAction, vedi AI_NARRATION_TIMEOUT_MS).
+      const baseNarr = basicActionNarration(p, result.def, narrTarget, { failed: narrFailed });
+      const techDetail = `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabel}) — restano ${usedPoolLeft}/2 Azioni (${usedPoolLabel}).${supportNote}`;
+      const pushedAction = await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'player', text: `${baseNarr}::TECH::${techDetail}`, meta:{avatar: resolveParticipantImage(p)} });
+      const actionEntryId = pushedAction && pushedAction.entry && pushedAction.entry.id;
       if(statusEl){ statusEl.style.color=''; statusEl.textContent=''; }
       refreshLiveParts();
+      const actionNarrTimeout = new Promise(resolve=>setTimeout(()=>resolve(null), AI_NARRATION_TIMEOUT_MS));
+      Promise.race([narrateAction(p, result.def, narrTarget, { failed: narrFailed }), actionNarrTimeout]).then(async (narrLine)=>{
+        if(!narrLine || !actionEntryId) return;
+        await editLogEntry(code, actionEntryId, `${narrLine}::TECH::${techDetail}`, combatNarrationThread(cachedCombat));
+        refreshLiveParts();
+      });
     };
     const dBtn = document.getElementById('btn-self-daction-use');
     if(dBtn) dBtn.onclick = ()=> spendSelfAction('self-daction-select');
@@ -1855,17 +1962,17 @@
            turno. Il select resta: serve solo più a scegliere il Bersaglio dell'Attacco qui sotto. -->
       <div class="divider"></div>
       ${(()=>{
-        // BUGFIX (segnalato dall'utente: "la battery sugli attacchi non viene calcolata
-        // correttamente"): prima la Battery non veniva MAI applicata a nessun tiro, a prescindere
-        // da quante tacche avesse il Digimon (vedi performAttackRoll). Non è automatica per
-        // regolamento ("il giocatore può scegliere di dichiararla... non è automatico"), quindi qui
-        // è una spunta esplicita: se selezionata E la mossa cliccata è una Signature Move, si
-        // applica alla PROSSIMA mossa cliccata (poi sparisce da sola, perché la Battery si azzera).
+        // Richiesta utente: "renderei più integrato nella grafica il tasto della battery... magari
+        // un tasto che compare a popup quando si sceglie la signature" -- la vecchia spunta
+        // "Usa Battery" stava sempre lì, visibile e spuntabile anche per una mossa non-Signature
+        // (dove non ha alcun effetto, vedi performAttackRoll). Ora non c'è più una spunta
+        // persistente qui: se il Digimon ha Battery, toccare una mossa ⭐ Signature apre un piccolo
+        // popup ("Usare la Battery su questa mossa?", vedi showBatteryUsePopup/bindAttacksCard) SOLO
+        // in quel momento -- una mossa normale parte invece subito, senza alcuna domanda. Questa
+        // riga resta solo come promemoria di quante tacche sono disponibili.
         const bat = Number(me.digimon.battery||0);
         if(bat<=0) return '';
-        return `<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-mute);margin-bottom:8px;">
-          <input type="checkbox" id="self-use-battery" /> 🔋 Usa Battery (${bat}) sulla prossima Signature Move: +${bat} Accuracy e +${bat} Danno (o Potenza se Support), poi si azzera. Nessun effetto sulle mosse non-Signature.
-        </label>`;
+        return `<div class="muted" style="font-size:11px;margin-bottom:8px;">🔋 Battery: <b style="color:var(--amber);">${bat}</b> — te la chiediamo al volo se scegli una mossa ⭐ Signature.</div>`;
       })()}
       <div class="moves-grid">
         ${(me.digimon.attacks||[]).map((a,i)=>{
@@ -1881,6 +1988,40 @@
       ${alreadyAttacked ? '<div class="muted" style="margin-top:6px;">Hai già attaccato in questo round.</div>' : ''}
       <div id="self-attack-result" style="margin-top:8px;"></div>
     `;
+  }
+
+  // Richiesta utente: "renderei più integrato nella grafica il tasto della battery per le
+  // signature, magari un tasto che compare a popup quando si sceglie la signature" -- piccolo
+  // popup di conferma (stesso stile .enc-modal-backdrop/.enc-modal-card già usato altrove, es.
+  // openEditLogModal) mostrato SOLO quando il Giocatore tocca una mossa ⭐ Signature con Battery
+  // disponibile (vedi bindAttacksCard qui sotto). Risolve con true/false invece di leggere una
+  // spunta lasciata lì dal render precedente -- niente da dimenticare spuntata/despuntata per
+  // errore su una mossa diversa da quella appena scelta.
+  function showBatteryUsePopup(battery, atkName, isSupport){
+    return new Promise(resolve=>{
+      const old = document.getElementById('battery-use-modal');
+      if(old) old.remove();
+      const modal = document.createElement('div');
+      modal.id = 'battery-use-modal';
+      modal.className = 'enc-modal-backdrop';
+      modal.innerHTML = `
+        <div class="enc-modal-card hud-frame" style="max-width:340px;text-align:center;">
+          <div class="section-title" style="margin-top:0;">🔋 Signature Move</div>
+          <div class="muted" style="font-size:12px;margin-bottom:14px;">
+            Usare la Battery (<b style="color:var(--amber);">${battery}</b>) su <b>${escapeHTML(atkName||'questa mossa')}</b>? +${battery} Accuracy e +${battery} ${isSupport?'Potenza':'Danno'} — si azzera subito dopo.
+          </div>
+          <div class="row" style="gap:8px;">
+            <button class="btn ghost" id="battery-use-no" style="flex:1;">Attacco normale</button>
+            <button class="btn amber" id="battery-use-yes" style="flex:1;">🔋 Usa Battery</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      const closeWith = (val)=>{ modal.remove(); resolve(val); };
+      modal.onclick = (ev)=>{ if(ev.target===modal) closeWith(false); };
+      document.getElementById('battery-use-no').onclick = ()=>closeWith(false);
+      document.getElementById('battery-use-yes').onclick = ()=>closeWith(true);
+    });
   }
 
   function bindAttacksCard(code, me){
@@ -1971,8 +2112,17 @@
           if(resEl) resEl.innerHTML = `<div class="err">${spend.msg}</div>`;
           return;
         }
-        const useBatteryCb = document.getElementById('self-use-battery');
-        const useBattery = !!(useBatteryCb && useBatteryCb.checked);
+        // Richiesta utente: "un tasto che compare a popup quando si sceglie la signature" -- al
+        // posto della vecchia spunta sempre visibile (vedi attacksCardHTML), la domanda "Usare la
+        // Battery?" compare SOLO qui, SOLO se la mossa appena toccata è una Signature Move e c'è
+        // davvero Battery da spendere -- una mossa normale (o Signature a Battery 0) parte diretta,
+        // nessun popup. L'Azione è già stata spesa sopra (trySpendAction): come già per la vecchia
+        // spunta, la scelta riguarda solo IL BONUS, non se attaccare o no.
+        let useBattery = false;
+        const curBatteryForPopup = Number(me.digimon.battery||0);
+        if(atk.signature && curBatteryForPopup>0){
+          useBattery = await showBatteryUsePopup(curBatteryForPopup, atk.name, atk.type==='Support');
+        }
         const { logText, dealt, accRoll, dodgeRoll, defeatInfo } = await performAttackRoll(code, cachedCombat, p, target, atk, { useBattery });
         const hit = accRoll.successes > 0 && accRoll.successes >= dodgeRoll.successes;
         if(resEl){
@@ -2992,6 +3142,43 @@
           const stuckName = combatDisplayName(curTurnP, false);
           await pushCombatNarration(cachedCombat, { who:'Sistema', role:'gm', text: `⏱ Turno di ${stuckName} passato automaticamente: Azioni esaurite da oltre 5 minuti senza altre azioni.` });
           await advanceCombatTurn(session.code, (cachedRoster||[]).filter(m=>m.role==='player'));
+        }
+      }
+    }
+    // Reminder di turno ogni due ore (richiesta utente: "un reminder di turno ogni due ore") --
+    // stesso meccanismo/stesse guardie del "Passa turno automatico dopo 5 minuti" qui sopra (nessun
+    // cron lato server: gira nel polling del Master o del giocatore di turno stesso), ma qui il
+    // turno NON avanza: è solo un promemoria narrato nella chat del combattimento
+    // (pushCombatNarration rispetta già l'eventuale ancoraggio a un Sottogruppo), ripetuto ogni 2h
+    // (2h, 4h, 6h...) finché resta il turno di quel partecipante. turnReminderCount conta quanti
+    // "scatti" da 2h sono già stati avvisati per QUESTO turno -- azzerato ad ogni cambio di turno
+    // (vedi advanceCombatTurn/jumpToCombatTurn/previousCombatTurn in questo file e
+    // recalcCombatOrder in js/combat-engine.js). Se il poll salta più di uno scatto da 2h insieme
+    // (es. nessuno ha aperto l'app per 5h), invia UN SOLO messaggio "di recupero" indicando le ore
+    // effettive trascorse, invece di inondare la chat con i reminder mancati nel frattempo.
+    if(cachedCombat && cachedCombat.active && !combatActionPending){
+      const curTurnP2 = currentTurnParticipant(cachedCombat);
+      const iAmMaster2 = session.role==='master';
+      const iAmTurnPlayer2 = !!(curTurnP2 && session.role==='player' && curTurnP2.isPC && session.username===curTurnP2.username);
+      if(curTurnP2 && curTurnP2.isPC && cachedCombat.turnStartedAt && (iAmMaster2 || iAmTurnPlayer2)){
+        const TURN_REMINDER_MS = 2*60*60*1000;
+        const elapsedMs2 = Date.now() - new Date(cachedCombat.turnStartedAt).getTime();
+        const dueCount = Math.floor(elapsedMs2 / TURN_REMINDER_MS);
+        const sentCount = Number(curTurnP2.turnReminderCount||0);
+        // Richiesta utente: "meglio evitare il reminder nelle ore notturne da mezzanotte alle 8" --
+        // ora locale del dispositivo che sta facendo il controllo (Master o giocatore di turno,
+        // stessa fonte già usata per orari/date altrove nel sito, es. toLocaleTimeString('it-IT')).
+        // Durante la finestra notturna il reminder NON parte e il conteggio resta fermo (non viene
+        // "consumato" in silenzio): appena l'orario torna diurno, il primo poll utile invia un solo
+        // messaggio di recupero con le ore REALI trascorse (che includono anche la notte) -- stessa
+        // logica di "recupero" già usata per un poll saltato di giorno, vedi commento più sopra.
+        const nowHour = new Date().getHours();
+        const inQuietHours = nowHour>=0 && nowHour<8;
+        if(dueCount > sentCount && !inQuietHours){
+          curTurnP2.turnReminderCount = dueCount;
+          const reminderName = combatDisplayName(curTurnP2, false);
+          await pushCombatNarration(cachedCombat, { who:'Sistema', role:'gm', text: `⏰ ${reminderName}, è il tuo turno da più di ${dueCount*2}h: ricordati di agire quando puoi!` });
+          await saveCombat(session.code, cachedCombat);
         }
       }
     }
@@ -6435,11 +6622,15 @@
           // riga (data-zone-ref) -- Guard non ha bisogno di bersaglio, si applica sempre a se stesso.
           let supportNote = '';
           let presetAttacker = false;
+          let narrTargetGM = null;
+          let narrFailedGM = false;
           if(SUPPORT_ACTION_KEYS.includes(sel.value)){
             const zoneRefSel = cardEl.querySelector(`[data-zone-ref="${id}"]`);
             const supportTarget = sel.value==='guard' ? p : (zoneRefSel && zoneRefSel.value ? combat.participants.find(x=>x.id===zoneRefSel.value) : null);
             const effect = await applySupportActionEffect(sel.value, p, supportTarget);
             supportNote = ' ' + effect.note;
+            narrTargetGM = supportTarget;
+            narrFailedGM = /NON RIUSCITO/.test(effect.note||'');
           } else if(MECHANIC_ACTION_KEYS.includes(sel.value)){
             // Reinforce/Reposition/Resist/Stance/Skill Check/Clash: tutte azioni su se stessi (nessun
             // bersaglio esterno) -- vedi applyActionMechanic. Stance/Skill Tamer leggono la scelta dai
@@ -6450,10 +6641,17 @@
             const effect = await applyActionMechanic(sel.value, p, null, extra);
             supportNote = ' ' + effect.note;
             presetAttacker = !!effect.presetAttacker;
+            narrFailedGM = /NON RIUSCITO/.test(effect.note||'');
           }
           const usedPoolLabelGM = result.def.pool==='tamer' ? 'Tamer' : 'Digimon';
           const usedPoolLeftGM = result.def.pool==='tamer' ? p.tamerActions : p.actions;
-          await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabelGM}) — restano ${usedPoolLeftGM}/2 Azioni (${usedPoolLabelGM}).${supportNote}`, meta:{avatar: resolveParticipantImage(p)} });
+          // Richiesta utente: stesso trattamento narrativo+dettaglio tecnico già dato agli Attacchi
+          // (vedi basicActionNarration/narrateAction qui sopra) -- frase narrativa subito visibile,
+          // numeri/dadi/Azioni residue dietro ::TECH::, eventualmente sostituita dalla narrazione AI.
+          const baseNarrGM = basicActionNarration(p, result.def, narrTargetGM, { failed: narrFailedGM });
+          const techDetailGM = `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabelGM}) — restano ${usedPoolLeftGM}/2 Azioni (${usedPoolLabelGM}).${supportNote}`;
+          const pushedActionGM = await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${baseNarrGM}::TECH::${techDetailGM}`, meta:{avatar: resolveParticipantImage(p)} });
+          const actionEntryIdGM = pushedActionGM && pushedActionGM.entry && pushedActionGM.entry.id;
           // Clash: preseleziona l'Attaccante nel pannello "⚔ Risolvi Attacco" (Inizia/Contesa), stesso
           // comportamento già esistente per 'attack' più sopra -- qui il costo va comunque spesato
           // normalmente (a differenza di 'attack', il cui costo è dedotto più tardi nella risoluzione).
@@ -6466,6 +6664,12 @@
           }
           await persistAndRefresh();
           refreshLiveParts();
+          const actionNarrTimeoutGM = new Promise(resolve=>setTimeout(()=>resolve(null), AI_NARRATION_TIMEOUT_MS));
+          Promise.race([narrateAction(p, result.def, narrTargetGM, { failed: narrFailedGM }), actionNarrTimeoutGM]).then(async (narrLine)=>{
+            if(!narrLine || !actionEntryIdGM) return;
+            await editLogEntry(code, actionEntryIdGM, `${narrLine}::TECH::${techDetailGM}`, combatNarrationThread(combat));
+            refreshLiveParts();
+          });
         };
       });
     };
