@@ -2452,11 +2452,7 @@
   // Esporta (come file .txt scaricabile, generato lato client — nessuna chiamata al server)
   // esattamente ciò che il Registro sta mostrando in questo momento.
   // saveScene spostata in js/scene-encounters.js
-  async function getLog(code, sinceId){
-    const url = '/api/log?code=' + encodeURIComponent(code) + (sinceId ? '&sinceId=' + encodeURIComponent(sinceId) : '');
-    const d = await apiGet(url);
-    return d ? (d.log||[]) : [];
-  }
+  async function getLog(code){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code)); return d ? (d.log||[]) : []; }
   async function heartbeat(code, username){ return apiPost('/api/roster', { resource:'heartbeat', code, username }); }
   async function getDex(code){ const d = await apiGet('/api/dex?code=' + encodeURIComponent(code)); return d ? (d.entries||[]) : []; }
   // addDexEntry spostata in js/scene-encounters.js
@@ -2665,15 +2661,11 @@
     refreshLiveParts(__pollTick);
     checkNoticesForMe();
     pollTimer = setInterval(async ()=>{
-      // Scheda in background (tab non attiva, minimizzata, telefono con schermo spento): saltiamo
-      // il giro. Non appena torna visibile, il primo interval successivo riprende normalmente —
-      // niente di perso, solo lavoro risparmiato mentre nessuno sta guardando.
-      if(document.hidden) return;
       // if(session) await heartbeat(session.code, session.username);
       __pollTick++;
       refreshLiveParts(__pollTick);
       checkNoticesForMe();
-    }, 20000);
+    }, 15000);
   }
 
   function checkPlayerPrivateUnread(){
@@ -2918,19 +2910,7 @@
     const dexCycle = (typeof tick!=='number') || (tick % 40 === 0); // ~10 minuti (era ogni 60s)
     cachedRoster = (await getRoster(session.code)).map(normalizeMember);
     cachedScene = await getScene(session.code);
-    // Fetch del log pubblico: sui giri "veloci" chiediamo solo i messaggi nuovi dopo l'ultimo che
-    // abbiamo già in cache (sinceId), invece di rileggere/riserializzare tutta la finestra di
-    // LOG_FETCH_LIMIT righe ogni 15-20s per ogni client connesso. Ogni slowCycle (~1 minuto)
-    // facciamo comunque un fetch completo, per restare allineati anche se un messaggio vecchio è
-    // stato modificato o cancellato (un delta per id non lo rileverebbe). Se cachedLog è vuoto
-    // (primo giro dopo login) il fetch è sempre completo.
-    const lastKnownLogId = (cachedLog && cachedLog.length) ? cachedLog[cachedLog.length-1].id : null;
-    if(!slowCycle && lastKnownLogId){
-      const newEntries = await getLog(session.code, lastKnownLogId);
-      if(newEntries.length) cachedLog = cachedLog.concat(newEntries);
-    } else {
-      cachedLog = await getLog(session.code);
-    }
+    cachedLog = await getLog(session.code);
     if(cachedLog.length){
       const myPublicName = session.role==='master' ? 'Master' : displayName(cachedMe || cachedRoster.find(m=>m.username===session.username) || {username:session.username});
       maybeNotifyNew('public', null, cachedLog[cachedLog.length-1], myPublicName);
@@ -3726,6 +3706,14 @@
             <button class="btn ghost small" id="ip-plus">+</button>
           </span>
         </div>
+        <div class="flex-between" style="margin-bottom:8px;">
+          <span class="muted">Growth Points (non spesi)</span>
+          <span style="display:flex;align-items:center;gap:6px;">
+            <span class="mono" style="color:var(--cyan);font-size:16px;">${t.unspentGrowthPoints||0}</span>
+            <button class="btn ghost small" id="gp-manual-minus">−</button>
+            <button class="btn ghost small" id="gp-manual-plus">+</button>
+          </span>
+        </div>
         ${Number(t.tormentPenalty||0)!==0 ? `<div class="muted" style="color:var(--danger);margin-bottom:8px;">Penalità Torment attiva: ${t.tormentPenalty} su Tiri/bonus finché non fai un Rest.</div>` : ''}
         <div class="divider"></div>
         <div class="muted" style="margin-bottom:6px;">Aspects — tratti di personalità che danno bonus o penalità ai Check, a scelta del giocatore</div>
@@ -3791,6 +3779,16 @@
       document.getElementById('tamer-w-plus').onclick = async ()=>{ me.tamer.currentWounds = Math.min(maxW, me.tamer.currentWounds+1); await saveMember(session.code, me); renderTamerCard(me, containerId); };
       document.getElementById('ip-minus').onclick = async ()=>{ me.tamer.inspirationPoints = Math.max(0, (me.tamer.inspirationPoints||0)-1); await saveMember(session.code, me); renderTamerCard(me, containerId); };
       document.getElementById('ip-plus').onclick = async ()=>{ me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1; await saveMember(session.code, me); renderTamerCard(me, containerId); };
+      // Richiesta utente: correzione manuale dei Growth Points non spesi, visibile sia al Master
+      // (dalla propria vista Roster, containerId "m-tamer-N") sia al giocatore sulla propria
+      // Scheda Tamer -- stesso pattern di ip-minus/ip-plus qui sopra. Serve perché finora l'unico
+      // modo per togliere Growth Points concessi per errore era il bottone "Annulla ultima
+      // Milestone" nel pannello Progressione, che però annulla SOLO l'ultima Milestone registrata
+      // (prog.lastMilestoneGrant) e sparisce se quella non risulta più disponibile (es. dopo un
+      //'Correzione manuale' sui contatori di party, che non tocca affatto i Growth Points dei
+      // singoli giocatori) -- lasciando il Master senza alcun modo di correggere il numero.
+      document.getElementById('gp-manual-minus').onclick = async ()=>{ me.tamer.unspentGrowthPoints = Math.max(0, Number(me.tamer.unspentGrowthPoints||0)-1); await saveMember(session.code, me); renderTamerCard(me, containerId); };
+      document.getElementById('gp-manual-plus').onclick = async ()=>{ me.tamer.unspentGrowthPoints = Number(me.tamer.unspentGrowthPoints||0)+1; await saveMember(session.code, me); renderTamerCard(me, containerId); };
       const majorBtn = document.getElementById('btn-aspect-major-use');
       if(majorBtn) majorBtn.onclick = async ()=>{
         const asPenalty = window.confirm('OK = usa come bonus (+4, consuma 1 uso). Annulla = invoca la penalità (-4, ripristina l\'uso e guadagni 1 IP).');
