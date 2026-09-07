@@ -39,15 +39,21 @@
 // (undefined → trattato come 'each') su tutti i messaggi vecchi, quindi restano identici a prima.
 //   - 'each' (default, Generale/Privata/Sottogruppo): comportamento storico — chi clicca si sposta
 //     DA SOLO, subito, come sempre (vedi branch [data-move-accept-sector] più sotto).
-//   - 'all'/'majority' (SOLO quando l'invito è mandato a un Sottogruppo, scelto dal Master nel
-//     nuovo selettore "Modalità spostamento" accanto al destinatario in js/scene-encounters.js):
-//     cliccare non sposta subito chi clicca, ma registra un "voto" (meta.moveVotes, un array di
-//     username, fuso via editLogEntry/PUT — vedi log.js, che ora fonde `meta` invece di ignorarlo)
-//     sul messaggio stesso. Appena il numero di voti raggiunge la soglia ('all' = 1, cioè basta il
-//     primo click; 'majority' = più della metà dei membri del sottogruppo AL MOMENTO del click),
-//     TUTTI i membri del sottogruppo vengono spostati in blocco (anche chi non ha ancora cliccato),
-//     il messaggio viene marcato meta.moveResolved così non si ripete al voto successivo, e viene
-//     pubblicato un messaggio di Sistema nello stesso Sottogruppo. Vedi branch [data-move-vote-id].
+//   - 'all'/'majority'/'unanimous' (SOLO quando l'invito è mandato a un Sottogruppo, scelto dal
+//     Master nel selettore "Modalità spostamento" accanto al destinatario in
+//     js/scene-encounters.js): cliccare non sposta subito chi clicca, ma registra un "voto"
+//     (meta.moveVotes, un array di username, fuso via editLogEntry/PUT — vedi log.js, che ora fonde
+//     `meta` invece di ignorarlo) sul messaggio stesso. Appena il numero di voti raggiunge la soglia
+//     ('all' = 1, cioè basta il primo click; 'majority' = più della metà dei membri del sottogruppo
+//     AL MOMENTO del click; 'unanimous' = TUTTI i membri, nessuno escluso), i membri del sottogruppo
+//     vengono spostati in blocco — per 'all'/'majority' anche chi non ha ancora cliccato, per
+//     'unanimous' hanno già cliccato tutti per definizione — il messaggio viene marcato
+//     meta.moveResolved così non si ripete al voto successivo, e viene pubblicato un messaggio di
+//     Sistema nello stesso Sottogruppo. Vedi branch [data-move-vote-id].
+//   - Contatore voti (richiesto da Rocco, "magari con un counter nel messaggio"): il bottone stesso
+//     mostra sempre "N/Tot" sotto di sé (vedi logHTML più sotto) e si aggiorna in automatico ad ogni
+//     click — nessun messaggio di chat separato per ogni voto, per non affollare il Registro
+//     (chiarito con Rocco: bastava rendere leggibile il conteggio già presente sul messaggio).
 
   let playerChatMode = 'public';
 
@@ -403,20 +409,34 @@
           if(moveMode==='each'){
             // Comportamento storico: chi clicca si sposta DA SOLO, subito.
             fulfillBtn = `<button class="btn small" style="margin-top:6px;background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);" data-move-accept-sector="${escapeAttr(moveSectorId)}" data-move-accept-luogo="${escapeAttr(moveLuogoId)}">🚶 Sì, andiamo!</button>`;
-          } else if(l.meta && l.meta.moveResolved){
-            // Soglia già raggiunta in passato (da un altro membro): niente più da cliccare,
-            // solo un esito per chi legge/rilegge il messaggio più tardi.
-            fulfillBtn = `<div class="muted" style="margin-top:6px;font-size:11px;">✅ Il sottogruppo si è già spostato.</div>`;
           } else {
+            // 'all'/'majority'/'unanimous': il contatore "N/Tot" (richiesto da Rocco) usa il
+            // numero REALE di membri del sottogruppo, letto da cachedSubgroups tramite
+            // thread_username (colonna restituita da GET /api/log, presente su ogni entry di
+            // private_logs) — così il denominatore resta corretto anche se il sottogruppo cambia
+            // membri dopo l'invio dell'invito.
+            const groupId = l.thread_username && String(l.thread_username).startsWith('subgroup:') ? String(l.thread_username).slice('subgroup:'.length) : null;
+            const group = groupId ? (cachedSubgroups||[]).find(g=>g.id===groupId) : null;
+            const totalMembers = group ? (group.members||[]).length : null;
             const votes = Array.isArray(l.meta && l.meta.moveVotes) ? l.meta.moveVotes : [];
-            const already = votes.includes(session.username);
-            const countLabel = moveMode==='all'
-              ? `Basta un solo "sì" per spostare tutto il sottogruppo (${votes.length} finora).`
-              : `${votes.length} ${votes.length===1?'persona ha':'persone hanno'} detto sì — serve la maggioranza del sottogruppo.`;
-            fulfillBtn = `<div style="margin-top:6px;">
-              <button class="btn small ${already?'ghost':''}" ${already?'disabled':''} style="${already?'':'background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);'}" data-move-vote-id="${escapeAttr(l.id)}" data-move-vote-sector="${escapeAttr(moveSectorId)}" data-move-vote-luogo="${escapeAttr(moveLuogoId)}" data-move-vote-mode="${escapeAttr(moveMode)}">${already?'✅ Hai accettato':'🚶 Sì, andiamo!'}</button>
-              <div class="muted" style="font-size:10px;margin-top:2px;">${countLabel}</div>
-            </div>`;
+            const totalLabel = totalMembers!=null ? `${votes.length}/${totalMembers}` : `${votes.length}`;
+            if(l.meta && l.meta.moveResolved){
+              // Soglia già raggiunta in passato (da un altro membro): niente più da cliccare,
+              // solo un esito per chi legge/rilegge il messaggio più tardi — il contatore resta
+              // visibile con il conteggio finale, invece di sparire nel nulla.
+              fulfillBtn = `<div class="muted" style="margin-top:6px;font-size:11px;">✅ Il sottogruppo si è già spostato (${totalLabel} hanno accettato).</div>`;
+            } else {
+              const already = votes.includes(session.username);
+              const modeExplainer = moveMode==='all'
+                ? 'basta un solo "sì" per spostare subito tutto il sottogruppo'
+                : (moveMode==='unanimous'
+                  ? 'devono dire "sì" TUTTI i membri del sottogruppo'
+                  : 'serve la maggioranza dei membri del sottogruppo');
+              fulfillBtn = `<div style="margin-top:6px;">
+                <button class="btn small ${already?'ghost':''}" ${already?'disabled':''} style="${already?'':'background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);'}" data-move-vote-id="${escapeAttr(l.id)}" data-move-vote-sector="${escapeAttr(moveSectorId)}" data-move-vote-luogo="${escapeAttr(moveLuogoId)}" data-move-vote-mode="${escapeAttr(moveMode)}">${already?'✅ Hai accettato':'🚶 Sì, andiamo!'}</button>
+                <div class="muted" style="font-size:10px;margin-top:2px;">${totalLabel} hanno detto sì — ${modeExplainer}${already?', in attesa degli altri':''}.</div>
+              </div>`;
+            }
           }
         }
       }
@@ -731,11 +751,14 @@
         }
       }
       if(moveVoteBtn && me){
-        // Modalità 'all'/'majority' (vedi nota di testa del file): cliccare NON sposta subito chi
-        // clicca, registra un voto sul messaggio stesso (meta.moveVotes) fondendolo via
+        // Modalità 'all'/'majority'/'unanimous' (vedi nota di testa del file): cliccare NON sposta
+        // subito chi clicca, registra un voto sul messaggio stesso (meta.moveVotes) fondendolo via
         // editLogEntry/PUT (log.js ora fonde meta invece di ignorarlo). Se il voto fa raggiungere
-        // la soglia, sposta TUTTI i membri del sottogruppo (anche chi non ha cliccato) e marca il
-        // messaggio moveResolved così i click successivi non ripetono lo spostamento.
+        // la soglia ('all'=1, 'majority'=metà+1, 'unanimous'=tutti), sposta i membri del sottogruppo
+        // (per 'unanimous' hanno già votato tutti, per le altre due anche i non-cliccanti) e marca
+        // il messaggio moveResolved così i click successivi non ripetono lo spostamento. Il
+        // contatore "N/Tot" mostrato sotto al bottone (vedi logHTML) si aggiorna da solo appena
+        // questo handler richiama onChanged, senza bisogno di un messaggio di chat a parte.
         const msgId = moveVoteBtn.getAttribute('data-move-vote-id');
         const sectorId = moveVoteBtn.getAttribute('data-move-vote-sector');
         const luogoId = moveVoteBtn.getAttribute('data-move-vote-luogo') || null;
@@ -747,12 +770,13 @@
           const votes = prevVotes.includes(session.username) ? prevVotes : [...prevVotes, session.username];
           // Il thread di un Sottogruppo è sempre "subgroup:<id>" (vedi js/subgroups.js) — questo
           // branch esiste solo per messaggi mandati lì (il Master, in js/scene-encounters.js,
-          // mostra 'all'/'majority' solo quando il destinatario dell'invito è un Sottogruppo).
+          // mostra 'all'/'majority'/'unanimous' solo quando il destinatario dell'invito è un
+          // Sottogruppo).
           const group = (thread && String(thread).startsWith('subgroup:'))
             ? (cachedSubgroups||[]).find(g=>g.id===String(thread).slice('subgroup:'.length)) || null
             : null;
           const totalMembers = group ? group.members.length : votes.length;
-          const threshold = mode==='all' ? 1 : (Math.floor(totalMembers/2)+1);
+          const threshold = mode==='all' ? 1 : (mode==='unanimous' ? totalMembers : (Math.floor(totalMembers/2)+1));
           const reached = !!group && votes.length >= threshold;
           const newMeta = Object.assign({}, entry.meta||{}, { moveVotes: votes }, reached ? { moveResolved:true } : {});
           const ok = await editLogEntry(code, msgId, entry.text, thread, { meta: newMeta });

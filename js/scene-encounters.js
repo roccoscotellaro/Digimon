@@ -42,8 +42,13 @@
 // "Modalità spostamento", visibile SOLO quando il destinatario è un Sottogruppo (per Generale/
 // Privata non ha senso — vedi discussione con Rocco): 'each' (default, comportamento storico: chi
 // clicca si sposta da solo), 'all' (il primo "sì" sposta tutto il sottogruppo), 'majority' (serve
-// la maggioranza dei membri, poi si spostano tutti anche i non-cliccanti). La logica di voto vera
-// e propria vive in js/chat-log-engine.js (logHTML/attachLogModeration, branch [data-move-vote-id]).
+// la maggioranza dei membri, poi si spostano tutti anche i non-cliccanti), 'unanimous' (aggiunta
+// dopo, richiesta di Rocco: serve il "sì" di OGNI membro del sottogruppo, nessuno escluso, prima
+// che si spostino — a differenza di 'majority' non sposta mai i non-cliccanti perché per
+// definizione non ce ne sono più quando la soglia scatta). La logica di voto vera e propria vive in
+// js/chat-log-engine.js (logHTML/attachLogModeration, branch [data-move-vote-id]) — lì anche il
+// contatore "N/Tot" mostrato sotto al bottone, che si aggiorna da solo ad ogni voto senza bisogno
+// di un messaggio di chat separato per ogni click (chiesto e chiarito con Rocco).
 
 // ---------- data layer (spostate da index.html: thin wrapper su apiPost/apiPut, self-contained) ----------
   async function saveScene(code, scene){ const d = await apiPost('/api/state', { resource:'scene', code, ...scene }); return !!(d && d.ok); }
@@ -274,6 +279,7 @@
                 <option value="each">Ognuno che clicca si sposta da solo (comportamento normale)</option>
                 <option value="all">Basta un "sì" per spostare subito tutto il sottogruppo</option>
                 <option value="majority">Si sposta tutto il sottogruppo quando la maggioranza dice "sì"</option>
+                <option value="unanimous">Si sposta tutto il sottogruppo solo quando TUTTI dicono "sì"</option>
               </select>
             </div>
             <button class="btn ghost small" data-sector-chat-invite="${selectedSector.id}" style="width:100%;">💬 Proponi qui il Settore</button>
