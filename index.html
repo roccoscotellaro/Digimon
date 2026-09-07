@@ -495,7 +495,8 @@
   .hp-mini-val{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-mute);white-space:nowrap;}
   .hp-mini-label{font-size:9px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-mute);margin-right:2px;}
   .enc-card-mini{display:flex;flex-direction:column;align-items:center;}
-  .self-target-chip:active{background:rgba(255,255,255,0.1) !important;}
+  .target-dropdown-item:active{background:var(--panel-2);}
+  .target-dropdown-item+.target-dropdown-item{border-top:1px solid var(--line);}
 
   .view-mode .field-static{margin-bottom:10px;}
   .field-static label{margin-bottom:2px;}
@@ -919,31 +920,6 @@
     if(loc.startsWith('sub:')) return chatMode==='subgroup' && subgroupId===loc.slice(4);
     return false;
   }
-  // Richiesta utente: "solo i partecipanti a quella chat vedessero il combattimento e che solo a
-  // loro venga bloccata la chat" -- quando il Master ancora un combattimento a un Sottogruppo
-  // specifico (combat.chatLock.location === 'sub:<id>', vedi sopra), i giocatori che NON fanno
-  // parte di quel Sottogruppo non devono nemmeno accorgersi che è in corso uno scontro: caso
-  // tipico "party diviso", dove l'altro gruppo sta affrontando qualcosa altrove nella stessa
-  // scena. Se invece il combattimento è ancorato alla Chat Generale (o non ha affatto un
-  // chatLock -- combattimento "vecchio stile", campo message lasciato vuoto all'avvio) resta
-  // visibile a tutti come sempre: la Generale non ha esclusioni di appartenenza.
-  //
-  // Usata sia per nascondere il contenuto del tab Battaglia del Giocatore (renderPlayer/
-  // refreshLiveParts, passando null al posto di cachedCombat alle funzioni di rendering se questa
-  // torna false) sia per decidere se la chat pubblica va bloccata "fuori dal proprio turno"
-  // (quel blocco, PRIMA di questa modifica, scattava per QUALSIASI giocatore mentre un
-  // combattimento qualunque era attivo, anche per chi non c'entrava nulla con quello scontro --
-  // vedi il call site in refreshLiveParts).
-  function canPlayerSeeCombat(combat, username){
-    if(!combat || !combat.active) return false;
-    const lock = combat.chatLock;
-    if(!lock || !lock.location || lock.location==='general') return true;
-    if(lock.location.startsWith('sub:')){
-      const g = (cachedSubgroups||[]).find(x=>x.id===lock.location.slice(4));
-      return !!(g && Array.isArray(g.members) && g.members.includes(username));
-    }
-    return true;
-  }
   // Countdown/scadenza delle 24h dall'inizio del turno attuale (combat.turnStartedAt, impostato
   // quando il Master calcola l'ordine dei turni e ad ogni "Turno Successivo" — vedi
   // advanceCombatTurn/btn-combat-calc-order): puramente informativo, un promemoria di quanto tempo
@@ -1338,12 +1314,6 @@
     // Timer 24h (richiesta utente): riparte da zero ad ogni cambio di turno, non solo al primo —
     // vedi combatTurnTimerLabel/combatDisplayHTML.
     combat.turnStartedAt = new Date().toISOString();
-    // Reminder di turno ogni 2 ore (richiesta utente): azzerato ad ogni cambio di turno, stesso
-    // spirito di actionsExhaustedAt qui sotto -- altrimenti chi tiene di nuovo il turno più tardi
-    // erediterebbe il conteggio di reminder già inviati l'ultima volta che gli è toccato, e i primi
-    // avvisi del nuovo turno non partirebbero finché non si supera quel vecchio conteggio. Vedi il
-    // conteggio vero e proprio in refreshLiveParts.
-    if(starting) starting.turnReminderCount = 0;
     await applyStartOfTurnEffects(code, combat, starting);
     await saveCombat(code, combat);
 
@@ -1359,14 +1329,8 @@
     const combatLive = document.getElementById('combat-live');
     // advanceCombatTurn è condivisa tra il bottone "Turno Successivo" del Master e "Fine Turno" del
     // Giocatore (bindAttacksCard) — un `true` fisso smascererebbe qui nomi/Digimon nascosti al
-    // Giocatore ogni volta che chiude il proprio turno. Stessa cautela per canPlayerSeeCombat: se
-    // per qualunque motivo questa venisse invocata lato Giocatore mentre non fa (più) parte della
-    // chat a cui il combattimento è ancorato, non deve rivedere lo scontro riapparire qui.
-    {
-      const __isMasterNow = !!(session && session.role==='master');
-      const __combatForLive = __isMasterNow ? cachedCombat : (canPlayerSeeCombat(cachedCombat, session.username) ? cachedCombat : null);
-      if(combatLive) combatLive.innerHTML = combatDisplayHTML(__combatForLive, __isMasterNow);
-    }
+    // Giocatore ogni volta che chiude il proprio turno.
+    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, !!(session && session.role==='master'));
     bindZoneLineArrows(code, players);
   }
   // Richiesta utente: il Master deve poter spostare manualmente il turno su un partecipante a
@@ -1388,9 +1352,6 @@
     combat.currentIndex = targetIdx;
     const starting = combat.participants.find(p=>p.id===targetParticipantId);
     combat.turnStartedAt = new Date().toISOString();
-    // Reminder di turno ogni 2 ore (richiesta utente): stesso azzeramento di advanceCombatTurn qui
-    // sopra -- vedi il commento lì per il perché.
-    if(starting) starting.turnReminderCount = 0;
     await applyStartOfTurnEffects(code, combat, starting);
     await saveCombat(code, combat);
     if(starting && starting.isPC && starting.username){
@@ -1423,10 +1384,6 @@
       skipped++;
     } while(isParticipantDefeated(combat.participants.find(p=>p.id===combat.order[combat.currentIndex])) && skipped < combat.order.length);
     combat.turnStartedAt = new Date().toISOString();
-    // Reminder di turno ogni 2 ore (richiesta utente): stesso azzeramento di advanceCombatTurn/
-    // jumpToCombatTurn -- chi riceve il turno tornando indietro riparte da un conteggio pulito.
-    const backTo = combat.participants.find(p=>p.id===combat.order[combat.currentIndex]);
-    if(backTo) backTo.turnReminderCount = 0;
     await saveCombat(code, combat);
     renderCombatManager(code, players);
     const combatLive = document.getElementById('combat-live');
@@ -1589,81 +1546,6 @@
     return `${attackerName} colpisce ${targetName} con ${atkName} (${dealt}).`;
   }
 
-  // Richiesta utente: "renderei tutti i messaggi tecnici di azione, come guard aid e via
-  // discorrendo più narrativi con espansione e descrizione tecnica, esattamente come per
-  // attacchi" -- stesso schema già usato per gli Attacchi (basicAttackNarration/narrateAttack,
-  // qui sopra): una frase narrativa SENZA numeri/dadi, visibile subito, con la vecchia riga
-  // tecnica (Pool Check, dadi, Azioni residue, bonus accodati) spostata dietro ::TECH:: (vedi
-  // logHTML) invece di stare in chiaro nel messaggio. `extra.failed` (opzionale) distingue le
-  // uniche due Azioni di questo gruppo il cui effetto è condizionato a un tiro (Aid, Reposition)
-  // -- dedotto dal testo already-generato di applySupportActionEffect/applyActionMechanic
-  // ("→ NON RIUSCITO"), senza toccarne la firma per non rischiare di rompere gli altri usi.
-  function basicActionNarration(actor, def, target, extra){
-    extra = extra || {};
-    const name = narratorName(actor);
-    const own = !!(target && target.id===actor.id);
-    const targetName = target ? (own ? null : narratorName(target)) : null;
-    switch(def.key){
-      case 'guard':
-        return `${name} si mette sulla difensiva, pronto/a a incassare o schivare il prossimo colpo.`;
-      case 'aid':
-        return extra.failed
-          ? `${name} tenta di dare una mano a ${targetName||'un alleato'}, ma il momento non è quello giusto.`
-          : `${name} si lancia in aiuto di ${targetName||'un alleato'}.`;
-      case 'direct1':
-      case 'direct2':
-        return `${name} dirige ${targetName || 'il proprio Digimon'} con voce ferma, indicando la mossa giusta.`;
-      case 'bolster_tamer':
-      case 'bolster_digimon':
-        return `${name} si spinge oltre il limite per dare tutto in questa azione${targetName?`, spronando ${targetName}`:''}.`;
-      case 'reinforce1':
-      case 'reinforce2':
-        return `${name} rinforza le proprie difese in vista del prossimo colpo.`;
-      case 'reposition1':
-      case 'reposition2':
-        return extra.failed
-          ? `${name} cerca un varco per riposizionarsi, ma non lo trova in tempo.`
-          : `${name} si riposiziona con un movimento rapido e calcolato.`;
-      case 'resist1':
-      case 'resist2':
-        return `${name} lotta per scrollarsi di dosso gli Effetti che lo/la affliggono.`;
-      case 'stance':
-        return `${name} cambia postura in vista della prossima mossa.`;
-      case 'skill_tamer':
-      case 'skill_digimon':
-        return `${name} tenta una Prova di Abilità, concentrandosi sul da farsi.`;
-      case 'clash':
-        return `${name} si prepara ad affrontare l'avversario in un Clash diretto.`;
-      default:
-        return targetName ? `${name} usa ${def.label} su ${targetName}.` : `${name} usa ${def.label}.`;
-    }
-  }
-
-  // Chiede una frase narrativa variabile all'AI per un'Azione di supporto/meccanica (Guard, Aid,
-  // Direct, Bolster, Reinforce, Reposition, Resist, Cambio Stance, Skill Check...), stesso schema
-  // di narrateAttack/narrateMovement qui sopra (endpoint /api/ai, mode:'narrazione-azione', nuovo).
-  // In caso di errore di rete o API non configurata ritorna null e il chiamante mostra
-  // basicActionNarration come frase di fallback -- nessun numero/dado passato all'AI, solo
-  // l'esito in linguaggio semplice (coerente con narrateMovement, che fa lo stesso per gli
-  // spostamenti).
-  async function narrateAction(actor, def, target, extra){
-    try{
-      extra = extra || {};
-      const aDispName = techLogName(actor);
-      const own = !!(target && target.id===actor.id);
-      const tDispName = target ? (own ? null : techLogName(target)) : null;
-      let personality = 'Nemico feroce e imprevedibile.';
-      if(actor.isPC){
-        const member = cachedRoster.find(m=>m.username===actor.username);
-        if(member && member.tamer && member.tamer.personality) personality = member.tamer.personality;
-      }
-      const esito = extra.failed ? 'Il tentativo non riesce.' : 'L\'Azione riesce.';
-      const context = `Azione usata: ${def.label}\nDescrizione di riferimento: ${def.desc||''}${tDispName?`\nBersaglio: ${tDispName}`:''}\nEsito: ${esito}`;
-      const d = await apiPost('/api/ai', { mode:'narrazione-azione', digimonName: aDispName, personality, context });
-      return (d && Array.isArray(d.lines) && d.lines[0]) ? d.lines[0] : null;
-    }catch(e){ return null; }
-  }
-
   function attackResultCompactHTML(narrLine, hit, dealt, detailHTML){
     const fallback = hit ? 'Colpito!' : 'Mancato.';
     const dmgTag = (hit && dealt>0) ? ` <b style="color:var(--cyan);">(${dealt})</b>` : '';
@@ -1804,15 +1686,11 @@
       // Direct/Aid/Guard/Bolster: bersaglio riusato dallo stesso menu BERSAGLIO usato per gli
       // Attacchi (self-target-select, vedi attacksCardHTML) -- Guard non ha bisogno di bersaglio.
       let supportNote = '';
-      let narrTarget = null;
-      let narrFailed = false;
       if(SUPPORT_ACTION_KEYS.includes(sel.value)){
         const targetSel = document.getElementById('self-target-select');
         const supportTarget = sel.value==='guard' ? p : (targetSel && targetSel.value ? cachedCombat.participants.find(x=>x.id===targetSel.value) : null);
         const effect = await applySupportActionEffect(sel.value, p, supportTarget);
         supportNote = ' ' + effect.note;
-        narrTarget = supportTarget;
-        narrFailed = /NON RIUSCITO/.test(effect.note||'');
       } else if(MECHANIC_ACTION_KEYS.includes(sel.value)){
         // Reinforce/Reposition/Resist/Stance/Skill Check: tutte azioni su se stessi (nessun
         // bersaglio esterno) -- vedi applyActionMechanic. Stance/Skill Tamer leggono la scelta
@@ -1824,28 +1702,13 @@
         const extra = { stance: stancePick ? stancePick.value : undefined, skillKey: skillPick ? skillPick.value : undefined };
         const effect = await applyActionMechanic(sel.value, p, null, extra);
         supportNote = ' ' + effect.note;
-        narrFailed = /NON RIUSCITO/.test(effect.note||'');
       }
       await saveCombat(code, cachedCombat);
       const usedPoolLabel = result.def.pool==='tamer' ? 'Tamer' : 'Digimon';
       const usedPoolLeft = result.def.pool==='tamer' ? p.tamerActions : p.actions;
-      // Richiesta utente: messaggi tecnici delle Azioni (Guard, Aid, ecc.) più narrativi, con
-      // espansione e dettaglio tecnico -- stesso schema di basicAttackNarration/narrateAttack per
-      // gli Attacchi: una frase narrativa subito visibile, i numeri (Pool Check, dadi, Azioni
-      // residue, bonus accodati) dietro ::TECH:: (vedi logHTML), eventualmente sostituita dalla
-      // narrazione AI se arriva in tempo (narrateAction, vedi AI_NARRATION_TIMEOUT_MS).
-      const baseNarr = basicActionNarration(p, result.def, narrTarget, { failed: narrFailed });
-      const techDetail = `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabel}) — restano ${usedPoolLeft}/2 Azioni (${usedPoolLabel}).${supportNote}`;
-      const pushedAction = await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'player', text: `${baseNarr}::TECH::${techDetail}`, meta:{avatar: resolveParticipantImage(p)} });
-      const actionEntryId = pushedAction && pushedAction.entry && pushedAction.entry.id;
+      await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'player', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabel}) — restano ${usedPoolLeft}/2 Azioni (${usedPoolLabel}).${supportNote}`, meta:{avatar: resolveParticipantImage(p)} });
       if(statusEl){ statusEl.style.color=''; statusEl.textContent=''; }
       refreshLiveParts();
-      const actionNarrTimeout = new Promise(resolve=>setTimeout(()=>resolve(null), AI_NARRATION_TIMEOUT_MS));
-      Promise.race([narrateAction(p, result.def, narrTarget, { failed: narrFailed }), actionNarrTimeout]).then(async (narrLine)=>{
-        if(!narrLine || !actionEntryId) return;
-        await editLogEntry(code, actionEntryId, `${narrLine}::TECH::${techDetail}`, combatNarrationThread(cachedCombat));
-        refreshLiveParts();
-      });
     };
     const dBtn = document.getElementById('btn-self-daction-use');
     if(dBtn) dBtn.onclick = ()=> spendSelfAction('self-daction-select');
@@ -1905,56 +1768,53 @@
     // validateAttackTargeting ("Scegli attaccante e bersaglio diversi."), quindi includerlo qui è
     // sicuro anche per il pannello Attacco, non solo per Direct/Aid/Bolster.
     const targetChoices = p ? others.concat([p]) : others;
-    // Richiesta utente: "vedono solo il menu a tendina dove scegliere il nemico, poco pratico" --
-    // il vecchio dropdown (apri, scorri, tocca la riga) è stato sostituito da una griglia di
-    // ritratti toccabili, come quella che il Master usa già per Attaccante/Bersaglio: un solo tap
-    // seleziona il Bersaglio, niente da aprire prima. #self-target-select resta l'input nascosto
-    // con la fonte di verità (letto da bindAttacksCard/bindCombatSelfActions al momento del click
-    // su Attacca/Direct/Aid/Bolster), qui solo il modo di impostarlo cambia.
-    const targetChipsHTML = targetChoices.map(x=>{
+    const targetItemsHTML = targetChoices.map(x=>{
       const isSelf = !!(p && x.id===p.id);
       const dispName = combatDisplayName(x, isMasterView);
       // Richiesta utente: distingue con un numerino (es. " #2") i Digimon che condividono lo stesso
       // nome visualizzato — vedi duplicateNameSuffix. Tenuto separato da dispName perché il confronto
       // isMasked qui sotto deve restare sul nome "puro", non sul nome+numero.
       const dupSuffix = duplicateNameSuffix(combat, x, isMasterView);
-      const sideTag = isSelf ? 'Te stesso' : (x.side==='enemy' ? 'Nemico' : 'Alleato');
+      const sideTag = isSelf ? '(te stesso)' : (x.side==='enemy' ? '(Nemico)' : '(Alleato)');
       const zone = zoneLabel(x.zone||'Medio');
       const img = resolveParticipantImage(x, true);
       const isMasked = dispName !== x.name;
       const showImg = !isMasked || !!x.nameHidden; // nameHidden mostra immagine, altre maschere no
       const portraitEl = showImg && img
-        ? `<img src="${escapeAttr(img)}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover;" />`
-        : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--panel-2);color:var(--text-mute);font-size:13px;">❔</div>`;
-      const color = isSelf ? 'var(--text-mute)' : (x.side==='ally' ? 'var(--cyan)' : 'var(--danger)');
-      const selected = firstOther ? x.id===firstOther.id : false;
-      // Testo GREZZO (non pre-escapato): finisce in data-target-detail via escapeAttr() qui sotto,
-      // che lo escapa una volta sola -- l'attributo HTML lo ri-decodifica da solo alla lettura
-      // (chip.getAttribute), quindi un doppio escapeHTML qui produrrebbe entità doppie (es. "&amp;"
-      // diventerebbe "&amp;amp;") per nomi con caratteri speciali.
-      const detail = `${dispName}${dupSuffix||''} — ${sideTag}${isSelf?'':` — ${zone}`}`;
-      return `<button type="button" class="self-target-chip" data-target-id="${escapeAttr(x.id)}" data-target-detail="${escapeAttr(detail)}" title="${escapeAttr(dispName+dupSuffix)} — ${escapeAttr(sideTag)}" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:3px;width:56px;border-radius:8px;border:2px solid ${selected?color:'transparent'};background:${selected?'rgba(255,255,255,0.06)':'var(--panel-2)'};cursor:pointer;">
-        <div style="width:34px;height:34px;border-radius:6px;overflow:hidden;border:1px solid ${color};">${portraitEl}</div>
-        <span style="font-size:9px;max-width:54px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${color};">${escapeHTML(dispName)}${dupSuffix?`<b style="color:var(--amber);">${escapeHTML(dupSuffix)}</b>`:''}</span>
-      </button>`;
+        ? `<img src="${escapeAttr(img)}" onerror="this.style.display='none'" style="width:28px;height:28px;object-fit:cover;border-radius:5px;flex-shrink:0;" />`
+        : `<div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:var(--panel-2);border-radius:5px;flex-shrink:0;color:var(--text-mute);font-size:13px;">❔</div>`;
+      return `<div class="target-dropdown-item" data-target-id="${escapeAttr(x.id)}" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;${isSelf?'border-top:1px solid var(--line);':''}">
+        ${portraitEl}
+        <span style="flex:1;min-width:0;"><span style="font-size:12px;">${escapeHTML(dispName)}</span>${dupSuffix?`<span class="mono" style="font-size:11px;color:var(--amber);">${escapeHTML(dupSuffix)}</span>`:''} <span class="muted" style="font-size:10px;">${escapeHTML(sideTag)}${isSelf?'':` — ${escapeHTML(zone)}`}</span></span>
+      </div>`;
     }).join('');
-    const firstOtherDetail = (()=>{
+    const selDisplay = (()=>{
       if(!firstOther) return '(nessun altro partecipante)';
       const dn = combatDisplayName(firstOther, isMasterView);
       const dnSuffix = duplicateNameSuffix(combat, firstOther, isMasterView);
-      const st = firstOther.side==='enemy' ? 'Nemico' : 'Alleato';
+      const st = firstOther.side==='enemy' ? '(Nemico)' : '(Alleato)';
       const zn = zoneLabel(firstOther.zone||'Medio');
-      return `${escapeHTML(dn)}${dnSuffix?escapeHTML(dnSuffix):''} — ${escapeHTML(st)} — ${escapeHTML(zn)}`;
+      const im = resolveParticipantImage(firstOther, true);
+      const isMask = dn !== firstOther.name;
+      const showI = !isMask || !!firstOther.nameHidden;
+      const pEl = showI && im
+        ? `<img src="${escapeAttr(im)}" onerror="this.style.display='none'" style="width:24px;height:24px;object-fit:cover;border-radius:4px;flex-shrink:0;" />`
+        : `<div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:var(--panel-2);border-radius:4px;flex-shrink:0;color:var(--text-mute);font-size:11px;">❔</div>`;
+      return `${pEl} <span style="flex:1;min-width:0;font-size:12px;">${escapeHTML(dn)}${dnSuffix?`<span class="mono" style="color:var(--amber);">${escapeHTML(dnSuffix)}</span>`:''} <span class="muted" style="font-size:10px;">${escapeHTML(st)} — ${escapeHTML(zn)}</span></span>`;
     })();
     return `
       ${turnBannerHTML(combat, username)}
       ${p ? `<div class="muted" style="margin-bottom:8px;">Zona attuale: <b style="color:var(--amber);">${zoneLabel(p.zone||'Medio')}</b> · Azioni: <span class="mono">${actsLeft}/2</span></div>` : ''}
       <div class="field"><label>BERSAGLIO</label>
         <input type="hidden" id="self-target-select" value="${firstOther?escapeAttr(firstOther.id):''}">
-        <div id="self-target-chips" style="display:flex;flex-wrap:wrap;gap:6px;${canAct?'':'opacity:0.5;pointer-events:none;'}">
-          ${targetChipsHTML || '<div class="muted" style="font-size:11px;">(nessun altro partecipante)</div>'}
+        <div id="target-dropdown-wrapper" style="position:relative;${canAct?'':'opacity:0.5;pointer-events:none;'}">
+          <div id="target-dropdown-toggle" style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;cursor:pointer;min-height:36px;">
+            ${selDisplay} <span style="margin-left:auto;color:var(--text-mute);">▾</span>
+          </div>
+          <div id="target-dropdown-list" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-top:2px;max-height:220px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+            ${targetItemsHTML || '<div class="muted" style="padding:10px;">(nessun altro partecipante)</div>'}
+          </div>
         </div>
-        <div class="muted" id="self-target-selected-line" style="font-size:10px;margin-top:4px;">${firstOtherDetail}</div>
       </div>
       <!-- I vecchi bottoni "Avvicinati/Allontanati" (relativi a un bersaglio scelto qui sopra) sono
            stati tolti perché poco intuitivi — il movimento ora si fa con le stesse frecce ◀/▶ del
@@ -1962,17 +1822,17 @@
            turno. Il select resta: serve solo più a scegliere il Bersaglio dell'Attacco qui sotto. -->
       <div class="divider"></div>
       ${(()=>{
-        // Richiesta utente: "renderei più integrato nella grafica il tasto della battery... magari
-        // un tasto che compare a popup quando si sceglie la signature" -- la vecchia spunta
-        // "Usa Battery" stava sempre lì, visibile e spuntabile anche per una mossa non-Signature
-        // (dove non ha alcun effetto, vedi performAttackRoll). Ora non c'è più una spunta
-        // persistente qui: se il Digimon ha Battery, toccare una mossa ⭐ Signature apre un piccolo
-        // popup ("Usare la Battery su questa mossa?", vedi showBatteryUsePopup/bindAttacksCard) SOLO
-        // in quel momento -- una mossa normale parte invece subito, senza alcuna domanda. Questa
-        // riga resta solo come promemoria di quante tacche sono disponibili.
+        // BUGFIX (segnalato dall'utente: "la battery sugli attacchi non viene calcolata
+        // correttamente"): prima la Battery non veniva MAI applicata a nessun tiro, a prescindere
+        // da quante tacche avesse il Digimon (vedi performAttackRoll). Non è automatica per
+        // regolamento ("il giocatore può scegliere di dichiararla... non è automatico"), quindi qui
+        // è una spunta esplicita: se selezionata E la mossa cliccata è una Signature Move, si
+        // applica alla PROSSIMA mossa cliccata (poi sparisce da sola, perché la Battery si azzera).
         const bat = Number(me.digimon.battery||0);
         if(bat<=0) return '';
-        return `<div class="muted" style="font-size:11px;margin-bottom:8px;">🔋 Battery: <b style="color:var(--amber);">${bat}</b> — te la chiediamo al volo se scegli una mossa ⭐ Signature.</div>`;
+        return `<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-mute);margin-bottom:8px;">
+          <input type="checkbox" id="self-use-battery" /> 🔋 Usa Battery (${bat}) sulla prossima Signature Move: +${bat} Accuracy e +${bat} Danno (o Potenza se Support), poi si azzera. Nessun effetto sulle mosse non-Signature.
+        </label>`;
       })()}
       <div class="moves-grid">
         ${(me.digimon.attacks||[]).map((a,i)=>{
@@ -1990,69 +1850,30 @@
     `;
   }
 
-  // Richiesta utente: "renderei più integrato nella grafica il tasto della battery per le
-  // signature, magari un tasto che compare a popup quando si sceglie la signature" -- piccolo
-  // popup di conferma (stesso stile .enc-modal-backdrop/.enc-modal-card già usato altrove, es.
-  // openEditLogModal) mostrato SOLO quando il Giocatore tocca una mossa ⭐ Signature con Battery
-  // disponibile (vedi bindAttacksCard qui sotto). Risolve con true/false invece di leggere una
-  // spunta lasciata lì dal render precedente -- niente da dimenticare spuntata/despuntata per
-  // errore su una mossa diversa da quella appena scelta.
-  function showBatteryUsePopup(battery, atkName, isSupport){
-    return new Promise(resolve=>{
-      const old = document.getElementById('battery-use-modal');
-      if(old) old.remove();
-      const modal = document.createElement('div');
-      modal.id = 'battery-use-modal';
-      modal.className = 'enc-modal-backdrop';
-      modal.innerHTML = `
-        <div class="enc-modal-card hud-frame" style="max-width:340px;text-align:center;">
-          <div class="section-title" style="margin-top:0;">🔋 Signature Move</div>
-          <div class="muted" style="font-size:12px;margin-bottom:14px;">
-            Usare la Battery (<b style="color:var(--amber);">${battery}</b>) su <b>${escapeHTML(atkName||'questa mossa')}</b>? +${battery} Accuracy e +${battery} ${isSupport?'Potenza':'Danno'} — si azzera subito dopo.
-          </div>
-          <div class="row" style="gap:8px;">
-            <button class="btn ghost" id="battery-use-no" style="flex:1;">Attacco normale</button>
-            <button class="btn amber" id="battery-use-yes" style="flex:1;">🔋 Usa Battery</button>
-          </div>
-        </div>
-      `;
-      document.body.appendChild(modal);
-      const closeWith = (val)=>{ modal.remove(); resolve(val); };
-      modal.onclick = (ev)=>{ if(ev.target===modal) closeWith(false); };
-      document.getElementById('battery-use-no').onclick = ()=>closeWith(false);
-      document.getElementById('battery-use-yes').onclick = ()=>closeWith(true);
-    });
-  }
-
   function bindAttacksCard(code, me){
     const targetSel = document.getElementById('self-target-select');
     const resEl = document.getElementById('self-attack-result');
 
-    // Binding griglia ritratti Bersaglio (richiesta utente: sostituisce il vecchio dropdown "poco
-    // pratico" su mobile -- un tap seleziona direttamente, senza aprire/scorrere un elenco prima).
-    // Aggiornamento leggero: sposta solo il bordo/sfondo "selezionato" tra i chip e la riga di
-    // dettaglio sotto, senza ricostruire l'intera card -- stesso spirito del guard anti-race già
-    // presente nel poll (vedi refreshLiveParts più sotto, che ora legge/ripristina il chip invece
-    // del vecchio toggle dropdown).
-    const chipsWrap = document.getElementById('self-target-chips');
-    const detailLine = document.getElementById('self-target-selected-line');
-    if(chipsWrap){
-      chipsWrap.querySelectorAll('.self-target-chip').forEach(chip=>{
-        chip.onclick = ()=>{
-          const id = chip.getAttribute('data-target-id');
+    // Binding dropdown custom bersaglio (ritratto + nome)
+    const ddToggle = document.getElementById('target-dropdown-toggle');
+    const ddList = document.getElementById('target-dropdown-list');
+    if(ddToggle && ddList){
+      ddToggle.onclick = ()=>{ ddList.style.display = ddList.style.display==='none' ? 'block' : 'none'; };
+      ddList.querySelectorAll('.target-dropdown-item').forEach(item=>{
+        item.onmouseenter = ()=>{ item.style.background='var(--panel-2)'; };
+        item.onmouseleave = ()=>{ item.style.background=''; };
+        item.onclick = ()=>{
+          const id = item.getAttribute('data-target-id');
           if(targetSel) targetSel.value = id;
-          chipsWrap.querySelectorAll('.self-target-chip').forEach(c=>{
-            const isThis = c===chip;
-            // Il colore del bordo selezionato ricalca quello già scritto sul nome (span figlio) al
-            // render -- Alleato/Nemico/Te stesso hanno ciascuno il proprio colore, invariato qui.
-            const nameEl = c.querySelector('span');
-            const col = nameEl ? nameEl.style.color : 'var(--line)';
-            c.style.border = `2px solid ${isThis?col:'transparent'}`;
-            c.style.background = isThis ? 'rgba(255,255,255,0.06)' : 'var(--panel-2)';
-          });
-          if(detailLine) detailLine.textContent = chip.getAttribute('data-target-detail') || '';
+          // Aggiorna la riga visualizzata nel toggle copiando il contenuto dell'item scelto
+          ddToggle.innerHTML = item.innerHTML + ' <span style="margin-left:auto;color:var(--text-mute);">▾</span>';
+          ddList.style.display = 'none';
         };
       });
+      // Chiudi dropdown cliccando fuori
+      document.addEventListener('click', (ev)=>{
+        if(!ev.target.closest('#target-dropdown-wrapper')) ddList.style.display = 'none';
+      }, { once: false });
     }
 
     // I vecchi bottoni "Avvicinati/Allontanati" (e la doMove che li gestiva) sono stati tolti da
@@ -2102,7 +1923,7 @@
         const atk = me.digimon.attacks[idx];
         const targetId = targetSel ? targetSel.value : '';
         const target = cachedCombat.participants.find(x=>x.id===targetId);
-        const validation = validateAttackTargeting(p, target, atk, { restrictFriendlyFire: true });
+        const validation = validateAttackTargeting(p, target, atk);
         if(!validation.ok){
           if(resEl) resEl.innerHTML = `<div class="err">${validation.error}</div>`;
           return;
@@ -2112,17 +1933,8 @@
           if(resEl) resEl.innerHTML = `<div class="err">${spend.msg}</div>`;
           return;
         }
-        // Richiesta utente: "un tasto che compare a popup quando si sceglie la signature" -- al
-        // posto della vecchia spunta sempre visibile (vedi attacksCardHTML), la domanda "Usare la
-        // Battery?" compare SOLO qui, SOLO se la mossa appena toccata è una Signature Move e c'è
-        // davvero Battery da spendere -- una mossa normale (o Signature a Battery 0) parte diretta,
-        // nessun popup. L'Azione è già stata spesa sopra (trySpendAction): come già per la vecchia
-        // spunta, la scelta riguarda solo IL BONUS, non se attaccare o no.
-        let useBattery = false;
-        const curBatteryForPopup = Number(me.digimon.battery||0);
-        if(atk.signature && curBatteryForPopup>0){
-          useBattery = await showBatteryUsePopup(curBatteryForPopup, atk.name, atk.type==='Support');
-        }
+        const useBatteryCb = document.getElementById('self-use-battery');
+        const useBattery = !!(useBatteryCb && useBatteryCb.checked);
         const { logText, dealt, accRoll, dodgeRoll, defeatInfo } = await performAttackRoll(code, cachedCombat, p, target, atk, { useBattery });
         const hit = accRoll.successes > 0 && accRoll.successes >= dodgeRoll.successes;
         if(resEl){
@@ -2640,7 +2452,11 @@
   // Esporta (come file .txt scaricabile, generato lato client — nessuna chiamata al server)
   // esattamente ciò che il Registro sta mostrando in questo momento.
   // saveScene spostata in js/scene-encounters.js
-  async function getLog(code){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code)); return d ? (d.log||[]) : []; }
+  async function getLog(code, sinceId){
+    const url = '/api/log?code=' + encodeURIComponent(code) + (sinceId ? '&sinceId=' + encodeURIComponent(sinceId) : '');
+    const d = await apiGet(url);
+    return d ? (d.log||[]) : [];
+  }
   async function heartbeat(code, username){ return apiPost('/api/roster', { resource:'heartbeat', code, username }); }
   async function getDex(code){ const d = await apiGet('/api/dex?code=' + encodeURIComponent(code)); return d ? (d.entries||[]) : []; }
   // addDexEntry spostata in js/scene-encounters.js
@@ -2849,11 +2665,15 @@
     refreshLiveParts(__pollTick);
     checkNoticesForMe();
     pollTimer = setInterval(async ()=>{
+      // Scheda in background (tab non attiva, minimizzata, telefono con schermo spento): saltiamo
+      // il giro. Non appena torna visibile, il primo interval successivo riprende normalmente —
+      // niente di perso, solo lavoro risparmiato mentre nessuno sta guardando.
+      if(document.hidden) return;
       // if(session) await heartbeat(session.code, session.username);
       __pollTick++;
       refreshLiveParts(__pollTick);
       checkNoticesForMe();
-    }, 15000);
+    }, 20000);
   }
 
   function checkPlayerPrivateUnread(){
@@ -3098,7 +2918,19 @@
     const dexCycle = (typeof tick!=='number') || (tick % 40 === 0); // ~10 minuti (era ogni 60s)
     cachedRoster = (await getRoster(session.code)).map(normalizeMember);
     cachedScene = await getScene(session.code);
-    cachedLog = await getLog(session.code);
+    // Fetch del log pubblico: sui giri "veloci" chiediamo solo i messaggi nuovi dopo l'ultimo che
+    // abbiamo già in cache (sinceId), invece di rileggere/riserializzare tutta la finestra di
+    // LOG_FETCH_LIMIT righe ogni 15-20s per ogni client connesso. Ogni slowCycle (~1 minuto)
+    // facciamo comunque un fetch completo, per restare allineati anche se un messaggio vecchio è
+    // stato modificato o cancellato (un delta per id non lo rileverebbe). Se cachedLog è vuoto
+    // (primo giro dopo login) il fetch è sempre completo.
+    const lastKnownLogId = (cachedLog && cachedLog.length) ? cachedLog[cachedLog.length-1].id : null;
+    if(!slowCycle && lastKnownLogId){
+      const newEntries = await getLog(session.code, lastKnownLogId);
+      if(newEntries.length) cachedLog = cachedLog.concat(newEntries);
+    } else {
+      cachedLog = await getLog(session.code);
+    }
     if(cachedLog.length){
       const myPublicName = session.role==='master' ? 'Master' : displayName(cachedMe || cachedRoster.find(m=>m.username===session.username) || {username:session.username});
       maybeNotifyNew('public', null, cachedLog[cachedLog.length-1], myPublicName);
@@ -3142,43 +2974,6 @@
           const stuckName = combatDisplayName(curTurnP, false);
           await pushCombatNarration(cachedCombat, { who:'Sistema', role:'gm', text: `⏱ Turno di ${stuckName} passato automaticamente: Azioni esaurite da oltre 5 minuti senza altre azioni.` });
           await advanceCombatTurn(session.code, (cachedRoster||[]).filter(m=>m.role==='player'));
-        }
-      }
-    }
-    // Reminder di turno ogni due ore (richiesta utente: "un reminder di turno ogni due ore") --
-    // stesso meccanismo/stesse guardie del "Passa turno automatico dopo 5 minuti" qui sopra (nessun
-    // cron lato server: gira nel polling del Master o del giocatore di turno stesso), ma qui il
-    // turno NON avanza: è solo un promemoria narrato nella chat del combattimento
-    // (pushCombatNarration rispetta già l'eventuale ancoraggio a un Sottogruppo), ripetuto ogni 2h
-    // (2h, 4h, 6h...) finché resta il turno di quel partecipante. turnReminderCount conta quanti
-    // "scatti" da 2h sono già stati avvisati per QUESTO turno -- azzerato ad ogni cambio di turno
-    // (vedi advanceCombatTurn/jumpToCombatTurn/previousCombatTurn in questo file e
-    // recalcCombatOrder in js/combat-engine.js). Se il poll salta più di uno scatto da 2h insieme
-    // (es. nessuno ha aperto l'app per 5h), invia UN SOLO messaggio "di recupero" indicando le ore
-    // effettive trascorse, invece di inondare la chat con i reminder mancati nel frattempo.
-    if(cachedCombat && cachedCombat.active && !combatActionPending){
-      const curTurnP2 = currentTurnParticipant(cachedCombat);
-      const iAmMaster2 = session.role==='master';
-      const iAmTurnPlayer2 = !!(curTurnP2 && session.role==='player' && curTurnP2.isPC && session.username===curTurnP2.username);
-      if(curTurnP2 && curTurnP2.isPC && cachedCombat.turnStartedAt && (iAmMaster2 || iAmTurnPlayer2)){
-        const TURN_REMINDER_MS = 2*60*60*1000;
-        const elapsedMs2 = Date.now() - new Date(cachedCombat.turnStartedAt).getTime();
-        const dueCount = Math.floor(elapsedMs2 / TURN_REMINDER_MS);
-        const sentCount = Number(curTurnP2.turnReminderCount||0);
-        // Richiesta utente: "meglio evitare il reminder nelle ore notturne da mezzanotte alle 8" --
-        // ora locale del dispositivo che sta facendo il controllo (Master o giocatore di turno,
-        // stessa fonte già usata per orari/date altrove nel sito, es. toLocaleTimeString('it-IT')).
-        // Durante la finestra notturna il reminder NON parte e il conteggio resta fermo (non viene
-        // "consumato" in silenzio): appena l'orario torna diurno, il primo poll utile invia un solo
-        // messaggio di recupero con le ore REALI trascorse (che includono anche la notte) -- stessa
-        // logica di "recupero" già usata per un poll saltato di giorno, vedi commento più sopra.
-        const nowHour = new Date().getHours();
-        const inQuietHours = nowHour>=0 && nowHour<8;
-        if(dueCount > sentCount && !inQuietHours){
-          curTurnP2.turnReminderCount = dueCount;
-          const reminderName = combatDisplayName(curTurnP2, false);
-          await pushCombatNarration(cachedCombat, { who:'Sistema', role:'gm', text: `⏰ ${reminderName}, è il tuo turno da più di ${dueCount*2}h: ricordati di agire quando puoi!` });
-          await saveCombat(session.code, cachedCombat);
         }
       }
     }
@@ -3278,13 +3073,7 @@
     if(dexLive && dexEditOpenId===null){ dexLive.innerHTML = dexListHTML(cachedDex, session.role==='master'); if(session.role==='master') bindDexEditButtons(session.code); }
     const combatLive = document.getElementById('combat-live');
     const isMasterRole = session && session.role==='master';
-    // Richiesta utente: nasconde il combattimento a chi non fa parte della chat/Sottogruppo a cui
-    // il Master lo ha ancorato (vedi canPlayerSeeCombat) -- il Master vede sempre tutto, invariato.
-    // combatForMe è null per un Giocatore escluso: tutte le funzioni di rendering più sotto (già
-    // scritte per gestire "nessun combattimento attivo") mostrano quindi "Nessun combattimento in
-    // corso" esattamente come se lo scontro non fosse mai iniziato.
-    const combatForMe = isMasterRole ? cachedCombat : (canPlayerSeeCombat(cachedCombat, session.username) ? cachedCombat : null);
-    if(combatLive) combatLive.innerHTML = combatDisplayHTML(combatForMe, isMasterRole);
+    if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, isMasterRole);
     // Prima si legava solo per il Master: ora le frecce ◀/▶ compaiono anche al Giocatore nel
     // proprio turno (vedi zoneLineHTML/bindZoneLineArrows) — bindZoneLineArrows è comunque un
     // no-op sicuro quando non ci sono bottoni [data-zoneline-move] nel DOM.
@@ -3307,7 +3096,7 @@
       if(mgrCard && !typingInMgr && !recentTapInMgr) renderCombatManager(session.code, (cachedRoster||[]).filter(m=>m.role==='player'));
     }
     const attacksCard = document.getElementById('attacks-card');
-    if(attacksCard) attacksCard.style.display = (combatForMe && combatForMe.active) ? '' : 'none';
+    if(attacksCard) attacksCard.style.display = (cachedCombat && cachedCombat.active) ? '' : 'none';
     if(session.role==='player'){
       cachedMe = cachedRoster.find(m=>m.username===session.username) || cachedMe;
       const attacksCardInner = document.getElementById('attacks-card-inner');
@@ -3324,39 +3113,32 @@
         // partecipanti.
         const prevTargetSel = document.getElementById('self-target-select');
         const prevTargetVal = prevTargetSel ? prevTargetSel.value : null;
-        attacksCardInner.innerHTML = attacksCardHTML(cachedMe, combatForMe, session.username);
+        attacksCardInner.innerHTML = attacksCardHTML(cachedMe, cachedCombat, session.username);
         bindAttacksCard(session.code, cachedMe);
         if(prevTargetVal){
           const newTargetSel = document.getElementById('self-target-select');
-          // self-target-select è ora impostato da un tap sui chip ritratto (non più un dropdown):
-          // basta verificare che il bersaglio esista ancora tra i chip appena ridisegnati e
-          // spostargli sopra l'evidenziazione "selezionato", coerente col binding in bindAttacksCard.
-          const matchChip = document.querySelector(`.self-target-chip[data-target-id="${CSS.escape(prevTargetVal)}"]`);
-          if(newTargetSel && matchChip){
+          // self-target-select è ora un <input type="hidden">: basta verificare che il bersaglio
+          // esista ancora tra gli item del dropdown custom.
+          const matchItem = document.querySelector(`.target-dropdown-item[data-target-id="${CSS.escape(prevTargetVal)}"]`);
+          if(newTargetSel && matchItem){
             newTargetSel.value = prevTargetVal;
-            document.querySelectorAll('.self-target-chip').forEach(c=>{
-              const isThis = c===matchChip;
-              const nameEl = c.querySelector('span');
-              const col = nameEl ? nameEl.style.color : 'var(--line)';
-              c.style.border = `2px solid ${isThis?col:'transparent'}`;
-              c.style.background = isThis ? 'rgba(255,255,255,0.06)' : 'var(--panel-2)';
-            });
-            const detailLine = document.getElementById('self-target-selected-line');
-            if(detailLine) detailLine.textContent = matchChip.getAttribute('data-target-detail') || '';
+            // Aggiorna anche la riga visibile nel toggle
+            const ddToggle = document.getElementById('target-dropdown-toggle');
+            if(ddToggle) ddToggle.innerHTML = matchItem.innerHTML + ' <span style="margin-left:auto;color:var(--text-mute);">▾</span>';
           }
         }
       }
     }
     const combatSelf = document.getElementById('combat-self-actions');
     if(combatSelf && session.role==='player'){
-      combatSelf.innerHTML = combatSelfActionHTML(combatForMe, session.username);
+      combatSelf.innerHTML = combatSelfActionHTML(cachedCombat, session.username);
       bindCombatSelfActions(session.code, session.username);
     }
     // ===== Mini-log nel tab Battle (mobile): mostra gli ultimi 4 messaggi della chat =====
     if(session.role==='player'){
       const miniLogEl = document.getElementById('combat-mini-log');
       const miniLogCard = document.getElementById('combat-mini-log-card');
-      if(miniLogCard) miniLogCard.style.display = (combatForMe && combatForMe.active) ? '' : 'none';
+      if(miniLogCard) miniLogCard.style.display = (cachedCombat && cachedCombat.active) ? '' : 'none';
       // BUGFIX: mostrava sempre cachedLog (Chat Generale), ma pushCombatNarration instrada la
       // narrazione di combattimento verso il Sottogruppo scelto dal Master quando combat.chatLock
       // è impostato su "sub:<id>" -- in quel caso il mini-log restava vuoto/con messaggi vecchi
@@ -3364,26 +3146,23 @@
       // pushCombatNarration: Generale se nessun chatLock (o "general"), altrimenti il thread del
       // Sottogruppo bloccato -- letto solo se il giocatore ne fa parte (getPrivateLog risponde
       // comunque solo con ciò a cui il thread dà accesso, stesso canale già usato dalla sua Chat
-      // "Gruppo" quando ci entra volontariamente). Usa combatForMe: chi non vede il combattimento
-      // non deve nemmeno vedere il mini-log della sua narrazione.
-      const miniLogLock = combatForMe && combatForMe.chatLock && combatForMe.chatLock.location;
+      // "Gruppo" quando ci entra volontariamente).
+      const miniLogLock = cachedCombat && cachedCombat.chatLock && cachedCombat.chatLock.location;
       let miniLogSource = cachedLog;
       if(miniLogLock && miniLogLock.startsWith('sub:')){
         try{ miniLogSource = await getPrivateLog(session.code, 'subgroup:'+miniLogLock.slice(4)); }catch(e){ miniLogSource = cachedLog; }
       }
-      if(miniLogEl && combatForMe && miniLogSource && miniLogSource.length > 0){
+      if(miniLogEl && miniLogSource && miniLogSource.length > 0){
         const last4 = miniLogSource.slice(-4);
         miniLogEl.innerHTML = typeof logHTML === 'function' ? logHTML(last4, false) : last4.map(e=>`<div style="padding:2px 0;font-size:12px;"><b style="color:var(--cyan);font-size:11px;">${escapeHTML(e.who||'')}</b> <span>${escapeHTML(e.text||'')}</span></div>`).join('');
         miniLogEl.scrollTop = miniLogEl.scrollHeight;
-      } else if(miniLogEl && !combatForMe){
-        miniLogEl.innerHTML = '';
       }
       // ===== Banner "È il tuo turno, ora puoi parlare!" nel tab Battle =====
       const turnBannerEl = document.getElementById('combat-turn-chat-banner');
       if(turnBannerEl){
-        const myTurnForBanner = isMyCombatTurn(combatForMe, session.username);
-        if(myTurnForBanner && combatForMe && combatForMe.active){
-          const curP = currentTurnParticipant(combatForMe);
+        const myTurnForBanner = isMyCombatTurn(cachedCombat, session.username);
+        if(myTurnForBanner && cachedCombat && cachedCombat.active){
+          const curP = currentTurnParticipant(cachedCombat);
           const curUser = curP && curP.username;
           if(curUser !== __lastTurnChatNotifiedUsername){
             __lastTurnChatNotifiedUsername = curUser;
@@ -3397,21 +3176,16 @@
         } else {
           turnBannerEl.innerHTML = '';
           // Reset: se il combattimento finisce o cambia turno, la prossima volta si rinotifica
-          if(!combatForMe || !combatForMe.active) __lastTurnChatNotifiedUsername = null;
+          if(!cachedCombat || !cachedCombat.active) __lastTurnChatNotifiedUsername = null;
         }
       }
     }
     // Blocca la chat pubblica (non quella privata col Master) fuori dal proprio turno, se in combattimento.
     // Blocca inoltre, per TUTTI (indipendentemente dal turno), la chat scelta dal Master come
     // "chat di combattimento" (chatLock) finché il Master non conclude lo scontro.
-    // Richiesta utente: "solo a loro [i partecipanti a quella chat] venga bloccata la chat" -- usa
-    // combatForMe (già null per chi non fa parte del Sottogruppo bloccato) al posto di cachedCombat,
-    // altrimenti PRIMA di questa modifica qualunque combattimento attivo bloccava la chat pubblica
-    // di TUTTI i giocatori, anche di chi non c'entrava nulla con quello scontro (mai "il proprio
-    // turno" per definizione, quindi sempre bloccato).
     if(session.role==='player'){
-      const myTurnNow = isMyCombatTurn(combatForMe, session.username);
-      const turnLockPublicChat = !!(combatForMe && combatForMe.active) && playerChatMode!=='private' && playerChatMode!=='subgroup' && !myTurnNow;
+      const myTurnNow = isMyCombatTurn(cachedCombat, session.username);
+      const turnLockPublicChat = !!(cachedCombat && cachedCombat.active) && playerChatMode!=='private' && playerChatMode!=='subgroup' && !myTurnNow;
       const chatLocked = combatChatLockLocationMatches(playerChatMode, playerActiveSubgroupId, myTurnNow);
       // Serve solo per sapere se QUESTA è la chat scelta dal Master come "chat di combattimento",
       // a prescindere dal turno — usato per mostrare il messaggio "è il tuo turno" proprio lì, dove
@@ -3504,14 +3278,6 @@
     cachedCombat = await getCombat(code);
     cachedProgression = await getProgression(code);
     cachedGameClock = await getGameClock(code);
-    // Serve SUBITO a canPlayerSeeCombat qui sotto (appartenenza ai Sottogruppi) -- senza questa
-    // fetch, cachedSubgroups resterebbe vuota fino al primo giro di polling "slowCycle" dentro
-    // refreshLiveParts, e un giocatore che FA parte del Sottogruppo a cui è ancorato il
-    // combattimento vedrebbe per qualche secondo "Nessun combattimento in corso" per errore
-    // (stesso identico bug già risolto altrove per il selettore Sottogruppo -- vedi
-    // ensurePlayerSubgroupPicker più sopra).
-    cachedSubgroups = await getSubgroups(code);
-    const combatForMe = canPlayerSeeCombat(cachedCombat, session.username) ? cachedCombat : null;
 
     root.innerHTML = `
       ${topbar('Vista Giocatore')}
@@ -3554,18 +3320,18 @@
 
           <div class="mobile-section" data-mobile-tab="combattimento">
           <div id="combat-turn-chat-banner"></div>
-          <div class="hud-frame card" id="attacks-card" style="${(combatForMe && combatForMe.active) ? '' : 'display:none;'}">
+          <div class="hud-frame card" id="attacks-card" style="${(cachedCombat && cachedCombat.active) ? '' : 'display:none;'}">
             <div class="section-title">Attacchi di ${escapeHTML(me.digimon.name || 'Digimon')}</div>
-            <div id="attacks-card-inner">${attacksCardHTML(me, combatForMe, session.username)}</div>
+            <div id="attacks-card-inner">${attacksCardHTML(me, cachedCombat, session.username)}</div>
           </div>
 
           <div class="hud-frame card">
             <div class="section-title">Combattimento</div>
-            <div id="combat-live">${combatDisplayHTML(combatForMe, false)}</div>
-            <div id="combat-self-actions">${combatSelfActionHTML(combatForMe, session.username)}</div>
+            <div id="combat-live">${combatDisplayHTML(cachedCombat, false)}</div>
+            <div id="combat-self-actions">${combatSelfActionHTML(cachedCombat, session.username)}</div>
           </div>
 
-          <div class="hud-frame card" id="combat-mini-log-card" style="${(combatForMe && combatForMe.active) ? '' : 'display:none;'}">
+          <div class="hud-frame card" id="combat-mini-log-card" style="${(cachedCombat && cachedCombat.active) ? '' : 'display:none;'}">
             <div class="section-title" style="font-size:11px;margin-bottom:4px;">💬 Ultimi messaggi</div>
             <div id="combat-mini-log"></div>
           </div>
@@ -5122,20 +4888,9 @@
   }
 
   // ---------- shared attack resolution (usato sia dal Combat Manager del Master sia dall'attacco in self-service del giocatore) ----------
-  function validateAttackTargeting(attacker, target, atk, opts){
+  function validateAttackTargeting(attacker, target, atk){
     if(!attacker || !target || attacker.id===target.id){
       return { ok:false, error:'Scegli attaccante e bersaglio diversi.' };
-    }
-    // Richiesta utente: "togli ai giocatori la possibilità di colpire propri compagni o alleati
-    // salvo se lo fanno con attacchi che hanno il tag support" -- SOLO per i Giocatori
-    // (opts.restrictFriendlyFire, passato solo dal pannello Attacchi del Giocatore più sotto): il
-    // Master resta libero di risolvere qualunque combinazione Attaccante/Bersaglio dalla Gestione
-    // Combattimento (narrazione, NPC che si scontrano tra loro, ecc. restano scelte sue). Il fuoco
-    // amico resta permesso solo con [SUPPORT] -- controllato sul Tipo dell'Attacco, non sull'Effetto
-    // collegato, per restare semplice e prevedibile (una [SUPPORT] senza Effetto o con Effetto
-    // negativo su un alleato è comunque una scelta strana del giocatore, ma resta sua).
-    if(opts && opts.restrictFriendlyFire && atk && atk.type!=='Support' && target.side===attacker.side){
-      return { ok:false, error:`${atk.name} non ha il Tag [SUPPORT]: non puoi colpire un alleato con un Attacco [${(atk.type||'DAMAGE').toUpperCase()}]. Scegli un bersaglio Nemico, oppure usa un Attacco [SUPPORT] su un alleato.` };
     }
     const zDist = zoneDistance(attacker.zone||'Medio', target.zone||'Medio');
     if(atk && atk.shape==='Melee' && zDist>0){
@@ -6622,15 +6377,11 @@
           // riga (data-zone-ref) -- Guard non ha bisogno di bersaglio, si applica sempre a se stesso.
           let supportNote = '';
           let presetAttacker = false;
-          let narrTargetGM = null;
-          let narrFailedGM = false;
           if(SUPPORT_ACTION_KEYS.includes(sel.value)){
             const zoneRefSel = cardEl.querySelector(`[data-zone-ref="${id}"]`);
             const supportTarget = sel.value==='guard' ? p : (zoneRefSel && zoneRefSel.value ? combat.participants.find(x=>x.id===zoneRefSel.value) : null);
             const effect = await applySupportActionEffect(sel.value, p, supportTarget);
             supportNote = ' ' + effect.note;
-            narrTargetGM = supportTarget;
-            narrFailedGM = /NON RIUSCITO/.test(effect.note||'');
           } else if(MECHANIC_ACTION_KEYS.includes(sel.value)){
             // Reinforce/Reposition/Resist/Stance/Skill Check/Clash: tutte azioni su se stessi (nessun
             // bersaglio esterno) -- vedi applyActionMechanic. Stance/Skill Tamer leggono la scelta dai
@@ -6641,17 +6392,10 @@
             const effect = await applyActionMechanic(sel.value, p, null, extra);
             supportNote = ' ' + effect.note;
             presetAttacker = !!effect.presetAttacker;
-            narrFailedGM = /NON RIUSCITO/.test(effect.note||'');
           }
           const usedPoolLabelGM = result.def.pool==='tamer' ? 'Tamer' : 'Digimon';
           const usedPoolLeftGM = result.def.pool==='tamer' ? p.tamerActions : p.actions;
-          // Richiesta utente: stesso trattamento narrativo+dettaglio tecnico già dato agli Attacchi
-          // (vedi basicActionNarration/narrateAction qui sopra) -- frase narrativa subito visibile,
-          // numeri/dadi/Azioni residue dietro ::TECH::, eventualmente sostituita dalla narrazione AI.
-          const baseNarrGM = basicActionNarration(p, result.def, narrTargetGM, { failed: narrFailedGM });
-          const techDetailGM = `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabelGM}) — restano ${usedPoolLeftGM}/2 Azioni (${usedPoolLabelGM}).${supportNote}`;
-          const pushedActionGM = await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${baseNarrGM}::TECH::${techDetailGM}`, meta:{avatar: resolveParticipantImage(p)} });
-          const actionEntryIdGM = pushedActionGM && pushedActionGM.entry && pushedActionGM.entry.id;
+          await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabelGM}) — restano ${usedPoolLeftGM}/2 Azioni (${usedPoolLabelGM}).${supportNote}`, meta:{avatar: resolveParticipantImage(p)} });
           // Clash: preseleziona l'Attaccante nel pannello "⚔ Risolvi Attacco" (Inizia/Contesa), stesso
           // comportamento già esistente per 'attack' più sopra -- qui il costo va comunque spesato
           // normalmente (a differenza di 'attack', il cui costo è dedotto più tardi nella risoluzione).
@@ -6664,12 +6408,6 @@
           }
           await persistAndRefresh();
           refreshLiveParts();
-          const actionNarrTimeoutGM = new Promise(resolve=>setTimeout(()=>resolve(null), AI_NARRATION_TIMEOUT_MS));
-          Promise.race([narrateAction(p, result.def, narrTargetGM, { failed: narrFailedGM }), actionNarrTimeoutGM]).then(async (narrLine)=>{
-            if(!narrLine || !actionEntryIdGM) return;
-            await editLogEntry(code, actionEntryIdGM, `${narrLine}::TECH::${techDetailGM}`, combatNarrationThread(combat));
-            refreshLiveParts();
-          });
         };
       });
     };

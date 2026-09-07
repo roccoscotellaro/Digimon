@@ -161,7 +161,29 @@ module.exports = async (req, res) => {
       // righe rimaste, non un cursore fisso sui primi N mai scritti.
       const LOG_FETCH_LIMIT = 2000; // 10x il precedente limite di 200
 
+      // `sinceId` (opzionale): usato dal polling ricorrente lato client per chiedere SOLO i
+      // messaggi scritti dopo l'ultimo che ha già in cache, invece di rileggere e riserializzare
+      // tutta la finestra di LOG_FETCH_LIMIT righe ad ogni giro (ogni 15-20s, per ogni client
+      // connesso). Riduce drasticamente il lavoro di CPU/JSON lato funzione serverless.
+      // Se assente, il comportamento è ESATTAMENTE quello di prima (fetch completo delle ultime
+      // LOG_FETCH_LIMIT righe) — usato per il caricamento iniziale della pagina, dove serve
+      // comunque tutta la cronologia recente.
+      const sinceId = req.query.sinceId ? Number(req.query.sinceId) : null;
+      const DELTA_FETCH_LIMIT = 500; // tetto di sicurezza anche per il delta
+
       if (threadUsername) {
+        if (sinceId) {
+          const { data, error } = await supabase
+            .from('private_logs')
+            .select('*')
+            .eq('campaign_code', code)
+            .eq('thread_username', threadUsername)
+            .gt('id', sinceId)
+            .order('id', { ascending: true })
+            .limit(DELTA_FETCH_LIMIT);
+          if (error) return res.status(500).json({ error: error.message });
+          return res.status(200).json({ log: data || [] });
+        }
         const { data, error } = await supabase
           .from('private_logs')
           .select('*')
@@ -171,6 +193,18 @@ module.exports = async (req, res) => {
           .limit(LOG_FETCH_LIMIT);
         if (error) return res.status(500).json({ error: error.message });
         return res.status(200).json({ log: (data || []).reverse() });
+      }
+
+      if (sinceId) {
+        const { data, error } = await supabase
+          .from('logs')
+          .select('*')
+          .eq('campaign_code', code)
+          .gt('id', sinceId)
+          .order('id', { ascending: true })
+          .limit(DELTA_FETCH_LIMIT);
+        if (error) return res.status(500).json({ error: error.message });
+        return res.status(200).json({ log: data || [] });
       }
 
       const { data, error } = await supabase
