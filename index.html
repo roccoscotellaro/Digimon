@@ -1139,17 +1139,29 @@
   // Hold Action dichiara un trigger condizionale futuro (nessun sistema di eventi nel sito per
   // rilevarlo in automatico), Hold Breath userebbe una risorsa "aria" mai modellata sul sito. Idem
   // per "Altro" (libere per definizione) e Attacca Tamer (rimosso dal menu su richiesta utente).
-  async function applyActionMechanic(actionKey, actor, target, extra){
+  async function applyActionMechanic(code, actionKey, actor, target, extra){
     extra = extra || {};
     // ---- Reinforce: Pool Check di Body (1 Az.) o Attributo più alto (2 Az.) del TAMER -> il
     // Digimon ottiene Wound Box Temporanee pari ai successi (tempWounds, stesso campo già usato
     // dallo Shield/dagli Effetti — vedi getParticipantWounds).
+    // BUGFIX (segnalato dall'utente: "aveva fatto anche Reinforce, ma gli HP temporanei non sono
+    // stati caricati da nessuna parte"): il ramo PC scriveva `member.digimon.tempWounds` solo sulla
+    // copia locale di `cachedRoster` ma non chiamava MAI `saveMember` -- a differenza di ogni altro
+    // punto del codice che tocca `member.digimon.*` (vedi applyDamageToParticipant/applyInstantEffect
+    // Shield, entrambi in questo file). La modifica restava quindi solo in memoria sul client di chi
+    // aveva cliccato Reinforce, finché il primo giro di polling successivo non la sovrascriveva col
+    // valore ancora vecchio arrivato dal server -- esattamente "non caricati da nessuna parte". Ora
+    // `code` è un parametro di questa funzione (già disponibile in entrambi i call site) e il ramo PC
+    // persiste subito la modifica, esattamente come fa il resto del codice.
     if(actionKey==='reinforce1' || actionKey==='reinforce2'){
       const pool = actionKey==='reinforce1' ? ownerAttr(actor,'body') : highestAttribute(actor);
       const roll = rollPool(pool);
       if(actor.isPC){
         const member = cachedRoster.find(m=>m.username===actor.username);
-        if(member) member.digimon.tempWounds = Number(member.digimon.tempWounds||0) + roll.successes;
+        if(member){
+          member.digimon.tempWounds = Number(member.digimon.tempWounds||0) + roll.successes;
+          await saveMember(code, member);
+        }
       } else {
         actor.tempWounds = Number(actor.tempWounds||0) + roll.successes;
       }
@@ -1491,9 +1503,10 @@
       } else if(isSupport){
         esito = `Colpisce ${tDispName} e gli applica un Effetto di stato (non è un attacco a danno diretto — niente numeri di danno).`;
       } else if(defeatInfo){
-        esito = defeatInfo.digitama
-          ? `Colpisce ${tDispName} per ${dealt} danni, riducendolo/a in fin di vita: crolla al suolo, sull'orlo di regredire a Digitama.`
-          : `Colpisce ${tDispName} per ${dealt} danni, sconfiggendolo/a: crolla esausto/a e regredisce a ${defeatInfo.toStage}.`;
+        // La sorte finale (regredire di Stage o tornare Digitama) è ora una scelta del Master fatta
+        // DOPO questo tiro (vedi applyDefeatIfNeeded) — la narrazione resta quindi generica, senza
+        // anticipare un esito non ancora deciso.
+        esito = `Colpisce ${tDispName} per ${dealt} danni, sconfiggendolo/a: crolla esausto/a e cade Sconfitto/a.`;
       } else {
         esito = `Colpisce ${tDispName}, infliggendo ${dealt} danni.`;
       }
@@ -1707,7 +1720,7 @@
         const stancePick = document.getElementById('self-stance-pick');
         const skillPick = document.getElementById('self-skill-pick');
         const extra = { stance: stancePick ? stancePick.value : undefined, skillKey: skillPick ? skillPick.value : undefined };
-        const effect = await applyActionMechanic(sel.value, p, null, extra);
+        const effect = await applyActionMechanic(code, sel.value, p, null, extra);
         supportNote = ' ' + effect.note;
       }
       await saveCombat(code, cachedCombat);
@@ -1956,9 +1969,7 @@
         const rollEntryId = pushed && pushed.entry && pushed.entry.id;
         if(defeatInfo){
           const defeatDispName = target.nameHidden ? hiddenParticipantLabel(target) : defeatInfo.name;
-          const noticeText = defeatInfo.digitama
-            ? `🥚 ${defeatDispName} è Sconfitto ed è già al Default Stage minimo — da regolamento diventerebbe Digitama, gestiscilo a mano.`
-            : `🏳️ ${defeatDispName} è Sconfitto! Retrocede a ${defeatInfo.toStage} con 1 Ferita e viene ignorato per il resto del combattimento (a meno che il giocatore non scelga di rientrare a proprio rischio).`;
+          const noticeText = defeatNoticeText(defeatInfo, defeatDispName);
           await pushCombatNarration(cachedCombat, { who:'Sistema', role:'gm', text: noticeText });
         }
         refreshLiveParts();
@@ -3118,8 +3129,23 @@
     }
     const combatSelf = document.getElementById('combat-self-actions');
     if(combatSelf && session.role==='player'){
-      combatSelf.innerHTML = combatSelfActionHTML(cachedCombat, session.username);
-      bindCombatSelfActions(session.code, session.username);
+      // BUGFIX (segnalato dall'utente: "continua a esserci un refresh troppo rapido quando uno dei
+      // giocatori sta selezionando qualcosa dai menu a tendina"): questo blocco veniva ridisegnato
+      // SENZA ALCUNA guardia a ogni giro di polling (~15s) -- a differenza di #combat-mgr-card
+      // (typingInMgr) e #attacks-card-inner (recentTapInAttacks), che sono protetti da tempo. Un
+      // giocatore con uno dei <select> di questa card (Azione Digimon/Azione Tamer, es. mentre sta
+      // scegliendo Reinforce) aperto o anche solo appena toccato si vedeva l'elenco resettato alla
+      // prima opzione o il menu chiuso a metà scelta. Stessa doppia guardia già in uso altrove:
+      // salta il ridisegno se il focus è su un INPUT/SELECT/TEXTAREA dentro questa card, o se c'è
+      // stato un tap/tocco recente al suo interno (vedi ensureCombatUiTapListener, ora esteso anche
+      // a #combat-self-actions).
+      const activeElSelf = document.activeElement;
+      const typingInSelf = !!(activeElSelf && combatSelf.contains(activeElSelf) && /^(INPUT|SELECT|TEXTAREA)$/.test(activeElSelf.tagName));
+      const recentTapInSelf = (Date.now() - lastCombatUiTapAt) < 2500;
+      if(!typingInSelf && !recentTapInSelf){
+        combatSelf.innerHTML = combatSelfActionHTML(cachedCombat, session.username);
+        bindCombatSelfActions(session.code, session.username);
+      }
     }
     // ===== Mini-log nel tab Battle (mobile): mostra gli ultimi 4 messaggi della chat =====
     if(session.role==='player'){
@@ -4865,8 +4891,20 @@
   // resta a 1 Wound Box, ed è "Sconfitto" (cosciente, ma di norma ignorato per il resto del
   // combattimento salvo scelga di rientrare a proprio rischio — nessuna Azione speciale è
   // definita da regolamento per questo caso, è a discrezione del Master).
-  // Se il Digimon è già al proprio Default Stage (o sotto), il caso limite è il Digitama:
-  // non è automatizzato da nessuna parte nell'app, va gestito a mano dal Master.
+  // Se il Digimon è già al proprio Default Stage (o sotto), il caso limite è il Digitama.
+  //
+  // FEATURE (richiesta utente: "quando viene sconfitto mettilo sì a zero ma lascia scegliere al
+  // master con un tasto se farlo regredire di livello o farlo finire in un uovo. Magari dai come
+  // suggerimento [...] se davvero dovrebbe finire in un uovo"): PRIMA di questa modifica, la
+  // regressione di Stage scattava qui sotto in automatico (nessuna scelta del Master), mentre il
+  // caso "già al Default Stage minimo" era solo un messaggio di testo ("gestiscilo a mano") senza
+  // alcun bottone reale per risolverlo. Ora applyDefeatIfNeeded si limita a marcare
+  // Sconfitto+in-attesa-di-decisione, senza toccare Stage/Ferite: la scelta vera (Regredisci di
+  // Stage / Richiudi nell'Uovo) è nei due bottoni sulla riga del partecipante in "Gestione
+  // Combattimento" (vedi data-defeat-regress/data-defeat-egg più sotto, in renderCombatManager),
+  // con l'esito consigliato da regola 9.12a mostrato solo come suggerimento, mai imposto — "Richiudi
+  // nell'Uovo" riusa la stessa azione non distruttiva già presente nella Scheda Digimon (d-close-egg
+  // in digimon.html: approved=false, Stat/Qualities/Attacchi restano quelli attuali).
   async function applyDefeatIfNeeded(code, participant){
     if(participant.isPC){
       const member = cachedRoster.find(m=>m.username===participant.username);
@@ -4874,20 +4912,32 @@
       const curIdx = stageIndex(member.digimon.stage);
       const defIdx = stageIndex(member.digimon.defaultStage);
       member.digimon.defeated = true;
-      if(curIdx>defIdx){
-        applyStageChange(member.digimon, member.digimon.stage, member.digimon.defaultStage);
-        member.digimon.currentWounds = 1;
-        await saveMember(code, member);
-        return { name: member.digimon.name||participant.name, digitama:false, toStage: member.digimon.defaultStage };
-      } else {
-        await saveMember(code, member);
-        return { name: member.digimon.name||participant.name, digitama:true };
-      }
+      member.digimon.defeatPending = true;
+      await saveMember(code, member);
+      const canRegress = curIdx>defIdx;
+      return { name: member.digimon.name||participant.name, digitama:!canRegress, canRegress, toStage: member.digimon.defaultStage };
     } else {
       if(participant.defeated || (participant.currentWounds||0)>0) return null;
       participant.defeated = true;
       return { name: participant.name, digitama:false, enemy:true };
     }
+  }
+
+  // Frase pronta per un messaggio di sistema STANDALONE in chat (include il nome del Digimon).
+  function defeatNoticeText(defeatInfo, dispName){
+    if(defeatInfo.enemy) return `🏳️ ${dispName} è Sconfitto!`;
+    return defeatInfo.digitama
+      ? `🏳️ ${dispName} è Sconfitto! È già al Default Stage minimo — da regolamento (9.12a) diventerebbe Digitama. Decidi dal pannello "Gestione Combattimento" (🥚 Richiudi nell'Uovo, o 🏳️ Regredisci se preferisci ignorare il suggerimento).`
+      : `🏳️ ${dispName} è Sconfitto! Da regolamento (9.12a) potrebbe regredire a ${defeatInfo.toStage} con 1 Ferita — decidi dal pannello "Gestione Combattimento" se farlo regredire o richiuderlo nell'Uovo.`;
+  }
+  // Stessa informazione ma come clausola da APPENDERE in coda a una riga di log già esistente
+  // (nessun nome ripetuto: il bersaglio è già nominato subito prima in quella riga).
+  function defeatInlineNote(defeatInfo){
+    if(!defeatInfo) return '';
+    if(defeatInfo.enemy) return ' 🏳️ Sconfitto!';
+    return defeatInfo.digitama
+      ? ` 🏳️ Sconfitto! Già al Default Stage minimo — da regolamento diventerebbe Digitama (risolvi da "Gestione Combattimento").`
+      : ` 🏳️ Sconfitto! Può regredire a ${defeatInfo.toStage} o essere richiuso nell'Uovo (risolvi da "Gestione Combattimento").`;
   }
 
   async function applyDamageToParticipant(code, combat, p, amount){
@@ -5009,7 +5059,19 @@
     }
     const dodgeRoll = rollPool(tStats.dodge + targetBonus);
     if(tStats.absoluteEvasion>0) dodgeRoll.successes += tStats.absoluteEvasion;
-    const zoneNote = (zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza${pointBlank?' inclusa Point Blank -3':''}: ${zoneLabel(attacker.zone||'Medio')}→${zoneLabel(target.zone||'Medio')})` : '') + (overpowerUsed ? ' [Overpower: 4 conta come Successo]' : '') + attackerBonusNote + targetBonusNote + batteryNote;
+    // BUGFIX (segnalato dal Master: "un giocatore aveva fatto Guard/dodge ma sembra non lo abbia
+    // calcolato, solo scritto"): il bonus da Direct/Aid/Guard/Bolster al Dodge del bersaglio VIENE
+    // già tirato correttamente qui sopra (dodgeRoll = rollPool(tStats.dodge + targetBonus)) -- il
+    // problema era solo nel LOG TECNICO: targetBonusNote finiva incollata dentro zoneNote, che si
+    // stampa SOLO nella porzione "Accuracy" della riga (mai vicino a "Dodge"), e tutte le righe di
+    // log sotto mostravano ${tStats.dodge}d6 come dimensione del pool di Dodge invece di
+    // ${tStats.dodge + targetBonus}d6 -- quindi chi leggeva il log vedeva la nota "+N Dodge da
+    // Guard" attaccata all'Accuracy dell'ATTACCANTE e un pool di Dodge che sembrava non essere
+    // cresciuto, anche se i dadi extra erano stati davvero tirati. zoneNote ora contiene solo le
+    // note lato Accuracy; targetBonusNote si stampa lato Dodge (vedi dodgeNote sotto).
+    const zoneNote = (zPenalty!==0 ? ` (${zPenalty} Accuracy per distanza${pointBlank?' inclusa Point Blank -3':''}: ${zoneLabel(attacker.zone||'Medio')}→${zoneLabel(target.zone||'Medio')})` : '') + (overpowerUsed ? ' [Overpower: 4 conta come Successo]' : '') + attackerBonusNote + batteryNote;
+    const dodgePool = tStats.dodge + targetBonus;
+    const dodgeNote = targetBonusNote;
     const certainNote = (aStats.certainStrike>0 ? ` +${aStats.certainStrike} [CERTAIN]` : '') + attrAdvNote;
     const atkLabel = atk ? `${atk.name} ${attackTagsPlain(atk)}` : 'Attacco generico';
     // Nomi mascherati per i log tecnici: se il Digimon ha nameHidden, il log NON rivela il nome reale.
@@ -5023,7 +5085,7 @@
       const verb = isHelpful ? 'supporta' : 'colpisce';
       const resultTag = isHelpful ? 'RIUSCITO' : 'COLPITO';
       if(accRoll.successes < dodgeRoll.successes || accRoll.successes===0){
-        logText = `✨ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → ${isHelpful?'NON RIUSCITO':'MANCATO'}, nessun Effetto applicato.`;
+        logText = `✨ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${dodgePool}d6${dodgeNote}[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → ${isHelpful?'NON RIUSCITO':'MANCATO'}, nessun Effetto applicato.`;
       } else if(atk.effectKey){
         const def = effDef;
         // Potenza 1 / Durata 3 di default (stessi valori dello strumento manuale "+Effetto" sulla riga
@@ -5034,19 +5096,19 @@
         const potency = 1 + batteryBonus;
         if(def && def.instant){
           const msg = await applyInstantEffect(code, target, atk.effectKey, potency);
-          logText = `✨ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → ${resultTag}! ${msg}`;
+          logText = `✨ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${dodgePool}d6${dodgeNote}[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → ${resultTag}! ${msg}`;
         } else {
           const duration = 3;
           if(!target.effects) target.effects = [];
           target.effects.push({ key: atk.effectKey, potency, duration });
-          logText = `✨ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → ${resultTag}! ${isHelpful?'Supporta':'Applica'} ${def?def.label:atk.effectKey} (Potenza ${potency}, Durata ${duration} — valori di default, correggibili a mano sulla riga di ${tName}).`;
+          logText = `✨ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${dodgePool}d6${dodgeNote}[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → ${resultTag}! ${isHelpful?'Supporta':'Applica'} ${def?def.label:atk.effectKey} (Potenza ${potency}, Durata ${duration} — valori di default, correggibili a mano sulla riga di ${tName}).`;
         }
       } else {
         logText = `✨ ${aName} usa ${atkLabel} su ${tName}: ${verb}, ma non ha un Effetto collegato da applicare.`;
       }
     } else {
       if(accRoll.successes < dodgeRoll.successes || accRoll.successes===0){
-        logText = `⚔ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO (schivato)`;
+        logText = `⚔ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${dodgePool}d6${dodgeNote}[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → MANCATO (schivato)`;
       } else {
         const excess = accRoll.successes - dodgeRoll.successes;
         let raw = excess + aStats.damage + batteryBonus;
@@ -5065,14 +5127,8 @@
         await applyDamageToParticipant(code, combat, target, dealt);
         const w = getParticipantWounds(target);
         const defeatInfo = await applyDefeatIfNeeded(code, target);
-        let defeatNote = '';
-        if(defeatInfo){
-          const defName = target.nameHidden ? hiddenParticipantLabel(target) : defeatInfo.name;
-          defeatNote = defeatInfo.digitama
-            ? ` 🥚 ${defName} è Sconfitto ed è già al Default Stage minimo: da regolamento diventerebbe Digitama — gestiscilo a mano.`
-            : ` 🏳️ ${defName} è Sconfitto! Retrocede a ${defeatInfo.toStage} con 1 Ferita.`;
-        }
-        logText = `⚔ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${tStats.dodge}d6[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! (${excess}+DMG ${aStats.damage}${batteryBonus>0?`+${batteryBonus} Battery`:''})${combatMonsterNote}-ARM ${tStats.armor} = ${dealt} danno → ${tName} ${w.current}/${w.max} Ferite${defeatNote}`;
+        const defeatNote = defeatInlineNote(defeatInfo);
+        logText = `⚔ ${aName} usa ${atkLabel} su ${tName}: Accuracy ${effAccuracy}d6${zoneNote}[${accRoll.dice.join(',')}]${certainNote}=${accRoll.successes} succ. vs Dodge ${dodgePool}d6${dodgeNote}[${dodgeRoll.dice.join(',')}]=${dodgeRoll.successes} succ. → COLPITO! (${excess}+DMG ${aStats.damage}${batteryBonus>0?`+${batteryBonus} Battery`:''})${combatMonsterNote}-ARM ${tStats.armor} = ${dealt} danno → ${tName} ${w.current}/${w.max} Ferite${defeatNote}`;
         return { logText, dealt, accRoll, dodgeRoll, atkLabel, defeatInfo };
       }
     }
@@ -5109,7 +5165,15 @@
     combatUiTapListenerBound = true;
     const mark = (ev)=>{
       const t = ev.target;
-      if(t && t.closest && (t.closest('#combat-mgr-card') || t.closest('#attacks-card'))) lastCombatUiTapAt = Date.now();
+      // BUGFIX (segnalato dall'utente: "continua a esserci un refresh troppo rapido quando uno dei
+      // giocatori sta selezionando qualcosa dai menu a tendina"): #combat-self-actions (i <select>
+      // Azione Digimon/Azione Tamer del pannello self-service, incluso quello di Reinforce/
+      // Reposition/ecc. -- vedi combatSelfActionHTML) è una card SIBLING di #attacks-card, non un
+      // suo discendente: un tap/tocco lì dentro non veniva mai registrato da questo listener, quindi
+      // lastCombatUiTapAt restava vecchio e il refresh sotto (refreshLiveParts) non aveva alcuna
+      // guardia per quella card -- veniva ridisegnata da zero a ogni giro di polling (~15s) anche
+      // mentre il giocatore aveva un <select> aperto, resettandolo alla prima opzione o chiudendolo.
+      if(t && t.closest && (t.closest('#combat-mgr-card') || t.closest('#attacks-card') || t.closest('#combat-self-actions'))) lastCombatUiTapAt = Date.now();
     };
     document.addEventListener('pointerdown', mark, true);
     document.addEventListener('touchstart', mark, true);
@@ -5496,6 +5560,14 @@
           const isCurrentTurn = !!(combat.order && combat.order.length && combat.order[combat.currentIndex]===p.id);
           const defeated = isParticipantDefeated(p);
           const expanded = isCurrentTurn || combatExpandedIds.has(p.id);
+          // FEATURE (richiesta utente sulla Sconfitta, vedi applyDefeatIfNeeded): finché
+          // member.digimon.defeatPending resta true, la Sconfitta di questo PC non è ancora stata
+          // risolta -- pCanRegress/pDefaultStage servono solo a mostrare il suggerimento da regola
+          // 9.12a accanto ai due bottoni di scelta del Master (vedi defeatResolutionHTML più sotto).
+          const pcMemberForDefeat = p.isPC ? cachedRoster.find(m=>m.username===p.username) : null;
+          const pDefeatPending = !!(pcMemberForDefeat && pcMemberForDefeat.digimon.defeatPending);
+          const pCanRegress = pDefeatPending && stageIndex(pcMemberForDefeat.digimon.stage) > stageIndex(pcMemberForDefeat.digimon.defaultStage);
+          const pDefaultStage = pcMemberForDefeat ? pcMemberForDefeat.digimon.defaultStage : null;
           // Richiesta utente: numerino accanto al nome (vicino alle Ferite) per distinguere Digimon
           // con lo stesso nome — vedi duplicateNameSuffix. Il Master vede sempre i nomi reali.
           const dupSuffix = duplicateNameSuffix(combat, p, true);
@@ -5509,12 +5581,27 @@
                 <button class="btn ghost small" data-part-remove="${p.id}">✕</button>
               </span>
             </div>`;
+          // FEATURE (richiesta utente sulla Sconfitta): sempre visibile, anche a riga non espansa --
+          // è una decisione in sospeso, il Master deve accorgersene subito senza dover espandere.
+          // "Regredisci" compare solo se ha ancora senso (uno Stage sopra il Default esiste
+          // davvero); "Richiudi nell'Uovo" è sempre disponibile (riusa approved=false, non
+          // distruttivo, stessa azione già presente sulla Scheda Digimon). "(consigliato)" segue
+          // solo il suggerimento di regola 9.12a, il Master resta comunque libero di scegliere l'altro.
+          const defeatResolutionHTML = pDefeatPending ? `
+            <div style="margin:6px 0;padding:8px;border:1px solid rgba(255,93,93,0.4);border-radius:6px;background:rgba(255,93,93,0.06);">
+              <div class="muted" style="font-size:11px;margin-bottom:6px;">🏳️ Sconfitto — risolvi la Sconfitta (regola 9.12a: ${pCanRegress?`consigliato regredire a ${escapeHTML(pDefaultStage)}`:'già al Default Stage minimo, consigliato Digitama'}):</div>
+              <div class="row">
+                ${pCanRegress ? `<button class="btn ghost small" data-defeat-regress="${p.id}" style="flex:1;">🏳️ Regredisci a ${escapeHTML(pDefaultStage)} (consigliato)</button>` : ''}
+                <button class="btn ghost small" data-defeat-egg="${p.id}" style="flex:1;">🥚 Richiudi nell'Uovo${pCanRegress?'':' (consigliato)'}</button>
+              </div>
+            </div>` : '';
           if(!expanded){
-            return `<div style="margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--line);">${header}${(p.effects&&p.effects.length)?`<div style="margin-top:4px;">${effectTagsHTML(p)}</div>`:''}</div>`;
+            return `<div style="margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--line);">${header}${defeatResolutionHTML}${(p.effects&&p.effects.length)?`<div style="margin-top:4px;">${effectTagsHTML(p)}</div>`:''}</div>`;
           }
           return `
           <div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line);${isCurrentTurn?'background:rgba(53,232,201,0.06);border-radius:6px;padding:8px;':''}">
             ${header}
+            ${defeatResolutionHTML}
             <!-- Richiesta utente: "manca un modo per danneggiare manualmente i digimon nemici" --
                  funziona su QUALSIASI partecipante (non solo Nemici: utile anche per correggere le
                  Ferite di un Alleato/PC per un Effetto/Trappola/terreno non coperto da un'Azione
@@ -6029,9 +6116,7 @@
         const rollEntryId = pushed && pushed.entry && pushed.entry.id;
         if(defeatInfo){
           const defeatDispName = target.nameHidden ? hiddenParticipantLabel(target) : defeatInfo.name;
-          const noticeText = defeatInfo.digitama
-            ? `🥚 ${defeatDispName} è Sconfitto ed è già al Default Stage minimo — da regolamento diventerebbe Digitama, gestiscilo a mano.`
-            : `🏳️ ${defeatDispName} è Sconfitto! Retrocede a ${defeatInfo.toStage} con 1 Ferita e viene ignorato per il resto del combattimento (a meno che il giocatore non scelga di rientrare a proprio rischio).`;
+          const noticeText = defeatNoticeText(defeatInfo, defeatDispName);
           await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: noticeText });
         }
         await persistAndRefresh();
@@ -6123,7 +6208,7 @@
             if(dealt>0) combatMonsterGain += dealt;
             const w = getParticipantWounds(v);
             const vDefeat = await applyDefeatIfNeeded(code, v);
-            const vDefeatNote = vDefeat ? (vDefeat.digitama ? ` 🥚 Sconfitto — già al Default Stage minimo, diventerebbe Digitama (gestisci a mano).` : ` 🏳️ Sconfitto! Retrocede a ${vDefeat.toStage} con 1 Ferita.`) : '';
+            const vDefeatNote = defeatInlineNote(vDefeat);
             lines.push(`— ${narratorName(v)}: COLPITO! ${dealt} danno (dimezzato da Area) → ${w.current}/${w.max} Ferite${vDefeatNote}`);
           }
         }
@@ -6423,7 +6508,7 @@
             const stancePick = cardEl.querySelector(`[data-stance-pick="${id}"]`);
             const skillPick = cardEl.querySelector(`[data-skill-pick="${id}"]`);
             const extra = { stance: stancePick ? stancePick.value : undefined, skillKey: skillPick ? skillPick.value : undefined };
-            const effect = await applyActionMechanic(sel.value, p, null, extra);
+            const effect = await applyActionMechanic(code, sel.value, p, null, extra);
             supportNote = ' ' + effect.note;
             presetAttacker = !!effect.presetAttacker;
           }
@@ -6520,12 +6605,7 @@
           let note = `${narratorName(p)} ${sign>0?'subisce':'recupera'} ${amount} Ferit${amount===1?'a':'e'} (manuale) — ora ${w.current}/${w.max}.`;
           if(sign>0){
             const defeatInfo = await applyDefeatIfNeeded(code, p);
-            if(defeatInfo){
-              const defName = p.nameHidden ? hiddenParticipantLabel(p) : defeatInfo.name;
-              note += defeatInfo.digitama
-                ? ` 🥚 ${defName} è Sconfitto ed è già al Default Stage minimo: da regolamento diventerebbe Digitama — gestiscilo a mano.`
-                : (defeatInfo.enemy ? ` 🏳️ ${defName} è Sconfitto!` : ` 🏳️ ${defName} è Sconfitto! Retrocede a ${defeatInfo.toStage} con 1 Ferita.`);
-            }
+            note += defeatInlineNote(defeatInfo);
           }
           await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: note, meta:{avatar: resolveParticipantImage(p)} });
           await persistAndRefresh();
@@ -6534,6 +6614,42 @@
     };
     bindManualWound('data-manual-damage', 1);
     bindManualWound('data-manual-heal', -1);
+    // FEATURE (richiesta utente: scelta del Master tra Regredire di Stage o Richiudere nell'Uovo
+    // quando un Digimon PC viene Sconfitto -- vedi applyDefeatIfNeeded/defeatResolutionHTML più
+    // sopra). Entrambi i bottoni cancellano solo defeatPending (member.digimon.defeated resta true:
+    // il partecipante resta "Sconfitto/ignorato" fino a un eventuale rientro a proprio rischio via
+    // data-part-reenter, esattamente come già succedeva prima di questa modifica).
+    cardEl.querySelectorAll('[data-defeat-regress]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-defeat-regress');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p || !p.isPC) return;
+        const member = cachedRoster.find(m=>m.username===p.username);
+        if(!member) return;
+        const fromStage = member.digimon.stage;
+        applyStageChange(member.digimon, member.digimon.stage, member.digimon.defaultStage);
+        member.digimon.currentWounds = 1;
+        member.digimon.defeatPending = false;
+        await saveMember(code, member);
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `🏳️ Il Master risolve la Sconfitta di ${narratorName(p)}: regredisce da ${fromStage} a ${member.digimon.defaultStage} con 1 Ferita.` });
+        await persistAndRefresh();
+      };
+    });
+    cardEl.querySelectorAll('[data-defeat-egg]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-defeat-egg');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p || !p.isPC) return;
+        const member = cachedRoster.find(m=>m.username===p.username);
+        if(!member) return;
+        if(!window.confirm(`Richiudere nell'Uovo il Digimon di ${narratorName(p)}? Il giocatore lo vedrà come Uovo finché non lo riapprovi dalla Scheda Digimon -- Stat/Qualities/Attacchi restano quelli attuali, nulla viene azzerato.`)) return;
+        member.digimon.approved = false;
+        member.digimon.defeatPending = false;
+        await saveMember(code, member);
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `🥚 Il Master risolve la Sconfitta di ${narratorName(p)}: torna Digitama (richiuso nell'Uovo -- riapprovalo dalla Scheda Digimon quando si schiude di nuovo).` });
+        await persistAndRefresh();
+      };
+    });
     cardEl.querySelectorAll('[data-action-refund-attack]').forEach(btn=>{
       btn.onclick = async ()=>{
         const id = btn.getAttribute('data-action-refund-attack');

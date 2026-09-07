@@ -69,11 +69,6 @@
       // in index.html e claude/audit-regolamento-dda2e.md, Addendum 3.
       p.tamerActions = 2;
       p.attackedThisRoundTamer = false;
-      // Reminder di turno ogni 2 ore (richiesta utente): riparte da zero per TUTTI a ogni calcolo/
-      // ricalcolo dell'ordine (inizio combattimento) -- vedi il conteggio vero e proprio in
-      // refreshLiveParts (index.html), e il reset "per il solo partecipante che riceve il turno" in
-      // advanceCombatTurn/jumpToCombatTurn/previousCombatTurn.
-      p.turnReminderCount = 0;
     });
   }
   function getParticipantBattery(p){
@@ -316,12 +311,38 @@
     return logs;
   }
 
+  // BUGFIX (segnalato dall'utente: "Ricorda che se ci sono degli Hp temporanei vanno scalati prima
+  // quelli"): questa funzione è l'UNICO punto del codice che infligge danno bypassando del tutto lo
+  // Shield/Wound Box Temporanee -- veniva usata solo per il danno da tick degli Effetti (Burn, Poison,
+  // Freeze, Ruin, vedi tickEffectsForParticipant sopra) e scriveva direttamente su currentWounds anche
+  // quando member.digimon.tempWounds (o p.tempWounds per i Nemici) era > 0. Ogni altro punto che
+  // infligge danno (applyDamageToParticipant in index.html, usato da Attacco/Clash/Area/Danno manuale)
+  // scala già prima lo Shield -- questa era rimasta l'unica eccezione. Allineata allo stesso pattern:
+  // shield prima, poi il resto su currentWounds. Nessuna chiamata a saveMember/saveCombat qui dentro
+  // (questo file resta "puro", vedi intestazione) -- il chiamante di tickEffectsForParticipant,
+  // applyStartOfTurnEffects in index.html, chiama già await saveMember(code, member) per i PC dopo aver
+  // processato gli Effetti, quindi la mutazione di tempWounds/currentWounds viene persistita lì.
   function applyDamageToParticipantSync(p, amount){
+    let remaining = amount;
     if(p.isPC){
       const member = cachedRoster.find(m=>m.username===p.username);
-      if(member) member.digimon.currentWounds = Math.max(0, member.digimon.currentWounds - amount);
+      if(member){
+        const shield = Number(member.digimon.tempWounds||0);
+        if(shield>0 && remaining>0){
+          const absorbed = Math.min(shield, remaining);
+          member.digimon.tempWounds = shield - absorbed;
+          remaining -= absorbed;
+        }
+        member.digimon.currentWounds = Math.max(0, member.digimon.currentWounds - remaining);
+      }
     } else {
-      p.currentWounds = Math.max(0, (p.currentWounds||0) - amount);
+      const shield = Number(p.tempWounds||0);
+      if(shield>0 && remaining>0){
+        const absorbed = Math.min(shield, remaining);
+        p.tempWounds = shield - absorbed;
+        remaining -= absorbed;
+      }
+      p.currentWounds = Math.max(0, (p.currentWounds||0) - remaining);
     }
   }
 
