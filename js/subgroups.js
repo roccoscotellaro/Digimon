@@ -4,10 +4,10 @@
 // chat" a essere estratto, perché dipendeva per intero da logHTML/attachLogModeration/
 // filterByLocation/locationFilterSelectHTML/subgroupLocationKey/getSubgroups/saveSubgroup/
 // deleteSubgroup/getPrivateLog/pushPrivateLog/correggiItaliano/currentLocationLabel/
-// exportVisibleLogAsText (js/chat-log-engine.js), da speakAsFieldHTML/attachSpeakAsButton/
-// chatAttachHTML/bindChatAttach/mentionButtonHTML/bindMentionButton (js/chat-composer.js), da
-// rememberNpc/loadSavedNpcs (js/npc-registry.js) e da attachDigimojiInput/italianToHiragana
-// (js/digimoji.js) — tutti ormai globali.
+// exportVisibleLogAsText/replySnippetFromEntry/renderReplyBanner (js/chat-log-engine.js), da
+// speakAsFieldHTML/attachSpeakAsButton/chatAttachHTML/bindChatAttach/mentionButtonHTML/
+// bindMentionButton (js/chat-composer.js), da rememberNpc/loadSavedNpcs (js/npc-registry.js) e da
+// attachDigimojiInput/italianToHiragana (js/digimoji.js) — tutti ormai globali.
 //
 // Script classico (non un modulo ES), caricato PRIMA del blocco <script> principale in index.html,
 // DOPO js/chat-log-engine.js (di cui usa le funzioni sopra elencate).
@@ -19,8 +19,22 @@
 // I due punti in index.html che avviano il pannello (nel render iniziale del Master e nel tab
 // "Sottogruppo" della Chat) passano `refreshLiveParts` come argomento — stesso comportamento di
 // prima, solo iniettato dall'esterno invece che agganciato per nome.
+//
+// "Rispondi a un messaggio specifico" (richiesta utente): pendingSubgroupReplyTo + onSubgroupReply
+// sono l'equivalente, per questa chat, di pendingReplyTo/pendingGmReplyTo di index.html e di
+// pendingPrivateReplyTo di js/private-chat.js — vedi la nota di testa di js/chat-log-engine.js.
+// onSubgroupReply è passato come 7° argomento a entrambi i punti che chiamano attachLogModeration
+// su questa chat (qui sotto, e in index.html/refreshLiveParts durante il polling).
 
   let pendingSubgroupImageUrl = null; // immagine allegata in corso di invio nei Sottogruppi di Chat del Master
+  let pendingSubgroupReplyTo = null; // messaggio a cui si sta rispondendo nel Sottogruppo attivo
+
+  function onSubgroupReply(entry){
+    pendingSubgroupReplyTo = replySnippetFromEntry(entry);
+    renderReplyBanner('subgroup-reply-preview', pendingSubgroupReplyTo, ()=>{ pendingSubgroupReplyTo = null; renderReplyBanner('subgroup-reply-preview', null); });
+    const ta = document.getElementById('subgroup-text');
+    if(ta) ta.focus();
+  }
 
   // ===== SOTTOGRUPPI DI CHAT =====
   // Un sottogruppo è un thread privato condiviso tra più giocatori (e il Master).
@@ -61,6 +75,7 @@
           ${locationFilterSelectHTML('subgroup-location-select', log, subKey, masterSubgroupLocationFilter[activeGroup.id])}
           <button class="btn ghost small" id="btn-subgroup-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
         </div>
+        <div id="subgroup-reply-preview"></div>
         <div style="margin-top:10px;">${speakAsFieldHTML('subgroup-speak-as', 'subgroup-speak-as-btn')}</div>
         <div class="row" id="subgroup-enemy-fields" style="display:none;margin-bottom:8px;">
           <input type="text" id="subgroup-enemy-speak-name" placeholder="Nome nemico" style="flex:2;" />
@@ -92,6 +107,9 @@
     cardEl.querySelectorAll('[data-subgroup-select]').forEach(btn=>{
       btn.onclick = ()=>{
         activeSubgroupId = btn.getAttribute('data-subgroup-select');
+        // Cambiare sottogruppo mentre si sta rispondendo a un messaggio di un altro gruppo non
+        // avrebbe senso (il messaggio citato non esiste in quel thread): annulla la risposta.
+        pendingSubgroupReplyTo = null;
         renderSubgroupChatMaster(code, players, onChanged);
       };
     });
@@ -149,6 +167,9 @@
       const label = subLocSelect ? subLocSelect.options[subLocSelect.selectedIndex].textContent.replace('📍 ','') : currentLocationLabel();
       exportVisibleLogAsText(filtered, label);
     };
+    // Se una risposta era già in corso (es. questo render è stato richiamato per un motivo
+    // diverso dal cambio sottogruppo, che invece la annulla sopra), ridisegna il banner.
+    if(activeGroup) renderReplyBanner('subgroup-reply-preview', pendingSubgroupReplyTo, ()=>{ pendingSubgroupReplyTo = null; renderReplyBanner('subgroup-reply-preview', null); });
     const subSpeakAsSel = document.getElementById('subgroup-speak-as');
     const subEnemyFields = document.getElementById('subgroup-enemy-fields');
     const subNpcFields = document.getElementById('subgroup-npc-fields');
@@ -230,6 +251,7 @@
       if(chosenColor) meta.color = chosenColor;
       if(pendingSubgroupImageUrl) meta.image = pendingSubgroupImageUrl;
       if(subDigimojiChkPre && subDigimojiChkPre.checked) meta.digimoji = true;
+      if(pendingSubgroupReplyTo) meta.replyTo = pendingSubgroupReplyTo;
       // Tagga con la posizione EFFETTIVA del sottogruppo (vedi subgroupLocationKey), non quella
       // del gruppo intero — così un sottogruppo separato viene "riconosciuto" nel Settore giusto.
       meta.location = subgroupLocationKey(activeGroup);
@@ -237,12 +259,13 @@
       await pushPrivateLog(code, 'subgroup:'+activeGroup.id, { who, role, text, meta });
       ta.value='';
       pendingSubgroupImageUrl = null;
+      pendingSubgroupReplyTo = null;
       renderSubgroupChatMaster(code, players, onChanged);
     };
 
     const logLive = document.getElementById('subgroup-log-live');
     if(logLive){
-      attachLogModeration(logLive, code, null, false, ()=>'subgroup:'+activeSubgroupId, onChanged);
+      attachLogModeration(logLive, code, null, false, ()=>'subgroup:'+activeSubgroupId, onChanged, onSubgroupReply);
       logLive.scrollTop = logLive.scrollHeight;
     }
     if(activeGroup) attachDigimojiInput('subgroup-text', 'subgroup-digimoji-toggle');

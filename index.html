@@ -581,6 +581,13 @@
   const ACTION_HINT_DEFAULT_TEXT = 'Scorciatoia: scrivi <code>/tira NomeSkill [TN] [major|minor]</code> (es. <code>/tira awareness 15 major</code>) per tirare in chat, opzionalmente usando un Aspect.';
   let pendingActionImageUrl = null;
   let pendingGmImageUrl = null;
+  // "Rispondi a un messaggio specifico": stato del riquadro-anteprima sopra ciascun composer.
+  // pendingReplyTo è condiviso dalle 3 modalità del composer del Giocatore (Generale/Privata/
+  // Sottogruppo usano lo stesso <textarea id="action-text">); pendingGmReplyTo è solo per la
+  // Chat Generale del Master (Privata e Sottogruppo hanno il proprio, vedi js/private-chat.js e
+  // js/subgroups.js). Vedi replySnippetFromEntry/renderReplyBanner in js/chat-log-engine.js.
+  let pendingReplyTo = null;
+  let pendingGmReplyTo = null;
   // missionsModalOpen/missionDraftObjectives spostati in js/missions.js
 
   async function getProgression(code){
@@ -3017,7 +3024,7 @@
         // giocatore del thread, non quella del gruppo intero.
         const privKey = memberLocationKey(cachedRoster.find(m=>m.username===masterPrivateThread));
         privLogLive.innerHTML = logHTML(filterByLocation(plog, masterPrivateLocationFilter[masterPrivateThread], privKey), true);
-        attachLogModeration(privLogLive, session.code, null, true, undefined, refreshLiveParts);
+        attachLogModeration(privLogLive, session.code, null, true, undefined, refreshLiveParts, onPrivateReply);
         if(wasAtBottom) privLogLive.scrollTop = privLogLive.scrollHeight;
         markPrivateThreadRead(session.code, masterPrivateThread, plog);
         refreshLocationSelectOptions(document.getElementById('private-location-select'), plog, privKey, masterPrivateLocationFilter[masterPrivateThread]);
@@ -3034,7 +3041,7 @@
         const activeGroupForKey = (await getSubgroups(session.code)).find(g=>g.id===activeSubgroupId);
         const subKey = subgroupLocationKey(activeGroupForKey);
         subLogLive.innerHTML = logHTML(filterByLocation(plog, masterSubgroupLocationFilter[activeSubgroupId], subKey), true);
-        attachLogModeration(subLogLive, session.code, null, false, ()=>'subgroup:'+activeSubgroupId, refreshLiveParts);
+        attachLogModeration(subLogLive, session.code, null, false, ()=>'subgroup:'+activeSubgroupId, refreshLiveParts, onSubgroupReply);
         if(wasAtBottom) subLogLive.scrollTop = subLogLive.scrollHeight;
         refreshLocationSelectOptions(document.getElementById('subgroup-location-select'), plog, subKey, masterSubgroupLocationFilter[activeSubgroupId]);
       }
@@ -3193,7 +3200,7 @@
       cachedMasterPrivateLog = plog;
       const wasAtBottom = privateLogLiveMaster.scrollHeight - privateLogLiveMaster.scrollTop <= privateLogLiveMaster.clientHeight + 40;
       privateLogLiveMaster.innerHTML = logHTML(plog, true);
-      attachLogModeration(privateLogLiveMaster, session.code, null, true, undefined, refreshLiveParts);
+      attachLogModeration(privateLogLiveMaster, session.code, null, true, undefined, refreshLiveParts, onPrivateReply);
       if(wasAtBottom) privateLogLiveMaster.scrollTop = privateLogLiveMaster.scrollHeight;
     }
     const errBanner = document.getElementById('api-err-banner');
@@ -3283,6 +3290,7 @@
             <div id="player-subgroup-select-wrap" style="display:none;margin-bottom:6px;"></div>
             <div class="muted" id="chat-location-bar" style="font-size:10.5px;margin-bottom:6px;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;"></div>
             <div class="log" id="log-live" style="height:220px;"></div>
+            <div id="action-reply-preview"></div>
             <div class="mobile-send-bar">
               <textarea id="action-text" rows="1" placeholder="Scrivi..." style="margin-top:8px;"></textarea>
               <button class="btn solid" id="btn-send-action">Invia</button>
@@ -3381,10 +3389,13 @@
         // Vedi subgroupLocationKey: tagga con la posizione effettiva del sottogruppo, non quella
         // del gruppo intero, altrimenti un sottogruppo separato non viene mai "riconosciuto".
         subMeta.location = subgroupLocationKey((cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId));
+        if(pendingReplyTo) subMeta.replyTo = pendingReplyTo;
         await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { who: displayName(me), role:'player', text: raw, meta: subMeta });
         advanceGameClock('sub:'+playerActiveSubgroupId, 5); // +5min per messaggio sottogruppo
         ta.value='';
         pendingActionImageUrl = null;
+        pendingReplyTo = null;
+        renderReplyBanner('action-reply-preview', null);
         const ap = document.getElementById('action-img-preview');
         if(ap) ap.innerHTML = '';
         await refreshPlayerLogDisplay(code, me);
@@ -3399,10 +3410,13 @@
         // Vedi memberLocationKey: tagga con la posizione effettiva del giocatore (se separato
         // dal gruppo), non quella del gruppo intero.
         privTextMeta.location = memberLocationKey(me);
+        if(pendingReplyTo) privTextMeta.replyTo = pendingReplyTo;
         await pushPrivateLog(code, session.username, { who: displayName(me), role:'player', text: raw, meta: privTextMeta });
         advanceGameClock('private:'+session.username, 5); // +5min per messaggio privato
         ta.value='';
         pendingActionImageUrl = null;
+        pendingReplyTo = null;
+        renderReplyBanner('action-reply-preview', null);
         const actionPreviewPriv = document.getElementById('action-img-preview');
         if(actionPreviewPriv) actionPreviewPriv.innerHTML = '';
         await refreshPlayerLogDisplay(code, me);
@@ -3418,21 +3432,30 @@
         }
         const rollMeta = rollResult.dice ? { dice: rollResult.dice } : {};
         if(pendingActionImageUrl) rollMeta.image = pendingActionImageUrl;
+        if(pendingReplyTo) rollMeta.replyTo = pendingReplyTo;
         await pushLog(code, { who: displayName(me), role:'roll', text: rollResult.text, meta: Object.keys(rollMeta).length ? rollMeta : null });
       } else {
         const textMeta = {};
         if(pendingActionImageUrl) textMeta.image = pendingActionImageUrl;
+        if(pendingReplyTo) textMeta.replyTo = pendingReplyTo;
         await pushLog(code, { who: displayName(me), role:'player', text: raw, meta: Object.keys(textMeta).length ? textMeta : null });
       }
       advanceGameClock('general', 5); // +5min per messaggio generale
       ta.value='';
       pendingActionImageUrl = null;
+      pendingReplyTo = null;
+      renderReplyBanner('action-reply-preview', null);
       const actionPreview = document.getElementById('action-img-preview');
       if(actionPreview) actionPreview.innerHTML = '';
       refreshLiveParts();
     };
     bindAttacksCard(code, me);
-    attachLogModeration(document.getElementById('log-live'), code, me, undefined, undefined, refreshLiveParts);
+    attachLogModeration(document.getElementById('log-live'), code, me, undefined, undefined, refreshLiveParts, (entry)=>{
+      pendingReplyTo = replySnippetFromEntry(entry);
+      renderReplyBanner('action-reply-preview', pendingReplyTo, ()=>{ pendingReplyTo = null; renderReplyBanner('action-reply-preview', null); });
+      const taReply = document.getElementById('action-text');
+      if(taReply) taReply.focus();
+    });
     bindCombatSelfActions(code, session.username);
     // Frecce ◀/▶ della linea distanze (vedi zoneLineHTML): compaiono anche al Giocatore quando è
     // il suo turno — le leghiamo già al primo render, non solo al primo poll di refreshLiveParts.
@@ -3446,6 +3469,10 @@
         document.querySelectorAll('#player-chat-seg .chat-seg-btn').forEach(b=>b.classList.toggle('active', b.dataset.chatmode===mode));
         const subWrap = document.getElementById('player-subgroup-select-wrap');
         if(subWrap) subWrap.style.display = mode==='subgroup' ? '' : 'none';
+        // Cambiare chat mentre si sta rispondendo a un messaggio di un'altra chat non avrebbe
+        // senso (il messaggio citato non esiste in quel thread): annulla la risposta in corso.
+        pendingReplyTo = null;
+        renderReplyBanner('action-reply-preview', null);
         await refreshPlayerLogDisplay(code, me);
       };
     });
@@ -4284,6 +4311,7 @@
               <button class="btn ghost small" id="btn-master-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
             </div>
             <div class="log" id="log-live">${logHTML(sceneLog(), session.role==='master')}</div>
+            <div id="gm-reply-preview"></div>
             <details class="gm-speak-controls" style="margin-top:8px;">
               <summary>🎭 Parla come... · 🎨 Colore · ✍️ Digimoji</summary>
               <div style="margin-top:8px;">
@@ -4444,7 +4472,12 @@
     renderGMReference();
     renderSectorMap(code, refreshLiveParts);
     renderMountingTN();
-    attachLogModeration(document.getElementById('log-live'), code, undefined, undefined, undefined, refreshLiveParts);
+    attachLogModeration(document.getElementById('log-live'), code, undefined, undefined, undefined, refreshLiveParts, (entry)=>{
+      pendingGmReplyTo = replySnippetFromEntry(entry);
+      renderReplyBanner('gm-reply-preview', pendingGmReplyTo, ()=>{ pendingGmReplyTo = null; renderReplyBanner('gm-reply-preview', null); });
+      const gmTaReply = document.getElementById('gm-text');
+      if(gmTaReply) gmTaReply.focus();
+    });
     bindSceneAudio(cachedScene);
     bindSceneAudioUpload(code);
     bindSceneCombatAudioUpload(code);
@@ -4572,6 +4605,7 @@
       const gmDigimojiChk = document.getElementById('gm-digimoji-toggle');
       if(gmDigimojiChk && gmDigimojiChk.checked) meta.digimoji = true;
       if(pendingGmImageUrl) meta.image = pendingGmImageUrl;
+      if(pendingGmReplyTo) meta.replyTo = pendingGmReplyTo;
       if(role==='npc'){
         // Se è un NPC nuovo, lo salva subito: la prossima apertura del picker "Parla come" lo
         // rilegge da loadSavedNpcs(code), quindi comparirà già pronto senza bisogno di un patch
@@ -4582,6 +4616,8 @@
       advanceGameClock('general', 5); // +5min per messaggio Master in generale
       ta.value='';
       pendingGmImageUrl = null;
+      pendingGmReplyTo = null;
+      renderReplyBanner('gm-reply-preview', null);
       const gmPreview = document.getElementById('gm-img-preview');
       if(gmPreview) gmPreview.innerHTML = '';
       if(gmDigimojiChk) gmDigimojiChk.checked = false;

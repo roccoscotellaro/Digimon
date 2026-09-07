@@ -13,8 +13,6 @@
 // cachedProgression, apiGet/apiPost/apiPut/apiDelete/lastApiError, escapeHTML/escapeAttr/
 // displayName, DIE_FACES/rollPool/rollSkillCheck, SKILL_DEFS/evaluateVsTN/ATTR_ABBR/
 // prodigiousSkillBonus, encName, loadSavedNpcs/rememberNpc, speakAsFieldHTML/attachSpeakAsButton).
-// Espone anche promptAspectChoice(me), usata sia qui (evasione di un tiro richiesto dal Master)
-// sia da openSkillRollPanel in index.html (tiro libero dalla scheda).
 //
 // attachLogModeration/openEditLogModal NON chiamano più refreshLiveParts() direttamente (quella
 // funzione resta nella IIFE di index.html, troppo centrale per diventare globale): al suo posto
@@ -27,6 +25,14 @@
 // stato globale (esattamente come i filtri "Storico per Settore" più sotto): index.html li legge
 // e scrive ancora, direttamente come prima, ma ora la lettura funziona anche da attachLogModeration
 // (che vive fuori dalla IIFE) per decidere in che canale rispondere a un tiro richiesto.
+//
+// "Rispondi a un messaggio specifico" (richiesta utente): replySnippetFromEntry/renderReplyBanner
+// più sotto sono le due funzioni condivise dalle 4 superfici di chat (Generale Player, Generale
+// Master, Privata, Sottogruppo) — ognuna tiene il proprio stato `pendingXReplyTo` (vedi index.html,
+// js/private-chat.js, js/subgroups.js) ma usa queste stesse funzioni per costruire lo snippet
+// citato da salvare in meta.replyTo e per disegnare/rimuovere il banner "↩ Rispondi a..." sopra
+// il proprio composer. Il bottone "↩" che avvia la risposta è su ogni messaggio (vedi logHTML),
+// gestito da un 7° parametro opzionale `onReply` di attachLogModeration.
 
   let playerChatMode = 'public';
 
@@ -305,6 +311,39 @@
     return '';
   }
 
+  // "Rispondi a un messaggio specifico" (vedi nota di testa del file): costruisce lo snippet
+  // {who, text} salvato in meta.replyTo al momento dell'invio, a partire dal messaggio originale
+  // su cui è stato premuto "↩". Rimuove gli eventuali marcatori tecnici (::TECH::/::REQ::/
+  // ::MOVEREQ::/::EVOUNLOCK::, vedi logHTML) tenendo solo la parte visibile del messaggio, e
+  // tronca a 140 caratteri per non far crescere troppo il banner/la citazione in chat.
+  function replySnippetFromEntry(entry){
+    if(!entry) return null;
+    let text = entry.text || '';
+    const markerIdx = text.indexOf('::');
+    if(markerIdx !== -1) text = text.slice(0, markerIdx);
+    text = text.trim();
+    if(text.length > 140) text = text.slice(0, 140).trim() + '…';
+    if(!text) text = (entry.meta && entry.meta.image) ? '📷 immagine' : '(messaggio)';
+    return { who: entry.who, text };
+  }
+
+  // Disegna (o rimuove, se entry è null) il banner "↩ Rispondi a..." sopra il composer indicato
+  // da containerId — un <div> vuoto già presente nel markup delle 4 chat (vedi index.html,
+  // js/private-chat.js, js/subgroups.js). onCancel viene collegato al bottone "✕" del banner.
+  function renderReplyBanner(containerId, entry, onCancel){
+    const el = document.getElementById(containerId);
+    if(!el) return;
+    if(!entry){ el.innerHTML = ''; return; }
+    el.innerHTML = `
+      <div class="reply-banner" style="display:flex;align-items:center;gap:6px;background:var(--panel-2);border-left:3px solid var(--cyan);border-radius:4px;padding:4px 8px;margin-top:8px;font-size:11px;">
+        <span class="muted" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">↩ Rispondi a <b>${escapeHTML(entry.who)}</b>: ${escapeHTML(entry.text)}</span>
+        <button type="button" class="btn ghost small" id="${containerId}-cancel" style="padding:1px 6px;">✕</button>
+      </div>
+    `;
+    const cancelBtn = document.getElementById(`${containerId}-cancel`);
+    if(cancelBtn) cancelBtn.onclick = onCancel;
+  }
+
   function logHTML(log, canModerate){
     if(!log || log.length===0) return '<div class="muted">Il registro è vuoto. Le azioni appariranno qui.</div>';
     return log.map(l=>{
@@ -365,12 +404,17 @@
         ).join('')}</div>`;
         animatedLogIds.add(l.id);
       }
+      // "Rispondi a un messaggio specifico": se questo messaggio è una risposta ad un altro,
+      // mostra sopra il testo una citazione compatta di chi/cosa è stato citato (vedi
+      // replySnippetFromEntry sopra) — solo lettura, nessun link/jump-to per restare semplice.
+      const replyQuoteHTML = (l.meta && l.meta.replyTo) ? `<div class="log-reply-quote" style="border-left:2px solid var(--cyan-dim);padding-left:6px;margin-bottom:4px;font-size:10.5px;opacity:0.82;">↩ <b>${escapeHTML(l.meta.replyTo.who)}</b>: ${escapeHTML(l.meta.replyTo.text)}</div>` : '';
       return `
       <div class="log-entry ${l.role}">
         <div class="flex-between">
           <div>${(()=>{ const __av = resolveLogAvatar(l); return __av ? `<img class="who-avatar" src="${escapeAttr(__av)}" data-avatar-expand="${escapeAttr(__av)}" style="cursor:zoom-in;" onerror="this.style.display='none'" />` : ''; })()}<span class="who mono" ${l.meta && l.meta.color ? `style="color:${escapeAttr(l.meta.color)};"` : ''}>${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span></div>
-          ${canModerate ? `<div><button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;">✎</button><button class="btn ghost small" data-log-del="${l.id}" style="padding:2px 6px;">✕</button></div>` : ''}
+          <div><button class="btn ghost small" data-log-reply="${l.id}" style="padding:2px 6px;" title="Rispondi">↩</button>${canModerate ? `<button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;">✎</button><button class="btn ghost small" data-log-del="${l.id}" style="padding:2px 6px;">✕</button>` : ''}</div>
         </div>
+        ${replyQuoteHTML}
         <div class="txt${l.meta && l.meta.digimoji ? ' digimoji-text' : ''}" ${l.meta && l.meta.digimoji ? `title="${escapeAttr(displayText)}"` : ''}>${formatLogText(displayText)}</div>
         ${l.meta && l.meta.digimoji ? `<div class="muted" style="font-size:10px;margin-top:2px;">(scritto in Digimoji — passa il mouse per leggere in chiaro)</div>` : ''}
         ${l.meta && l.meta.image ? `<img src="${escapeAttr(l.meta.image)}" class="log-image" data-avatar-expand="${escapeAttr(l.meta.image)}" onerror="this.style.display='none'" />` : ''}
@@ -518,62 +562,19 @@
     };
   }
 
-  // promptAspectChoice(me): implementa per intero la 8.01b (Applying Aspects to Skill Checks) nel
-  // punto in cui un tiro Skill viene davvero eseguito — non solo il bonus (+4 Major/+2 Minor, uso
-  // limitato a sessione) ma anche la Negativa (-4/-2, che ricarica l'uso e per il Major dà 1 IP),
-  // dato che il regolamento esplicita che gli Aspect "do not always have to be used to your
-  // benefit". Mostra anche il testo e l'eventuale Origine (majorAspect.desc/minorAspect.desc,
-  // vedi player.html) così chi tira può giudicare se l'Aspect è davvero pertinente alla scena,
-  // invece di vedere solo l'etichetta "Major"/"Minor". Usata sia da attachLogModeration (tiro
-  // risposto in chat a una richiesta del Master) sia da openSkillRollPanel in index.html (tiro
-  // libero dalla scheda) — tenuta qui perché chat-log-engine.js è caricato prima di entrambi.
-  // Ritorna null se il giocatore non ha Aspect impostati, non ha scelto nulla, o annulla; altrimenti
-  // { delta, note, kind } dove kind è 'major-bonus'/'major-penalty'/'minor-bonus'/'minor-penalty'
-  // (usato da openSkillRollPanel per marcare la checkbox corrispondente come già "consumata").
-  function promptAspectChoice(me){
-    const major = me.tamer.majorAspect || {};
-    const minor = me.tamer.minorAspect || {};
-    const majorLeft = Number(major.usesLeft)||0;
-    const minorLeft = Number(minor.usesLeft)||0;
-    if(!major.text && !minor.text) return null;
-    const opts = [];
-    if(major.text){
-      if(majorLeft>0) opts.push({ key:String(opts.length+1), kind:'major-bonus', label:`+4 Major Aspect (${majorLeft} usi rimasti)`,
-        apply:()=>({ delta:4, note:` +4 Major Aspect (${major.text})`, mutate:()=>{ major.usesLeft = majorLeft-1; } }) });
-      opts.push({ key:String(opts.length+1), kind:'major-penalty', label:`−4 Major Aspect (Negativa: ricarica l'uso e dà 1 IP)`,
-        apply:()=>({ delta:-4, note:` -4 Major Aspect (${major.text}) → uso ricaricato, +1 IP`, mutate:()=>{ major.usesLeft = 1; me.tamer.inspirationPoints = (Number(me.tamer.inspirationPoints)||0)+1; } }) });
-    }
-    if(minor.text){
-      if(minorLeft>0) opts.push({ key:String(opts.length+1), kind:'minor-bonus', label:`+2 Minor Aspect (${minorLeft} usi rimasti)`,
-        apply:()=>({ delta:2, note:` +2 Minor Aspect (${minor.text})`, mutate:()=>{ minor.usesLeft = minorLeft-1; } }) });
-      opts.push({ key:String(opts.length+1), kind:'minor-penalty', label:`−2 Minor Aspect (Negativa: ricarica entrambi gli usi)`,
-        apply:()=>({ delta:-2, note:` -2 Minor Aspect (${minor.text}) → usi ricaricati`, mutate:()=>{ minor.usesLeft = 2; } }) });
-    }
-    if(!opts.length) return null;
-    const lines = [];
-    if(major.text) lines.push(`Major: "${major.text}"${major.desc?` — ${major.desc}`:''}`);
-    if(minor.text) lines.push(`Minor: "${minor.text}"${minor.desc?` — ${minor.desc}`:''}`);
-    lines.push('');
-    lines.push('Applicare un Aspect a questo Check? (il bonus/la Negativa vale solo se l\'Aspect è pertinente alla scena)');
-    opts.forEach(o=>lines.push(`${o.key}) ${o.label}`));
-    lines.push('(lascia vuoto per nessuno)');
-    const choice = window.prompt(lines.join('\n'), '');
-    const picked = opts.find(o=>o.key===String(choice||'').trim());
-    if(!picked) return null;
-    const result = picked.apply();
-    result.mutate();
-    return { delta: result.delta, note: result.note, kind: picked.kind };
-  }
-
   // onChanged (opzionale): invocato al posto della vecchia chiamata diretta a refreshLiveParts()
   // dopo edit/delete/tiro-evaso/spostamento-accettato — vedi nota di testa del file. Ereditato
   // anche da openEditLogModal (aperta dal bottone ✎).
-  function attachLogModeration(container, code, me, isPrivate, subgroupThread, onChanged){
+  // onReply (opzionale): invocato quando si preme "↩" su un messaggio (vedi logHTML) — riceve
+  // l'entry originale e sta al chiamante (ogni composer, vedi nota di testa del file) impostare
+  // il proprio stato pendingXReplyTo e disegnare il banner con renderReplyBanner.
+  function attachLogModeration(container, code, me, isPrivate, subgroupThread, onChanged, onReply){
     if(!container || container.dataset.modBound) return;
     container.dataset.modBound = '1';
     container.addEventListener('click', async (e)=>{
       const editBtn = e.target.closest('[data-log-edit]');
       const delBtn = e.target.closest('[data-log-del]');
+      const replyBtn = e.target.closest('[data-log-reply]');
       const fulfillBtn = e.target.closest('[data-fulfill-target]');
       const moveAcceptBtn = e.target.closest('[data-move-accept-sector]');
       const evoQuickBtn = e.target.closest('[data-evo-quick-username]');
@@ -582,6 +583,11 @@
       // momento del click, non lo "congeliamo" quando la funzione viene collegata.
       const thread = subgroupThread ? (typeof subgroupThread==='function'?subgroupThread():subgroupThread) : (isPrivate ? masterPrivateThread : null);
       const sourceLog = subgroupThread ? cachedSubgroupLog : (isPrivate ? cachedMasterPrivateLog : cachedLog);
+      if(replyBtn && onReply){
+        const id = replyBtn.getAttribute('data-log-reply');
+        const entry = sourceLog.find(l=>String(l.id)===String(id));
+        if(entry) onReply(entry);
+      }
       if(editBtn){
         const id = editBtn.getAttribute('data-log-edit');
         const entry = sourceLog.find(l=>String(l.id)===String(id));
@@ -615,11 +621,19 @@
             const { dice, total: baseTotal } = rollSkillCheck(attrVal, skillVal);
             let total = baseTotal;
             let aspectNote = digimonBonus>0 ? ` +${digimonBonus} dal Digimon (Prodigious Skill/Mind Over Matter)` : '';
-            const aspectResult = promptAspectChoice(me);
-            if(aspectResult){
-              total += aspectResult.delta;
-              aspectNote = aspectResult.note;
-              await saveMember(session.code, me);
+            const majorLeft = me.tamer.majorAspect ? (me.tamer.majorAspect.usesLeft||0) : 0;
+            const minorLeft = me.tamer.minorAspect ? (me.tamer.minorAspect.usesLeft||0) : 0;
+            if(majorLeft>0 || minorLeft>0){
+              const choice = window.prompt(`Usare un Aspect? Scrivi "major" (+4, ${majorLeft} usi), "minor" (+2, ${minorLeft} usi), o lascia vuoto per nessuno.`, '');
+              if(choice && choice.trim().toLowerCase().startsWith('major') && majorLeft>0){
+                total += 4; me.tamer.majorAspect.usesLeft -= 1;
+                aspectNote = ` +4 Major Aspect (${me.tamer.majorAspect.text})`;
+                await saveMember(session.code, me);
+              } else if(choice && choice.trim().toLowerCase().startsWith('minor') && minorLeft>0){
+                total += 2; me.tamer.minorAspect.usesLeft -= 1;
+                aspectNote = ` +2 Minor Aspect (${me.tamer.minorAspect.text})`;
+                await saveMember(session.code, me);
+              }
             }
             const verdict = evaluateVsTN(total, tn, dice);
             text = `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict?` vs TN ${tn} → ${verdict.label}`:'') + ' (richiesto dal Master)';

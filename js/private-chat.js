@@ -7,10 +7,11 @@
 // Dipende da masterPrivateThread/masterPrivateLocationFilter/masterSubgroupLocationFilter
 // (già globali, vedi js/chat-log-engine.js) e da logHTML/attachLogModeration/filterByLocation/
 // locationFilterSelectHTML/getPrivateLog/pushPrivateLog/correggiItaliano/currentLocationLabel/
-// exportVisibleLogAsText/memberLocationKey (idem), da speakAsFieldHTML/attachSpeakAsButton/
-// chatAttachHTML/bindChatAttach/mentionButtonHTML/bindMentionButton (js/chat-composer.js), da
-// rememberNpc/loadSavedNpcs (js/npc-registry.js), da attachDigimojiInput/italianToHiragana
-// (js/digimoji.js) e da renderSubgroupChatMaster (js/subgroups.js) — tutti ormai globali.
+// exportVisibleLogAsText/memberLocationKey/replySnippetFromEntry/renderReplyBanner (idem), da
+// speakAsFieldHTML/attachSpeakAsButton/chatAttachHTML/bindChatAttach/mentionButtonHTML/
+// bindMentionButton (js/chat-composer.js), da rememberNpc/loadSavedNpcs (js/npc-registry.js), da
+// attachDigimojiInput/italianToHiragana (js/digimoji.js) e da renderSubgroupChatMaster
+// (js/subgroups.js) — tutti ormai globali.
 //
 // Script classico (non un modulo ES), caricato PRIMA del blocco <script> principale in index.html,
 // DOPO js/chat-log-engine.js e js/subgroups.js (di cui usa le funzioni sopra elencate).
@@ -24,10 +25,24 @@
 // ricorsiva. I punti in index.html che avviano questo modulo passano `refreshLiveParts` e
 // `maybeNotifyNew` come argomenti — stesso comportamento di prima, iniettato dall'esterno invece
 // che agganciato per nome.
+//
+// "Rispondi a un messaggio specifico" (richiesta utente): pendingPrivateReplyTo + onPrivateReply
+// sono l'equivalente, per questa chat, di pendingReplyTo/pendingGmReplyTo di index.html e di
+// pendingSubgroupReplyTo di js/subgroups.js — vedi la nota di testa di js/chat-log-engine.js.
+// onPrivateReply è passato come 7° argomento a entrambi i punti che chiamano attachLogModeration
+// su questa chat (qui sotto, e in index.html/refreshLiveParts durante il polling).
 
   let masterChatMode = 'general';
   let masterPrivateUnread = {}; // { username: true } — thread ha messaggi non ancora visti dal Master
   let pendingPrivateImageUrl = null; // immagine allegata in corso di invio nella Chat Privata del Master
+  let pendingPrivateReplyTo = null; // messaggio a cui si sta rispondendo nella Chat Privata del Master
+
+  function onPrivateReply(entry){
+    pendingPrivateReplyTo = replySnippetFromEntry(entry);
+    renderReplyBanner('private-reply-preview', pendingPrivateReplyTo, ()=>{ pendingPrivateReplyTo = null; renderReplyBanner('private-reply-preview', null); });
+    const ta = document.getElementById('private-text-master');
+    if(ta) ta.focus();
+  }
 
   function privateReadKey(code, thread){ return `dvos_privread_${code}_${thread}`; }
   function markPrivateThreadRead(code, thread, log){
@@ -129,6 +144,7 @@
         ${locationFilterSelectHTML('private-location-select', log, privKey, masterPrivateLocationFilter[masterPrivateThread])}
         <button class="btn ghost small" id="btn-private-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
       </div>
+      <div id="private-reply-preview"></div>
       <div style="margin-top:10px;">${speakAsFieldHTML('private-speak-as', 'private-speak-as-btn')}</div>
       <div class="row" id="private-enemy-fields" style="display:none;margin-bottom:8px;">
         <input type="text" id="private-enemy-speak-name" placeholder="Nome nemico" style="flex:2;" />
@@ -158,6 +174,9 @@
     document.getElementById('mchat-unread-badge') && checkMasterPrivateUnread(code, players, notify);
     document.getElementById('private-thread-select').onchange = (e)=>{
       masterPrivateThread = e.target.value;
+      // Cambiare thread mentre si sta rispondendo a un messaggio di un altro giocatore non
+      // avrebbe senso (il messaggio citato non esiste in quel thread): annulla la risposta.
+      pendingPrivateReplyTo = null;
       renderPrivateChatMaster(code, players, onChanged, notify);
     };
     bindChatAttach('private', code, 'avviso', ()=>pendingPrivateImageUrl, (url)=>{ pendingPrivateImageUrl = url; });
@@ -186,6 +205,9 @@
       const label = privLocSelect ? privLocSelect.options[privLocSelect.selectedIndex].textContent.replace('📍 ','') : currentLocationLabel();
       exportVisibleLogAsText(filtered, label);
     };
+    // Se una risposta era già in corso (es. questo render è stato richiamato per un motivo
+    // diverso dal cambio thread, che invece la annulla sopra), ridisegna il banner.
+    renderReplyBanner('private-reply-preview', pendingPrivateReplyTo, ()=>{ pendingPrivateReplyTo = null; renderReplyBanner('private-reply-preview', null); });
     const privSpeakAsSel = document.getElementById('private-speak-as');
     const privEnemyFields = document.getElementById('private-enemy-fields');
     const privNpcFields = document.getElementById('private-npc-fields');
@@ -264,6 +286,7 @@
       if(pendingPrivateImageUrl) meta.image = pendingPrivateImageUrl;
       const privDigimojiChk = document.getElementById('private-digimoji-toggle');
       if(privDigimojiChk && privDigimojiChk.checked) meta.digimoji = true;
+      if(pendingPrivateReplyTo) meta.replyTo = pendingPrivateReplyTo;
       // Stessa correzione della Chat Privata/Sottogruppi: tagga con la posizione effettiva del
       // giocatore destinatario, non quella del gruppo intero (vedi memberLocationKey sopra).
       meta.location = memberLocationKey(cachedRoster.find(m=>m.username===masterPrivateThread));
@@ -271,13 +294,14 @@
       await pushPrivateLog(code, masterPrivateThread, { who, role, text, meta });
       ta.value='';
       pendingPrivateImageUrl = null;
+      pendingPrivateReplyTo = null;
       // renderPrivateChatMaster ricostruisce anche la select "Parla come" da loadSavedNpcs(code),
       // quindi un NPC nuovo qui compare già pronto per la prossima volta senza bisogno di un patch
       // manuale del DOM come nella chat generale (questa vista si ridisegna comunque per intero).
       renderPrivateChatMaster(code, players, onChanged, notify);
     };
     const logLive = document.getElementById('private-log-live-master');
-    attachLogModeration(logLive, code, null, true, undefined, onChanged);
+    attachLogModeration(logLive, code, null, true, undefined, onChanged, onPrivateReply);
     if(logLive) logLive.scrollTop = logLive.scrollHeight;
     attachDigimojiInput('private-text-master', 'private-digimoji-toggle');
   }
