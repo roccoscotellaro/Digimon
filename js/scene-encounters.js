@@ -8,8 +8,8 @@
 //
 // Dipende da (già globali, caricati prima nella catena degli script): escapeHTML/escapeAttr/
 // displayName (js/util.js), apiPost (js/api.js), bestDigimonImage/findSectorAnywhere/
-// luogoNameById/memberEffectiveSectorId/memberEffectiveLuogoId/pushLog/pushPrivateLog/saveMember
-// (js/chat-log-engine.js), encounterCurrentWounds/encounterMaxWounds/normalizeEncounter
+// luogoNameById/memberEffectiveSectorId/memberEffectiveLuogoId/pushLog/pushPrivateLog/saveMember/
+// getSubgroups (js/chat-log-engine.js), encounterCurrentWounds/encounterMaxWounds/normalizeEncounter
 // (js/encounters.js), miniHpBarHTML/portraitHTML (js/ui-helpers.js), attackTagsHTML/
 // attributeBadgeHTML/attributeIconHTML/splitCategoriesAttribute/DEX_ATTRIBUTES
 // (js/digimon-card.js), openMentionDetail (js/chat-composer.js).
@@ -34,6 +34,16 @@
 // encountersReadonlyHTML/sceneHTML per l'uso lato lettura, encountersEditableHTML/
 // bindEncountersInnerActions/renderEncounterDraftCard/bindEncounterDraftCard per l'assegnazione
 // lato Master.
+//
+// Invito in chat "Vuoi andare qui?" verso un Sottogruppo (richiesta di Rocco): il selettore
+// "destinatario" aveva solo Chat Generale/Privata — un Sottogruppo non poteva essere scelto, quindi
+// l'invito non poteva proprio essere mandato lì. Aggiunta un'opzione per Sottogruppo (letta da
+// cachedSubgroups, popolata al bisogno qui sotto se non ancora caricata) più un secondo selettore
+// "Modalità spostamento", visibile SOLO quando il destinatario è un Sottogruppo (per Generale/
+// Privata non ha senso — vedi discussione con Rocco): 'each' (default, comportamento storico: chi
+// clicca si sposta da solo), 'all' (il primo "sì" sposta tutto il sottogruppo), 'majority' (serve
+// la maggioranza dei membri, poi si spostano tutti anche i non-cliccanti). La logica di voto vera
+// e propria vive in js/chat-log-engine.js (logHTML/attachLogModeration, branch [data-move-vote-id]).
 
 // ---------- data layer (spostate da index.html: thin wrapper su apiPost/apiPut, self-contained) ----------
   async function saveScene(code, scene){ const d = await apiPost('/api/state', { resource:'scene', code, ...scene }); return !!(d && d.ok); }
@@ -44,6 +54,7 @@
   let sectorMapSelectedId = null; // which Settore is expanded in the compact Mappa panel
   let moveOpenUsername = null; // quale giocatore ha aperto il modulo "Sposta" nel pannello unico "Posizione dei giocatori"
   let encounterDraft = null; // pending Digimon (from Dex or homebrew) being reviewed before adding to the scene
+  let sectorMapSubgroupsLoaded = false; // true dopo il primo fetch di cachedSubgroups innescato da renderSectorMap (vedi sotto)
 
 // ---------- helper generici (spostati da index.html) ----------
   function onlineSummary(members){
@@ -132,6 +143,18 @@
   function renderSectorMap(code, onChanged){
     const el = document.getElementById('sector-map-card');
     if(!el) return;
+    // Il pannello "Invito in chat" qui sotto può ora proporre un Sottogruppo come destinatario:
+    // cachedSubgroups (globale, vedi js/chat-log-engine.js) potrebbe però non essere ancora stata
+    // caricata se il Master non ha mai aperto la scheda "👥 Gruppi" della Chat in questa sessione —
+    // la carichiamo una volta qui e ci ri-disegniamo sopra quando arriva, così l'opzione compare
+    // anche senza dover prima passare dal pannello Sottogruppi.
+    if(!sectorMapSubgroupsLoaded){
+      sectorMapSubgroupsLoaded = true;
+      getSubgroups(code).then(groups=>{
+        cachedSubgroups = groups;
+        renderSectorMap(code, onChanged);
+      }).catch(()=>{});
+    }
     const macroScenes = cachedScene.macroScenes || [];
     const activeMacro = macroScenes.find(m=>m.id===cachedScene.currentMacroSceneId) || null;
     const sectors = activeMacro ? (activeMacro.sectors||[]) : [];
@@ -243,6 +266,14 @@
               <select id="invite-target-select">
                 <option value="">📣 Chat Generale (visibile a tutti)</option>
                 ${(cachedRoster||[]).filter(m=>m.role==='player').map(m=>`<option value="${escapeAttr(m.username)}">✉️ Privata: ${escapeHTML(displayName(m))} (invisibile agli altri)</option>`).join('')}
+                ${(cachedSubgroups||[]).map(g=>`<option value="subgroup:${escapeAttr(g.id)}">👥 Sottogruppo: ${escapeHTML(g.name)} (${(g.members||[]).length})</option>`).join('')}
+              </select>
+            </div>
+            <div class="field" id="invite-mode-field" style="display:none;margin-bottom:4px;"><label>🧭 Modalità spostamento (solo Sottogruppo)</label>
+              <select id="invite-mode-select">
+                <option value="each">Ognuno che clicca si sposta da solo (comportamento normale)</option>
+                <option value="all">Basta un "sì" per spostare subito tutto il sottogruppo</option>
+                <option value="majority">Si sposta tutto il sottogruppo quando la maggioranza dice "sì"</option>
               </select>
             </div>
             <button class="btn ghost small" data-sector-chat-invite="${selectedSector.id}" style="width:100%;">💬 Proponi qui il Settore</button>
@@ -252,7 +283,7 @@
                 <span style="font-size:12px;display:flex;align-items:center;gap:5px;">${lg.image?`<img src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" style="width:18px;height:18px;object-fit:cover;border-radius:3px;" />`:''}${escapeHTML(lg.name)} ${cachedScene.currentLuogoId===lg.id?'<span class="tag" style="color:var(--cyan);border-color:var(--cyan);font-size:9px;">📍</span>':''}${lg.description?`<span class="muted" style="font-size:10px;"> — ${escapeHTML(lg.description)}</span>`:''}</span>
                 <span>
                   <button class="btn small" data-luogo-activate="${selectedSector.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">📍</button>
-                  <button class="btn ghost small" data-luogo-chat-invite="${selectedSector.id}:${lg.id}" style="padding:2px 6px;font-size:10px;" title="Manda l'invito 'Vuoi andare qui?' al destinatario scelto sopra (Generale o Privata)">💬</button>
+                  <button class="btn ghost small" data-luogo-chat-invite="${selectedSector.id}:${lg.id}" style="padding:2px 6px;font-size:10px;" title="Manda l'invito 'Vuoi andare qui?' al destinatario e con la modalità scelti sopra">💬</button>
                   <button class="btn ghost small" data-luogo-image="${selectedSector.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">🖼️</button>
                   <button class="btn ghost small" data-luogo-remove="${selectedSector.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">🗑️</button>
                 </span>
@@ -303,6 +334,16 @@
       renderSectorMap(code, onChanged);
       if(onChanged) onChanged();
     };
+    // Selettore "destinatario" dell'invito: il campo "Modalità spostamento" ha senso SOLO quando
+    // il destinatario scelto è un Sottogruppo (per Generale/Privata resta sempre nascosto, e la
+    // modalità effettiva usata da sendMoveInvite in quel caso è sempre 'each').
+    const inviteTargetSel = document.getElementById('invite-target-select');
+    const inviteModeField = document.getElementById('invite-mode-field');
+    if(inviteTargetSel && inviteModeField){
+      const syncInviteModeVisibility = ()=>{ inviteModeField.style.display = inviteTargetSel.value.startsWith('subgroup:') ? 'block' : 'none'; };
+      inviteTargetSel.onchange = syncInviteModeVisibility;
+      syncInviteModeVisibility();
+    }
     // Pannello unico "👥 Posizione dei giocatori": un solo modo per spostare un giocatore (in
     // qualunque Macroscena, senza toccare cachedScene.currentMacroSceneId/currentSectorId/
     // currentLuogoId, quindi senza disturbare cosa vede il resto del gruppo) o farlo rientrare.
@@ -539,13 +580,20 @@
       renderSectorMap(code, onChanged);
       if(onChanged) onChanged();
     };
-    // "Proponi in chat": manda un messaggio con un pulsante "🚶 Sì, andiamo!" — in Generale (tutti)
-    // o in Privata a un solo giocatore, a scelta nel menu "destinatario" qui sopra. Chi lo clicca si
-    // sposta DA SOLO (non tutto il gruppo) a quel Settore/Luogo, bypassando lo spostamento libero/le
-    // connessioni: è il Master stesso a proporlo esplicitamente, quindi vale sempre.
-    async function sendMoveInvite(text){
+    // "Proponi in chat": manda un messaggio con un pulsante "🚶 Sì, andiamo!" — in Generale (tutti),
+    // in Privata a un solo giocatore, o in un Sottogruppo, a scelta nel menu "destinatario" qui
+    // sopra. Per Generale/Privata chi lo clicca si sposta SEMPRE da solo (mode 'each' forzato: non
+    // avrebbe senso far dipendere l'intera Chat Generale da un voto). Per un Sottogruppo, la
+    // "Modalità spostamento" scelta accanto al destinatario decide se ogni click sposta solo chi
+    // clicca, o se serve un primo sì/una maggioranza per spostare tutto il sottogruppo insieme —
+    // vedi js/chat-log-engine.js (logHTML/attachLogModeration) per la logica di voto vera e propria.
+    async function sendMoveInvite(label, sectorId, luogoId){
       const targetEl = document.getElementById('invite-target-select');
       const target = targetEl ? targetEl.value : '';
+      const isSubgroup = target.startsWith('subgroup:');
+      const modeEl = document.getElementById('invite-mode-select');
+      const mode = (isSubgroup && modeEl) ? modeEl.value : 'each';
+      const text = `Vuoi andare a "${label}"?::MOVEREQ::${sectorId}|${luogoId||''}|${mode}`;
       if(target) await pushPrivateLog(code, target, { who:'Master', role:'moverequest', text });
       else await pushLog(code, { who:'Master', role:'moverequest', text });
     }
@@ -561,7 +609,7 @@
         const statusEl = document.getElementById('sector-status');
         if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); return; }
         if(statusEl) statusEl.textContent = '';
-        await sendMoveInvite(`Vuoi andare a "${s.name}"?::MOVEREQ::${sectorId}|`);
+        await sendMoveInvite(s.name, sectorId, '');
         renderSectorMap(code, onChanged);
         if(onChanged) onChanged();
       };
@@ -580,7 +628,7 @@
         const statusEl = document.getElementById('sector-status');
         if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); return; }
         if(statusEl) statusEl.textContent = '';
-        await sendMoveInvite(`Vuoi andare a "${lg.name}"?::MOVEREQ::${sectorId}|${luogoId}`);
+        await sendMoveInvite(lg.name, sectorId, luogoId);
         renderSectorMap(code, onChanged);
         if(onChanged) onChanged();
       };

@@ -33,6 +33,21 @@
 // citato da salvare in meta.replyTo e per disegnare/rimuovere il banner "↩ Rispondi a..." sopra
 // il proprio composer. Il bottone "↩" che avvia la risposta è su ogni messaggio (vedi logHTML),
 // gestito da un 7° parametro opzionale `onReply` di attachLogModeration.
+//
+// Inviti di spostamento "Vuoi andare a...?" (::MOVEREQ::) — MODALITÀ (aggiunte dopo la richiesta
+// di Rocco su Foggia/Koromon Village): il payload è ora `sectorId|luogoId|mode`, dove `mode` manca
+// (undefined → trattato come 'each') su tutti i messaggi vecchi, quindi restano identici a prima.
+//   - 'each' (default, Generale/Privata/Sottogruppo): comportamento storico — chi clicca si sposta
+//     DA SOLO, subito, come sempre (vedi branch [data-move-accept-sector] più sotto).
+//   - 'all'/'majority' (SOLO quando l'invito è mandato a un Sottogruppo, scelto dal Master nel
+//     nuovo selettore "Modalità spostamento" accanto al destinatario in js/scene-encounters.js):
+//     cliccare non sposta subito chi clicca, ma registra un "voto" (meta.moveVotes, un array di
+//     username, fuso via editLogEntry/PUT — vedi log.js, che ora fonde `meta` invece di ignorarlo)
+//     sul messaggio stesso. Appena il numero di voti raggiunge la soglia ('all' = 1, cioè basta il
+//     primo click; 'majority' = più della metà dei membri del sottogruppo AL MOMENTO del click),
+//     TUTTI i membri del sottogruppo vengono spostati in blocco (anche chi non ha ancora cliccato),
+//     il messaggio viene marcato meta.moveResolved così non si ripete al voto successivo, e viene
+//     pubblicato un messaggio di Sistema nello stesso Sottogruppo. Vedi branch [data-move-vote-id].
 
   let playerChatMode = 'public';
 
@@ -170,7 +185,11 @@
   }
 
   // whoUpdate (opzionale) = { who, role, meta } per riassegnare anche il "mittente" di un
-  // messaggio già inviato (vedi openEditLogModal), non solo correggerne il testo.
+  // messaggio già inviato (vedi openEditLogModal), non solo correggerne il testo — o per fondere
+  // altre chiavi in meta (es. moveVotes/moveResolved, vedi attachLogModeration/[data-move-vote-id]
+  // più sotto). log.js FONDE meta con quello già presente sulla riga, non lo sovrascrive: passare
+  // solo le chiavi che si vogliono aggiungere/cambiare è sufficiente, non serve portarsi dietro
+  // tutto l'oggetto meta esistente (anche se non fa danno farlo).
   async function editLogEntry(code, id, text, thread, whoUpdate){
     const body = thread ? { code, thread, id, text } : { code, id, text };
     if(whoUpdate){ Object.assign(body, whoUpdate); }
@@ -373,15 +392,32 @@
           fulfillBtn = `<button class="btn amber small" style="margin-top:6px;" data-fulfill-target="${escapeAttr(parts[0])}" data-fulfill-skill="${escapeAttr(skillKey)}" data-fulfill-tn="${escapeAttr(tn)}">🎲 Tira ora</button>`;
         }
       }
-      // Invito del Master a spostarsi ("Vuoi andare a XXX?"): visibile a chiunque legga questo
-      // messaggio (non a un giocatore specifico come la richiesta di tiro) — ogni giocatore che
-      // clicca si sposta DA SOLO, senza muovere il resto del gruppo.
+      // Invito del Master a spostarsi ("Vuoi andare a XXX?"): payload = sectorId|luogoId|mode
+      // (mode manca sui messaggi vecchi → 'each', vedi nota di testa del file per le 3 modalità).
       if(l.role==='moverequest' && l.text.includes('::MOVEREQ::')){
         const [shown, payload] = l.text.split('::MOVEREQ::');
         displayText = shown;
-        const [moveSectorId, moveLuogoId] = payload.split('|');
+        const payloadParts = payload.split('|');
+        const moveSectorId = payloadParts[0], moveLuogoId = payloadParts[1] || '', moveMode = payloadParts[2] || 'each';
         if(session && session.role==='player' && moveSectorId){
-          fulfillBtn = `<button class="btn small" style="margin-top:6px;background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);" data-move-accept-sector="${escapeAttr(moveSectorId)}" data-move-accept-luogo="${escapeAttr(moveLuogoId||'')}">🚶 Sì, andiamo!</button>`;
+          if(moveMode==='each'){
+            // Comportamento storico: chi clicca si sposta DA SOLO, subito.
+            fulfillBtn = `<button class="btn small" style="margin-top:6px;background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);" data-move-accept-sector="${escapeAttr(moveSectorId)}" data-move-accept-luogo="${escapeAttr(moveLuogoId)}">🚶 Sì, andiamo!</button>`;
+          } else if(l.meta && l.meta.moveResolved){
+            // Soglia già raggiunta in passato (da un altro membro): niente più da cliccare,
+            // solo un esito per chi legge/rilegge il messaggio più tardi.
+            fulfillBtn = `<div class="muted" style="margin-top:6px;font-size:11px;">✅ Il sottogruppo si è già spostato.</div>`;
+          } else {
+            const votes = Array.isArray(l.meta && l.meta.moveVotes) ? l.meta.moveVotes : [];
+            const already = votes.includes(session.username);
+            const countLabel = moveMode==='all'
+              ? `Basta un solo "sì" per spostare tutto il sottogruppo (${votes.length} finora).`
+              : `${votes.length} ${votes.length===1?'persona ha':'persone hanno'} detto sì — serve la maggioranza del sottogruppo.`;
+            fulfillBtn = `<div style="margin-top:6px;">
+              <button class="btn small ${already?'ghost':''}" ${already?'disabled':''} style="${already?'':'background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);'}" data-move-vote-id="${escapeAttr(l.id)}" data-move-vote-sector="${escapeAttr(moveSectorId)}" data-move-vote-luogo="${escapeAttr(moveLuogoId)}" data-move-vote-mode="${escapeAttr(moveMode)}">${already?'✅ Hai accettato':'🚶 Sì, andiamo!'}</button>
+              <div class="muted" style="font-size:10px;margin-top:2px;">${countLabel}</div>
+            </div>`;
+          }
         }
       }
       // Sblocco Evoluzione da parte del Master (js/digimon-card.js, bottone 🔓/🔒): il messaggio
@@ -577,6 +613,7 @@
       const replyBtn = e.target.closest('[data-log-reply]');
       const fulfillBtn = e.target.closest('[data-fulfill-target]');
       const moveAcceptBtn = e.target.closest('[data-move-accept-sector]');
+      const moveVoteBtn = e.target.closest('[data-move-vote-id]');
       const evoQuickBtn = e.target.closest('[data-evo-quick-username]');
       // In chat privata il thread attuale può cambiare da un refresh all'altro (il Master
       // passa da un giocatore all'altro), quindi lo leggiamo dalla variabile globale al
@@ -669,6 +706,7 @@
         // Il Master ha esplicitamente proposto questa destinazione in chat: lo spostamento va a
         // buon fine anche se lo "spostamento libero"/le connessioni non lo permetterebbero — qui
         // non è il giocatore a decidere di muoversi da solo, è un invito diretto del Master.
+        // (Modalità 'each', comportamento storico — vedi nota di testa del file per 'all'/'majority'.)
         const sectorId = moveAcceptBtn.getAttribute('data-move-accept-sector');
         const luogoId = moveAcceptBtn.getAttribute('data-move-accept-luogo') || null;
         if(sectorId){
@@ -690,6 +728,48 @@
             else await pushLog(code, entry);
             if(onChanged) onChanged();
           }
+        }
+      }
+      if(moveVoteBtn && me){
+        // Modalità 'all'/'majority' (vedi nota di testa del file): cliccare NON sposta subito chi
+        // clicca, registra un voto sul messaggio stesso (meta.moveVotes) fondendolo via
+        // editLogEntry/PUT (log.js ora fonde meta invece di ignorarlo). Se il voto fa raggiungere
+        // la soglia, sposta TUTTI i membri del sottogruppo (anche chi non ha cliccato) e marca il
+        // messaggio moveResolved così i click successivi non ripetono lo spostamento.
+        const msgId = moveVoteBtn.getAttribute('data-move-vote-id');
+        const sectorId = moveVoteBtn.getAttribute('data-move-vote-sector');
+        const luogoId = moveVoteBtn.getAttribute('data-move-vote-luogo') || null;
+        const mode = moveVoteBtn.getAttribute('data-move-vote-mode');
+        const entry = sourceLog.find(l=>String(l.id)===String(msgId));
+        if(entry && sectorId && !(entry.meta && entry.meta.moveResolved)){
+          moveVoteBtn.disabled = true;
+          const prevVotes = Array.isArray(entry.meta && entry.meta.moveVotes) ? entry.meta.moveVotes : [];
+          const votes = prevVotes.includes(session.username) ? prevVotes : [...prevVotes, session.username];
+          // Il thread di un Sottogruppo è sempre "subgroup:<id>" (vedi js/subgroups.js) — questo
+          // branch esiste solo per messaggi mandati lì (il Master, in js/scene-encounters.js,
+          // mostra 'all'/'majority' solo quando il destinatario dell'invito è un Sottogruppo).
+          const group = (thread && String(thread).startsWith('subgroup:'))
+            ? (cachedSubgroups||[]).find(g=>g.id===String(thread).slice('subgroup:'.length)) || null
+            : null;
+          const totalMembers = group ? group.members.length : votes.length;
+          const threshold = mode==='all' ? 1 : (Math.floor(totalMembers/2)+1);
+          const reached = !!group && votes.length >= threshold;
+          const newMeta = Object.assign({}, entry.meta||{}, { moveVotes: votes }, reached ? { moveResolved:true } : {});
+          const ok = await editLogEntry(code, msgId, entry.text, thread, { meta: newMeta });
+          if(!ok){ moveVoteBtn.disabled = false; return; }
+          entry.meta = newMeta;
+          if(reached){
+            for(const username of group.members){
+              const member = (cachedRoster||[]).find(m=>m.username===username);
+              if(!member || !member.tamer) continue;
+              member.tamer.currentSectorId = sectorId;
+              member.tamer.currentLuogoId = luogoId;
+              await saveMember(code, member);
+            }
+            const destName = luogoId ? luogoNameById(sectorId, luogoId) : sectorNameById(sectorId);
+            await pushPrivateLog(code, thread, { who:'Sistema', role:'gm', text: `📍 Il sottogruppo si sposta a "${destName||''}" (${votes.length}/${totalMembers} hanno accettato).` });
+          }
+          if(onChanged) onChanged();
         }
       }
       // Bottone "🧬 Evolvi ora!" pulsante (vedi logHTML/::EVOUNLOCK:: sopra): tenta di far evolvere

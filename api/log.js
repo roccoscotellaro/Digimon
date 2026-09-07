@@ -5,8 +5,8 @@
 //   GET    /api/log?code=XXX&thread=Mario           -> log privato di quel thread (tabella private_logs)
 //   POST   { code, username, who, text, ... }        -> scrive sul log pubblico
 //   POST   { code, thread, username, who, text, ... } -> scrive sul log privato
-//   PUT    { code, id, text }                        -> modifica un messaggio del log pubblico
-//   PUT    { code, thread, id, text }                 -> modifica un messaggio del log privato di quel thread
+//   PUT    { code, id, text, meta, who, role }        -> modifica un messaggio del log pubblico
+//   PUT    { code, thread, id, text, meta, who, role } -> modifica un messaggio del log privato di quel thread
 //   DELETE ?code=XXX&id=YYY                           -> elimina un messaggio dal log pubblico
 //   DELETE ?code=XXX&clearAll=1                       -> svuota TUTTO il log pubblico della campagna
 //   DELETE ?code=XXX&thread=Mario&id=YYY              -> elimina un messaggio dal log privato di quel thread
@@ -161,29 +161,7 @@ module.exports = async (req, res) => {
       // righe rimaste, non un cursore fisso sui primi N mai scritti.
       const LOG_FETCH_LIMIT = 2000; // 10x il precedente limite di 200
 
-      // `sinceId` (opzionale): usato dal polling ricorrente lato client per chiedere SOLO i
-      // messaggi scritti dopo l'ultimo che ha già in cache, invece di rileggere e riserializzare
-      // tutta la finestra di LOG_FETCH_LIMIT righe ad ogni giro (ogni 15-20s, per ogni client
-      // connesso). Riduce drasticamente il lavoro di CPU/JSON lato funzione serverless.
-      // Se assente, il comportamento è ESATTAMENTE quello di prima (fetch completo delle ultime
-      // LOG_FETCH_LIMIT righe) — usato per il caricamento iniziale della pagina, dove serve
-      // comunque tutta la cronologia recente.
-      const sinceId = req.query.sinceId ? Number(req.query.sinceId) : null;
-      const DELTA_FETCH_LIMIT = 500; // tetto di sicurezza anche per il delta
-
       if (threadUsername) {
-        if (sinceId) {
-          const { data, error } = await supabase
-            .from('private_logs')
-            .select('*')
-            .eq('campaign_code', code)
-            .eq('thread_username', threadUsername)
-            .gt('id', sinceId)
-            .order('id', { ascending: true })
-            .limit(DELTA_FETCH_LIMIT);
-          if (error) return res.status(500).json({ error: error.message });
-          return res.status(200).json({ log: data || [] });
-        }
         const { data, error } = await supabase
           .from('private_logs')
           .select('*')
@@ -193,18 +171,6 @@ module.exports = async (req, res) => {
           .limit(LOG_FETCH_LIMIT);
         if (error) return res.status(500).json({ error: error.message });
         return res.status(200).json({ log: (data || []).reverse() });
-      }
-
-      if (sinceId) {
-        const { data, error } = await supabase
-          .from('logs')
-          .select('*')
-          .eq('campaign_code', code)
-          .gt('id', sinceId)
-          .order('id', { ascending: true })
-          .limit(DELTA_FETCH_LIMIT);
-        if (error) return res.status(500).json({ error: error.message });
-        return res.status(200).json({ log: data || [] });
       }
 
       const { data, error } = await supabase
@@ -278,26 +244,37 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'PUT') {
-      const { code, thread, id, text } = req.body || {};
+      // Aggiornamento di un messaggio già inviato: `text` sostituisce il testo come sempre, ma
+      // ora accetta anche `who`/`role`/`meta` (opzionali) — servivano già dal client (vedi
+      // editLogEntry/openEditLogModal in js/chat-log-engine.js, whoUpdate) per "Cambia chi ha
+      // parlato" e per il voto di spostamento dei Sottogruppi (meta.moveVotes/moveResolved), ma
+      // finora venivano ignorati silenziosamente qui: la richiesta tornava "ok" senza che nulla
+      // (a parte il testo) fosse davvero salvato. `meta` viene FUSO con quello già presente sulla
+      // riga (non sovrascritto), così un update parziale (es. solo moveVotes) non cancella altre
+      // chiavi già in meta (image, digimoji, location, replyTo, ecc.) — richiede una lettura in
+      // più prima dell'update, accettabile per il volume di traffico di questa app.
+      const { code, thread, id, text, meta, who, role } = req.body || {};
       const campaignCode = cleanCode(code);
-      if (!campaignCode || !id || !text) return res.status(400).json({ error: 'missing code, id or text' });
-
-      if (thread) {
-        const { error } = await supabase
-          .from('private_logs')
-          .update({ text: String(text).slice(0, 8000) })
-          .eq('campaign_code', campaignCode)
-          .eq('thread_username', thread)
-          .eq('id', id);
-        if (error) return res.status(500).json({ error: error.message });
-        return res.status(200).json({ ok: true });
+      if (!campaignCode || !id) return res.status(400).json({ error: 'missing code or id' });
+      if (text === undefined && meta === undefined && who === undefined) {
+        return res.status(400).json({ error: 'missing text, meta or who: nothing to update' });
       }
 
-      const { error } = await supabase
-        .from('logs')
-        .update({ text: String(text).slice(0, 8000) })
-        .eq('campaign_code', campaignCode)
-        .eq('id', id);
+      const table = thread ? 'private_logs' : 'logs';
+      let selectQuery = supabase.from(table).select('meta').eq('campaign_code', campaignCode).eq('id', id);
+      if (thread) selectQuery = selectQuery.eq('thread_username', thread);
+      const { data: existing, error: fetchError } = await selectQuery.maybeSingle();
+      if (fetchError) return res.status(500).json({ error: fetchError.message });
+
+      const patch = {};
+      if (text !== undefined) patch.text = String(text).slice(0, 8000);
+      if (who !== undefined) patch.who = String(who).slice(0, 60);
+      if (role !== undefined) patch.role = role;
+      if (meta !== undefined) patch.meta = Object.assign({}, (existing && existing.meta) || {}, meta);
+
+      let updateQuery = supabase.from(table).update(patch).eq('campaign_code', campaignCode).eq('id', id);
+      if (thread) updateQuery = updateQuery.eq('thread_username', thread);
+      const { error } = await updateQuery;
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true });
     }
