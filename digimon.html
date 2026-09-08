@@ -1035,14 +1035,23 @@
     // Origin Transfer Vercel senza un beneficio percepibile per il giocatore.
     pollTimer = setInterval(async ()=>{
       if(!session) return;
-      // Scheda in background: saltiamo il giro, nessun lavoro sprecato mentre non è visibile.
-      if(document.hidden) return;
-      cachedRoster = await getRoster(session.code);
+      // BUGFIX (segnalato dall'utente: "non salva gli attacchi quando provo ad aggiungerli" +
+      // "sembra refresharsi continuamente non si tiene salvate le modifiche"): questa riga
+      // sovrascriveva SEMPRE `cachedRoster` con una copia fresca dal server, ogni 15s, anche
+      // mentre l'utente aveva la Scheda Digimon aperta in modifica. renderPage() ricalcola
+      // `target` con `cachedRoster.find(...)` a OGNI interazione (es. dopo "+ Aggiungi Mossa",
+      // che salva e poi richiama renderPage()): se il poll vinceva la corsa con un fetch appena
+      // prima o durante quel giro, `target` tornava a essere l'oggetto ancora "vecchio" letto dal
+      // server (senza l'ultima modifica), facendo sparire la mossa appena aggiunta e dando la
+      // sensazione di un refresh continuo che si "mangia" le modifiche non ancora rilette dal
+      // server. Ora, esattamente come già fatto per cachedCombat in index.html, il poll non
+      // rimpiazza cachedRoster mentre isEditingFullForm è vero (form Scheda/Wizard aperti).
+      if(!isEditingFullForm) cachedRoster = await getRoster(session.code);
       checkNoticesForMe();
       if(isEditingFullForm) return;
       if(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
       render();
-    }, 20000);
+    }, 15000);
   }
 
   function render(){
@@ -2650,7 +2659,14 @@
     } else {
       bodyHTML = null;
     }
-    isEditingFullForm = (bodyHTML === null) || !!creationDraft || !!stageBuildDraft;
+    // BUGFIX: prima era vero ogni volta che la Scheda completa era mostrata, ANCHE in sola
+    // lettura (bodyHTML===null copre sia la vista che la modifica) -- coerente con la guardia
+    // già corretta in player.html (`bodyHTML === null && editable`), qui mancava il controllo
+    // di `editable`. L'effetto pratico: chi guardava la Scheda in sola lettura (es. il Master
+    // che sfoglia i Digimon dei giocatori) non vedeva MAI più aggiornamenti dal polling, mentre
+    // ora il flag riflette davvero "sto modificando un form", che è anche ciò che la guardia sul
+    // poll qui sopra usa per decidere quando NON toccare cachedRoster.
+    isEditingFullForm = (bodyHTML === null && editable) || !!creationDraft || !!stageBuildDraft;
 
     // Ogni renderPage() ricostruisce da zero root.innerHTML: senza salvare/ripristinare lo scroll,
     // azioni come "+ Aggiungi Quality" nel wizard fanno tornare la pagina in cima, dando l'impressione

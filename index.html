@@ -972,8 +972,8 @@
     { key:'resist2', label:'Resist (2 Az.)', cost:2, pool:'digimon', desc:'Come sopra, ma riduce la Potenza di 2 (2 Azioni spese).' },
     { key:'direct1', label:'Direct (1 Az. — Charisma)', cost:1, pool:'tamer', desc:'Il Tamer incita un Digimon: aggiunge dadi pari a Charisma al suo prossimo Accuracy/Dodge Pool (-2 se non è il proprio partner). Dura finché non viene usato o il Tamer ripete l\'Azione. Una volta a turno.' },
     { key:'direct2', label:'Direct (2 Az. — Highest Attribute)', cost:2, pool:'tamer', desc:'Come Direct (1 Az.), ma il bonus è pari all\'Attributo più alto del Tamer invece di Charisma.' },
-    { key:'reinforce1', label:'Reinforce (1 Az. — Body)', cost:1, pool:'tamer', desc:'Il Tamer tira un Pool Check di Body: il Digimon ottiene Wound Box Temporanee pari ai successi, fino al prossimo turno del Tamer. Una volta a turno.' },
-    { key:'reinforce2', label:'Reinforce (2 Az. — Highest Attribute)', cost:2, pool:'tamer', desc:'Come Reinforce (1 Az.), ma il Pool Check usa l\'Attributo più alto del Tamer invece di Body.' },
+    { key:'reinforce1', label:'Reinforce (1 Az. — Body)', cost:1, pool:'tamer', reinforceOnce:true, desc:'Il Tamer tira un Pool Check di Body: il Digimon ottiene Wound Box Temporanee pari ai successi, fino al prossimo turno del Tamer. Una volta a turno.' },
+    { key:'reinforce2', label:'Reinforce (2 Az. — Highest Attribute)', cost:2, pool:'tamer', reinforceOnce:true, desc:'Come Reinforce (1 Az.), ma il Pool Check usa l\'Attributo più alto del Tamer invece di Body.' },
     { key:'reposition1', label:'Reposition (1 Az. — Agility)', cost:1, pool:'tamer', desc:'Il Tamer aiuta il Digimon a riposizionarsi sulla linea delle distanze con un Pool Check di Agility.' },
     { key:'reposition2', label:'Reposition (2 Az. — Highest Attribute)', cost:2, pool:'tamer', desc:'Come Reposition (1 Az.), ma il Pool Check usa l\'Attributo più alto del Tamer invece di Agility.' },
     { key:'hold_action', label:'Hold Action (Tamer, 2 Az.)', cost:2, pool:'tamer', desc:'Il Tamer dichiara un trigger specifico e un\'Azione da 1 che il Digimon eseguirà se quel trigger si verifica prima del prossimo turno (con +Intelligence del Tamer al tiro). Se il trigger non si verifica, non succede nulla.' },
@@ -1016,6 +1016,14 @@
     if(def.oncePerRoundTamer && participant.attackedThisRoundTamer){
       return { ok:false, msg:'Il Tamer ha già usato Attacca questo round.' };
     }
+    // Reinforce (9.06b, "Una volta a turno"): a differenza di Attacca (Tamer/Digimon, che hanno
+    // già un flag dedicato sopra), Reinforce non aveva ALCUNA verifica -- un Tamer con abbastanza
+    // Azioni poteva ripeterlo più volte nello stesso turno, sommando PF Temporanei ben oltre
+    // quanto previsto da regolamento. Flag dedicato (non riusa attackedThisRoundTamer, che è
+    // semanticamente legato solo ad Attacca Tamer) resettato a fine turno in applyEndOfTurnEffects.
+    if(def.reinforceOnce && participant.usedReinforceThisTurn){
+      return { ok:false, msg:'Il Tamer ha già usato Reinforce questo turno.' };
+    }
     const current = participant[poolKey]===undefined ? 2 : participant[poolKey];
     if(current < def.cost) return { ok:false, msg: poolKey==='tamerActions' ? 'Azioni del Tamer insufficienti.' : 'Azioni insufficienti.' };
     participant[poolKey] = current - def.cost;
@@ -1028,6 +1036,9 @@
     }
     if(def.oncePerRoundTamer){
       participant.attackedThisRoundTamer = true;
+    }
+    if(def.reinforceOnce){
+      participant.usedReinforceThisTurn = true;
     }
     // Passa turno automatico dopo 5 minuti (richiesta utente, solo per PC -- mai per un Nemico
     // creato dal Master): timbra il momento in cui ENTRAMBI i pool di Azioni (Digimon e Tamer) si
@@ -1156,16 +1167,27 @@
     if(actionKey==='reinforce1' || actionKey==='reinforce2'){
       const pool = actionKey==='reinforce1' ? ownerAttr(actor,'body') : highestAttribute(actor);
       const roll = rollPool(pool);
+      // FIX (segnalato dall'utente: "i pf temporanei si accumulano a ogni Reinforce?"): il
+      // regolamento dice esplicitamente "fino al prossimo turno del Tamer" -- una scadenza che qui
+      // non era mai stata implementata, quindi i PF Temporanei da Reinforce restavano per sempre
+      // (finché non consumati da danno), accumulandosi indefinitamente a ogni uso riuscito. Ora
+      // viene tracciata ANCHE la quota attribuibile a Reinforce, in un campo separato
+      // (reinforceTempWounds) accanto al pool condiviso tempWounds (usato anche da Shield/Effetti,
+      // che restano permanenti come da regolamento e non vanno toccati da questa scadenza) --
+      // applyStartOfTurnEffects usa reinforceTempWounds per far sparire quanto ne resta non appena
+      // inizia il turno successivo di questo stesso Digimon/Tamer (vedi commento lì).
       if(actor.isPC){
         const member = cachedRoster.find(m=>m.username===actor.username);
         if(member){
           member.digimon.tempWounds = Number(member.digimon.tempWounds||0) + roll.successes;
+          member.digimon.reinforceTempWounds = Number(member.digimon.reinforceTempWounds||0) + roll.successes;
           await saveMember(code, member);
         }
       } else {
         actor.tempWounds = Number(actor.tempWounds||0) + roll.successes;
+        actor.reinforceTempWounds = Number(actor.reinforceTempWounds||0) + roll.successes;
       }
-      return { ok:true, note: `Pool Check Reinforce ${pool}d6[${roll.dice.join(',')}]=${roll.successes} succ. → +${roll.successes} Wound Box Temporanee.` };
+      return { ok:true, note: `Pool Check Reinforce ${pool}d6[${roll.dice.join(',')}]=${roll.successes} succ. → +${roll.successes} Wound Box Temporanee (fino al prossimo turno del Tamer).` };
     }
     // ---- Reposition: Pool Check di Agility (1 Az.) o Attributo più alto (2 Az.) del TAMER -> se
     // riesce (≥1 successo, stessa convenzione di Aid), il Digimon ottiene 1 spostamento gratuito
@@ -1256,6 +1278,8 @@
     // Pool separato del Tamer (Indice Regole 9.01) -- vedi commento su ACTION_DEFS/trySpendAction.
     finishing.tamerActions = 2;
     finishing.attackedThisRoundTamer = false;
+    // Reinforce (9.06b, "Una volta a turno") -- vedi flag dedicato in trySpendAction.
+    finishing.usedReinforceThisTurn = false;
     // Vedi trySpendAction: azzera il conto alla rovescia del "Passa turno automatico dopo 5
     // minuti" -- chi lascia il turno riparte con Azioni piene, quindi non è più "esaurito".
     finishing.actionsExhaustedAt = null;
@@ -1290,6 +1314,36 @@
     const tickLogs = await tickEffectsForParticipant(code, combat, starting);
     for(const line of tickLogs){
       await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: line });
+    }
+    // Reinforce (9.06b): i PF Temporanei concessi durano "fino al prossimo turno del Tamer" -- qui
+    // è dove quel turno successivo inizia davvero, quindi è qui che quanto ne resta (non ancora
+    // consumato da un danno subito nel frattempo) sparisce. reinforceTempWounds tiene traccia SOLO
+    // della quota data da Reinforce, cosi da non intaccare PF Temporanei da altre fonti (Shield/
+    // Effetti, permanenti finché non consumati) che coesistessero nello stesso pool tempWounds --
+    // se un danno ha già eroso parte del pool condiviso, scade al massimo quanto ne resta davvero.
+    let reinforceExpiredNote = null;
+    if(starting.isPC){
+      const memberForReinforce = cachedRoster.find(m=>m.username===starting.username);
+      if(memberForReinforce){
+        const reinforceLeft = Number(memberForReinforce.digimon.reinforceTempWounds||0);
+        if(reinforceLeft>0){
+          const expiring = Math.min(reinforceLeft, Number(memberForReinforce.digimon.tempWounds||0));
+          memberForReinforce.digimon.tempWounds = Math.max(0, Number(memberForReinforce.digimon.tempWounds||0) - expiring);
+          memberForReinforce.digimon.reinforceTempWounds = 0;
+          if(expiring>0) reinforceExpiredNote = `${memberForReinforce.digimon.name||displayName(memberForReinforce)} perde ${expiring} Wound Box Temporanee da Reinforce (turno scaduto).`;
+        }
+      }
+    } else {
+      const reinforceLeft = Number(starting.reinforceTempWounds||0);
+      if(reinforceLeft>0){
+        const expiring = Math.min(reinforceLeft, Number(starting.tempWounds||0));
+        starting.tempWounds = Math.max(0, Number(starting.tempWounds||0) - expiring);
+        starting.reinforceTempWounds = 0;
+        if(expiring>0) reinforceExpiredNote = `${starting.name} perde ${expiring} Wound Box Temporanee da Reinforce (turno scaduto).`;
+      }
+    }
+    if(reinforceExpiredNote){
+      await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: reinforceExpiredNote });
     }
     if(starting.isPC){
       const member = cachedRoster.find(m=>m.username===starting.username);
@@ -2806,6 +2860,15 @@
   async function renderChatArea(code, me, opts){
     opts = opts || {};
     if(!session) return;
+    // BUGFIX (segnalato dall'utente: "la risposta ai messaggi da telefono sembra non funzionare
+    // lato giocatori"): vedi lastLogTapAt/ensureCombatUiTapListener più sotto nel file. Le chiamate
+    // dirette (invio messaggio, cambio filtro location, cambio modalità chat) passano sempre
+    // { forceScrollBottom:true } e devono sempre eseguire; il refresh PASSIVO di sfondo
+    // (refreshLiveParts, senza opts) invece salta la ricostruzione di #log-live se c'è stato un
+    // tap/tocco recente al suo interno, per non distruggere il bottone che il giocatore sta
+    // ancora toccando (↩ Rispondi, ✎, ✕, 🎲 Tira ora, voto spostamento, Evolvi ora...). Il prossimo
+    // giro di polling (pochi secondi dopo) ridisegna comunque il log con i dati aggiornati.
+    if(!opts.forceScrollBottom && (Date.now() - lastLogTapAt) < 2500) return;
     let raw, filterVal, thread = null;
     // "Chiave attuale" da usare per il filtro/tag: per Privata/Sottogruppo NON è la posizione
     // del gruppo intero (currentLocationKey), ma quella effettiva di chi partecipa — altrimenti
@@ -3011,7 +3074,9 @@
     if(logLive){
       if(session.role==='player'){
         await renderChatArea(session.code, cachedMe);
-      } else {
+      } else if((Date.now() - lastLogTapAt) >= 2500){
+        // Vedi lastLogTapAt più sotto nel file: stessa guardia anti-race anche qui, per il
+        // Registro del Master (ricostruito direttamente, non passa da renderChatArea).
         const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
         logLive.innerHTML = logHTML(sceneLog(), session && session.role==='master');
         if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
@@ -5159,6 +5224,15 @@
   // recente, saltiamo il ridisegno automatico di quel giro di polling: il tap ha tutto il tempo
   // di completarsi, e i dati si aggiornano comunque al giro successivo.
   let lastCombatUiTapAt = 0;
+  // BUGFIX (segnalato dall'utente: "la risposta ai messaggi da telefono sembra non funzionare lato
+  // giocatori"): stessa classe di bug di lastCombatUiTapAt qui sotto, ma per #log-live (Registro
+  // chat). I bottoni ↩ Rispondi / ✎ / ✕ / 🎲 Tira ora / voto spostamento / Evolvi ora dentro ogni
+  // riga del log (vedi logHTML/attachLogModeration) su mobile restano premuti abbastanza a lungo
+  // tra touchstart e touchend da cadere nella finestra del poll periodico (refreshLiveParts, ogni
+  // ~15s), che ricostruiva SEMPRE da zero l'HTML di #log-live tramite renderChatArea(...) senza
+  // alcuna guardia -- il nodo toccato veniva distrutto e ricreato sotto al dito e il touchend
+  // finiva sull'elemento sbagliato (o su nulla), dando l'impressione che il tap "non funzionasse".
+  let lastLogTapAt = 0;
   let combatUiTapListenerBound = false;
   function ensureCombatUiTapListener(){
     if(combatUiTapListenerBound) return;
@@ -5174,6 +5248,8 @@
       // guardia per quella card -- veniva ridisegnata da zero a ogni giro di polling (~15s) anche
       // mentre il giocatore aveva un <select> aperto, resettandolo alla prima opzione o chiudendolo.
       if(t && t.closest && (t.closest('#combat-mgr-card') || t.closest('#attacks-card') || t.closest('#combat-self-actions'))) lastCombatUiTapAt = Date.now();
+      // Vedi commento su lastLogTapAt più sopra: stessa guardia, per il Registro chat.
+      if(t && t.closest && t.closest('#log-live')) lastLogTapAt = Date.now();
     };
     document.addEventListener('pointerdown', mark, true);
     document.addEventListener('touchstart', mark, true);
