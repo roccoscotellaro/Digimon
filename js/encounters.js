@@ -16,13 +16,26 @@
   // impostato, l'Incontro si vede solo a chi (giocatore o gruppo) si trova in quel Settore (con
   // luogoId nullo = ovunque in quel Settore) o esattamente in quel Luogo (con luogoId impostato).
   // Vedi encounterMatchesLocation in js/scene-encounters.js.
+  //
+  // bossBonusStat/bossBonusAmount (richiesta utente: "vogliamo creare questo automatismo?" per il
+  // flag Boss): tracciano SE e QUANTO bonus è stato dato a una singola Statistica base per essere
+  // stato marcato Boss, così togliere il flag può annullare esattamente lo stesso bonus invece di
+  // lasciare la Statistica gonfiata per sempre. null/0 = nessun bonus applicato (default, e caso
+  // di tutti gli Incontri creati prima di questa funzionalità).
   function normalizeEncounter(e){
     if(typeof e === 'string'){
-      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null, disposition:'enemy', nameHidden:false, sectorId:null, luogoId:null };
+      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, bossBonusStat:null, bossBonusAmount:0, currentWounds:null, disposition:'enemy', nameHidden:false, sectorId:null, luogoId:null };
     }
-    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, currentWounds:null, disposition:'enemy', nameHidden:false, sectorId:null, luogoId:null }, e);
+    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, bossBonusStat:null, bossBonusAmount:0, currentWounds:null, disposition:'enemy', nameHidden:false, sectorId:null, luogoId:null }, e);
   }
   const ENCOUNTER_DISPOSITIONS = { enemy:{label:'Nemico', color:'var(--danger)', icon:'⚔️'}, ally:{label:'Alleato', color:'var(--cyan)', icon:'🤝'}, neutral:{label:'Neutrale', color:'var(--text-mute)', icon:'❔'} };
+
+  // Statistiche base a cui è possibile assegnare il bonus automatico da Boss (vedi
+  // renderEncounterDraftCard/bindEncounterDraftCard e il bottone "👑 Segna Boss" in
+  // js/scene-encounters.js). baseHealth alza le Caselle Ferita tramite encounterMaxWounds qui
+  // sotto (Stage + Health×2, quindi ogni punto qui vale 2 Caselle Ferita), le altre si applicano
+  // 1:1 alla Statistica del partecipante in combattimento.
+  const BOSS_BONUS_STATS = { baseAccuracy:'Accuracy', baseDamage:'Damage', baseDodge:'Dodge', baseArmor:'Armor', baseHealth:'Wound Box (Health)' };
 
   // Caselle Ferita di un Incontro nella Scena, stessa formula usata per i Digimon dei giocatori (Stage + Health×2)
   function encounterMaxWounds(e){

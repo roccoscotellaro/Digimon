@@ -1029,7 +1029,7 @@
         <div class="roster-item" style="padding:6px 8px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;${e.isBoss?'border-color:var(--danger);':''}border-left:3px solid ${disp.color};">
           ${(()=>{ const img = bestDigimonImage(e.dexId, e.name, e.gif || e.image); return img ? `<img src="${escapeAttr(img)}" onerror="this.style.display='none'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0;" />` : ''; })()}
           <div style="flex:1;min-width:140px;">
-            <div><b>${escapeHTML(e.name)}</b> ${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}${attributeIconHTML(dexAttributeFor(e.dexId, e.name), 14)}<button class="tag" data-cycle-disposition="${i}" style="cursor:pointer;color:${disp.color};border-color:${disp.color};background:none;" title="Clicca per cambiare (Nemico/Alleato/Neutrale) — si riflette nell'aggiunta al combattimento">${disp.icon} ${disp.label}</button>${e.isBoss?`<span class="tag" style="color:var(--danger);border-color:var(--danger);">👑 Boss</span>`:''}${e.nameHidden?`<span class="tag" style="color:var(--violet, #b98cf0);border-color:var(--violet, #b98cf0);">🎭 Nome Nascosto</span>`:''}${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>
+            <div><b>${escapeHTML(e.name)}</b> ${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}${attributeIconHTML(dexAttributeFor(e.dexId, e.name), 14)}<button class="tag" data-cycle-disposition="${i}" style="cursor:pointer;color:${disp.color};border-color:${disp.color};background:none;" title="Clicca per cambiare (Nemico/Alleato/Neutrale) — si riflette nell'aggiunta al combattimento">${disp.icon} ${disp.label}</button>${e.isBoss?`<span class="tag" style="color:var(--danger);border-color:var(--danger);" title="${e.bossBonusStat?('Bonus Boss: +'+e.bossBonusAmount+' '+escapeAttr(BOSS_BONUS_STATS[e.bossBonusStat]||e.bossBonusStat)):'Nessun bonus Statistica assegnato'}">👑 Boss${e.bossBonusStat?` (+${e.bossBonusAmount} ${escapeHTML(BOSS_BONUS_STATS[e.bossBonusStat]||e.bossBonusStat)})`:''}</span>`:''}${e.nameHidden?`<span class="tag" style="color:var(--violet, #b98cf0);border-color:var(--violet, #b98cf0);">🎭 Nome Nascosto</span>`:''}${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>
             <div class="muted" style="font-size:11px;">${visible ? '👁️ Visibile ai giocatori' : '🙈 Nascosto — solo il Master lo vede'}${visible ? (e.nameHidden ? ' · 🎭 Presenza visibile, nome e descrizione nascosti ai giocatori' : '') : ''} · ${encounterLocationLabel(e)}</div>
             <div style="margin-top:4px;">
               <select data-enc-location="${i}" style="font-size:10px;padding:2px 4px;max-width:260px;" title="Dove si trova questo Digimon nella Scena — i giocatori lo vedranno in Scena solo quando la loro posizione corrisponde. 'Ovunque' = comportamento di prima, sempre visibile.">
@@ -1106,13 +1106,30 @@
           <div class="field"><label>Armor</label><input type="number" id="draft-arm" value="${d.baseStats.baseArmor||0}" min="0" /></div>
         </div>
         <div class="field"><label>Health</label><input type="number" id="draft-hp" value="${d.baseStats.baseHealth||0}" min="0" /></div>
-        <label style="font-size:11px;display:flex;align-items:center;gap:6px;margin:8px 0;"><input type="checkbox" id="draft-isboss" ${d.isBoss?'checked':''} /> 👑 Boss (bordo rosso nella scena)</label>
+        <label style="font-size:11px;display:flex;align-items:center;gap:6px;margin:8px 0 4px;"><input type="checkbox" id="draft-isboss" ${d.isBoss?'checked':''} /> 👑 Boss (bordo rosso nella scena)</label>
+        <div class="row" id="draft-boss-bonus-wrap" style="display:${d.isBoss?'flex':'none'};margin-bottom:8px;">
+          <div class="field" style="flex:2;"><label>Bonus Boss a</label>
+            <select id="draft-boss-stat">
+              <option value="">— nessuno —</option>
+              ${Object.entries(BOSS_BONUS_STATS).map(([k,v])=>`<option value="${k}" ${d.bossBonusStat===k?'selected':''}>${v}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field" style="flex:1;"><label>Di quanto</label><input type="number" id="draft-boss-bonus" value="${d.bossBonusAmount||2}" min="0" /></div>
+        </div>
         <div class="row" style="margin-top:6px;">
           <button class="btn solid small" id="btn-confirm-encounter" style="flex:2;">✅ Conferma e Aggiungi alla Scena</button>
           <button class="btn ghost small" id="btn-cancel-encounter" style="flex:1;">Annulla</button>
         </div>
       </div>
     `;
+    // Richiesta utente ("vogliamo creare questo automatismo?" sul flag Boss): mostra il
+    // selettore Statistica/Bonus solo quando la spunta Boss è attiva, così chi non vuole dare
+    // nessun bonus non vede campi in più — invariato rispetto a prima se si lascia "— nessuno —".
+    const draftBossChk = document.getElementById('draft-isboss');
+    const draftBossBonusWrap = document.getElementById('draft-boss-bonus-wrap');
+    if(draftBossChk && draftBossBonusWrap){
+      draftBossChk.onchange = ()=>{ draftBossBonusWrap.style.display = draftBossChk.checked ? 'flex' : 'none'; };
+    }
   }
 
   function bindEncounterDraftCard(code, username, onChanged){
@@ -1138,7 +1155,23 @@
         baseArmor: Number(document.getElementById('draft-arm').value)||0,
         baseHealth: Number(document.getElementById('draft-hp').value)||0
       };
-      const finalEncounter = { id: encounterDraft.id, name, dexId: encounterDraft.dexId, stage, categories, image, description, baseStats, attacks: encounterDraft.attacks || [], revealed:false, isBoss, sectorId, luogoId };
+      // Richiesta utente: segnare Boss durante la costruzione chiede a quale Statistica dare il
+      // bonus (invece di un bonus fisso automatico) — applicato qui direttamente alle Stat base
+      // prima di salvare l'Incontro, e tracciato su bossBonusStat/bossBonusAmount così togliere
+      // il flag Boss in seguito (vedi data-toggle-boss più sotto) può annullarlo esattamente.
+      let bossBonusStat = null, bossBonusAmount = 0;
+      if(isBoss){
+        const statSel = document.getElementById('draft-boss-stat');
+        const amountInp = document.getElementById('draft-boss-bonus');
+        const statKey = statSel ? statSel.value : '';
+        const amount = amountInp ? Math.max(0, Number(amountInp.value)||0) : 0;
+        if(statKey && amount>0 && BOSS_BONUS_STATS[statKey]){
+          baseStats[statKey] = Number(baseStats[statKey]||0) + amount;
+          bossBonusStat = statKey;
+          bossBonusAmount = amount;
+        }
+      }
+      const finalEncounter = { id: encounterDraft.id, name, dexId: encounterDraft.dexId, stage, categories, image, description, baseStats, attacks: encounterDraft.attacks || [], revealed:false, isBoss, bossBonusStat, bossBonusAmount, sectorId, luogoId };
       cachedScene.encounters = cachedScene.encounters || [];
       cachedScene.encounters.push(finalEncounter);
       encounterDraft = null;
@@ -1172,11 +1205,11 @@
           description: dexMatch.description || '',
           baseStats: Object.assign({baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, dexMatch.base_stats||{}),
           attacks: buildAttacksFromDexEntry(dexMatch),
-          revealed:false, isBoss:false
+          revealed:false, isBoss:false, bossBonusStat:null, bossBonusAmount:0
         } : {
           id:'enc'+Date.now()+Math.random().toString(36).slice(2,6),
           name, dexId:null, stage:'Rookie', categories:[], image:'', description:'',
-          baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:false, isBoss:false
+          baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:false, isBoss:false, bossBonusStat:null, bossBonusAmount:0
         };
         renderEncounterDraftCard();
         bindEncounterDraftCard(code, username, onChanged);
@@ -1291,6 +1324,36 @@
         const idx = Number(btn.getAttribute('data-toggle-boss'));
         const e = cachedScene.encounters[idx];
         if(!e) return;
+        if(!e.baseStats) e.baseStats = {baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0};
+        if(!e.isBoss){
+          // Attivazione: richiesta utente ("durante la costruzione chiede a cosa dare bonus") —
+          // questo bottone marca Boss anche su un Incontro GIÀ aggiunto alla Scena (non solo in
+          // fase di bozza), quindi la stessa domanda va posta anche qui. window.prompt perché
+          // questo bottone non ha un form proprio attorno (stesso pattern già usato altrove in
+          // questo file, es. URL immagine Settore/Luogo).
+          const keys = Object.keys(BOSS_BONUS_STATS);
+          const menu = keys.map((k,i)=>`${i+1}. ${BOSS_BONUS_STATS[k]}`).join('\n');
+          const choice = window.prompt(`A quale Statistica dare il bonus Boss? Scrivi il numero (lascia vuoto per nessun bonus):\n${menu}`, '');
+          if(choice && choice.trim()){
+            const statKey = keys[Number(choice.trim())-1];
+            if(statKey){
+              const amountRaw = window.prompt(`Di quanto aumentare ${BOSS_BONUS_STATS[statKey]}?`, '2');
+              const amount = Math.max(0, Number(amountRaw)||0);
+              if(amount>0){
+                e.baseStats[statKey] = Number(e.baseStats[statKey]||0) + amount;
+                e.bossBonusStat = statKey;
+                e.bossBonusAmount = amount;
+              }
+            }
+          }
+        } else if(e.bossBonusStat && e.bossBonusAmount){
+          // Disattivazione: annulla ESATTAMENTE il bonus dato all'attivazione, così il flag Boss
+          // resta reversibile invece di lasciare la Statistica gonfiata per sempre anche dopo
+          // averlo tolto.
+          e.baseStats[e.bossBonusStat] = Math.max(0, Number(e.baseStats[e.bossBonusStat]||0) - e.bossBonusAmount);
+          e.bossBonusStat = null;
+          e.bossBonusAmount = 0;
+        }
         e.isBoss = !e.isBoss;
         await saveScene(code, cachedScene);
         live.innerHTML = encountersEditableHTML(cachedScene.encounters);
