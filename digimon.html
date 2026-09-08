@@ -2878,13 +2878,22 @@
       const evoCeilingSel = document.getElementById('d-evo-ceiling');
       if(evoCeilingSel){
         evoCeilingSel.onchange = async ()=>{
-          target.digimon.defaultStage = 'Fresh';
-          target.digimon.defaultRange = Math.max(0, STAGES.indexOf(evoCeilingSel.value) - STAGES.indexOf('Fresh'));
-          // Tiene sincronizzati anche i campi tecnici grezzi nella griglia Stat avanzate, così se il
-          // Master preme poi il bottone "Salva" generale non li sovrascrive con valori vecchi.
-          const rawStageSel = document.getElementById('d-defaultStage');
+          // BUGFIX (segnalato dall'utente: scegliendo qui un nuovo "Stage massimo sbloccato" —
+          // es. Ultimate per un Digimon con Default Stage Rookie — il Default Stage reale veniva
+          // azzerato a "Fresh" e SALVATO così sul server. Il pannello "Controllo Evoluzione" qui
+          // sopra continuava a mostrare il ceiling scelto (Ultimate) perché lo ricalcola da
+          // Default Stage + Default Range, quindi sembrava tutto a posto restando su questa
+          // pagina — ma altrove (es. index.html, dopo un ricarico) il Default Stage tornava
+          // "Fresh" invece di "Rookie". Causa: la riga sotto forzava sempre
+          // `target.digimon.defaultStage = 'Fresh'`, sull'assunto (falso per una scheda già
+          // avviata) che il Default Stage fosse sempre Fresh. Ora il Default Stage NON viene più
+          // toccato da questo controllo: cambia solo il Default Range, calcolato come distanza tra
+          // il Default Stage ATTUALE (qualunque esso sia) e lo Stage scelto come nuovo ceiling.
+          const baseStage = target.digimon.defaultStage || 'Fresh';
+          target.digimon.defaultRange = Math.max(0, STAGES.indexOf(evoCeilingSel.value) - STAGES.indexOf(baseStage));
+          // Tiene sincronizzato anche il campo tecnico grezzo nella griglia Stat avanzate, così se
+          // il Master preme poi il bottone "Salva" generale non lo sovrascrive con un valore vecchio.
           const rawRangeInp = document.getElementById('d-defaultRange');
-          if(rawStageSel) rawStageSel.value = 'Fresh';
           if(rawRangeInp) rawRangeInp.value = target.digimon.defaultRange;
           await saveMember(session.code, target);
           cachedRoster = await getRoster(session.code);
