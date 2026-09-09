@@ -1,17 +1,26 @@
 // js/progression.js
 // Pannello "Progressione Party" del Master: Campaign Level, Variant Rules (Attribute Advantage,
-// Natural Critical Results, Blast/Slide/Dark Evolution), i contatori Milestone/XP/Ispirazione con
-// i bottoni "+1 XP" per motivo, l'assegnazione di una Milestone Narrativa, l'annullamento
-// dell'ultima Milestone concessa per errore (btn-milestone-undo), Break/Rest del party (8.04), e
-// la correzione manuale di Milestone/XP/Ispirazione. Include anche grantMilestoneRewards (unico
-// punto in cui una Milestone viene davvero concessa, sia da soglia XP sia da assegnazione
-// Narrativa: +3 Growth Points/+1 IP/+3 DP Bonus a ogni giocatore, con l'istantanea in
-// prog.lastMilestoneGrant usata da btn-milestone-undo per l'annullamento) e saveProgression
-// (wrapper dati verso /api/state, usato solo da questo cluster -- portato qui insieme al resto
-// invece di lasciarlo nell'IIFE di index.html, stesso schema gia' visto in fase 12 per
-// saveScene/addDexEntry/updateDexEntry in js/scene-encounters.js). getProgression resta invece in
-// index.html: e' usato anche da refreshLiveParts/renderMaster (nucleo di orchestrazione, mai
-// estratto).
+// Natural Critical Results, Blast/Slide/Dark Evolution), i contatori Milestone/XP con i bottoni
+// "+1 XP" per motivo, l'assegnazione di una Milestone Narrativa, l'annullamento dell'ultima
+// Milestone concessa per errore (btn-milestone-undo), Break/Rest del party (8.04), la correzione
+// manuale di Milestone/XP, e un riepilogo di sola lettura dei Punti Ispirazione (IP) di ciascun
+// giocatore. Include anche grantMilestoneRewards (unico punto in cui una Milestone viene davvero
+// concessa, sia da soglia XP sia da assegnazione Narrativa: +3 Growth Points/+1 IP/+3 DP Bonus a
+// ogni giocatore, con l'istantanea in prog.lastMilestoneGrant usata da btn-milestone-undo per
+// l'annullamento) e saveProgression (wrapper dati verso /api/state, usato solo da questo cluster
+// -- portato qui insieme al resto invece di lasciarlo nell'IIFE di index.html, stesso schema gia'
+// visto in fase 12 per saveScene/addDexEntry/updateDexEntry in js/scene-encounters.js).
+// getProgression resta invece in index.html: e' usato anche da refreshLiveParts/renderMaster
+// (nucleo di orchestrazione, mai estratto).
+//
+// Nota regole (2.05 -- Inspiration Points): l'IP e' una risorsa INDIVIDUALE di ogni Tamer (pool
+// personale, cap 2+Willpower), non un pool condiviso dal party -- vedi p.tamer.inspirationPoints
+// (gia' gestito correttamente per-giocatore da grantMilestoneRewards e dalla Scheda Tamer in
+// js/tamer-card.js, coi bottoni +/- IP). Il vecchio campo party-wide cachedProgression.inspiration
+// (mostrato prima come singolo numero "Ispirazione" qui e nella topbar) e' stato rimosso
+// dall'interfaccia perche' ridondante/fuorviante: non veniva mai speso da nessuna parte nel
+// codice, solo mostrato accanto al vero valore per-giocatore. Questo pannello ora mostra invece un
+// riepilogo di sola lettura dell'IP di ciascun giocatore (la modifica resta sulla Scheda Tamer).
 //
 // Dipende da (gia' globali, caricati prima nella catena degli script): apiPost/lastApiError
 // (js/api.js), escapeHTML/escapeAttr (js/util.js), pushLog/saveMember (js/chat-log-engine.js),
@@ -67,7 +76,8 @@
   async function renderProgressionMaster(code, onChanged){
     const cardEl = document.getElementById('progression-card');
     if(!cardEl) return;
-    const prog = cachedProgression || { milestone:0, xp:0, inspiration:0, campaignLevel:'Standard' };
+    const prog = cachedProgression || { milestone:0, xp:0, campaignLevel:'Standard' };
+    const players = (cachedRoster||[]).filter(m=>m.role==='player');
     cardEl.innerHTML = `
       <div class="section-title">Progressione Party</div>
       <div class="field"><label>Campaign Level</label>
@@ -103,11 +113,15 @@
         <input type="checkbox" id="darkevo-toggle" ${prog.darkEvolutionEnabled?'checked':''} />
         <span class="muted">🌑 Dark Evolution</span>
       </label>
-      <div class="grid-stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:10px;">
+      <div class="grid-stats" style="grid-template-columns:repeat(2,1fr);margin-bottom:10px;">
         <div class="stat-box"><div class="v">${prog.milestone}</div><div class="l">Milestone</div></div>
         <div class="stat-box"><div class="v">${prog.xp}/7</div><div class="l">XP</div></div>
-        <div class="stat-box"><div class="v">${prog.inspiration}</div><div class="l">Ispirazione</div></div>
       </div>
+      <div class="muted" style="margin-bottom:4px;">Punti Ispirazione (2.05 — individuali, non di party)</div>
+      <div class="muted" style="margin-bottom:8px;">
+        ${players.length ? players.map(p=>`<span class="mono" style="margin-right:10px;">${escapeHTML(p.username)}: <b style="color:var(--cyan);">${Number(p.tamer.inspirationPoints||0)}</b></span>`).join('') : 'Nessun giocatore nel roster.'}
+      </div>
+      <div class="muted" style="margin-bottom:8px;font-size:11px;">Si modifica dalla Scheda Tamer di ciascun giocatore (bottoni +/-), non da qui.</div>
       <div class="muted" style="margin-bottom:6px;">Aggiungi XP</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
         <button class="btn small" data-xp-add="1" data-xp-label="Sessione senza Combattimento">+1 No-Combat</button>
@@ -128,7 +142,6 @@
       <div class="row">
         <input type="number" id="prog-milestone-manual" value="${prog.milestone}" style="flex:1;" />
         <input type="number" id="prog-xp-manual" value="${prog.xp}" style="flex:1;" />
-        <input type="number" id="prog-insp-manual" value="${prog.inspiration}" style="flex:1;" />
         <button class="btn ghost small" id="btn-prog-manual-save" style="flex:1;">Salva</button>
       </div>
       <div class="muted" id="prog-status" style="margin-top:6px;"></div>
@@ -140,7 +153,6 @@
       while(prog.xp >= 7){
         prog.xp -= 7;
         prog.milestone += 1;
-        prog.inspiration = Number(prog.inspiration||0) + 1;
         hitMilestone = true;
       }
       await saveProgression(code, prog);
@@ -148,7 +160,7 @@
       await pushLog(code, { who:'Sistema', role:'gm', text: `+${amount} XP (${label}). XP: ${prog.xp}/7.` });
       if(hitMilestone){
         await grantMilestoneRewards(code, prog, prog.milestone, 'XP', 7);
-        await pushLog(code, { who:'Sistema', role:'gm', text: `🌟 Milestone ${prog.milestone} raggiunta! Ogni giocatore riceve 3 Growth Points, 1 IP, e il proprio Digimon 3 DP Bonus. Il party guadagna 1 Punto Ispirazione.` });
+        await pushLog(code, { who:'Sistema', role:'gm', text: `🌟 Milestone ${prog.milestone} raggiunta! Ogni giocatore riceve 3 Growth Points, 1 IP, e il proprio Digimon 3 DP Bonus.` });
       }
       renderProgressionMaster(code, onChanged);
       if(onChanged) onChanged();
@@ -205,11 +217,10 @@
     };
     document.getElementById('btn-milestone-narrative').onclick = async ()=>{
       prog.milestone += 1;
-      prog.inspiration = Number(prog.inspiration||0) + 1;
       await saveProgression(code, prog);
       cachedProgression = prog;
       await grantMilestoneRewards(code, prog, prog.milestone, 'Narrativa', 0);
-      await pushLog(code, { who:'Sistema', role:'gm', text: `🌟 Milestone ${prog.milestone} raggiunta (narrativa)! Ogni giocatore riceve 3 Growth Points, 1 IP, e il proprio Digimon 3 DP Bonus. Il party guadagna 1 Punto Ispirazione.` });
+      await pushLog(code, { who:'Sistema', role:'gm', text: `🌟 Milestone ${prog.milestone} raggiunta (narrativa)! Ogni giocatore riceve 3 Growth Points, 1 IP, e il proprio Digimon 3 DP Bonus.` });
       renderProgressionMaster(code, onChanged);
       if(onChanged) onChanged();
     };
@@ -222,7 +233,7 @@
       undoBtn.onclick = async ()=>{
         const grant = prog.lastMilestoneGrant;
         if(!grant) return;
-        if(!window.confirm(`Annullare la Milestone ${grant.milestone} (${grant.reason})? Toglierà 3 Growth Points, 1 IP e 3 DP Bonus a ogni giocatore che l'aveva ricevuta, e riporterà indietro Milestone/Ispirazione di party${grant.xpConsumed?` (e ${grant.xpConsumed} XP)`:''}. Se un giocatore ha già SPESO quei Growth Points/DP, non è possibile recuperarli indietro automaticamente — resterà a 0 invece che in negativo, da sistemare a mano.`)) return;
+        if(!window.confirm(`Annullare la Milestone ${grant.milestone} (${grant.reason})? Toglierà 3 Growth Points, 1 IP e 3 DP Bonus a ogni giocatore che l'aveva ricevuta, e riporterà indietro la Milestone${grant.xpConsumed?` (e ${grant.xpConsumed} XP)`:''}. Se un giocatore ha già SPESO quei Growth Points/DP/IP, non è possibile recuperarli indietro automaticamente — resterà a 0 invece che in negativo, da sistemare a mano.`)) return;
         for(const username of (grant.playerUsernames||[])){
           const p = cachedRoster.find(m=>m.role==='player' && m.username===username);
           if(!p) continue; // giocatore non più nel roster: nulla da annullare per lui
@@ -236,12 +247,11 @@
           await saveMember(code, p);
         }
         prog.milestone = Math.max(0, Number(prog.milestone||0) - 1);
-        prog.inspiration = Math.max(0, Number(prog.inspiration||0) - 1);
         if(grant.xpConsumed) prog.xp = Number(prog.xp||0) + grant.xpConsumed;
         prog.lastMilestoneGrant = null;
         await saveProgression(code, prog);
         cachedProgression = prog;
-        await pushLog(code, { who:'Sistema', role:'gm', text: `↩️ Milestone ${grant.milestone} annullata (era stata consegnata per: ${grant.reason}). Growth Points/IP/DP Bonus tolti a ogni giocatore, Milestone/Ispirazione di party riportate indietro${grant.xpConsumed?`, ${grant.xpConsumed} XP restituiti al pool`:''}.` });
+        await pushLog(code, { who:'Sistema', role:'gm', text: `↩️ Milestone ${grant.milestone} annullata (era stata consegnata per: ${grant.reason}). Growth Points/IP/DP Bonus tolti a ogni giocatore, Milestone riportata indietro${grant.xpConsumed?`, ${grant.xpConsumed} XP restituiti al pool`:''}.` });
         renderProgressionMaster(code, onChanged);
         if(onChanged) onChanged();
       };
@@ -278,7 +288,6 @@
     document.getElementById('btn-prog-manual-save').onclick = async ()=>{
       prog.milestone = Number(document.getElementById('prog-milestone-manual').value)||0;
       prog.xp = Number(document.getElementById('prog-xp-manual').value)||0;
-      prog.inspiration = Number(document.getElementById('prog-insp-manual').value)||0;
       const ok = await saveProgression(code, prog);
       cachedProgression = prog;
       const st = document.getElementById('prog-status');
