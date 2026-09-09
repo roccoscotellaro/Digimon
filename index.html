@@ -530,13 +530,17 @@
 <script src="js/dex-admin.js"></script>
 <script src="js/ui-nav.js"></script>
 <script>
-// sidebarTab (quale scheda del pannello laterale del Player è attiva: Scheda/Inventario/Bug)
-// dichiarata FUORI dalla IIFE sotto, come session/cachedXxx in js/store.js: usata anche da
-// renderSidebar in js/tamer-card.js (Fase 23) -- se restava dentro la IIFE, quella funzione
-// esterna non poteva vederla e lanciava "sidebarTab is not defined" ad ogni renderPlayer(),
-// interrompendo lì tutto il resto della funzione (inclusa initMobileNav più sotto: da qui il
-// sintomo "barra di navigazione mobile non risponde più" per i giocatori).
+// sidebarTab/editingTamer/editingScene dichiarate FUORI dalla IIFE sotto, come session/cachedXxx
+// in js/store.js: sono flag di stato UI locale che funzioni ESTERNE (in js/tamer-card.js e
+// probabilmente js/scene-encounters.js) leggono/scrivono -- se restano dentro la IIFE, quelle
+// funzioni non le vedono e lanciano "X is not defined" al primo utilizzo, interrompendo lì tutta
+// la funzione chiamante (inclusa initMobileNav più sotto in renderPlayer/renderMaster: da qui il
+// sintomo "barra di navigazione mobile non risponde più"). sidebarTab e editingTamer erano
+// entrambe la causa confermata di due crash successivi di renderPlayer per i giocatori (Fase 23);
+// editingScene è stata promossa qui per prevenzione, stesso pattern, non ancora confermata rotta.
 let sidebarTab = 'scheda';
+let editingTamer = false;
+let editingScene = false;
 (function(){
   const root = document.getElementById('root-app');
   let pollTimer = null;
@@ -552,9 +556,8 @@ let sidebarTab = 'scheda';
   const SESSION_KEY = 'digivice_session_v1';
   // EGG_IMAGE_URL spostata in js/ui-helpers.js
 
-  let editingTamer = false;
+  // editingTamer/editingScene dichiarate sopra, fuori da questa IIFE (vedi commento lì).
   // editingDigimon spostato in js/digimon-card.js
-  let editingScene = false;
   // sidebarTab dichiarata sopra, fuori da questa IIFE (vedi commento lì).
   // Tracciamento "ultimo messaggio già notificato" per le notifiche desktop — SEPARATO dal
   // tracciamento "letto/non letto" (che usa localStorage e persiste tra sessioni): qui basta la
