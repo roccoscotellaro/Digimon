@@ -1262,6 +1262,9 @@
         <div class="field"><label>Default Stage</label>
           <select id="d-defaultStage">${STAGES.map(s=>`<option value="${s}" ${d.defaultStage===s?'selected':''}>${s}</option>`).join('')}</select>
         </div>
+        <div class="field"><label>Attributo <span id="d-attribute-icon">${attributeIconHTML(d.attribute, 16)}</span></label>
+          <select id="d-attribute">${Object.keys(ATTRIBUTE_ICON_URL).map(a=>`<option value="${a}" ${(d.attribute||'Free')===a?'selected':''}>${a}</option>`).join('')}</select>
+        </div>
         <div class="field"><label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="d-hybridMode" ${d.hybridMode?'checked':''} style="width:auto;" /> Hybrid Mode</label></div>
       </div>
     </div>`;
@@ -2905,6 +2908,13 @@
     if(target && editable && bodyHTML===null){
       bindImageUpload(target);
       bindListEditors(target);
+      const attrSelLive = document.getElementById('d-attribute');
+      if(attrSelLive){
+        attrSelLive.onchange = ()=>{
+          const iconEl = document.getElementById('d-attribute-icon');
+          if(iconEl) iconEl.innerHTML = attributeIconHTML(attrSelLive.value, 16);
+        };
+      }
       document.getElementById('d-save').onclick = async ()=>{
         // Lo Stage va letto PRIMA di clampare le Stat: il tetto minimo/massimo dipende dallo Stage
         // (es. Rookie min 2, Champion min 3...) e potrebbe essere appena stato cambiato dal menu qui sotto.
@@ -2957,6 +2967,8 @@
         target.digimon.evolutionPoints = Number(document.getElementById('d-evolutionPoints').value)||0;
         target.digimon.forcedEvoRoundsLeft = Number(document.getElementById('d-forcedEvoRoundsLeft').value)||0;
         target.digimon.defaultStage = document.getElementById('d-defaultStage').value;
+        const attributeEl = document.getElementById('d-attribute');
+        if(attributeEl) target.digimon.attribute = attributeEl.value;
         target.digimon.hybridMode = document.getElementById('d-hybridMode').checked;
         // Fissa Nome/Immagine/Stat appena modificati sullo Stage attualmente attivo, altrimenti al
         // prossimo switch da "Stage Attuale" applyStageChange li sovrascrive con i valori vecchi.

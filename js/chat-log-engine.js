@@ -54,6 +54,33 @@
 //     mostra sempre "N/Tot" sotto di sé (vedi logHTML più sotto) e si aggiorna in automatico ad ogni
 //     click — nessun messaggio di chat separato per ogni voto, per non affollare il Registro
 //     (chiarito con Rocco: bastava rendere leggibile il conteggio già presente sul messaggio).
+//
+// BUGFIX (segnalazione Rocco: "Default Stage non si aggiorna"/"i link alle GIF ogni tanto
+// spariscono"): saveMember(code, member) manda l'INTERO oggetto member.digimon/member.tamer a
+// /api/roster, che fa un upsert Supabase che SOSTITUISCE per intero quelle colonne JSONB (vedi
+// roster.js). index.html tiene una copia in memoria di cachedRoster aggiornata solo ogni ~15s
+// (refreshLiveParts/polling): se nel frattempo il Master fa un salvataggio automatico "di
+// contorno" (reset Stance dopo un Clash, Battery consumata, danno applicato...) partendo da una
+// cachedRoster leggermente vecchia, e nel frattempo il giocatore ha modificato un campo NON
+// correlato (Default Stage, Attributo, URL immagine/GIF) da digimon.html in un'altra scheda,
+// quel salvataggio "di contorno" riscrive l'intero oggetto e cancella silenziosamente la modifica
+// del giocatore — anche se i due salvataggi non toccavano affatto lo stesso campo.
+//
+// patchMember (nuovo, accanto a saveMember): usa il nuovo endpoint resource:'patch' di
+// /api/roster (vedi roster.js), che fa SELECT + merge superficiale + UPDATE solo sulle chiavi
+// passate in digimonPatch/tamerPatch, lasciando intatto ogni altro campo — anche se modificato nel
+// frattempo da un'altra scheda. index.html converte a questo i salvataggi "di contorno" del
+// combattimento (~14 punti) che toccano solo 1-2 campi scalari; i pochi salvataggi che riscrivono
+// legittimamente l'intera scheda (Scheda Digimon stessa, creazione membro, applyStageChange)
+// restano su saveMember come prima.
+async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
+async function patchMember(code, username, digimonPatch, tamerPatch){
+  const body = { resource:'patch', code, username };
+  if(digimonPatch) body.digimonPatch = digimonPatch;
+  if(tamerPatch) body.tamerPatch = tamerPatch;
+  const d = await apiPost('/api/roster', body);
+  return !!(d && d.ok);
+}
 
   let playerChatMode = 'public';
 
@@ -91,8 +118,6 @@
   async function getSubgroups(code){ const d = await apiGet('/api/notice?resource=subgroup&code=' + encodeURIComponent(code), true); return d ? (d.groups||[]) : []; }
   async function saveSubgroup(code, { id, name, members }){ return apiPost('/api/notice', { resource:'subgroup', code, id, name, members }); }
   async function deleteSubgroup(code, id){ return apiDelete('/api/notice?resource=subgroup&code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
-
-  async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
 
   function currentLocationKey(){
     if(!cachedScene) return '_|_|_';
