@@ -2609,21 +2609,42 @@ let editingScene = false;
 
   // ---------- Pannello Dadi UI (bottoni per ogni tipo di dado GDR) ----------
   const DICE_TYPES = [4, 6, 8, 10, 12, 20, 100];
+  // Mappa emoji facce d6 (stesse di DIE_FACES in js/dice.js); per gli altri dadi usa il numero.
+  const D6_FACES = ['','⚀','⚁','⚂','⚃','⚄','⚅'];
+
+  function genericDiceRowHTML(results, sides){
+    // Replica la stessa animazione 3D dei d6 (classe .die3d con @keyframes diceroll)
+    // Per i d6 usa le emoji facce, per gli altri mostra il numero stilizzato.
+    return `<span class="dice-perspective">${results.map((r,i)=>{
+      const delay = i * 0.08;
+      const face = (sides===6 && D6_FACES[r]) ? D6_FACES[r] : r;
+      const style = `animation-delay:${delay}s;${sides!==6?'font-size:20px;min-width:26px;text-align:center;':''}`;
+      return `<span class="die3d" style="${style}">${face}</span>`;
+    }).join('')}</span>`;
+  }
 
   function renderDicePanel(panelId){
     const el = document.getElementById(panelId);
     if(!el) return;
+    const isMaster = panelId === 'dice-panel-master';
     el.innerHTML = `
       <details>
         <summary style="cursor:pointer;font-size:11px;color:var(--text-mute);user-select:none;">🎲 Lancia Dadi</summary>
         <div style="margin-top:6px;">
+          ${isMaster ? `<div style="margin-bottom:6px;">
+            <select id="${panelId}-dest" style="font-size:11px;width:100%;">
+              <option value="general">📣 Chat Generale</option>
+              ${(cachedRoster||[]).filter(p=>p.role==='player').map(p=>`<option value="private:${escapeAttr(p.username)}">✉️ Privata di ${escapeHTML(displayName(p))}</option>`).join('')}
+              ${(cachedSubgroups||[]).map(g=>`<option value="subgroup:${escapeAttr(g.id)}">👥 ${escapeHTML(g.name)}</option>`).join('')}
+            </select>
+          </div>` : ''}
           <div class="dice-panel-bar">
             <input type="number" class="dice-qty" id="${panelId}-qty" value="1" min="1" max="100" title="Quantità" />
             ${DICE_TYPES.map(d=>`<button class="dice-btn" data-dice-sides="${d}" id="${panelId}-d${d}">d${d}</button>`).join('')}
-            <input type="text" class="dice-mod" id="${panelId}-mod" value="" placeholder="±mod" title="Modificatore (es. +3, -1)" />
+            <input type="text" class="dice-mod" id="${panelId}-mod" value="" placeholder="±" title="Modificatore (es. +3, -1)" />
             <button class="dice-roll-go" id="${panelId}-go">Tira!</button>
           </div>
-          <div id="${panelId}-result" style="margin-top:4px;font-size:12px;"></div>
+          <div id="${panelId}-result" style="margin-top:6px;min-height:28px;"></div>
           <div id="${panelId}-error" style="margin-top:2px;font-size:11px;color:var(--danger);"></div>
         </div>
       </details>
@@ -2648,7 +2669,6 @@ let editingScene = false;
         mod = parseInt(modRaw.replace(/^\+/, ''), 10);
         if(isNaN(mod)){ errEl.textContent = 'Modificatore non valido (es. +3 o -1).'; return; }
       }
-      // Tira i dadi
       const results = [];
       let total = 0;
       for(let i=0; i<qty; i++){
@@ -2659,8 +2679,8 @@ let editingScene = false;
       total += mod;
       const modStr = mod > 0 ? `+${mod}` : (mod < 0 ? `${mod}` : '');
       const rollText = `🎲 ${qty}d${selectedSides}[${results.join(',')}]${modStr} = ${total}`;
-      resEl.innerHTML = `<span class="mono" style="color:var(--cyan);">${escapeHTML(rollText)}</span>`;
-      // Invia nella chat corretta
+      // Animazione 3D
+      resEl.innerHTML = `${genericDiceRowHTML(results, selectedSides)}<span class="roll-total">${total}</span>`;
       sendDiceRollToChat(panelId, rollText);
     };
   }
@@ -2684,8 +2704,23 @@ let editingScene = false;
           await pushLog(code, entry);
         }
       } else {
-        // Master — invia sempre in Generale
-        await pushLog(code, { who:'Master', role:'roll', text: rollText });
+        // Master — destinazione scelta dal selettore
+        const destSel = document.getElementById(panelId+'-dest');
+        const dest = destSel ? destSel.value : 'general';
+        const entry = { who:'Master', role:'roll', text: rollText };
+        if(dest.startsWith('subgroup:')){
+          const subId = dest.slice('subgroup:'.length);
+          const group = (cachedSubgroups||[]).find(g=>g.id===subId) || null;
+          entry.meta = { location: subgroupLocationKey(group) };
+          await pushPrivateLog(code, 'subgroup:'+subId, entry);
+        } else if(dest.startsWith('private:')){
+          const username = dest.slice('private:'.length);
+          const member = (cachedRoster||[]).find(m=>m.username===username);
+          entry.meta = { location: memberLocationKey(member) };
+          await pushPrivateLog(code, username, entry);
+        } else {
+          await pushLog(code, entry);
+        }
       }
       refreshLiveParts();
     } catch(e){
