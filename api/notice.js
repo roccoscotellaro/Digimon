@@ -244,6 +244,16 @@ async function handleBugReportPut(req, res) {
 }
 
 // ---------------- MISSIONI (report obiettivi/ricompense/PG assegnati) ----------------
+// Campo `hints` ("Indicazioni"): testo libero opzionale, separato dalla `description` narrativa
+// -- pensato per suggerimenti/indizi che il Master vuole dare ai giocatori senza mescolarli al
+// contesto della missione. Richiede la colonna `hints` sulla tabella `missions` (non esisteva
+// prima di questa modifica -- vedi migrazione SQL qui sotto). Le altre colonne di `missions` sono
+// TEXT dirette (non JSONB), quindi a differenza di tamer/digimon in `members` un campo nuovo non
+// è "gratis": serve un'ALTER TABLE una tantum.
+//
+// Migrazione SQL da eseguire una volta sul SQL Editor di Supabase:
+//
+//   alter table missions add column if not exists hints text not null default '';
 async function handleMissionGet(req, res) {
   const { code } = req.query;
   if (!code) return res.status(400).json({ error: 'code mancante' });
@@ -257,7 +267,7 @@ async function handleMissionGet(req, res) {
 }
 
 async function handleMissionPost(req, res) {
-  const { code, title, description, objectives, rewards, assignedTo, createdBy } = req.body || {};
+  const { code, title, description, hints, objectives, rewards, assignedTo, createdBy } = req.body || {};
   if (!code || !title || !String(title).trim()) return res.status(400).json({ error: 'code e title sono obbligatori' });
   const cleanObjectives = Array.isArray(objectives)
     ? objectives.filter(o => o && String(o.text || '').trim()).map(o => ({ text: String(o.text).trim(), done: !!o.done }))
@@ -268,6 +278,7 @@ async function handleMissionPost(req, res) {
       code,
       title: String(title).trim(),
       description: description || '',
+      hints: hints || '',
       objectives: cleanObjectives,
       rewards: rewards || '',
       assigned_to: Array.isArray(assignedTo) ? assignedTo : [],
@@ -281,7 +292,7 @@ async function handleMissionPost(req, res) {
 }
 
 async function handleMissionPut(req, res) {
-  const { code, id, title, description, objectives, rewards, assignedTo, status, toggleObjectiveIndex } = req.body || {};
+  const { code, id, title, description, hints, objectives, rewards, assignedTo, status, toggleObjectiveIndex } = req.body || {};
   if (!code || !id) return res.status(400).json({ error: 'code e id sono obbligatori' });
 
   // Caso frequente: spuntare/togliere un singolo obiettivo. Va letto e riscritto
@@ -304,6 +315,7 @@ async function handleMissionPut(req, res) {
   const patch = { updated_at: new Date().toISOString() };
   if (title !== undefined) patch.title = String(title).trim();
   if (description !== undefined) patch.description = description;
+  if (hints !== undefined) patch.hints = hints;
   if (rewards !== undefined) patch.rewards = rewards;
   if (Array.isArray(assignedTo)) patch.assigned_to = assignedTo;
   if (Array.isArray(objectives)) patch.objectives = objectives.map(o => ({ text: String(o.text || '').trim(), done: !!o.done })).filter(o => o.text);

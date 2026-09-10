@@ -23,9 +23,18 @@
 // riepilogo di sola lettura dell'IP di ciascun giocatore (la modifica resta sulla Scheda Tamer).
 //
 // Dipende da (gia' globali, caricati prima nella catena degli script): apiPost/lastApiError
-// (js/api.js), escapeHTML/escapeAttr (js/util.js), pushLog/saveMember (js/chat-log-engine.js),
-// session/cachedRoster/cachedProgression (js/store.js), e TALENT_DEFS (js/tamer-card.js, usato
-// solo dentro "Rest" per azzerare gli Special Order a cadenza settimanale/rest).
+// (js/api.js), escapeHTML/escapeAttr (js/util.js), pushLog/pushPrivateLog/getSubgroups/
+// memberLocationKey/subgroupLocationKey/saveMember (js/chat-log-engine.js), session/cachedRoster/
+// cachedProgression/cachedSubgroups (js/store.js), e TALENT_DEFS (js/tamer-card.js, usato solo
+// dentro "Rest" per azzerare gli Special Order a cadenza settimanale/rest).
+//
+// Richiesta utente: poter scegliere DOVE pubblicare l'esito di Break/Rest (prima andava sempre e
+// solo in Chat Generale) — stesso pattern Generale/Privata/Sottogruppo già usato da "Richiedi un
+// Tiro" in index.html, con le checkbox lette al momento del click da publishDowntimeMessage
+// invece che una volta sola al render (così restano valide anche dopo un giro di
+// renderProgressionMaster interno, es. dopo aver mosso lo slider Campaign Level). "Privata" manda
+// una copia a OGNI giocatore del party (Break/Rest non hanno un destinatario selezionabile, sono
+// sempre un'azione di party) invece che a un sottoinsieme.
 //
 // Script classico (non un modulo ES), caricato nella catena degli script prima del blocco
 // <script> principale di index.html.
@@ -133,6 +142,22 @@
       ${prog.lastMilestoneGrant ? `<button class="btn ghost" id="btn-milestone-undo" style="width:100%;margin-bottom:6px;" title="Annulla la Milestone ${escapeAttr(String(prog.lastMilestoneGrant.milestone))} (${escapeAttr(prog.lastMilestoneGrant.reason)}), consegnata il ${escapeAttr(new Date(prog.lastMilestoneGrant.at).toLocaleString('it-IT'))}">↩️ Annulla ultima Milestone (${escapeHTML(String(prog.lastMilestoneGrant.milestone))})</button>` : ''}
       <div class="divider"></div>
       <div class="muted" style="margin-bottom:6px;">Downtime del Party (8.04)</div>
+      <div class="muted" style="margin:2px 0 6px;font-size:11px;">Dove pubblicare l'esito (almeno uno):</div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="downtime-chan-general" checked />
+        <label for="downtime-chan-general">📣 Chat Generale (visibile a tutti)</label>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="downtime-chan-private" />
+        <label for="downtime-chan-private">✉️ Chat Privata (una copia per ciascun giocatore)</label>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="downtime-chan-subgroup" />
+        <label for="downtime-chan-subgroup">👥 Sottogruppo</label>
+      </div>
+      <div class="field" id="downtime-subgroup-field" style="display:none;"><label>Quale sottogruppo</label>
+        <select id="downtime-subgroup-select"><option value="">Caricamento...</option></select>
+      </div>
       <div class="row" style="margin-bottom:8px;">
         <button class="btn" id="btn-take-break" style="flex:1;">☕ Break</button>
         <button class="btn solid" id="btn-take-rest" style="flex:1;">😴 Rest</button>
@@ -256,6 +281,48 @@
         if(onChanged) onChanged();
       };
     }
+    // Destinazione dell'esito di Break/Rest: stesso pattern Generale/Privata/Sottogruppo già
+    // usato per "Richiedi un Tiro" in index.html (checkbox multiple, il messaggio va in tutti i
+    // canali scelti). "Privata" qui manda una copia della stessa riga nella chat privata di
+    // OGNI giocatore (Break/Rest sono azioni di party, non mirate a un singolo) invece che a un
+    // sottoinsieme scelto — a differenza di "Richiedi un Tiro"/"Richiedi Torment Check" non c'è
+    // qui una selezione di destinatari, è sempre tutto il party.
+    const downtimeSubChk = document.getElementById('downtime-chan-subgroup');
+    const downtimeSubField = document.getElementById('downtime-subgroup-field');
+    if(downtimeSubChk){
+      downtimeSubChk.onchange = async ()=>{
+        downtimeSubField.style.display = downtimeSubChk.checked ? 'block' : 'none';
+        if(downtimeSubChk.checked){
+          const groups = await getSubgroups(code);
+          cachedSubgroups = groups;
+          const sel = document.getElementById('downtime-subgroup-select');
+          if(sel) sel.innerHTML = groups.length ? groups.map(g=>`<option value="${escapeAttr(g.id)}">${escapeHTML(g.name)}</option>`).join('') : '<option value="">Nessun sottogruppo creato</option>';
+        }
+      };
+    }
+    async function publishDowntimeMessage(entry){
+      const sendGeneral = document.getElementById('downtime-chan-general').checked;
+      const sendPrivate = document.getElementById('downtime-chan-private').checked;
+      const sendSubgroup = downtimeSubChk ? downtimeSubChk.checked : false;
+      const subSel = document.getElementById('downtime-subgroup-select');
+      const subgroupId = subSel ? subSel.value : '';
+      if(!sendGeneral && !sendPrivate && !(sendSubgroup && subgroupId)){
+        // Nessun canale valido selezionato (es. Sottogruppo spuntato ma non ancora scelto): invia
+        // comunque alla Chat Generale, invece di far sparire nel nulla l'esito di Break/Rest.
+        await pushLog(code, entry);
+        return;
+      }
+      if(sendGeneral) await pushLog(code, entry);
+      if(sendPrivate){
+        for(const p of cachedRoster.filter(m=>m.role==='player')){
+          await pushPrivateLog(code, p.username, { ...entry, meta: { location: memberLocationKey(p) } });
+        }
+      }
+      if(sendSubgroup && subgroupId){
+        const group = (cachedSubgroups||[]).find(g=>g.id===subgroupId) || null;
+        await pushPrivateLog(code, 'subgroup:'+subgroupId, { ...entry, meta: { location: subgroupLocationKey(group) } });
+      }
+    }
     document.getElementById('btn-take-break').onclick = async ()=>{
       const players = cachedRoster.filter(m=>m.role==='player');
       for(const p of players){
@@ -265,7 +332,7 @@
         p.digimon.evolutionPoints = Math.min(cap, Number(p.digimon.evolutionPoints||0)+1);
         await saveMember(code, p);
       }
-      await pushLog(code, { who:'Sistema', role:'gm', text: `☕ Il party prende un Break: Ferite recuperate del tutto, +1 Evolution Point a testa.` });
+      await publishDowntimeMessage({ who:'Sistema', role:'gm', text: `☕ Il party prende un Break: Ferite recuperate del tutto, +1 Evolution Point a testa.` });
       if(onChanged) onChanged();
     };
     document.getElementById('btn-take-rest').onclick = async ()=>{
@@ -282,7 +349,7 @@
         (p.digimon.armorForms||[]).forEach(af=>{ af.usedThisRest = false; });
         await saveMember(code, p);
       }
-      await pushLog(code, { who:'Sistema', role:'gm', text: `😴 Il party fa un Rest: Ferite ed Evolution Points recuperati del tutto, penalità Torment rimosse, Torment Check di nuovo disponibili.` });
+      await publishDowntimeMessage({ who:'Sistema', role:'gm', text: `😴 Il party fa un Rest: Ferite ed Evolution Points recuperati del tutto, penalità Torment rimosse, Torment Check di nuovo disponibili.` });
       if(onChanged) onChanged();
     };
     document.getElementById('btn-prog-manual-save').onclick = async ()=>{

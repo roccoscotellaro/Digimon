@@ -423,6 +423,32 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
           fulfillBtn = `<button class="btn amber small" style="margin-top:6px;" data-fulfill-target="${escapeAttr(parts[0])}" data-fulfill-skill="${escapeAttr(skillKey)}" data-fulfill-tn="${escapeAttr(tn)}">🎲 Tira ora</button>`;
         }
       }
+      // Richiesta mirata di un Torment Check specifico (Master → un solo giocatore, un solo
+      // Torment tra quelli già registrati sulla sua Scheda Tamer): payload = username|nomeTorment
+      // (il nome può contenere "|", quindi si ricompone tutto ciò che segue il primo pipe invece
+      // di limitarsi a parts[1]). A differenza di ::REQ:: (skill/pool generiche, sempre valide),
+      // qui bisogna anche verificare al momento della lettura che quel Torment esista ancora e
+      // non sia già stato tentato in questo Rest — può essere passato del tempo dall'invio della
+      // richiesta. cachedRoster (non "me", che qui non è un parametro di logHTML) dà lo stato
+      // aggiornato del Tamer di chi sta leggendo.
+      if(l.role==='tormentrequest' && l.text.includes('::TORMENTREQ::')){
+        const [shown, payload] = l.text.split('::TORMENTREQ::');
+        displayText = shown;
+        const sepIdx = payload.indexOf('|');
+        const tormentTargetUser = sepIdx>=0 ? payload.slice(0, sepIdx) : payload;
+        const tormentName = sepIdx>=0 ? payload.slice(sepIdx+1) : '';
+        if(session && session.role==='player' && session.username===tormentTargetUser){
+          const selfMember = (cachedRoster||[]).find(m=>m.username===session.username);
+          const tor = (selfMember && selfMember.tamer && Array.isArray(selfMember.tamer.torments)) ? selfMember.tamer.torments.find(t=>t.name===tormentName) : null;
+          if(!tor){
+            fulfillBtn = `<div class="muted" style="margin-top:6px;font-size:11px;">Torment "${escapeHTML(tormentName)}" non trovato (forse rinominato o rimosso dalla Scheda).</div>`;
+          } else if(tor.usedThisRest){
+            fulfillBtn = `<div class="muted" style="margin-top:6px;font-size:11px;">Già tentato questo Rest.</div>`;
+          } else {
+            fulfillBtn = `<button class="btn amber small" style="margin-top:6px;" data-fulfill-torment="${escapeAttr(tormentName)}">🎲 Tira Torment Check</button>`;
+          }
+        }
+      }
       // Invito del Master a spostarsi ("Vuoi andare a XXX?"): payload = sectorId|luogoId|mode
       // (mode manca sui messaggi vecchi → 'each', vedi nota di testa del file per le 3 modalità).
       if(l.role==='moverequest' && l.text.includes('::MOVEREQ::')){
@@ -657,6 +683,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       const delBtn = e.target.closest('[data-log-del]');
       const replyBtn = e.target.closest('[data-log-reply]');
       const fulfillBtn = e.target.closest('[data-fulfill-target]');
+      const fulfillTormentBtn = e.target.closest('[data-fulfill-torment]');
       const moveAcceptBtn = e.target.closest('[data-move-accept-sector]');
       const moveVoteBtn = e.target.closest('[data-move-vote-id]');
       const evoQuickBtn = e.target.closest('[data-evo-quick-username]');
@@ -736,6 +763,52 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
           // si era separato dal gruppo, il risultato veniva sì salvato sul server, ma spariva
           // subito sotto il filtro di default "Settore attuale" della sua stessa chat — il tiro
           // sembrava non succedere affatto ("non compare il risultato").
+          if(playerChatMode==='private'){
+            await pushPrivateLog(code, session.username, { ...entry, meta: { ...(entry.meta||{}), location: memberLocationKey(me) } });
+          } else if(playerChatMode==='subgroup' && playerActiveSubgroupId){
+            const group = (cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId) || null;
+            await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { ...entry, meta: { ...(entry.meta||{}), location: subgroupLocationKey(group) } });
+          } else {
+            await pushLog(code, entry);
+          }
+          if(onChanged) onChanged();
+        }
+      }
+      if(fulfillTormentBtn && me){
+        // Stesso identico esito/regole del Torment Check "in autonomia" su js/tamer-card.js
+        // (data-torment-check): qui l'unica differenza è che il tiro parte da una richiesta del
+        // Master in chat invece che da un click sulla propria Scheda Tamer. Il Torment è
+        // individuato per NOME (non per indice, che potrebbe non corrispondere più a distanza di
+        // tempo dalla richiesta se il giocatore ha aggiunto/rimosso altri Torment nel frattempo).
+        const tormentName = fulfillTormentBtn.getAttribute('data-fulfill-torment');
+        const tor = (me.tamer.torments||[]).find(t=>t.name===tormentName);
+        if(tor && !tor.usedThisRest){
+          const result = rollTormentCheck(tor.boxes);
+          let outcomeText;
+          if(result.outcome==='crit-success'){
+            tor.boxes = Math.max(0, tor.boxes-1);
+            me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1;
+            tor.usedThisRest = true;
+            outcomeText = 'Successo Critico! Cancella 1 Casella Torment e guadagna 1 IP.';
+          } else if(result.outcome==='success'){
+            me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1;
+            tor.usedThisRest = true;
+            outcomeText = 'Successo! Guadagna 1 IP.';
+          } else if(result.outcome==='deep-crit-fail'){
+            tor.boxes = Math.min(10, tor.boxes+1);
+            me.tamer.tormentPenalty = -5;
+            tor.usedThisRest = true;
+            outcomeText = 'Fallimento Critico Profondo! +1 Casella Torment, penalità -5 fino al Rest.';
+          } else if(result.outcome==='crit-fail'){
+            me.tamer.tormentPenalty = -2;
+            tor.usedThisRest = true;
+            outcomeText = 'Fallimento Critico! Penalità -2 fino al Rest.';
+          } else {
+            outcomeText = 'Fallimento. Nessun effetto, si può ritentare più tardi.';
+          }
+          await saveMember(session.code, me);
+          const entry = { who: displayName(me), role:'roll', text: `Torment Check su "${tor.name}": 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText} (richiesto dal Master)`, meta:{dice: result.dice} };
+          // Stessa logica di risposta-nello-stesso-canale già usata sopra per data-fulfill-target.
           if(playerChatMode==='private'){
             await pushPrivateLog(code, session.username, { ...entry, meta: { ...(entry.meta||{}), location: memberLocationKey(me) } });
           } else if(playerChatMode==='subgroup' && playerActiveSubgroupId){

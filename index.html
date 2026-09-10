@@ -378,7 +378,12 @@
       box-shadow:0 -2px 12px rgba(0,0,0,0.5);
       padding:0;height:56px;
       padding-bottom:env(safe-area-inset-bottom, 0);
-      -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+      /* Rimosso backdrop-filter: lo sfondo qui sopra (var(--panel)) è già opaco (#0e141b,
+         nessun alpha), quindi il blur non aveva alcun effetto visivo su nessun browser —
+         serviva solo a innescare un bug noto di compositing di Safari/WebKit su elementi
+         "position:fixed" con backdrop-filter, che produce una riga/artefatto colorato
+         (qui: la striscia ciano che taglia le icone segnalata dall'utente, riprodotta solo
+         su Safari e non su altri browser/telefono). Vedi claude/split-status-addendum-*.md. */
     }
     .mobile-nav-btn{
       flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -3729,6 +3734,37 @@ let editingScene = false;
             <button class="btn amber" id="btn-request-roll" style="width:100%;">Richiedi Tiro</button>
             <div class="muted" id="req-roll-status" style="margin-top:6px;"></div>
           </div>
+          <div class="hud-frame card">
+            <div class="section-title">Richiedi Torment Check</div>
+            <div class="muted" style="font-size:11px;margin-bottom:4px;">Richiesta mirata a UN giocatore, su UNO dei suoi Torment già registrati (a differenza di "Richiedi un Tiro" sopra, qui il Master sceglie anche quale Torment specifico).</div>
+            <div class="field"><label>A chi</label>
+              <select id="torment-req-player">
+                <option value="">— scegli un giocatore —</option>
+                ${players.map(p=>`<option value="${escapeAttr(p.username)}">${escapeHTML(displayName(p))}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field"><label>Quale Torment</label>
+              <select id="torment-req-torment"><option value="">— scegli prima un giocatore —</option></select>
+            </div>
+            <div class="muted" style="margin:2px 0 6px;font-size:11px;">Dove mostrare la richiesta (almeno una):</div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="torment-req-chan-general" checked />
+              <label for="torment-req-chan-general">📣 Chat Generale (visibile a tutti)</label>
+            </div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="torment-req-chan-private" />
+              <label for="torment-req-chan-private">✉️ Chat Privata (solo per il giocatore scelto sopra)</label>
+            </div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="torment-req-chan-subgroup" />
+              <label for="torment-req-chan-subgroup">👥 Sottogruppo</label>
+            </div>
+            <div class="field" id="torment-req-subgroup-field" style="display:none;"><label>Quale sottogruppo</label>
+              <select id="torment-req-subgroup-select"><option value="">Caricamento...</option></select>
+            </div>
+            <button class="btn amber" id="btn-request-torment" style="width:100%;">Richiedi Torment Check</button>
+            <div class="muted" id="torment-req-status" style="margin-top:6px;"></div>
+          </div>
           </div>
 
           <div class="mobile-section" data-mobile-tab="strumenti">
@@ -4020,6 +4056,76 @@ let editingScene = false;
           // Stesso bug e stessa correzione per i Sottogruppi (vedi subgroupLocationKey): la
           // richiesta va taggata con la posizione EFFETTIVA del sottogruppo, non quella del
           // Master, altrimenti resta "invisibile" nel filtro di default della sua chat.
+          const group = (cachedSubgroups||[]).find(g=>g.id===subgroupId) || null;
+          await pushPrivateLog(code, 'subgroup:'+subgroupId, { ...entry, meta: { location: subgroupLocationKey(group) } });
+        }
+        if(statusEl) statusEl.textContent = '';
+        refreshLiveParts();
+      };
+    }
+
+    // ===== Richiedi Torment Check (mirato a un giocatore + un Torment specifico) =====
+    // A differenza di "Richiedi un Tiro" sopra (skill/pool generiche, stesso bottone per N
+    // giocatori), qui il Master sceglie anche QUALE Torment tra quelli già registrati sulla
+    // Scheda Tamer del giocatore scelto — quindi un solo giocatore per richiesta, non una lista.
+    // Il marcatore ::TORMENTREQ:: (payload: username|nomeTorment) è gestito in logHTML/
+    // attachLogModeration di js/chat-log-engine.js, stesso pattern di ::REQ::/::MOVEREQ::.
+    const tormentPlayerSel = document.getElementById('torment-req-player');
+    const tormentTormentSel = document.getElementById('torment-req-torment');
+    if(tormentPlayerSel && tormentTormentSel){
+      tormentPlayerSel.onchange = ()=>{
+        const p = cachedRoster.find(m=>m.username===tormentPlayerSel.value);
+        const torments = p ? (p.tamer.torments||[]) : [];
+        const available = torments.filter(t=>!t.usedThisRest);
+        if(!p){
+          tormentTormentSel.innerHTML = '<option value="">— scegli prima un giocatore —</option>';
+        } else if(!available.length){
+          tormentTormentSel.innerHTML = '<option value="">Nessun Torment disponibile (nessuno registrato, o già tentati questo Rest)</option>';
+        } else {
+          tormentTormentSel.innerHTML = available.map(t=>`<option value="${escapeAttr(t.name)}">${escapeHTML(t.name)} (${t.boxes} caselle)</option>`).join('');
+        }
+      };
+    }
+    const tormentReqSubChk = document.getElementById('torment-req-chan-subgroup');
+    const tormentReqSubField = document.getElementById('torment-req-subgroup-field');
+    if(tormentReqSubChk){
+      tormentReqSubChk.onchange = async ()=>{
+        tormentReqSubField.style.display = tormentReqSubChk.checked ? 'block' : 'none';
+        if(tormentReqSubChk.checked){
+          const groups = await getSubgroups(code);
+          cachedSubgroups = groups;
+          const sel = document.getElementById('torment-req-subgroup-select');
+          if(sel) sel.innerHTML = groups.length ? groups.map(g=>`<option value="${escapeAttr(g.id)}">${escapeHTML(g.name)}</option>`).join('') : '<option value="">Nessun sottogruppo creato</option>';
+        }
+      };
+    }
+    const tormentReqBtn = document.getElementById('btn-request-torment');
+    if(tormentReqBtn){
+      tormentReqBtn.onclick = async ()=>{
+        const statusEl = document.getElementById('torment-req-status');
+        const targetUsername = tormentPlayerSel ? tormentPlayerSel.value : '';
+        const tormentName = tormentTormentSel ? tormentTormentSel.value : '';
+        const sendGeneral = document.getElementById('torment-req-chan-general').checked;
+        const sendPrivate = document.getElementById('torment-req-chan-private').checked;
+        const sendSubgroup = tormentReqSubChk ? tormentReqSubChk.checked : false;
+        const subSel = document.getElementById('torment-req-subgroup-select');
+        const subgroupId = subSel ? subSel.value : '';
+        if(!targetUsername){ if(statusEl) statusEl.textContent = 'Scegli un giocatore.'; return; }
+        if(!tormentName){ if(statusEl) statusEl.textContent = 'Scegli un Torment.'; return; }
+        if(!sendGeneral && !sendPrivate && !sendSubgroup){ if(statusEl) statusEl.textContent = 'Scegli almeno un canale (Generale, Privata e/o Sottogruppo).'; return; }
+        if(sendSubgroup && !subgroupId){ if(statusEl) statusEl.textContent = 'Scegli un sottogruppo.'; return; }
+        const targetMember = cachedRoster.find(m=>m.username===targetUsername);
+        const targetLabel = targetMember ? displayName(targetMember) : targetUsername;
+        // Il nome del Torment può in teoria contenere "|" (testo libero digitato dal giocatore
+        // in js/tamer-card.js): il lato ricevente ricompone tutto ciò che segue il primo "|"
+        // invece di limitarsi a payload.split('|')[1], quindi non serve escaparlo qui.
+        const payload = `${targetUsername}|${tormentName}`;
+        const entry = { who:'Master', role:'tormentrequest', text: `Richiesta a ${targetLabel}: tira il Torment Check "${tormentName}"::TORMENTREQ::${payload}` };
+        if(sendGeneral) await pushLog(code, entry);
+        if(sendPrivate){
+          await pushPrivateLog(code, targetUsername, { ...entry, meta: { location: memberLocationKey(targetMember) } });
+        }
+        if(sendSubgroup){
           const group = (cachedSubgroups||[]).find(g=>g.id===subgroupId) || null;
           await pushPrivateLog(code, 'subgroup:'+subgroupId, { ...entry, meta: { location: subgroupLocationKey(group) } });
         }
