@@ -90,11 +90,13 @@
         </div>
       `).join('')}
       ${closed.length ? `
-      <div class="flex-between" style="margin:10px 0 6px;">
-        <span class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;">Storico recente (chiusi)</span>
+      <div class="flex-between" style="margin:10px 0 6px;cursor:pointer;" id="notice-history-toggle">
+        <span class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;">▶ Storico chiusi (${closedAll.length})</span>
         <button class="btn ghost small" id="btn-clear-notice-history" style="color:var(--danger);border-color:rgba(255,93,93,0.4);font-size:10px;padding:3px 8px;">🗑 Cancella storico</button>
       </div>
+      <div id="notice-history-list" style="display:none;">
       ${closed.map(n=>`<div class="flex-between muted" style="font-size:11px;margin-bottom:4px;gap:6px;"><span>• ${escapeHTML((n.text||'').slice(0,60))}${(n.text||'').length>60?'…':''} — ${targetDescHTML(n)}</span><button class="btn ghost small" data-notice-delete="${n.id}" style="padding:1px 6px;flex-shrink:0;" title="Cancella questo avviso dallo storico">✕</button></div>`).join('')}
+      </div>
       ` : ''}
     `;
 
@@ -156,10 +158,24 @@
     });
     const clearHistBtn = document.getElementById('btn-clear-notice-history');
     if(clearHistBtn){
-      clearHistBtn.onclick = async ()=>{
+      clearHistBtn.onclick = async (ev)=>{
+        ev.stopPropagation(); // non triggerare il toggle
         if(!window.confirm(`Cancellare tutto lo storico avvisi chiusi (${closedAll.length} voci)? Non si può annullare.`)) return;
         await Promise.all(closedAll.map(n=>deleteNotice(code, n.id)));
         renderNoticeManager(code, players);
+      };
+    }
+    const histToggle = document.getElementById('notice-history-toggle');
+    if(histToggle){
+      histToggle.onclick = (ev)=>{
+        if(ev.target.closest('#btn-clear-notice-history')) return;
+        const list = document.getElementById('notice-history-list');
+        const label = histToggle.querySelector('span');
+        if(list){
+          const open = list.style.display==='none';
+          list.style.display = open ? '' : 'none';
+          if(label) label.textContent = (open ? '▼' : '▶') + ` Storico chiusi (${closedAll.length})`;
+        }
       };
     }
   }
@@ -231,10 +247,21 @@
           </div>
         `;}).join('');
     cardEl.innerHTML = `
-      <div class="section-title">Log Bio-Resonance Scan</div>
-      <div class="muted" style="margin-bottom:8px;">Ogni Digimon può uscire ad un solo Tamer per campagna; ogni Tamer ha 2 tentativi. Cancella una riga per correggere un errore, liberare un nome o restituire un tentativo. "📤 Applica alla Scheda" apre la Creazione Guidata già pre-compilata per quel Tamer, se non l'ha ancora fatto lui stesso.</div>
-      <div id="scan-log-rows">${rowsHTML}</div>
+      <div class="section-title" id="scan-log-toggle" style="cursor:pointer;user-select:none;">▶ Log Bio-Resonance Scan <span class="muted" style="font-size:11px;font-weight:400;">(${log.length})</span></div>
+      <div id="scan-log-body" style="display:none;">
+        <div class="muted" style="margin-bottom:8px;">Ogni Digimon può uscire ad un solo Tamer per campagna; ogni Tamer ha 2 tentativi. Cancella una riga per correggere un errore, liberare un nome o restituire un tentativo. "📤 Applica alla Scheda" apre la Creazione Guidata già pre-compilata per quel Tamer, se non l'ha ancora fatto lui stesso.</div>
+        <div id="scan-log-rows">${rowsHTML}</div>
+      </div>
     `;
+    document.getElementById('scan-log-toggle').onclick = ()=>{
+      const body = document.getElementById('scan-log-body');
+      const toggle = document.getElementById('scan-log-toggle');
+      if(body){
+        const open = body.style.display==='none';
+        body.style.display = open ? '' : 'none';
+        toggle.innerHTML = (open ? '▼' : '▶') + ` Log Bio-Resonance Scan <span class="muted" style="font-size:11px;font-weight:400;">(${log.length})</span>`;
+      }
+    };
     cardEl.querySelectorAll('[data-scan-push]').forEach(btn=>{
       btn.onclick = ()=>{
         const username = btn.getAttribute('data-scan-push');
