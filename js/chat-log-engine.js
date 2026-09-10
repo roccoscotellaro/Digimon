@@ -84,6 +84,16 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
 
   let playerChatMode = 'public';
 
+  // BUGFIX (segnalato da Rocco: "il tasto Sì andiamo... i giocatori cliccano ma non vengono
+  // spostati"): #log-live lato giocatore è UN SOLO elemento DOM condiviso dalle 3 chat
+  // (Generale/Privata/Sottogruppo). attachLogModeration viene legato a quell'elemento UNA SOLA
+  // VOLTA, al primo render, con isPrivate/subgroupThread fissati a undefined per sempre (=Generale).
+  // playerActiveChatThread/playerActiveChatLog vengono aggiornati ad ogni renderChatArea con il
+  // thread/log EFFETTIVAMENTE mostrati in quel momento (qualunque delle 3 chat sia aperta), così
+  // attachLogModeration può risolverli al momento del click tramite usePlayerActiveChat.
+  let playerActiveChatThread = null; // null = Chat Generale
+  let playerActiveChatLog = [];
+
   // Iniettato una sola volta: animazione "pulse" per il bottone "Evolvi ora" nel messaggio con cui
   // il Master sblocca l'Evoluzione (vedi logHTML più sotto, marcatore ::EVOUNLOCK::) — serve a far
   // notare al giocatore che c'è un'azione da fare, non solo un avviso testuale.
@@ -675,7 +685,12 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
   // onReply (opzionale): invocato quando si preme "↩" su un messaggio (vedi logHTML) — riceve
   // l'entry originale e sta al chiamante (ogni composer, vedi nota di testa del file) impostare
   // il proprio stato pendingXReplyTo e disegnare il banner con renderReplyBanner.
-  function attachLogModeration(container, code, me, isPrivate, subgroupThread, onChanged, onReply){
+  // usePlayerActiveChat (8° parametro, opzionale, booleano): passare `true` SOLO dal call site
+  // del #log-live del giocatore in index.html (vedi BUGFIX su playerActiveChatThread/
+  // playerActiveChatLog sopra), per risolvere thread/sourceLog dal thread/log EFFETTIVAMENTE
+  // mostrati in quel momento (qualunque delle 3 chat del giocatore sia aperta), invece del fisso
+  // isPrivate/subgroupThread=undefined (=sempre Generale) usato finora.
+  function attachLogModeration(container, code, me, isPrivate, subgroupThread, onChanged, onReply, usePlayerActiveChat){
     if(!container || container.dataset.modBound) return;
     container.dataset.modBound = '1';
     container.addEventListener('click', async (e)=>{
@@ -687,11 +702,17 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       const moveAcceptBtn = e.target.closest('[data-move-accept-sector]');
       const moveVoteBtn = e.target.closest('[data-move-vote-id]');
       const evoQuickBtn = e.target.closest('[data-evo-quick-username]');
-      // In chat privata il thread attuale può cambiare da un refresh all'altro (il Master
-      // passa da un giocatore all'altro), quindi lo leggiamo dalla variabile globale al
-      // momento del click, non lo "congeliamo" quando la funzione viene collegata.
-      const thread = subgroupThread ? (typeof subgroupThread==='function'?subgroupThread():subgroupThread) : (isPrivate ? masterPrivateThread : null);
-      const sourceLog = subgroupThread ? cachedSubgroupLog : (isPrivate ? cachedMasterPrivateLog : cachedLog);
+      let thread, sourceLog;
+      if(usePlayerActiveChat){
+        thread = playerActiveChatThread;
+        sourceLog = playerActiveChatLog || [];
+      } else {
+        // In chat privata il thread attuale può cambiare da un refresh all'altro (il Master
+        // passa da un giocatore all'altro), quindi lo leggiamo dalla variabile globale al
+        // momento del click, non lo "congeliamo" quando la funzione viene collegata.
+        thread = subgroupThread ? (typeof subgroupThread==='function'?subgroupThread():subgroupThread) : (isPrivate ? masterPrivateThread : null);
+        sourceLog = subgroupThread ? cachedSubgroupLog : (isPrivate ? cachedMasterPrivateLog : cachedLog);
+      }
       if(replyBtn && onReply){
         const id = replyBtn.getAttribute('data-log-reply');
         const entry = sourceLog.find(l=>String(l.id)===String(id));

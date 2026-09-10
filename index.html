@@ -2865,6 +2865,13 @@ let editingScene = false;
       filterVal = publicLocationFilter;
       effectiveKey = currentLocationKey();
     }
+    // BUGFIX (segnalato da Rocco: "il tasto Sì andiamo... non sposta i giocatori"): esponiamo
+    // qui il thread/log EFFETTIVAMENTE mostrati in questo momento (vedi playerActiveChatThread/
+    // playerActiveChatLog in js/chat-log-engine.js) così attachLogModeration può ritrovare i
+    // messaggi di Privata/Sottogruppo al momento del click sul voto di spostamento, invece di
+    // cercarli sempre in cachedLog (solo Chat Generale) come succedeva prima.
+    playerActiveChatThread = thread;
+    playerActiveChatLog = raw;
     const filtered = filterByLocation(raw, filterVal, effectiveKey);
     const logLive = document.getElementById('log-live');
     if(logLive){
@@ -3516,12 +3523,16 @@ let editingScene = false;
       refreshLiveParts();
     };
     bindAttacksCard(code, me);
+    // BUGFIX (Rocco: "il tasto Sì andiamo... non sposta i giocatori"): 8° argomento `true` —
+    // vedi usePlayerActiveChat in js/chat-log-engine.js. Senza, questo binding (fatto una sola
+    // volta qui, mai rifatto quando il giocatore cambia chat) restava fisso su Generale/cachedLog
+    // per sempre, e un voto/risposta dato da Privata o Sottogruppo non trovava mai il messaggio.
     attachLogModeration(document.getElementById('log-live'), code, me, undefined, undefined, refreshLiveParts, (entry)=>{
       pendingReplyTo = replySnippetFromEntry(entry);
       renderReplyBanner('action-reply-preview', pendingReplyTo, ()=>{ pendingReplyTo = null; renderReplyBanner('action-reply-preview', null); });
       const taReply = document.getElementById('action-text');
       if(taReply) taReply.focus();
-    });
+    }, true);
     bindCombatSelfActions(code, session.username);
     // Frecce ◀/▶ della linea distanze (vedi zoneLineHTML): compaiono anche al Giocatore quando è
     // il suo turno — le leghiamo già al primo render, non solo al primo poll di refreshLiveParts.
