@@ -2559,12 +2559,13 @@ let editingScene = false;
   function parseGenericDiceRoll(raw){
     let input = raw.trim();
     // Accetta prefisso opzionale /roll o /r
-    if(/^\/r(oll)?\s+/i.test(input)) input = input.replace(/^\/r(oll)?\s+/i, '');
+    if(/^\/r(oll)?\s/i.test(input)) input = input.replace(/^\/r(oll)?\s+/i, '').trim();
     // Deve contenere almeno un NdX
     if(!/\d*d\d+/i.test(input)) return null;
+    // Rimuovi spazi per la validazione
+    const clean = input.replace(/\s+/g, '');
     // Verifica che l'intera stringa sia una formula dado valida (NdX, +, -, numeri)
-    if(!/^[\d]*d[\d]+([+\-][\d]*d?[\d]+)*$/i.test(input.replace(/\s/g, ''))) return null;
-    const clean = input.replace(/\s/g, '');
+    if(!/^\d*d\d+([+\-]\d*d?\d+)*$/i.test(clean)) return null;
     // Splitta i token: ogni +/- inizia un nuovo token
     const tokens = clean.match(/[+\-]?[^+\-]+/g) || [];
     let total = 0;
@@ -3573,6 +3574,15 @@ let editingScene = false;
         await refreshPlayerLogDisplay(code, me);
         return;
       }
+      // Dado generico GDR (es. "2d6", "/roll 1d20+3") — ha priorità sulle skill shortcut
+      // perché la notazione dado non entra mai in conflitto con i nomi delle Skill.
+      const genericDice = parseGenericDiceRoll(raw);
+      if(genericDice){
+        const rollMeta = {};
+        if(pendingActionImageUrl) rollMeta.image = pendingActionImageUrl;
+        if(pendingReplyTo) rollMeta.replyTo = pendingReplyTo;
+        await pushLog(code, { who: displayName(me), role:'roll', text: genericDice.text, meta: Object.keys(rollMeta).length ? rollMeta : null });
+      } else {
       const rollResult = await tryParseRollShortcut(raw, me);
       const resEl = document.getElementById('action-roll-result');
       if(rollResult){
@@ -3586,20 +3596,12 @@ let editingScene = false;
         if(pendingReplyTo) rollMeta.replyTo = pendingReplyTo;
         await pushLog(code, { who: displayName(me), role:'roll', text: rollResult.text, meta: Object.keys(rollMeta).length ? rollMeta : null });
       } else {
-        // Dado generico GDR (es. "2d6", "/roll 1d20+3") — fallback se non è una skill shortcut
-        const genericDice = parseGenericDiceRoll(raw);
-        if(genericDice){
-          const rollMeta = {};
-          if(pendingActionImageUrl) rollMeta.image = pendingActionImageUrl;
-          if(pendingReplyTo) rollMeta.replyTo = pendingReplyTo;
-          await pushLog(code, { who: displayName(me), role:'roll', text: genericDice.text, meta: Object.keys(rollMeta).length ? rollMeta : null });
-        } else {
-          const textMeta = {};
-          if(pendingActionImageUrl) textMeta.image = pendingActionImageUrl;
-          if(pendingReplyTo) textMeta.replyTo = pendingReplyTo;
-          await pushLog(code, { who: displayName(me), role:'player', text: raw, meta: Object.keys(textMeta).length ? textMeta : null });
-        }
+        const textMeta = {};
+        if(pendingActionImageUrl) textMeta.image = pendingActionImageUrl;
+        if(pendingReplyTo) textMeta.replyTo = pendingReplyTo;
+        await pushLog(code, { who: displayName(me), role:'player', text: raw, meta: Object.keys(textMeta).length ? textMeta : null });
       }
+      } // fine else genericDice
       advanceGameClock('general', 5); // +5min per messaggio generale
       ta.value='';
       pendingActionImageUrl = null;
