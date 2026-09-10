@@ -244,6 +244,13 @@
   .suggest-box{background:var(--panel-2);border:1px solid var(--cyan-dim);padding:10px;margin-top:8px;font-size:12px;}
   .suggest-line{padding:6px 8px;margin-bottom:4px;background:rgba(53,232,201,0.05);cursor:pointer;border-radius:var(--radius);}
   .suggest-line:hover{background:rgba(53,232,201,0.12);}
+  .dice-panel-bar{display:flex;align-items:center;gap:4px;flex-wrap:wrap;}
+  .dice-btn{padding:4px 8px;font-size:12px;border-radius:var(--radius);cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--text);font-family:var(--mono);min-width:36px;text-align:center;transition:border-color .15s,background .15s;}
+  .dice-btn:hover{border-color:var(--cyan);background:rgba(53,232,201,0.08);}
+  .dice-btn.active{border-color:var(--cyan);background:rgba(53,232,201,0.15);color:var(--cyan);}
+  .dice-qty{width:38px;text-align:center;font-size:12px;padding:4px;border-radius:var(--radius);border:1px solid var(--line);background:var(--surface);color:var(--text);font-family:var(--mono);}
+  .dice-mod{width:46px;text-align:center;font-size:12px;padding:4px;border-radius:var(--radius);border:1px solid var(--line);background:var(--surface);color:var(--text);font-family:var(--mono);}
+  .dice-roll-go{padding:4px 12px;font-size:12px;border-radius:var(--radius);cursor:pointer;border:1px solid var(--cyan);background:rgba(53,232,201,0.15);color:var(--cyan);font-weight:700;}
 
   .tag{font-size:10px;padding:2px 8px;border:1px solid var(--line);color:var(--text-mute);border-radius:20px;text-transform:uppercase;}
   .flex-between{display:flex;justify-content:space-between;align-items:center;}
@@ -2600,6 +2607,92 @@ let editingScene = false;
     return { text: `🎲 ${desc} = ${total}`, allDice, total };
   }
 
+  // ---------- Pannello Dadi UI (bottoni per ogni tipo di dado GDR) ----------
+  const DICE_TYPES = [4, 6, 8, 10, 12, 20, 100];
+
+  function renderDicePanel(panelId){
+    const el = document.getElementById(panelId);
+    if(!el) return;
+    el.innerHTML = `
+      <details>
+        <summary style="cursor:pointer;font-size:11px;color:var(--text-mute);user-select:none;">🎲 Lancia Dadi</summary>
+        <div style="margin-top:6px;">
+          <div class="dice-panel-bar">
+            <input type="number" class="dice-qty" id="${panelId}-qty" value="1" min="1" max="100" title="Quantità" />
+            ${DICE_TYPES.map(d=>`<button class="dice-btn" data-dice-sides="${d}" id="${panelId}-d${d}">d${d}</button>`).join('')}
+            <input type="text" class="dice-mod" id="${panelId}-mod" value="" placeholder="±mod" title="Modificatore (es. +3, -1)" />
+            <button class="dice-roll-go" id="${panelId}-go">Tira!</button>
+          </div>
+          <div id="${panelId}-result" style="margin-top:4px;font-size:12px;"></div>
+          <div id="${panelId}-error" style="margin-top:2px;font-size:11px;color:var(--danger);"></div>
+        </div>
+      </details>
+    `;
+    let selectedSides = null;
+    el.querySelectorAll('.dice-btn').forEach(btn=>{
+      btn.onclick = ()=>{
+        el.querySelectorAll('.dice-btn').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedSides = Number(btn.getAttribute('data-dice-sides'));
+      };
+    });
+    document.getElementById(panelId+'-go').onclick = ()=>{
+      const errEl = document.getElementById(panelId+'-error');
+      const resEl = document.getElementById(panelId+'-result');
+      errEl.textContent = '';
+      if(!selectedSides){ errEl.textContent = 'Seleziona un tipo di dado.'; return; }
+      const qty = Math.max(1, Math.min(100, Number(document.getElementById(panelId+'-qty').value)||1));
+      const modRaw = (document.getElementById(panelId+'-mod').value||'').trim();
+      let mod = 0;
+      if(modRaw){
+        mod = parseInt(modRaw.replace(/^\+/, ''), 10);
+        if(isNaN(mod)){ errEl.textContent = 'Modificatore non valido (es. +3 o -1).'; return; }
+      }
+      // Tira i dadi
+      const results = [];
+      let total = 0;
+      for(let i=0; i<qty; i++){
+        const r = Math.floor(Math.random()*selectedSides)+1;
+        results.push(r);
+        total += r;
+      }
+      total += mod;
+      const modStr = mod > 0 ? `+${mod}` : (mod < 0 ? `${mod}` : '');
+      const rollText = `🎲 ${qty}d${selectedSides}[${results.join(',')}]${modStr} = ${total}`;
+      resEl.innerHTML = `<span class="mono" style="color:var(--cyan);">${escapeHTML(rollText)}</span>`;
+      // Invia nella chat corretta
+      sendDiceRollToChat(panelId, rollText);
+    };
+  }
+
+  async function sendDiceRollToChat(panelId, rollText){
+    const errEl = document.getElementById(panelId+'-error');
+    try{
+      const code = session.code;
+      if(panelId==='dice-panel-player'){
+        const me = cachedMe || (cachedRoster||[]).find(m=>m.username===session.username);
+        const who = me ? displayName(me) : session.username;
+        const entry = { who, role:'roll', text: rollText };
+        if(playerChatMode==='subgroup' && playerActiveSubgroupId){
+          const group = (cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId) || null;
+          entry.meta = { location: subgroupLocationKey(group) };
+          await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, entry);
+        } else if(playerChatMode==='private'){
+          entry.meta = { location: memberLocationKey(me) };
+          await pushPrivateLog(code, session.username, entry);
+        } else {
+          await pushLog(code, entry);
+        }
+      } else {
+        // Master — invia sempre in Generale
+        await pushLog(code, { who:'Master', role:'roll', text: rollText });
+      }
+      refreshLiveParts();
+    } catch(e){
+      if(errEl) errEl.textContent = 'Errore invio: ' + e.message;
+    }
+  }
+
 
 
   // tormentBoxesHTML e' stata spostata in js/dice.js (pure formattazione, zero dipendenze).
@@ -3442,6 +3535,7 @@ let editingScene = false;
               <textarea id="action-text" rows="1" placeholder="Scrivi..." style="margin-top:8px;"></textarea>
               <button class="btn solid" id="btn-send-action">Invia</button>
             </div>
+            <div id="dice-panel-player" class="dice-panel" style="margin-top:6px;"></div>
             <div class="muted" id="action-hint" style="margin-top:4px;font-size:11px;">${ACTION_HINT_DEFAULT_TEXT}</div>
             <div id="action-roll-result" style="margin-top:6px;"></div>
             ${chatAttachHTML('action')}
@@ -3497,6 +3591,7 @@ let editingScene = false;
     document.getElementById('btn-open-missions').onclick = openMissionsModal;
     bindChatAttach('action', code, 'chat', ()=>pendingActionImageUrl, (url)=>{ pendingActionImageUrl = url; });
     bindMentionButton('action', code, 'action-text');
+    renderDicePanel('dice-panel-player');
     renderChatArea(code, me, { forceScrollBottom:true }); // riempie il selettore location + il Registro (vedi sopra)
     // Popola il mini-log nel tab Battle al primo render
     {
@@ -3771,6 +3866,7 @@ let editingScene = false;
               <textarea id="gm-text" rows="1" placeholder="Narrazione del Master..."></textarea>
               <button class="btn amber" id="btn-gm-post">Pubblica</button>
             </div>
+            <div id="dice-panel-master" class="dice-panel" style="margin-top:6px;"></div>
             ${chatAttachHTML('gm')}
             ${mentionButtonHTML('gm')}
             </div>
@@ -4011,6 +4107,7 @@ let editingScene = false;
     attachSpeakAsButton('speak-as', 'speak-as-btn', code, null, applySpeakAsMode);
     bindChatAttach('gm', code, 'avviso', ()=>pendingGmImageUrl, (url)=>{ pendingGmImageUrl = url; });
     bindMentionButton('gm', code, 'gm-text');
+    renderDicePanel('dice-panel-master');
     document.getElementById('btn-gm-post').onclick = async ()=>{
       const ta = document.getElementById('gm-text');
       const gmDigimojiChkPre = document.getElementById('gm-digimoji-toggle');
