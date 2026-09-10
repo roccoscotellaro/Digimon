@@ -54,33 +54,6 @@
 //     mostra sempre "N/Tot" sotto di sé (vedi logHTML più sotto) e si aggiorna in automatico ad ogni
 //     click — nessun messaggio di chat separato per ogni voto, per non affollare il Registro
 //     (chiarito con Rocco: bastava rendere leggibile il conteggio già presente sul messaggio).
-//
-// BUGFIX (segnalazione Rocco: "Default Stage non si aggiorna"/"i link alle GIF ogni tanto
-// spariscono"): saveMember(code, member) manda l'INTERO oggetto member.digimon/member.tamer a
-// /api/roster, che fa un upsert Supabase che SOSTITUISCE per intero quelle colonne JSONB (vedi
-// roster.js). index.html tiene una copia in memoria di cachedRoster aggiornata solo ogni ~15s
-// (refreshLiveParts/polling): se nel frattempo il Master fa un salvataggio automatico "di
-// contorno" (reset Stance dopo un Clash, Battery consumata, danno applicato...) partendo da una
-// cachedRoster leggermente vecchia, e nel frattempo il giocatore ha modificato un campo NON
-// correlato (Default Stage, Attributo, URL immagine/GIF) da digimon.html in un'altra scheda,
-// quel salvataggio "di contorno" riscrive l'intero oggetto e cancella silenziosamente la modifica
-// del giocatore — anche se i due salvataggi non toccavano affatto lo stesso campo.
-//
-// patchMember (nuovo, accanto a saveMember): usa il nuovo endpoint resource:'patch' di
-// /api/roster (vedi roster.js), che fa SELECT + merge superficiale + UPDATE solo sulle chiavi
-// passate in digimonPatch/tamerPatch, lasciando intatto ogni altro campo — anche se modificato nel
-// frattempo da un'altra scheda. index.html converte a questo i salvataggi "di contorno" del
-// combattimento (~14 punti) che toccano solo 1-2 campi scalari; i pochi salvataggi che riscrivono
-// legittimamente l'intera scheda (Scheda Digimon stessa, creazione membro, applyStageChange)
-// restano su saveMember come prima.
-async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
-async function patchMember(code, username, digimonPatch, tamerPatch){
-  const body = { resource:'patch', code, username };
-  if(digimonPatch) body.digimonPatch = digimonPatch;
-  if(tamerPatch) body.tamerPatch = tamerPatch;
-  const d = await apiPost('/api/roster', body);
-  return !!(d && d.ok);
-}
 
   let playerChatMode = 'public';
 
@@ -118,6 +91,8 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
   async function getSubgroups(code){ const d = await apiGet('/api/notice?resource=subgroup&code=' + encodeURIComponent(code), true); return d ? (d.groups||[]) : []; }
   async function saveSubgroup(code, { id, name, members }){ return apiPost('/api/notice', { resource:'subgroup', code, id, name, members }); }
   async function deleteSubgroup(code, id){ return apiDelete('/api/notice?resource=subgroup&code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
+
+  async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
 
   function currentLocationKey(){
     if(!cachedScene) return '_|_|_';
@@ -334,6 +309,26 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
   // render/refresh di quel pannello) — serve ad attachLogModeration per trovare il testo
   // originale del messaggio da modificare, dato che il log privato non passa da cachedLog.
 
+  // BUGFIX (segnalato da Rocco: "il tasto Sì andiamo... i giocatori cliccano ma non vengono
+  // spostati"): #log-live lato giocatore è UN SOLO elemento DOM condiviso dalle 3 chat
+  // (Generale/Privata/Sottogruppo, vedi renderChatArea in index.html — cambia solo quale log sta
+  // guardando in base a playerChatMode/playerActiveSubgroupId). attachLogModeration viene legato
+  // a quell'elemento UNA SOLA VOLTA, al primo render, con isPrivate/subgroupThread fissati a
+  // undefined per sempre (=Generale) — esattamente come già fa correttamente il Sottogruppo del
+  // MASTER passando una funzione per subgroupThread, qui però mancava del tutto per il giocatore.
+  // Risultato: un voto "Sì, andiamo!" dato da un messaggio di Sottogruppo/Privata cercava
+  // l'entry in cachedLog (che contiene SOLO la Chat Generale) invece che nel log di quel thread,
+  // non la trovava mai, e l'intero branch [data-move-vote-id] veniva silenziosamente saltato —
+  // il click sembrava non fare nulla (nessun voto registrato, nessuno spostato). Stesso identico
+  // problema, mai notato perché meno visibile, per "↩ Rispondi" su un messaggio di Privata/Gruppo.
+  //
+  // playerActiveChatThread/playerActiveChatLog vengono aggiornati ad ogni renderChatArea con il
+  // thread/log EFFETTIVAMENTE mostrati in quel momento (qualunque delle 3 chat sia aperta), così
+  // attachLogModeration può risolverli al momento del click tramite il resolvePlayerSource
+  // passato dal call site del giocatore in index.html — vedi 8° parametro qui sotto.
+  let playerActiveChatThread = null; // null = Chat Generale
+  let playerActiveChatLog = [];
+
   function resolveLogAvatar(l){
     // Se l'entry ha già un avatar esplicito in meta, lo usiamo (NPC/enemy/digimon parlati dal Master)
     if(l.meta && l.meta.avatar) return l.meta.avatar;
@@ -421,32 +416,6 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         const skillKey = parts[1], tn = parts[2]||'';
         if(session && session.role==='player' && targets.includes(session.username)){
           fulfillBtn = `<button class="btn amber small" style="margin-top:6px;" data-fulfill-target="${escapeAttr(parts[0])}" data-fulfill-skill="${escapeAttr(skillKey)}" data-fulfill-tn="${escapeAttr(tn)}">🎲 Tira ora</button>`;
-        }
-      }
-      // Richiesta mirata di un Torment Check specifico (Master → un solo giocatore, un solo
-      // Torment tra quelli già registrati sulla sua Scheda Tamer): payload = username|nomeTorment
-      // (il nome può contenere "|", quindi si ricompone tutto ciò che segue il primo pipe invece
-      // di limitarsi a parts[1]). A differenza di ::REQ:: (skill/pool generiche, sempre valide),
-      // qui bisogna anche verificare al momento della lettura che quel Torment esista ancora e
-      // non sia già stato tentato in questo Rest — può essere passato del tempo dall'invio della
-      // richiesta. cachedRoster (non "me", che qui non è un parametro di logHTML) dà lo stato
-      // aggiornato del Tamer di chi sta leggendo.
-      if(l.role==='tormentrequest' && l.text.includes('::TORMENTREQ::')){
-        const [shown, payload] = l.text.split('::TORMENTREQ::');
-        displayText = shown;
-        const sepIdx = payload.indexOf('|');
-        const tormentTargetUser = sepIdx>=0 ? payload.slice(0, sepIdx) : payload;
-        const tormentName = sepIdx>=0 ? payload.slice(sepIdx+1) : '';
-        if(session && session.role==='player' && session.username===tormentTargetUser){
-          const selfMember = (cachedRoster||[]).find(m=>m.username===session.username);
-          const tor = (selfMember && selfMember.tamer && Array.isArray(selfMember.tamer.torments)) ? selfMember.tamer.torments.find(t=>t.name===tormentName) : null;
-          if(!tor){
-            fulfillBtn = `<div class="muted" style="margin-top:6px;font-size:11px;">Torment "${escapeHTML(tormentName)}" non trovato (forse rinominato o rimosso dalla Scheda).</div>`;
-          } else if(tor.usedThisRest){
-            fulfillBtn = `<div class="muted" style="margin-top:6px;font-size:11px;">Già tentato questo Rest.</div>`;
-          } else {
-            fulfillBtn = `<button class="btn amber small" style="margin-top:6px;" data-fulfill-torment="${escapeAttr(tormentName)}">🎲 Tira Torment Check</button>`;
-          }
         }
       }
       // Invito del Master a spostarsi ("Vuoi andare a XXX?"): payload = sectorId|luogoId|mode
@@ -675,7 +644,16 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
   // onReply (opzionale): invocato quando si preme "↩" su un messaggio (vedi logHTML) — riceve
   // l'entry originale e sta al chiamante (ogni composer, vedi nota di testa del file) impostare
   // il proprio stato pendingXReplyTo e disegnare il banner con renderReplyBanner.
-  function attachLogModeration(container, code, me, isPrivate, subgroupThread, onChanged, onReply){
+  //
+  // usePlayerActiveChat (8° parametro, opzionale, booleano): passare `true` SOLO dal call site
+  // del #log-live del giocatore in index.html (vedi BUGFIX su playerActiveChatThread/
+  // playerActiveChatLog sopra), per risolvere thread/sourceLog dal thread/log EFFETTIVAMENTE
+  // mostrati in quel momento (qualunque delle 3 chat del giocatore sia aperta), invece del fisso
+  // isPrivate/subgroupThread=undefined (=sempre Generale) usato finora. Quando true, ha sempre
+  // la precedenza sui parametri isPrivate/subgroupThread, pensati invece per i pannelli dedicati
+  // del Master (chat privata e sottogruppo del Master hanno ciascuno il proprio elemento DOM,
+  // non condiviso — lì isPrivate/subgroupThread bastavano già e restano usati così com'erano).
+  function attachLogModeration(container, code, me, isPrivate, subgroupThread, onChanged, onReply, usePlayerActiveChat){
     if(!container || container.dataset.modBound) return;
     container.dataset.modBound = '1';
     container.addEventListener('click', async (e)=>{
@@ -683,15 +661,20 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       const delBtn = e.target.closest('[data-log-del]');
       const replyBtn = e.target.closest('[data-log-reply]');
       const fulfillBtn = e.target.closest('[data-fulfill-target]');
-      const fulfillTormentBtn = e.target.closest('[data-fulfill-torment]');
       const moveAcceptBtn = e.target.closest('[data-move-accept-sector]');
       const moveVoteBtn = e.target.closest('[data-move-vote-id]');
       const evoQuickBtn = e.target.closest('[data-evo-quick-username]');
       // In chat privata il thread attuale può cambiare da un refresh all'altro (il Master
       // passa da un giocatore all'altro), quindi lo leggiamo dalla variabile globale al
       // momento del click, non lo "congeliamo" quando la funzione viene collegata.
-      const thread = subgroupThread ? (typeof subgroupThread==='function'?subgroupThread():subgroupThread) : (isPrivate ? masterPrivateThread : null);
-      const sourceLog = subgroupThread ? cachedSubgroupLog : (isPrivate ? cachedMasterPrivateLog : cachedLog);
+      let thread, sourceLog;
+      if(usePlayerActiveChat){
+        thread = playerActiveChatThread;
+        sourceLog = playerActiveChatLog || [];
+      } else {
+        thread = subgroupThread ? (typeof subgroupThread==='function'?subgroupThread():subgroupThread) : (isPrivate ? masterPrivateThread : null);
+        sourceLog = subgroupThread ? cachedSubgroupLog : (isPrivate ? cachedMasterPrivateLog : cachedLog);
+      }
       if(replyBtn && onReply){
         const id = replyBtn.getAttribute('data-log-reply');
         const entry = sourceLog.find(l=>String(l.id)===String(id));
@@ -763,52 +746,6 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
           // si era separato dal gruppo, il risultato veniva sì salvato sul server, ma spariva
           // subito sotto il filtro di default "Settore attuale" della sua stessa chat — il tiro
           // sembrava non succedere affatto ("non compare il risultato").
-          if(playerChatMode==='private'){
-            await pushPrivateLog(code, session.username, { ...entry, meta: { ...(entry.meta||{}), location: memberLocationKey(me) } });
-          } else if(playerChatMode==='subgroup' && playerActiveSubgroupId){
-            const group = (cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId) || null;
-            await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { ...entry, meta: { ...(entry.meta||{}), location: subgroupLocationKey(group) } });
-          } else {
-            await pushLog(code, entry);
-          }
-          if(onChanged) onChanged();
-        }
-      }
-      if(fulfillTormentBtn && me){
-        // Stesso identico esito/regole del Torment Check "in autonomia" su js/tamer-card.js
-        // (data-torment-check): qui l'unica differenza è che il tiro parte da una richiesta del
-        // Master in chat invece che da un click sulla propria Scheda Tamer. Il Torment è
-        // individuato per NOME (non per indice, che potrebbe non corrispondere più a distanza di
-        // tempo dalla richiesta se il giocatore ha aggiunto/rimosso altri Torment nel frattempo).
-        const tormentName = fulfillTormentBtn.getAttribute('data-fulfill-torment');
-        const tor = (me.tamer.torments||[]).find(t=>t.name===tormentName);
-        if(tor && !tor.usedThisRest){
-          const result = rollTormentCheck(tor.boxes);
-          let outcomeText;
-          if(result.outcome==='crit-success'){
-            tor.boxes = Math.max(0, tor.boxes-1);
-            me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1;
-            tor.usedThisRest = true;
-            outcomeText = 'Successo Critico! Cancella 1 Casella Torment e guadagna 1 IP.';
-          } else if(result.outcome==='success'){
-            me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1;
-            tor.usedThisRest = true;
-            outcomeText = 'Successo! Guadagna 1 IP.';
-          } else if(result.outcome==='deep-crit-fail'){
-            tor.boxes = Math.min(10, tor.boxes+1);
-            me.tamer.tormentPenalty = -5;
-            tor.usedThisRest = true;
-            outcomeText = 'Fallimento Critico Profondo! +1 Casella Torment, penalità -5 fino al Rest.';
-          } else if(result.outcome==='crit-fail'){
-            me.tamer.tormentPenalty = -2;
-            tor.usedThisRest = true;
-            outcomeText = 'Fallimento Critico! Penalità -2 fino al Rest.';
-          } else {
-            outcomeText = 'Fallimento. Nessun effetto, si può ritentare più tardi.';
-          }
-          await saveMember(session.code, me);
-          const entry = { who: displayName(me), role:'roll', text: `Torment Check su "${tor.name}": 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText} (richiesto dal Master)`, meta:{dice: result.dice} };
-          // Stessa logica di risposta-nello-stesso-canale già usata sopra per data-fulfill-target.
           if(playerChatMode==='private'){
             await pushPrivateLog(code, session.username, { ...entry, meta: { ...(entry.meta||{}), location: memberLocationKey(me) } });
           } else if(playerChatMode==='subgroup' && playerActiveSubgroupId){
