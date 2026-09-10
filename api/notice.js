@@ -272,21 +272,23 @@ async function handleMissionPost(req, res) {
   const cleanObjectives = Array.isArray(objectives)
     ? objectives.filter(o => o && String(o.text || '').trim()).map(o => ({ text: String(o.text).trim(), done: !!o.done }))
     : [];
-  const { data, error } = await supabase
-    .from('missions')
-    .insert({
-      code,
-      title: String(title).trim(),
-      description: description || '',
-      hints: hints || '',
-      objectives: cleanObjectives,
-      rewards: rewards || '',
-      assigned_to: Array.isArray(assignedTo) ? assignedTo : [],
-      status: 'non_iniziata',
-      created_by: createdBy || 'Master'
-    })
-    .select()
-    .single();
+  const row = {
+    code,
+    title: String(title).trim(),
+    description: description || '',
+    hints: hints || '',
+    objectives: cleanObjectives,
+    rewards: rewards || '',
+    assigned_to: Array.isArray(assignedTo) ? assignedTo : [],
+    status: 'non_iniziata',
+    created_by: createdBy || 'Master'
+  };
+  let { data, error } = await supabase.from('missions').insert(row).select().single();
+  // Se fallisce per colonna hints mancante, riprova senza
+  if (error && error.message && error.message.includes('hints')) {
+    delete row.hints;
+    ({ data, error } = await supabase.from('missions').insert(row).select().single());
+  }
   if (error) return res.status(500).json({ error: error.message });
   return res.status(200).json({ ok: true, mission: data });
 }
@@ -294,6 +296,27 @@ async function handleMissionPost(req, res) {
 async function handleMissionPut(req, res) {
   const { code, id, title, description, hints, objectives, rewards, assignedTo, status, toggleObjectiveIndex } = req.body || {};
   if (!code || !id) return res.status(400).json({ error: 'code e id sono obbligatori' });
+
+  // Helper: tenta un update; se fallisce per colonna inesistente (hints/updated_at non ancora
+  // migrata), rimuove le colonne problematiche e riprova UNA volta — così il deploy non è bloccante
+  // rispetto alla migrazione SQL.
+  async function tryUpdate(table, patchObj, filters) {
+    let q = supabase.from(table).update(patchObj);
+    for (const [k, v] of Object.entries(filters)) q = q.eq(k, v);
+    const { error } = await q;
+    if (error && error.message && error.message.includes('column')) {
+      // Rimuovi le colonne non riconosciute e riprova
+      const retryPatch = { ...patchObj };
+      for (const col of ['hints', 'updated_at']) {
+        if (error.message.includes(col)) delete retryPatch[col];
+      }
+      if (Object.keys(retryPatch).length === 0) return { error: null }; // niente da aggiornare
+      let q2 = supabase.from(table).update(retryPatch);
+      for (const [k, v] of Object.entries(filters)) q2 = q2.eq(k, v);
+      return await q2;
+    }
+    return { error };
+  }
 
   // Caso frequente: spuntare/togliere un singolo obiettivo. Va letto e riscritto
   // per intero perché objectives è una colonna JSONB, non righe separate.
@@ -305,9 +328,7 @@ async function handleMissionPut(req, res) {
     const idx = Number(toggleObjectiveIndex);
     if (!objs[idx]) return res.status(400).json({ error: 'obiettivo non trovato' });
     objs[idx] = { ...objs[idx], done: !objs[idx].done };
-    const { error } = await supabase.from('missions')
-      .update({ objectives: objs, updated_at: new Date().toISOString() })
-      .eq('id', id).eq('code', code);
+    const { error } = await tryUpdate('missions', { objectives: objs, updated_at: new Date().toISOString() }, { id, code });
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ ok: true });
   }
@@ -321,7 +342,7 @@ async function handleMissionPut(req, res) {
   if (Array.isArray(objectives)) patch.objectives = objectives.map(o => ({ text: String(o.text || '').trim(), done: !!o.done })).filter(o => o.text);
   if (status && ['non_iniziata', 'in_corso', 'completata', 'fallita'].includes(status)) patch.status = status;
 
-  const { error } = await supabase.from('missions').update(patch).eq('id', id).eq('code', code);
+  const { error } = await tryUpdate('missions', patch, { id, code });
   if (error) return res.status(500).json({ error: error.message });
   return res.status(200).json({ ok: true });
 }
