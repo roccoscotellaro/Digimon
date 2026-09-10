@@ -2553,6 +2553,52 @@ let editingScene = false;
   // spostati in js/util.js e js/dice.js (caricati prima di questo script, vedi sotto) --
   // restano disponibili come funzioni globali esattamente come prima.
 
+  // ---------- Dado generico GDR (qualsiasi NdX±M, usabile da tutte le chat) ----------
+  // Accetta: "2d6", "1d20+3", "4d8-1", "d12", "3d10+2d4", "2d6+1d8+5", "/roll 2d20", ecc.
+  // Ritorna null se il testo non è un comando dado. Se lo è, ritorna { text, allDice, total }.
+  function parseGenericDiceRoll(raw){
+    let input = raw.trim();
+    // Accetta prefisso opzionale /roll o /r
+    if(/^\/r(oll)?\s+/i.test(input)) input = input.replace(/^\/r(oll)?\s+/i, '');
+    // Deve contenere almeno un NdX
+    if(!/\d*d\d+/i.test(input)) return null;
+    // Verifica che l'intera stringa sia una formula dado valida (NdX, +, -, numeri)
+    if(!/^[\d]*d[\d]+([+\-][\d]*d?[\d]+)*$/i.test(input.replace(/\s/g, ''))) return null;
+    const clean = input.replace(/\s/g, '');
+    // Splitta i token: ogni +/- inizia un nuovo token
+    const tokens = clean.match(/[+\-]?[^+\-]+/g) || [];
+    let total = 0;
+    const allDice = []; // {sides, results[]}
+    const parts = []; // stringhe descrittive
+    for(const tok of tokens){
+      const sign = tok.startsWith('-') ? -1 : 1;
+      const abs = tok.replace(/^[+\-]/, '');
+      const diceMatch = abs.match(/^(\d*)d(\d+)$/i);
+      if(diceMatch){
+        const count = Math.min(Number(diceMatch[1] || 1), 100); // cap a 100 dadi
+        const sides = Math.min(Number(diceMatch[2]), 1000);
+        if(count < 1 || sides < 1) return null;
+        const results = [];
+        for(let i=0; i<count; i++){
+          const r = Math.floor(Math.random()*sides)+1;
+          results.push(r);
+          total += r * sign;
+        }
+        allDice.push({ sides, results, sign });
+        parts.push(`${sign<0?'-':''}${count}d${sides}[${results.join(',')}]`);
+      } else {
+        const num = Number(abs);
+        if(isNaN(num)) return null;
+        total += num * sign;
+        parts.push(`${sign<0?'-':'+'}${num}`);
+      }
+    }
+    // Formatta testo: "2d6[3,5]+1d8[7]+3 = 18"
+    let desc = parts.join('');
+    if(desc.startsWith('+')) desc = desc.slice(1);
+    return { text: `🎲 ${desc} = ${total}`, allDice, total };
+  }
+
 
 
   // tormentBoxesHTML e' stata spostata in js/dice.js (pure formattazione, zero dipendenze).
@@ -3486,11 +3532,15 @@ let editingScene = false;
       if(playerChatMode==='subgroup' && playerActiveSubgroupId){
         const subMeta = {};
         if(pendingActionImageUrl) subMeta.image = pendingActionImageUrl;
-        // Vedi subgroupLocationKey: tagga con la posizione effettiva del sottogruppo, non quella
-        // del gruppo intero, altrimenti un sottogruppo separato non viene mai "riconosciuto".
         subMeta.location = subgroupLocationKey((cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId));
         if(pendingReplyTo) subMeta.replyTo = pendingReplyTo;
-        await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { who: displayName(me), role:'player', text: raw, meta: subMeta });
+        // Dado generico GDR (es. "2d6", "/roll 1d20+3")
+        const diceResult = parseGenericDiceRoll(raw);
+        if(diceResult){
+          await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { who: displayName(me), role:'roll', text: diceResult.text, meta: subMeta });
+        } else {
+          await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { who: displayName(me), role:'player', text: raw, meta: subMeta });
+        }
         advanceGameClock('sub:'+playerActiveSubgroupId, 5); // +5min per messaggio sottogruppo
         ta.value='';
         pendingActionImageUrl = null;
@@ -3502,16 +3552,17 @@ let editingScene = false;
         return;
       }
       if(playerChatMode==='private'){
-        // Stesso trattamento dell'immagine allegata della chat pubblica qui sotto (pendingActionImageUrl
-        // è condiviso tra le due modalità, dato che usano lo stesso widget #action-img-*): senza questo
-        // l'immagine restava selezionata nel widget ma non veniva mai inviata in privato.
         const privTextMeta = {};
         if(pendingActionImageUrl) privTextMeta.image = pendingActionImageUrl;
-        // Vedi memberLocationKey: tagga con la posizione effettiva del giocatore (se separato
-        // dal gruppo), non quella del gruppo intero.
         privTextMeta.location = memberLocationKey(me);
         if(pendingReplyTo) privTextMeta.replyTo = pendingReplyTo;
-        await pushPrivateLog(code, session.username, { who: displayName(me), role:'player', text: raw, meta: privTextMeta });
+        // Dado generico GDR (es. "2d6", "/roll 1d20+3")
+        const diceResult = parseGenericDiceRoll(raw);
+        if(diceResult){
+          await pushPrivateLog(code, session.username, { who: displayName(me), role:'roll', text: diceResult.text, meta: privTextMeta });
+        } else {
+          await pushPrivateLog(code, session.username, { who: displayName(me), role:'player', text: raw, meta: privTextMeta });
+        }
         advanceGameClock('private:'+session.username, 5); // +5min per messaggio privato
         ta.value='';
         pendingActionImageUrl = null;
@@ -3535,10 +3586,19 @@ let editingScene = false;
         if(pendingReplyTo) rollMeta.replyTo = pendingReplyTo;
         await pushLog(code, { who: displayName(me), role:'roll', text: rollResult.text, meta: Object.keys(rollMeta).length ? rollMeta : null });
       } else {
-        const textMeta = {};
-        if(pendingActionImageUrl) textMeta.image = pendingActionImageUrl;
-        if(pendingReplyTo) textMeta.replyTo = pendingReplyTo;
-        await pushLog(code, { who: displayName(me), role:'player', text: raw, meta: Object.keys(textMeta).length ? textMeta : null });
+        // Dado generico GDR (es. "2d6", "/roll 1d20+3") — fallback se non è una skill shortcut
+        const genericDice = parseGenericDiceRoll(raw);
+        if(genericDice){
+          const rollMeta = {};
+          if(pendingActionImageUrl) rollMeta.image = pendingActionImageUrl;
+          if(pendingReplyTo) rollMeta.replyTo = pendingReplyTo;
+          await pushLog(code, { who: displayName(me), role:'roll', text: genericDice.text, meta: Object.keys(rollMeta).length ? rollMeta : null });
+        } else {
+          const textMeta = {};
+          if(pendingActionImageUrl) textMeta.image = pendingActionImageUrl;
+          if(pendingReplyTo) textMeta.replyTo = pendingReplyTo;
+          await pushLog(code, { who: displayName(me), role:'player', text: raw, meta: Object.keys(textMeta).length ? textMeta : null });
+        }
       }
       advanceGameClock('general', 5); // +5min per messaggio generale
       ta.value='';
@@ -4002,14 +4062,17 @@ let editingScene = false;
       if(gmDigimojiChk && gmDigimojiChk.checked) meta.digimoji = true;
       if(pendingGmImageUrl) meta.image = pendingGmImageUrl;
       if(pendingGmReplyTo) meta.replyTo = pendingGmReplyTo;
-      if(role==='npc'){
-        // Se è un NPC nuovo, lo salva subito: la prossima apertura del picker "Parla come" lo
-        // rilegge da loadSavedNpcs(code), quindi comparirà già pronto senza bisogno di un patch
-        // manuale del DOM (il picker non è più un <select> con opzioni fisse da aggiornare).
-        rememberNpc(code, { name: who, color: chosenColor, avatar });
+      // Dado generico GDR (es. "2d6", "/roll 1d20+3") — il Master può tirare dadi come chiunque
+      const genericDice = parseGenericDiceRoll(text);
+      if(genericDice){
+        await pushLog(code, { who, role:'roll', text: genericDice.text, meta: Object.keys(meta).length ? meta : null });
+      } else {
+        if(role==='npc'){
+          rememberNpc(code, { name: who, color: chosenColor, avatar });
+        }
+        await pushLog(code, { who, role, text, meta: Object.keys(meta).length ? meta : null });
       }
-      await pushLog(code, { who, role, text, meta: Object.keys(meta).length ? meta : null });
-      advanceGameClock('general', 5); // +5min per messaggio Master in generale
+      advanceGameClock('general', 5);
       ta.value='';
       pendingGmImageUrl = null;
       pendingGmReplyTo = null;
