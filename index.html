@@ -2626,18 +2626,10 @@ let editingScene = false;
   function renderDicePanel(panelId){
     const el = document.getElementById(panelId);
     if(!el) return;
-    const isMaster = panelId === 'dice-panel-master';
     el.innerHTML = `
       <details>
         <summary style="cursor:pointer;font-size:11px;color:var(--text-mute);user-select:none;">🎲 Lancia Dadi</summary>
         <div style="margin-top:6px;">
-          ${isMaster ? `<div style="margin-bottom:6px;">
-            <select id="${panelId}-dest" style="font-size:11px;width:100%;">
-              <option value="general">📣 Chat Generale</option>
-              ${(cachedRoster||[]).filter(p=>p.role==='player').map(p=>`<option value="private:${escapeAttr(p.username)}">✉️ Privata di ${escapeHTML(displayName(p))}</option>`).join('')}
-              ${(cachedSubgroups||[]).map(g=>`<option value="subgroup:${escapeAttr(g.id)}">👥 ${escapeHTML(g.name)}</option>`).join('')}
-            </select>
-          </div>` : ''}
           <div class="dice-panel-bar">
             <input type="number" class="dice-qty" id="${panelId}-qty" value="1" min="1" max="100" title="Quantità" />
             ${DICE_TYPES.map(d=>`<button class="dice-btn" data-dice-sides="${d}" id="${panelId}-d${d}">d${d}</button>`).join('')}
@@ -2704,20 +2696,14 @@ let editingScene = false;
           await pushLog(code, entry);
         }
       } else {
-        // Master — destinazione scelta dal selettore
-        const destSel = document.getElementById(panelId+'-dest');
-        const dest = destSel ? destSel.value : 'general';
+        // Master — segue il tab chat attualmente selezionato (Generale/Privata/Sottogruppo)
         const entry = { who:'Master', role:'roll', text: rollText };
-        if(dest.startsWith('subgroup:')){
-          const subId = dest.slice('subgroup:'.length);
-          const group = (cachedSubgroups||[]).find(g=>g.id===subId) || null;
+        if(typeof masterChatMode!=='undefined' && masterChatMode==='private' && masterPrivateThread){
+          await pushPrivateLog(code, masterPrivateThread, entry);
+        } else if(typeof masterChatMode!=='undefined' && masterChatMode==='subgroup' && typeof activeSubgroupId!=='undefined' && activeSubgroupId){
+          const group = (cachedSubgroups||[]).find(g=>g.id===activeSubgroupId) || null;
           entry.meta = { location: subgroupLocationKey(group) };
-          await pushPrivateLog(code, 'subgroup:'+subId, entry);
-        } else if(dest.startsWith('private:')){
-          const username = dest.slice('private:'.length);
-          const member = (cachedRoster||[]).find(m=>m.username===username);
-          entry.meta = { location: memberLocationKey(member) };
-          await pushPrivateLog(code, username, entry);
+          await pushPrivateLog(code, 'subgroup:'+activeSubgroupId, entry);
         } else {
           await pushLog(code, entry);
         }
