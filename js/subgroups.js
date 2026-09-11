@@ -25,6 +25,12 @@
 // pendingPrivateReplyTo di js/private-chat.js — vedi la nota di testa di js/chat-log-engine.js.
 // onSubgroupReply è passato come 7° argomento a entrambi i punti che chiamano attachLogModeration
 // su questa chat (qui sotto, e in index.html/refreshLiveParts durante il polling).
+//
+// BUGFIX (segnalato da Rocco: "il tiro di dadi è presente per il master solo in generale e non
+// nelle altre due chat"): stesso identico problema e stessa correzione di js/private-chat.js (vedi
+// nota lì) — il pannello "🎲 Lancia Dadi" mancava del tutto nel markup di questa chat. Aggiunto
+// #dice-panel-master-subgroup, inizializzato SOLO quando esiste un sottogruppo attivo (nessun
+// composer, quindi nessun pannello Dadi, se non c'è ancora nessun sottogruppo creato).
 
   let pendingSubgroupImageUrl = null; // immagine allegata in corso di invio nei Sottogruppi di Chat del Master
   let pendingSubgroupReplyTo = null; // messaggio a cui si sta rispondendo nel Sottogruppo attivo
@@ -97,6 +103,7 @@
           <button class="btn ghost small" id="subgroup-btn-correct">Correggi Italiano</button>
         </div>
         <div class="muted" id="subgroup-correct-status" style="margin-top:2px;font-size:10.5px;"></div>
+        <div id="dice-panel-master-subgroup" class="dice-panel" style="margin-top:6px;"></div>
         ${chatAttachHTML('subgroup')}
         ${mentionButtonHTML('subgroup')}
         <button class="btn amber" id="btn-subgroup-send" style="width:100%;margin-top:6px;">Invia</button>
@@ -143,6 +150,10 @@
     const sendBtn = document.getElementById('btn-subgroup-send');
     if(activeGroup) bindChatAttach('subgroup', code, 'chat', ()=>pendingSubgroupImageUrl, (url)=>{ pendingSubgroupImageUrl = url; });
     if(activeGroup) bindMentionButton('subgroup', code, 'subgroup-text');
+    // Pannello Dadi condiviso (vedi BUGFIX in testa al file) — ricreato ad ogni render di questo
+    // pannello, solo quando esiste davvero un sottogruppo attivo (altrimenti il contenitore non è
+    // nel markup, vedi sopra).
+    if(activeGroup && typeof renderDicePanel === 'function') renderDicePanel('dice-panel-master-subgroup');
     // Correzione IT via AI: stessa funzione già usata in Chat Generale (Player) e ora anche in
     // Chat Privata (Master) — mancava qui, unica sezione rimasta senza.
     const subCorrectBtn = document.getElementById('subgroup-btn-correct');
@@ -220,8 +231,11 @@
       } else if(mode.startsWith('encounter:')){
         const idx = Number(mode.slice('encounter:'.length));
         const encObj = (cachedScene.encounters||[])[idx];
-        who = encName(encObj) || 'Digimon';
-        const dexMatch = cachedDex.find(e=>e.name.trim().toLowerCase()===who.trim().toLowerCase());
+        const trueEncName = encName(encObj) || 'Digimon';
+        // BUGFIX (privacy, segnalato da Rocco): stessa maschera "???" di index.html (Chat
+        // Generale) per un Incontro con "🎭 Nascondi Nome" attivo — vedi il commento lì.
+        who = (encObj && encObj.nameHidden) ? '❔ ???' : trueEncName;
+        const dexMatch = cachedDex.find(e=>e.name.trim().toLowerCase()===trueEncName.trim().toLowerCase());
         role = 'enemy';
         avatar = (encObj && typeof encObj==='object' && encObj.image) ? encObj.image : (dexMatch ? dexMatch.image_url : null);
       } else if(mode.startsWith('dex:')){

@@ -31,6 +31,17 @@
 // pendingSubgroupReplyTo di js/subgroups.js — vedi la nota di testa di js/chat-log-engine.js.
 // onPrivateReply è passato come 7° argomento a entrambi i punti che chiamano attachLogModeration
 // su questa chat (qui sotto, e in index.html/refreshLiveParts durante il polling).
+//
+// BUGFIX (segnalato da Rocco: "il tiro di dadi è presente per il master solo in generale e non
+// nelle altre due chat"): il pannello "🎲 Lancia Dadi" (renderDicePanel, definito in index.html)
+// veniva inserito SOLO nel markup della Chat Generale (#dice-panel-master) — questa chat Privata
+// del Master non aveva alcun contenitore per lui, quindi il widget semplicemente non esisteva qui
+// (non era un problema di permessi/routing: sendDiceRollToChat già instrada correttamente
+// qualunque tiro del Master in base a masterChatMode/masterPrivateThread/activeSubgroupId, vedi
+// index.html — mancava solo il pulsante stesso). Aggiunto #dice-panel-master-private nel markup
+// qui sotto, inizializzato con renderDicePanel ad ogni render di questo pannello (il pannello Id
+// diverso da 'dice-panel-player' fa sì che sendDiceRollToChat prenda comunque il ramo "Master",
+// che già segue il tab attivo — nessuna modifica necessaria lì).
 
   let masterChatMode = 'general';
   let masterPrivateUnread = {}; // { username: true } — thread ha messaggi non ancora visti dal Master
@@ -166,6 +177,7 @@
         <button class="btn ghost small" id="private-btn-correct">Correggi Italiano</button>
       </div>
       <div class="muted" id="private-correct-status" style="margin-top:2px;font-size:10.5px;"></div>
+      <div id="dice-panel-master-private" class="dice-panel" style="margin-top:6px;"></div>
       ${chatAttachHTML('private')}
       ${mentionButtonHTML('private')}
       <button class="btn amber" id="btn-private-send-master" style="width:100%;margin-top:6px;">Invia</button>
@@ -181,6 +193,10 @@
     };
     bindChatAttach('private', code, 'avviso', ()=>pendingPrivateImageUrl, (url)=>{ pendingPrivateImageUrl = url; });
     bindMentionButton('private', code, 'private-text-master');
+    // Pannello Dadi condiviso (vedi BUGFIX in testa al file) — ricreato ad ogni render di questo
+    // pannello, esattamente come lo speak-as/gli allegati sopra, dato che cardEl.innerHTML viene
+    // ricostruito per intero ogni volta (cambio thread, invio messaggio, refresh...).
+    if(typeof renderDicePanel === 'function') renderDicePanel('dice-panel-master-private');
     // Correzione IT via AI: stessa funzione già usata in Chat Generale (Player) — mancava qui,
     // costringendo il Master a correggere a mano i messaggi di Chat Privata.
     const privCorrectBtn = document.getElementById('private-btn-correct');
@@ -254,8 +270,11 @@
       } else if(mode.startsWith('encounter:')){
         const idx = Number(mode.slice('encounter:'.length));
         const encObj = (cachedScene.encounters||[])[idx];
-        who = encName(encObj) || 'Digimon';
-        const dexMatch = cachedDex.find(e=>e.name.trim().toLowerCase()===who.trim().toLowerCase());
+        const trueEncName = encName(encObj) || 'Digimon';
+        // BUGFIX (privacy, segnalato da Rocco): stessa maschera "???" di index.html (Chat
+        // Generale) per un Incontro con "🎭 Nascondi Nome" attivo — vedi il commento lì.
+        who = (encObj && encObj.nameHidden) ? '❔ ???' : trueEncName;
+        const dexMatch = cachedDex.find(e=>e.name.trim().toLowerCase()===trueEncName.trim().toLowerCase());
         role = 'enemy';
         avatar = (encObj && typeof encObj==='object' && encObj.image) ? encObj.image : (dexMatch ? dexMatch.image_url : null);
       } else if(mode.startsWith('dex:')){

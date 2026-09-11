@@ -502,7 +502,12 @@
           await saveMember(session.code, me);
           const resEl = document.getElementById('torment-result-'+idx);
           if(resEl) resEl.innerHTML = `${diceRowHTML(result.dice)} <b>${result.total}</b> vs TN ${result.tn} — ${outcomeText}`;
-          await pushLog(session.code, { who: displayName(me), role:'roll', text: `Torment Check su "${tor.name}": 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText}`, meta:{dice: result.dice} });
+          // BUGFIX (privacy, segnalato da Rocco): come per la richiesta (vedi index.html) e per il
+          // Torment Check evaso da una richiesta del Master (js/chat-log-engine.js), il messaggio
+          // in chat non nomina più il Torment — solo l'esito generico. Il nome vero viaggia nel
+          // payload ::TORMENTRESULT:: e viene rivelato da logHTML (js/chat-log-engine.js) solo al
+          // giocatore che ha tirato e al Master.
+          await pushLog(session.code, { who: displayName(me), role:'roll', text: `Ha completato un Torment Check: 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText}::TORMENTRESULT::${session.username}|${tor.name}`, meta:{dice: result.dice} });
           if(tor.usedThisRest){ btn.disabled = true; btn.textContent = 'Già tentato (Rest)'; }
           if(onChanged) onChanged();
         };
