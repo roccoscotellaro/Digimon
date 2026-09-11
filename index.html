@@ -383,14 +383,30 @@
       display:flex;align-items:stretch;
       background:var(--panel);border-top:1px solid var(--line);
       box-shadow:0 -2px 12px rgba(0,0,0,0.5);
-      padding:0;height:56px;
+      padding:0;min-height:56px;
       padding-bottom:env(safe-area-inset-bottom, 0);
       /* Rimosso backdrop-filter: lo sfondo qui sopra (var(--panel)) è già opaco (#0e141b,
          nessun alpha), quindi il blur non aveva alcun effetto visivo su nessun browser —
          serviva solo a innescare un bug noto di compositing di Safari/WebKit su elementi
          "position:fixed" con backdrop-filter, che produce una riga/artefatto colorato
          (qui: la striscia ciano che taglia le icone segnalata dall'utente, riprodotta solo
-         su Safari e non su altri browser/telefono). Vedi claude/split-status-addendum-*.md. */
+         su Safari e non su altri browser/telefono). Vedi claude/split-status-addendum-*.md.
+
+         BUGFIX successivo (segnalato di nuovo da Rocco: "il menu in basso in Safari si vede
+         tagliato, il selettore va sull'icona"): con *{box-sizing:border-box} (vedi cima del
+         file), un'altezza FISSA (height:56px) unita a padding-bottom:env(safe-area-inset-
+         bottom) faceva SOTTRARRE l'inset all'area di contenuto invece di aggiungersi ad essa —
+         su un iPhone con home indicator (inset-bottom tipicamente ~34px, presente in Safari
+         reale su device con notch/Dynamic Island, spesso assente/0 nei browser o negli
+         emulatori con cui il bug non si vedeva) i bottoni .mobile-nav-btn restavano quindi
+         schiacciati in soli ~22px invece di 56px: icona ed etichetta si comprimevano/
+         sovrapponevano, e la barretta dell'indicatore attivo (.mobile-nav-btn.active::after,
+         posizionata a top:0 DENTRO quel box schiacciato) finiva visivamente sopra l'icona
+         invece che sotto — esattamente "il selettore va sull'icona". height:56px → min-height:
+         56px fa sì che l'inset si sommi all'altezza totale (coerente con gli altri punti del
+         file che già assumono un ingombro totale di "56px + inset", es. il padding-bottom di
+         .mobile-section.mobile-active e i bottom di .dvos-audio-fixed/.dvos-attr-fixed più
+         sopra), lasciando ai bottoni sempre i loro 56px pieni indipendentemente dal device. */
     }
     .mobile-nav-btn{
       flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -3951,9 +3967,17 @@ let editingScene = false;
             <button class="btn amber" id="btn-request-roll" style="width:100%;">Richiedi Tiro</button>
             <div class="muted" id="req-roll-status" style="margin-top:6px;"></div>
           </div>
+          </div>
+
+          <div class="mobile-section" data-mobile-tab="strumenti">
+          <!-- BUGFIX (Rocco, 2026-09-11): "Richiedi Torment Check" viveva nel tab mobile "Roster"
+               insieme a "Roster Campagna"/"Richiedi un Tiro" — su desktop non si notava (grid2
+               mostra tutto insieme), ma su mobile chi cerca uno strumento del Master lo cerca
+               sotto "Strumenti" (🔧) e non lo trova sotto "Roster" (👥): da lì il "non è presente".
+               Spostato qui, nessun'altra modifica (stessi id, stesso markup). -->
           <div class="hud-frame card">
             <div class="section-title">Richiedi Torment Check</div>
-            <div class="muted" style="font-size:11px;margin-bottom:4px;">Richiesta mirata a UN giocatore, su UNO dei suoi Torment già registrati (a differenza di "Richiedi un Tiro" sopra, qui il Master sceglie anche quale Torment specifico).</div>
+            <div class="muted" style="font-size:11px;margin-bottom:4px;">Richiesta mirata a UN giocatore, su UNO dei suoi Torment già registrati (a differenza di "Richiedi un Tiro" nel tab Roster, qui il Master sceglie anche quale Torment specifico).</div>
             <div class="field"><label>A chi</label>
               <select id="torment-req-player">
                 <option value="">— scegli un giocatore —</option>
@@ -3982,9 +4006,6 @@ let editingScene = false;
             <button class="btn amber" id="btn-request-torment" style="width:100%;">Richiedi Torment Check</button>
             <div class="muted" id="torment-req-status" style="margin-top:6px;"></div>
           </div>
-          </div>
-
-          <div class="mobile-section" data-mobile-tab="strumenti">
           <div class="hud-frame card" id="notice-mgr-card"></div>
           <div class="hud-frame card" id="bugreports-card"></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;">
@@ -4341,7 +4362,13 @@ let editingScene = false;
         // in js/tamer-card.js): il lato ricevente ricompone tutto ciò che segue il primo "|"
         // invece di limitarsi a payload.split('|')[1], quindi non serve escaparlo qui.
         const payload = `${targetUsername}|${tormentName}`;
-        const entry = { who:'Master', role:'tormentrequest', text: `Richiesta a ${targetLabel}: tira il Torment Check "${tormentName}"::TORMENTREQ::${payload}` };
+        // BUGFIX (privacy, segnalato da Rocco): il testo "shown" (prima di ::TORMENTREQ::) è
+        // visibile a TUTTI quelli che leggono quel canale, non solo al giocatore bersaglio — gli
+        // altri giocatori non devono sapere quale Torment (quindi quale malus) affligge un
+        // personaggio non loro. Il nome del Torment resta quindi SOLO nel payload dopo il
+        // marcatore (letto in chiaro solo dal client del giocatore bersaglio, vedi logHTML in
+        // js/chat-log-engine.js) — il testo mostrato a tutti ora è generico.
+        const entry = { who:'Master', role:'tormentrequest', text: `Richiesta a ${targetLabel}: tira un Torment Check.::TORMENTREQ::${payload}` };
         if(sendGeneral) await pushLog(code, entry);
         if(sendPrivate){
           await pushPrivateLog(code, targetUsername, { ...entry, meta: { location: memberLocationKey(targetMember) } });
