@@ -441,13 +441,6 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       // non sia già stato tentato in questo Rest — può essere passato del tempo dall'invio della
       // richiesta. cachedRoster (non "me", che qui non è un parametro di logHTML) dà lo stato
       // aggiornato del Tamer di chi sta leggendo.
-      //
-      // BUGFIX (privacy, segnalato da Rocco): il testo "shown" (mostrato in chat a TUTTI quelli
-      // che leggono quel canale) non nomina più il Torment — vedi index.html, dove il messaggio
-      // è ora generico ("tira un Torment Check."). Solo qui, nel ramo che riguarda il client del
-      // giocatore BERSAGLIO (session.username===tormentTargetUser), il nome vero viene rivelato:
-      // sia per decidere se il bottone è ancora valido, sia ora anche nell'etichetta del bottone
-      // stesso, visibile SOLO a lui — gli altri giocatori non vedono mai questo ramo.
       if(l.role==='tormentrequest' && l.text.includes('::TORMENTREQ::')){
         const [shown, payload] = l.text.split('::TORMENTREQ::');
         displayText = shown;
@@ -462,27 +455,8 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
           } else if(tor.usedThisRest){
             fulfillBtn = `<div class="muted" style="margin-top:6px;font-size:11px;">Già tentato questo Rest.</div>`;
           } else {
-            fulfillBtn = `<button class="btn amber small" style="margin-top:6px;" data-fulfill-torment="${escapeAttr(tormentName)}">🎲 Tira Torment Check: ${escapeHTML(tormentName)}</button>`;
+            fulfillBtn = `<button class="btn amber small" style="margin-top:6px;" data-fulfill-torment="${escapeAttr(tormentName)}">🎲 Tira Torment Check</button>`;
           }
-        }
-      }
-      // Risultato di un Torment Check (self-service da js/tamer-card.js, oppure da una richiesta
-      // del Master evasa con fulfillTormentBtn più sotto in questo file): stesso bugfix privacy
-      // di ::TORMENTREQ:: qui sopra — segnalato da Rocco perché il fix originale copriva solo il
-      // messaggio di RICHIESTA e non quello di RISULTATO. Il testo "shown" (visibile a tutti quelli
-      // che leggono il canale) non nomina più il Torment, solo l'esito generico (successo/fallimento
-      // e conseguenze meccaniche). Il nome vero viaggia nel payload e viene rivelato in un dettaglio
-      // <details> ripiegabile solo a chi ha titolo di saperlo: il giocatore che ha tirato, oppure il
-      // Master (che lo conosce comunque già, avendolo scelto lui stesso per la richiesta, ed è chi
-      // deve tracciare i Torment dei giocatori per gestire la partita).
-      if(l.role==='roll' && l.text && l.text.includes('::TORMENTRESULT::')){
-        const [shown, payload] = l.text.split('::TORMENTRESULT::');
-        displayText = shown;
-        const sepIdx = payload.indexOf('|');
-        const rollUser = sepIdx>=0 ? payload.slice(0, sepIdx) : payload;
-        const tormentName = sepIdx>=0 ? payload.slice(sepIdx+1) : '';
-        if(session && ((session.role==='player' && session.username===rollUser) || session.role==='master')){
-          techDetailHTML = `<details style="margin-top:4px;"><summary class="muted" style="font-size:10px;cursor:pointer;">▸ quale Torment</summary><div class="muted" style="font-size:10.5px;margin-top:4px;">${escapeHTML(tormentName)}</div></details>`;
         }
       }
       // Invito del Master a spostarsi ("Vuoi andare a XXX?"): payload = sectorId|luogoId|mode
@@ -854,10 +828,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
             outcomeText = 'Fallimento. Nessun effetto, si può ritentare più tardi.';
           }
           await saveMember(session.code, me);
-          // BUGFIX (privacy, segnalato da Rocco): il testo mostrato in chat non nomina più il
-          // Torment (vedi ::TORMENTRESULT:: in logHTML più sopra in questo file) — solo il
-          // giocatore stesso e il Master, leggendo il messaggio, vedono il nome vero.
-          const entry = { who: displayName(me), role:'roll', text: `Ha completato un Torment Check (richiesto dal Master): 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText}::TORMENTRESULT::${session.username}|${tor.name}`, meta:{dice: result.dice} };
+          const entry = { who: displayName(me), role:'roll', text: `Torment Check su "${tor.name}": 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText} (richiesto dal Master)`, meta:{dice: result.dice} };
           // Stessa logica di risposta-nello-stesso-canale già usata sopra per data-fulfill-target.
           if(playerChatMode==='private'){
             await pushPrivateLog(code, session.username, { ...entry, meta: { ...(entry.meta||{}), location: memberLocationKey(me) } });
@@ -998,6 +969,20 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         html += line;
         if(i < lines.length-1) html += '<br>';
       }
+    });
+    // Battuta fuori tono (richiesta utente: "quando i giocatori scrivono (scherzo: ...) si può
+    // aprire un piccolo trafiletto con la battuta, così da non smorzare il tono del resto"):
+    // "(scherzo: testo)" o "(scherzo, testo)" (accetta anche solo "(scherzo testo)", senza
+    // separatore, per tolleranza) viene estratto dal flusso principale e sostituito con un chip
+    // "😄 scherzo" chiuso di default (vedi .log-joke nel CSS di index.html) — un click lo apre e
+    // mostra la battuta in un riquadro a parte. Va PRIMA dell'evidenziazione delle virgolette qui
+    // sotto, così un'eventuale "..." dentro la battuta viene comunque evidenziata al suo interno.
+    // [^<)]+ (non "<" né ")") resta dentro una singola riga/battuta, senza attraversare eventuali
+    // <br>/<div> già inseriti sopra o "mangiarsi" la parentesi di chiusura vera.
+    html = html.replace(/\(\s*scherzo\s*[:,]?\s*([^<)]+)\)/gi, (m, joke)=>{
+      const jokeText = joke.trim();
+      if(!jokeText) return m; // "(scherzo)" da solo, senza nulla dentro: nulla da mostrare, lascialo com'è
+      return `<details class="log-joke"><summary>😄 scherzo</summary><span class="log-joke-text">${jokeText}</span></details>`;
     });
     // Discorso diretto: il testo tra virgolette viene evidenziato (colore + corsivo, vedi CSS
     // .log-speech) per distinguere a colpo d'occhio ciò che il personaggio DICE dal resto del

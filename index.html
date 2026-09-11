@@ -177,6 +177,27 @@
   .mention-chip img{width:18px;height:18px;border-radius:50%;object-fit:cover;flex-shrink:0;}
   .mention-chip:hover{border-color:var(--cyan);background:rgba(53,232,201,0.22);}
 
+  /* Richiesta utente: "quando i giocatori scrivono (scherzo: ...) si può aprire un piccolo
+     trafiletto con la battuta, così da non smorzare il tono del resto" -- formatLogText()
+     estrae "(scherzo: testo)" dal messaggio e lo sostituisce con questo <details> chiuso di
+     default: un chip cliccabile "😄 scherzo" che, aperto, mostra la battuta in un riquadro a
+     parte, invece di lasciarla in mezzo al testo serio. display:inline-block sul <details>
+     stesso per restare dentro il flusso della frase (di default sarebbe un blocco a sé, andando
+     a capo anche col resto della frase dopo di lui). */
+  .log-joke{display:inline-block;vertical-align:middle;}
+  .log-joke summary{
+    display:inline-flex;align-items:center;gap:3px;cursor:pointer;list-style:none;
+    font-size:11px;padding:1px 8px;border:1px solid rgba(255,138,61,0.5);border-radius:12px;
+    background:rgba(255,138,61,0.1);color:var(--amber);user-select:none;line-height:1.6;
+  }
+  .log-joke summary::-webkit-details-marker{display:none;}
+  .log-joke summary::marker{content:'';}
+  .log-joke summary:hover{background:rgba(255,138,61,0.2);}
+  .log-joke .log-joke-text{
+    display:block;margin-top:4px;padding:6px 9px;border:1px solid rgba(255,138,61,0.35);
+    border-radius:8px;background:rgba(255,138,61,0.07);font-size:12px;font-style:italic;color:var(--text);
+  }
+
   .dice-perspective{perspective:400px;display:inline-flex;gap:6px;vertical-align:middle;}
   .die3d{display:inline-block;font-size:26px;line-height:1;color:var(--cyan);animation:diceroll 0.7s cubic-bezier(.3,1.4,.6,1);}
   @keyframes diceroll{
