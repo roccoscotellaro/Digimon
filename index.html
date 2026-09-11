@@ -251,6 +251,31 @@
   .dice-qty{width:38px;text-align:center;font-size:12px;padding:4px;border-radius:var(--radius);border:1px solid var(--line);background:var(--surface);color:var(--text);font-family:var(--mono);}
   .dice-mod{width:46px;text-align:center;font-size:12px;padding:4px;border-radius:var(--radius);border:1px solid var(--line);background:var(--surface);color:var(--text);font-family:var(--mono);}
   .dice-roll-go{padding:4px 12px;font-size:12px;border-radius:var(--radius);cursor:pointer;border:1px solid var(--cyan);background:rgba(53,232,201,0.15);color:var(--cyan);font-weight:700;}
+  /* BUGFIX/richiesta grafica (Rocco: "non vedo la funzione per tirare i dadi... nelle chat di
+     privato e sottogruppo, magari integra meglio la funzione con il resto della grafica"): il
+     widget esisteva già in tutte le chat (renderDicePanel, vedi sotto) ma il suo <summary> era
+     un link mutato in testo 11px, identico a un qualsiasi <details> "avanzato" secondario —
+     facilmente perso in composer lunghi come Privata/Sottogruppo, dove precede subito il tasto
+     "Invia". Ora il <summary> ha lo stesso trattamento visivo di un chip/pulsante (bordo ciano,
+     hover, stato aperto evidenziato) così risalta come un controllo cliccabile a sé, coerente
+     con .btn/.chat-seg-btn/.mention-chip già usati altrove; il corpo del pannello, quando aperto,
+     prende una piccola "card" (.dice-panel-body) invece di restare senza alcun contorno.
+     Nessuna modifica alla logica: stesso markup/id, solo classi aggiuntive sul contenuto generato
+     da renderDicePanel. */
+  .dice-panel summary{
+    display:inline-flex;align-items:center;gap:5px;
+    padding:5px 10px;font-size:11px;font-family:'Share Tech Mono',monospace;
+    letter-spacing:0.03em;border:1px solid var(--cyan-dim);color:var(--cyan);
+    border-radius:var(--radius);cursor:pointer;user-select:none;
+    -webkit-tap-highlight-color:transparent;transition:.15s;
+  }
+  .dice-panel summary::-webkit-details-marker{display:none;}
+  .dice-panel summary::marker{content:'';}
+  .dice-panel summary:hover{background:rgba(53,232,201,0.1);border-color:var(--cyan);}
+  .dice-panel[open] summary, .dice-panel details[open] > summary{background:rgba(53,232,201,0.12);border-color:var(--cyan);}
+  .dice-panel .dice-panel-body{
+    margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel-2);
+  }
 
   .tag{font-size:10px;padding:2px 8px;border:1px solid var(--line);color:var(--text-mute);border-radius:20px;text-transform:uppercase;}
   .flex-between{display:flex;justify-content:space-between;align-items:center;}
@@ -2644,8 +2669,8 @@ let editingScene = false;
     if(!el) return;
     el.innerHTML = `
       <details>
-        <summary style="cursor:pointer;font-size:11px;color:var(--text-mute);user-select:none;">🎲 Lancia Dadi</summary>
-        <div style="margin-top:6px;">
+        <summary>🎲 Lancia Dadi</summary>
+        <div class="dice-panel-body">
           <div class="dice-panel-bar">
             <input type="number" class="dice-qty" id="${panelId}-qty" value="1" min="1" max="100" title="Quantità" />
             ${DICE_TYPES.map(d=>`<button class="dice-btn" data-dice-sides="${d}" id="${panelId}-d${d}">d${d}</button>`).join('')}

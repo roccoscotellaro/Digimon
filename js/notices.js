@@ -64,6 +64,38 @@
           ⏳ In attesa: ${pending.length ? pending.map(displayNameFor).join(', ') : 'nessuno'}
         </div>`;
     }
+    // BUGFIX/richiesta grafica (Rocco: "manca il crop... degli avvisi, troppo lunghe ormai come
+    // sezioni"): prima ogni Avviso attivo mostrava SEMPRE testo completo + progresso conferme per
+    // intero, e la lista non aveva alcun limite — con qualche Avviso accumulato (specialmente uno
+    // lungo, o con molti destinatari) il pannello Master diventava lunghissimo. Ora:
+    //  1) il testo di un singolo Avviso, se supera ~220 caratteri, viene troncato con un
+    //     <details> per espanderlo (stesso pattern di digivice-scan.html/.crest-reasoning);
+    //  2) solo i primi 3 Avvisi attivi restano sempre visibili per intero, gli altri finiscono
+    //     dentro un <details> "▸ Altri N avvisi attivi" (nessuna perdita di funzionalità: i
+    //     bottoni "Chiudi" restano cliccabili anche dentro, la selezione degli event handler
+    //     più sotto usa querySelectorAll su tutto cardEl indipendentemente dal nesting).
+    function noticeBodyHTML(n){
+      const text = n.text || '';
+      if(text.length <= 220) return `<div style="margin-top:4px;font-size:12px;white-space:pre-wrap;">${escapeHTML(text)}</div>${confirmProgressHTML(n)}`;
+      return `<details style="margin-top:4px;">
+        <summary style="cursor:pointer;font-size:12px;">${escapeHTML(text.slice(0,160))}… <span class="muted" style="font-size:10.5px;">(espandi)</span></summary>
+        <div style="margin-top:6px;font-size:12px;white-space:pre-wrap;">${escapeHTML(text)}</div>
+        ${confirmProgressHTML(n)}
+      </details>`;
+    }
+    function activeNoticeItemHTML(n){
+      return `
+        <div class="roster-item" style="padding:8px;margin-bottom:6px;">
+          <div class="flex-between"><b style="font-size:12px;">${targetDescHTML(n)}</b><button class="btn ghost small" data-notice-close="${n.id}">Chiudi</button></div>
+          ${noticeBodyHTML(n)}
+        </div>
+      `;
+    }
+    const activeVisible = active.slice(0, 3);
+    const activeExtra = active.slice(3);
+    const activeHTML = active.length===0 ? '<div class="muted">Nessun avviso attivo.</div>'
+      : activeVisible.map(activeNoticeItemHTML).join('')
+        + (activeExtra.length ? `<details style="margin-top:4px;"><summary style="cursor:pointer;font-size:11px;color:var(--text-mute);">▸ Altri ${activeExtra.length} avvisi attivi</summary><div style="margin-top:6px;">${activeExtra.map(activeNoticeItemHTML).join('')}</div></details>` : '');
 
     cardEl.innerHTML = `
       <div class="section-title">📢 Gestione Avvisi</div>
@@ -82,21 +114,13 @@
       <div class="muted" id="notice-status" style="margin-top:6px;"></div>
       <div class="divider"></div>
       <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Avvisi attivi</div>
-      ${active.length===0 ? '<div class="muted">Nessun avviso attivo.</div>' : active.map(n=>`
-        <div class="roster-item" style="padding:8px;margin-bottom:6px;">
-          <div class="flex-between"><b style="font-size:12px;">${targetDescHTML(n)}</b><button class="btn ghost small" data-notice-close="${n.id}">Chiudi</button></div>
-          <div style="margin-top:4px;font-size:12px;white-space:pre-wrap;">${escapeHTML(n.text)}</div>
-          ${confirmProgressHTML(n)}
-        </div>
-      `).join('')}
+      ${activeHTML}
       ${closed.length ? `
-      <div class="flex-between" style="margin:10px 0 6px;cursor:pointer;" id="notice-history-toggle">
-        <span class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;">▶ Storico chiusi (${closedAll.length})</span>
+      <div class="flex-between" style="margin:10px 0 6px;">
+        <span class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;">Storico recente (chiusi)</span>
         <button class="btn ghost small" id="btn-clear-notice-history" style="color:var(--danger);border-color:rgba(255,93,93,0.4);font-size:10px;padding:3px 8px;">🗑 Cancella storico</button>
       </div>
-      <div id="notice-history-list" style="display:none;">
       ${closed.map(n=>`<div class="flex-between muted" style="font-size:11px;margin-bottom:4px;gap:6px;"><span>• ${escapeHTML((n.text||'').slice(0,60))}${(n.text||'').length>60?'…':''} — ${targetDescHTML(n)}</span><button class="btn ghost small" data-notice-delete="${n.id}" style="padding:1px 6px;flex-shrink:0;" title="Cancella questo avviso dallo storico">✕</button></div>`).join('')}
-      </div>
       ` : ''}
     `;
 
@@ -158,24 +182,10 @@
     });
     const clearHistBtn = document.getElementById('btn-clear-notice-history');
     if(clearHistBtn){
-      clearHistBtn.onclick = async (ev)=>{
-        ev.stopPropagation(); // non triggerare il toggle
+      clearHistBtn.onclick = async ()=>{
         if(!window.confirm(`Cancellare tutto lo storico avvisi chiusi (${closedAll.length} voci)? Non si può annullare.`)) return;
         await Promise.all(closedAll.map(n=>deleteNotice(code, n.id)));
         renderNoticeManager(code, players);
-      };
-    }
-    const histToggle = document.getElementById('notice-history-toggle');
-    if(histToggle){
-      histToggle.onclick = (ev)=>{
-        if(ev.target.closest('#btn-clear-notice-history')) return;
-        const list = document.getElementById('notice-history-list');
-        const label = histToggle.querySelector('span');
-        if(list){
-          const open = list.style.display==='none';
-          list.style.display = open ? '' : 'none';
-          if(label) label.textContent = (open ? '▼' : '▶') + ` Storico chiusi (${closedAll.length})`;
-        }
       };
     }
   }
@@ -247,21 +257,10 @@
           </div>
         `;}).join('');
     cardEl.innerHTML = `
-      <div class="section-title" id="scan-log-toggle" style="cursor:pointer;user-select:none;">▶ Log Bio-Resonance Scan <span class="muted" style="font-size:11px;font-weight:400;">(${log.length})</span></div>
-      <div id="scan-log-body" style="display:none;">
-        <div class="muted" style="margin-bottom:8px;">Ogni Digimon può uscire ad un solo Tamer per campagna; ogni Tamer ha 2 tentativi. Cancella una riga per correggere un errore, liberare un nome o restituire un tentativo. "📤 Applica alla Scheda" apre la Creazione Guidata già pre-compilata per quel Tamer, se non l'ha ancora fatto lui stesso.</div>
-        <div id="scan-log-rows">${rowsHTML}</div>
-      </div>
+      <div class="section-title">Log Bio-Resonance Scan</div>
+      <div class="muted" style="margin-bottom:8px;">Ogni Digimon può uscire ad un solo Tamer per campagna; ogni Tamer ha 2 tentativi. Cancella una riga per correggere un errore, liberare un nome o restituire un tentativo. "📤 Applica alla Scheda" apre la Creazione Guidata già pre-compilata per quel Tamer, se non l'ha ancora fatto lui stesso.</div>
+      <div id="scan-log-rows">${rowsHTML}</div>
     `;
-    document.getElementById('scan-log-toggle').onclick = ()=>{
-      const body = document.getElementById('scan-log-body');
-      const toggle = document.getElementById('scan-log-toggle');
-      if(body){
-        const open = body.style.display==='none';
-        body.style.display = open ? '' : 'none';
-        toggle.innerHTML = (open ? '▼' : '▶') + ` Log Bio-Resonance Scan <span class="muted" style="font-size:11px;font-weight:400;">(${log.length})</span>`;
-      }
-    };
     cardEl.querySelectorAll('[data-scan-push]').forEach(btn=>{
       btn.onclick = ()=>{
         const username = btn.getAttribute('data-scan-push');
