@@ -1056,6 +1056,7 @@
               </div>
             </details>` : ''}
           </div>
+          <input type="color" data-enc-chatcolor="${i}" class="chat-color-swatch" style="width:28px;height:28px;" value="${escapeAttr(e.chatColor||'#ff5d5d')}" title="Colore scritta in chat quando lo fai 'Parlare' (Parla come) — resta questo ogni volta, senza doverlo re-impostare" />
           <button class="btn ${e.isBoss?'':'ghost'} small" data-toggle-boss="${i}" style="padding:4px 8px;font-size:10px;">${e.isBoss?'👑 Rimuovi Boss':'👑 Segna Boss'}</button>
           <button class="btn ${visible?'ghost':''} small" data-toggle-reveal="${i}" style="padding:4px 8px;font-size:10px;">${visible?'🙈 Nascondi':'👁️ Mostra ai giocatori'}</button>
           <button class="btn ${e.nameHidden?'':'ghost'} small" data-toggle-namehidden="${i}" style="padding:4px 8px;font-size:10px;" title="Il Digimon resta visibile in Scena, ma nome/descrizione restano '???' per i giocatori finché non lo riveli">${e.nameHidden?'🏷️ Rivela Nome':'🎭 Nascondi Nome'}</button>
@@ -1095,6 +1096,10 @@
         <div class="field"><label>Descrizione</label><textarea id="draft-desc" rows="2">${escapeHTML(d.description)}</textarea></div>
         <div class="field" style="margin-top:6px;"><label>📍 Dove si trova (i giocatori lo vedranno in Scena solo da lì — "Ovunque" = comportamento di prima, sempre visibile)</label>
           <select id="draft-location">${locationOptionsHTML(cachedScene.currentSectorId, cachedScene.currentLuogoId)}</select>
+        </div>
+        <div class="chat-color-field" style="margin-top:6px;">
+          <label class="muted">🎨 Colore scritta in chat (quando lo fai "Parlare" — resta questo ogni volta, senza doverlo re-impostare)</label>
+          <input type="color" id="draft-chatcolor" class="chat-color-swatch" value="${escapeAttr(d.chatColor||'#ff5d5d')}" />
         </div>
         <div class="muted" style="margin:6px 0 4px;">Stat base (puoi lasciarle a 0 e completarle dopo)</div>
         <div class="row">
@@ -1148,6 +1153,8 @@
       const locVal = locEl ? locEl.value : '';
       const sectorId = locVal ? locVal.split(':')[0] : null;
       const luogoId = (locVal && locVal.includes(':')) ? locVal.split(':')[1] : null;
+      const chatColorEl = document.getElementById('draft-chatcolor');
+      const chatColor = chatColorEl ? chatColorEl.value : '#ff5d5d';
       const baseStats = {
         baseAccuracy: Number(document.getElementById('draft-acc').value)||0,
         baseDamage: Number(document.getElementById('draft-dmg').value)||0,
@@ -1171,7 +1178,7 @@
           bossBonusAmount = amount;
         }
       }
-      const finalEncounter = { id: encounterDraft.id, name, dexId: encounterDraft.dexId, stage, categories, image, description, baseStats, attacks: encounterDraft.attacks || [], revealed:false, isBoss, bossBonusStat, bossBonusAmount, sectorId, luogoId };
+      const finalEncounter = { id: encounterDraft.id, name, dexId: encounterDraft.dexId, stage, categories, image, description, baseStats, attacks: encounterDraft.attacks || [], revealed:false, isBoss, bossBonusStat, bossBonusAmount, sectorId, luogoId, chatColor };
       cachedScene.encounters = cachedScene.encounters || [];
       cachedScene.encounters.push(finalEncounter);
       encounterDraft = null;
@@ -1205,11 +1212,11 @@
           description: dexMatch.description || '',
           baseStats: Object.assign({baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, dexMatch.base_stats||{}),
           attacks: buildAttacksFromDexEntry(dexMatch),
-          revealed:false, isBoss:false, bossBonusStat:null, bossBonusAmount:0
+          revealed:false, isBoss:false, bossBonusStat:null, bossBonusAmount:0, chatColor:'#ff5d5d'
         } : {
           id:'enc'+Date.now()+Math.random().toString(36).slice(2,6),
           name, dexId:null, stage:'Rookie', categories:[], image:'', description:'',
-          baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:false, isBoss:false, bossBonusStat:null, bossBonusAmount:0
+          baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:false, isBoss:false, bossBonusStat:null, bossBonusAmount:0, chatColor:'#ff5d5d'
         };
         renderEncounterDraftCard();
         bindEncounterDraftCard(code, username, onChanged);
@@ -1281,6 +1288,24 @@
           e.sectorId = sectorId;
           e.luogoId = luogoId || null;
         }
+        await saveScene(code, cachedScene);
+        live.innerHTML = encountersEditableHTML(cachedScene.encounters);
+        bindEncountersInnerActions(code, username, onChanged);
+        if(onChanged) onChanged();
+      };
+    });
+    // Colore scritta in chat (richiesta utente: "fai sì che possa sceglierlo quando lo aggiungo in
+    // scena così che resti sempre lo stesso e non devo cambiarlo ogni volta"): persistito
+    // sull'Incontro (chatColor, vedi js/encounters.js) così ogni volta che il Master lo fa
+    // "Parlare" (Parla come, nelle tre chat) il picker si precompila da solo con questo colore —
+    // vedi applySpeakAsMode/applyPrivSpeakAsMode/applySubSpeakAsMode. Editabile anche qui per un
+    // Incontro già piazzato, non solo alla creazione (renderEncounterDraftCard).
+    live.querySelectorAll('[data-enc-chatcolor]').forEach(inp=>{
+      inp.onchange = async ()=>{
+        const idx = Number(inp.getAttribute('data-enc-chatcolor'));
+        const e = cachedScene.encounters[idx];
+        if(!e) return;
+        e.chatColor = inp.value;
         await saveScene(code, cachedScene);
         live.innerHTML = encountersEditableHTML(cachedScene.encounters);
         bindEncountersInnerActions(code, username, onChanged);

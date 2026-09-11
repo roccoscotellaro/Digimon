@@ -91,9 +91,9 @@
           <input type="text" id="subgroup-npc-speak-name" placeholder="Nome NPC" style="flex:2;" />
           <input type="text" id="subgroup-npc-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
         </div>
-        <div class="row" style="margin-bottom:8px;align-items:center;">
-          <label class="muted" style="flex:2;font-size:11px;">Colore scritta in chat</label>
-          <input type="color" id="subgroup-speak-color" value="#ff8a3d" style="flex:1;padding:2px;height:34px;" />
+        <div class="chat-color-field">
+          <label class="muted">🎨 Colore scritta in chat</label>
+          <input type="color" id="subgroup-speak-color" class="chat-color-swatch" value="#ff8a3d" />
         </div>
         <textarea id="subgroup-text" rows="2" placeholder="Scrivi nel sottogruppo..." style="margin-top:8px;"></textarea>
         <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--text-mute);">
@@ -194,7 +194,10 @@
           const member = cachedRoster.find(m=>m.username===username);
           if(subColorInput) subColorInput.value = (member && member.digimon.chatColor) || '#c896ff';
         } else if(mode.startsWith('encounter:')){
-          if(subColorInput) subColorInput.value = '#ff5d5d';
+          // Colore persistente dell'Incontro (vedi js/encounters.js: chatColor)
+          const idx = Number(mode.slice('encounter:'.length));
+          const encObj = (cachedScene && cachedScene.encounters || [])[idx];
+          if(subColorInput) subColorInput.value = (encObj && encObj.chatColor) || '#ff5d5d';
         } else if(mode.startsWith('dex:')){
           if(subColorInput) subColorInput.value = '#ff5d5d';
         } else if(mode==='enemy'){

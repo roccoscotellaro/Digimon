@@ -277,6 +277,25 @@
     margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel-2);
   }
 
+  /* ===== Colore scritta in chat (richiesta utente: "Rendi più carino e riconoscibile il colore
+     scelto per la chat del digimon"): il vecchio <input type="color"> era una casella nuda accanto
+     a un'etichetta piatta, facile da non notare in composer lunghi. Ora è un chip con bordo/sfondo
+     coerente col resto dei controlli (stesso trattamento di .dice-panel), e lo swatch stesso ha un
+     bordo ciano ben visibile invece del default del browser. Usato nelle tre chat Master (Generale,
+     Privata, Sottogruppo) sul rispettivo #speak-color/#private-speak-color/#subgroup-speak-color. */
+  .chat-color-field{
+    display:flex;align-items:center;gap:8px;margin-bottom:8px;
+    padding:5px 8px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel-2);
+  }
+  .chat-color-field label{flex:1;margin:0;}
+  .chat-color-swatch{
+    -webkit-appearance:none;appearance:none;width:38px;height:30px;padding:0;border:2px solid var(--cyan-dim);
+    border-radius:var(--radius);cursor:pointer;background:none;flex:none;transition:border-color .15s;
+  }
+  .chat-color-swatch::-webkit-color-swatch-wrapper{padding:2px;}
+  .chat-color-swatch::-webkit-color-swatch{border:none;border-radius:1px;}
+  .chat-color-swatch:hover{border-color:var(--cyan);}
+
   .tag{font-size:10px;padding:2px 8px;border:1px solid var(--line);color:var(--text-mute);border-radius:20px;text-transform:uppercase;}
   .flex-between{display:flex;justify-content:space-between;align-items:center;}
   .muted{color:var(--text-mute);font-size:11px;}
@@ -3908,9 +3927,9 @@ let editingScene = false;
               <input type="text" id="npc-speak-name" placeholder="Nome NPC" style="flex:2;" />
               <input type="text" id="npc-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
             </div>
-            <div class="row" style="margin-bottom:8px;align-items:center;">
-              <label class="muted" style="flex:2;font-size:11px;">Colore scritta in chat</label>
-              <input type="color" id="speak-color" value="#ff8a3d" style="flex:1;padding:2px;height:34px;" />
+            <div class="chat-color-field">
+              <label class="muted">🎨 Colore scritta in chat</label>
+              <input type="color" id="speak-color" class="chat-color-swatch" value="#ff8a3d" />
             </div>
             <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--text-mute);">
               <input type="checkbox" id="gm-digimoji-toggle" /> ✍️ Scrivi in Digimoji
@@ -4155,7 +4174,11 @@ let editingScene = false;
         const member = cachedRoster.find(m=>m.username===username);
         if(colorInput) colorInput.value = (member && member.digimon.chatColor) || '#c896ff';
       } else if(mode.startsWith('encounter:')){
-        if(colorInput) colorInput.value = '#ff5d5d';
+        // Colore persistente dell'Incontro (vedi js/encounters.js: chatColor, richiesta utente
+        // "fai sì che possa sceglierlo quando lo aggiungo in scena così che resti sempre lo stesso")
+        const idx = Number(mode.slice('encounter:'.length));
+        const encObj = (cachedScene && cachedScene.encounters || [])[idx];
+        if(colorInput) colorInput.value = (encObj && encObj.chatColor) || '#ff5d5d';
       } else if(mode.startsWith('dex:')){
         if(colorInput) colorInput.value = '#ff5d5d';
       } else if(mode==='enemy'){
@@ -4655,6 +4678,35 @@ let editingScene = false;
     }
   }
 
+  // FEATURE (richiesta utente: "il master deve poter modificare i punti ferita temporanei e gli
+  // altri bonus durante il combattimento che ti ricordo che si azzerano a ogni fine turno"): fino
+  // a qui il Master poteva solo SUBIRE gli effetti automatici di Reinforce/Shield (PF Temporanei,
+  // member.digimon.tempWounds o p.tempWounds a seconda di PC/NPC, vedi applyDamageToParticipant
+  // sopra) senza un modo per correggerli a mano -- utile quando un'Azione viene narrata a voce
+  // invece che coperta da un bottone, o per rimuoverli prima che scadano da soli. Stessa dualità
+  // PC/NPC già usata da applyDamageToParticipant.
+  function getParticipantTempWounds(p){
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      return member ? Number(member.digimon.tempWounds||0) : 0;
+    }
+    return Number(p.tempWounds||0);
+  }
+  async function setParticipantTempWounds(code, combat, p, newVal){
+    newVal = Math.max(0, Math.floor(Number(newVal)||0));
+    if(p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      if(member){
+        member.digimon.tempWounds = newVal;
+        await patchMember(code, member.username, { tempWounds: newVal });
+      }
+    } else {
+      p.tempWounds = newVal;
+      await saveCombat(code, combat);
+    }
+    return newVal;
+  }
+
   // ---------- shared attack resolution (usato sia dal Combat Manager del Master sia dall'attacco in self-service del giocatore) ----------
   function validateAttackTargeting(attacker, target, atk){
     if(!attacker || !target || attacker.id===target.id){
@@ -5052,6 +5104,27 @@ let editingScene = false;
               <button class="btn ghost small" data-manual-damage="${p.id}" style="flex:1;" title="Applica Danno manuale (es. Effetto/Trappola/Terreno non coperto da un'Azione automatizzata)">🩸 Danno</button>
               <button class="btn ghost small" data-manual-heal="${p.id}" style="flex:1;" title="Cura manuale (es. Regen/Cleanse non automatizzati)">💚 Cura</button>
             </div>
+            <!-- Richiesta utente: PF Temporanei e "altri bonus" (bonus in coda al prossimo Pool
+                 Check, es. Direct/Aid/Guard/Bolster) modificabili a mano dal Master -- vedi
+                 getParticipantTempWounds/setParticipantTempWounds più sopra. Ricorda: si azzerano
+                 da soli a fine turno/quando consumati (Reinforce/pendingRollBonus), quindi questi
+                 controlli servono per correzioni a metà turno, non per uno stato persistente. -->
+            <div class="row" style="margin-top:2px;margin-bottom:2px;align-items:center;">
+              <input type="number" data-manual-tempwounds-amt="${p.id}" value="1" min="1" style="width:56px;flex:0 0 auto;" />
+              <button class="btn ghost small" data-manual-tempwounds-add="${p.id}" style="flex:1;" title="Aggiungi PF Temporanei (Shield) manualmente — es. Azione narrata a voce, non coperta da un bottone">🛡️ + PF Temp</button>
+              <button class="btn ghost small" data-manual-tempwounds-remove="${p.id}" style="flex:1;" title="Rimuovi PF Temporanei manualmente (es. prima che scadano da soli)">🛡️ − PF Temp</button>
+            </div>
+            <div class="muted" style="font-size:10px;margin-bottom:6px;">PF Temporanei attuali: <b>${getParticipantTempWounds(p)}</b> (assorbono il prossimo Danno prima delle Ferite vere)</div>
+            <div class="row" style="margin-bottom:2px;align-items:center;">
+              <input type="number" data-manual-bonus-amt="${p.id}" placeholder="es. 2" style="width:56px;flex:0 0 auto;" />
+              <select data-manual-bonus-stat="${p.id}" style="flex:1;">
+                <option value="either">Accuracy o Dodge</option>
+                <option value="accuracy">Solo Accuracy</option>
+                <option value="dodge">Solo Dodge</option>
+              </select>
+              <button class="btn ghost small" data-manual-bonus-set="${p.id}" style="flex:0 0 auto;padding:4px 8px;" title="Imposta manualmente il bonus in coda sul prossimo Pool Check (sostituisce quello attuale) — es. Direct/Aid/Guard/Bolster narrato a voce">🎯 Imposta</button>
+            </div>
+            <div class="muted" style="font-size:10px;margin-bottom:6px;">Bonus in coda: ${p.pendingRollBonus ? `<b>+${p.pendingRollBonus.amount}</b> (${p.pendingRollBonus.stat==='either'?'Accuracy/Dodge':p.pendingRollBonus.stat==='accuracy'?'solo Accuracy':'solo Dodge'}, da ${escapeHTML(p.pendingRollBonus.source)}) <button class="btn ghost small" data-manual-bonus-clear="${p.id}" style="padding:1px 6px;margin-left:4px;">✕ Rimuovi</button>` : 'nessuno'} — si consuma al primo Pool Check, altrimenti resta finché non lo tolgono da qui.</div>
             <div class="muted" style="font-size:11px;margin-top:6px;margin-bottom:2px;color:var(--cyan);">Azione Digimon</div>
             <div class="row">
               <select data-daction-select="${p.id}" style="flex:2;">${DIGIMON_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az.)</option>`).join('')}</select>
@@ -6053,6 +6126,63 @@ let editingScene = false;
     };
     bindManualWound('data-manual-damage', 1);
     bindManualWound('data-manual-heal', -1);
+    // Richiesta utente: PF Temporanei e "altri bonus" (pendingRollBonus) modificabili a mano dal
+    // Master -- vedi il commento sopra, nel markup del partecipante, e getParticipantTempWounds/
+    // setParticipantTempWounds (dualità PC/NPC già usata da applyDamageToParticipant).
+    // pendingRollBonus invece vive sempre direttamente sul partecipante di combattimento, PC o NPC
+    // che sia (stesso campo scritto da queuePendingRollBonus per Direct/Aid/Guard/Bolster).
+    cardEl.querySelectorAll('[data-manual-tempwounds-add]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-manual-tempwounds-add');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p) return;
+        const amtInput = cardEl.querySelector(`[data-manual-tempwounds-amt="${id}"]`);
+        const amount = Math.max(0, Math.floor(Number(amtInput && amtInput.value) || 0));
+        if(amount<=0) return;
+        const newVal = await setParticipantTempWounds(code, combat, p, getParticipantTempWounds(p) + amount);
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${narratorName(p)} ottiene +${amount} PF Temporanei (manuale) — ora ${newVal}.` });
+        await persistAndRefresh();
+      };
+    });
+    cardEl.querySelectorAll('[data-manual-tempwounds-remove]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-manual-tempwounds-remove');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p) return;
+        const amtInput = cardEl.querySelector(`[data-manual-tempwounds-amt="${id}"]`);
+        const amount = Math.max(0, Math.floor(Number(amtInput && amtInput.value) || 0));
+        if(amount<=0) return;
+        const newVal = await setParticipantTempWounds(code, combat, p, Math.max(0, getParticipantTempWounds(p) - amount));
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${narratorName(p)} perde ${amount} PF Temporanei (manuale) — ora ${newVal}.` });
+        await persistAndRefresh();
+      };
+    });
+    cardEl.querySelectorAll('[data-manual-bonus-set]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-manual-bonus-set');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p) return;
+        const amtInput = cardEl.querySelector(`[data-manual-bonus-amt="${id}"]`);
+        const statSel = cardEl.querySelector(`[data-manual-bonus-stat="${id}"]`);
+        const amount = Math.max(0, Math.floor(Number(amtInput && amtInput.value) || 0));
+        if(amount<=0) return;
+        const stat = statSel ? statSel.value : 'either';
+        p.pendingRollBonus = { amount, source:'manuale (Master)', stat };
+        const statLabel = stat==='either'?'Accuracy/Dodge':stat==='accuracy'?'solo Accuracy':'solo Dodge';
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${narratorName(p)}: bonus manuale +${amount} (${statLabel}) impostato in coda sul prossimo Pool Check.` });
+        await persistAndRefresh();
+      };
+    });
+    cardEl.querySelectorAll('[data-manual-bonus-clear]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-manual-bonus-clear');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p) return;
+        p.pendingRollBonus = null;
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${narratorName(p)}: bonus in coda rimosso (manuale).` });
+        await persistAndRefresh();
+      };
+    });
     // FEATURE (richiesta utente: scelta del Master tra Regredire di Stage o Richiudere nell'Uovo
     // quando un Digimon PC viene Sconfitto -- vedi applyDefeatIfNeeded/defeatResolutionHTML più
     // sopra). Entrambi i bottoni cancellano solo defeatPending (member.digimon.defeated resta true:

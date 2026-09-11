@@ -22,11 +22,19 @@
   // stato marcato Boss, così togliere il flag può annullare esattamente lo stesso bonus invece di
   // lasciare la Statistica gonfiata per sempre. null/0 = nessun bonus applicato (default, e caso
   // di tutti gli Incontri creati prima di questa funzionalità).
+  //
+  // chatColor (richiesta utente: "fai sì che possa scegliere il colore quando lo aggiungo in
+  // scena così che resti sempre lo stesso e non devo cambiarlo ogni volta"): colore mostrato/usato
+  // di default nel picker "Colore scritta in chat" quando il Master fa "Parlare" questo Incontro
+  // (vedi applySpeakAsMode/applyPrivSpeakAsMode/applySubSpeakAsMode) — invece del vecchio valore
+  // fisso '#ff5d5d' uguale per ogni Incontro, ognuno ha ora il proprio colore persistente,
+  // impostabile alla creazione (renderEncounterDraftCard) o in seguito (encountersEditableHTML).
+  // '#ff5d5d' resta il default per gli Incontri creati prima di questo campo.
   function normalizeEncounter(e){
     if(typeof e === 'string'){
-      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, bossBonusStat:null, bossBonusAmount:0, currentWounds:null, disposition:'enemy', nameHidden:false, sectorId:null, luogoId:null };
+      return { id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:e, dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, bossBonusStat:null, bossBonusAmount:0, currentWounds:null, disposition:'enemy', nameHidden:false, sectorId:null, luogoId:null, chatColor:'#ff5d5d' };
     }
-    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, bossBonusStat:null, bossBonusAmount:0, currentWounds:null, disposition:'enemy', nameHidden:false, sectorId:null, luogoId:null }, e);
+    return Object.assign({ id:'enc'+Date.now()+Math.random().toString(36).slice(2,6), name:'', dexId:null, stage:'', categories:[], image:'', description:'', baseStats:{baseAccuracy:0,baseDamage:0,baseDodge:0,baseArmor:0,baseHealth:0}, attacks:[], revealed:true, isBoss:false, bossBonusStat:null, bossBonusAmount:0, currentWounds:null, disposition:'enemy', nameHidden:false, sectorId:null, luogoId:null, chatColor:'#ff5d5d' }, e);
   }
   const ENCOUNTER_DISPOSITIONS = { enemy:{label:'Nemico', color:'var(--danger)', icon:'⚔️'}, ally:{label:'Alleato', color:'var(--cyan)', icon:'🤝'}, neutral:{label:'Neutrale', color:'var(--text-mute)', icon:'❔'} };
 

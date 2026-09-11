@@ -751,9 +751,41 @@
         await saveMember(session.code, me);
         const verdict = evaluateVsTN(total, tnVal, dice);
         const resEl = document.getElementById('roll-result-'+containerId);
-        resEl.innerHTML = `${diceRowHTML(dice)}<span class="roll-total">${total}</span>${verdict?`<span class="roll-verdict ${verdict.cls}">${verdict.label}</span>`:''}`;
         const logText = `tira ${def.label} (${ATTR_ABBR[chosenAttr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict ? ` vs TN ${tnVal} → ${verdict.label}` : '');
         await pushLog(session.code, { who: displayName(me), role:'roll', text: logText, meta: { dice, total, verdict: verdict?verdict.label:null } });
+
+        // ---------- Ispirazione: Ritira (richiesta utente: "Come funziona l'ispirazione? ...
+        // implementiamo la funzione automatica per il lancio") ----------
+        // Regola 2.05a "Reroll": 1 IP per ri-tirare per intero un Check/Pool, guardi il nuovo
+        // risultato e scegli se tenerlo o tenere il vecchio. Non è vincolato ai tiri falliti --
+        // qui lo offriamo dopo OGNI tiro, finché il Tamer ha almeno 1 IP. flatExtra raccoglie
+        // tutti i bonus NON-dado già applicati sopra (Stunt/Teamwork/Aspects/Miracle) così il
+        // ri-tiro rifà solo i 3d6 e riusa automaticamente gli stessi bonus fissi.
+        const flatExtra = total - baseTotal;
+        const renderResult = (curDice, curTotal, curVerdict)=>{
+          const ipNow = Number(me.tamer.inspirationPoints||0);
+          resEl.innerHTML = `${diceRowHTML(curDice)}<span class="roll-total">${curTotal}</span>${curVerdict?`<span class="roll-verdict ${curVerdict.cls}">${curVerdict.label}</span>`:''}` +
+            (ipNow>=1 ? `<div style="margin-top:8px;"><button class="btn ghost small" id="roll-reroll-${containerId}">🔄 Ispirazione: Ritira (1 IP, hai ${ipNow})</button></div>` : '');
+          const rerollBtn = document.getElementById('roll-reroll-'+containerId);
+          if(rerollBtn){
+            rerollBtn.onclick = async ()=>{
+              me.tamer.inspirationPoints = Math.max(0, Number(me.tamer.inspirationPoints||0) - 1);
+              const { dice: dice2, total: baseTotal2 } = rollSkillCheck(attrVal, skillVal, stuntDice);
+              const total2 = baseTotal2 + flatExtra;
+              const verdict2 = evaluateVsTN(total2, tnVal, dice2);
+              await saveMember(session.code, me);
+              const keepNew = window.confirm(`Ri-tiro con Ispirazione: nuovo risultato ${total2}${verdict2?' ('+verdict2.label+')':''} (dadi ${dice2.join(',')}) contro il vecchio ${curTotal}${curVerdict?' ('+curVerdict.label+')':''} (dadi ${curDice.join(',')}).\n\nOK = tieni il NUOVO risultato. Annulla = tieni il VECCHIO.`);
+              const finalDice = keepNew ? dice2 : curDice;
+              const finalTotal = keepNew ? total2 : curTotal;
+              const finalVerdict = keepNew ? verdict2 : curVerdict;
+              const rerollLogText = `Ispirazione (-1 IP): ri-tira ${def.label} → 3d6[${dice2.join(',')}] + ${attrVal} + ${skillVal}${flatExtra?` +${flatExtra} (bonus già applicati)`:''} = ${total2}` + (verdict2 ? ` vs TN ${tnVal} → ${verdict2.label}` : '') + ` — tenuto: ${keepNew?'il NUOVO':'il VECCHIO'} risultato (${finalTotal})`;
+              await pushLog(session.code, { who: displayName(me), role:'roll', text: rerollLogText, meta: { dice: finalDice, total: finalTotal, verdict: finalVerdict?finalVerdict.label:null } });
+              renderResult(finalDice, finalTotal, finalVerdict);
+              if(onChanged) onChanged();
+            };
+          }
+        };
+        renderResult(dice, total, verdict);
         if(onChanged) onChanged();
       };
     };
