@@ -217,11 +217,33 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
     URL.revokeObjectURL(url);
   }
 
+  // Colore automatico del mittente (richiesta utente: "i Digimon dei protagonisti e i personaggi
+  // stessi dovrebbero avere un colore fisso impostato in Scheda, senza che il Master debba
+  // reimpostarlo ogni volta"): se chi chiama pushLog/pushPrivateLog non ha già scelto un colore
+  // esplicito per QUESTO messaggio (es. dal composer "Parla come...", che pre-compila comunque lo
+  // stesso colore preso da qui — vedi speak-color/privColorInput/subColorInput), cerchiamo un
+  // membro del roster il cui Tamer o Digimon si chiami esattamente come `who` e, se ha un
+  // chatColor impostato in Scheda (tamerChatColor/digimonChatColor, js/util.js), lo applichiamo
+  // qui. Un solo punto invece di doverlo aggiungere a mano a decine di pushLog/pushPrivateLog
+  // sparsi in index.html/js/*.js — copre anche i tiri automatici (Evoluzione, Signature Move,
+  // Torment Check, "Evolvi ora"/"Tira ora" in chat) senza toccare ognuno di quei punti.
+  function applyDefaultChatColor(meta, who){
+    if(!who || meta.color) return;
+    const roster = cachedRoster||[];
+    const tamerMember = roster.find(m=>displayName(m)===who);
+    const tamerColor = tamerMember && tamerChatColor(tamerMember);
+    if(tamerColor){ meta.color = tamerColor; return; }
+    const digiMember = roster.find(m=>m.digimon && m.digimon.name===who);
+    const digiColor = digiMember && digimonChatColor(digiMember);
+    if(digiColor) meta.color = digiColor;
+  }
+
   async function pushLog(code, entry){
     // Marca il messaggio con la location attuale (vedi sopra), a meno che chi chiama non
     // abbia già impostato esplicitamente meta.location (nessun caso attuale, ma per sicurezza).
     const meta = entry.meta ? { ...entry.meta } : {};
     if(meta.location===undefined) meta.location = currentLocationKey();
+    applyDefaultChatColor(meta, entry.who);
     return apiPost('/api/log', { code, username: session && session.username, ...entry, meta, sceneId: entry.sceneId || (cachedScene && cachedScene.id) || null });
   }
 
@@ -245,9 +267,12 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
 
   async function pushPrivateLog(code, thread, entry){
     // Stesso tag di location della Chat Generale (vedi pushLog sopra) — prima lo storico per
-    // Settore era attivo SOLO lì; ora vale anche per Chat Privata e Sottogruppi.
+    // Settore era attivo SOLO lì; ora vale anche per Chat Privata e Sottogruppi. Stesso colore
+    // automatico del mittente di pushLog sopra (applyDefaultChatColor) — anche qui, solo se chi
+    // chiama non ha già scelto un colore esplicito per questo messaggio.
     const meta = entry.meta ? { ...entry.meta } : {};
     if(meta.location===undefined) meta.location = currentLocationKey();
+    applyDefaultChatColor(meta, entry.who);
     return apiPost('/api/log', { code, thread, username: session && session.username, ...entry, meta });
   }
 
@@ -702,6 +727,22 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       const moveAcceptBtn = e.target.closest('[data-move-accept-sector]');
       const moveVoteBtn = e.target.closest('[data-move-vote-id]');
       const evoQuickBtn = e.target.closest('[data-evo-quick-username]');
+      // BUGFIX (Rocco: "il Master ha costruito e sbloccato lo Stage Champion ma il gioco
+      // continua a dire che non è pronto"): questo listener viene agganciato UNA SOLA VOLTA,
+      // quando la Chat del giocatore viene costruita (vedi il commento su usePlayerActiveChat
+      // in index.html/renderPlayer — "fatto una sola volta qui, mai rifatto quando il giocatore
+      // cambia chat", stesso identico principio per l'8° argomento). Il parametro `me` passato
+      // qui sopra è quindi "congelato" alla Scheda del giocatore di QUEL preciso momento (in
+      // pratica, di quando ha aperto/ricaricato la pagina) — se il Master costruisce/sblocca uno
+      // Stage DOPO, questa chiusura non se ne accorge mai finché il giocatore non ricarica la
+      // pagina, e "Evolvi ora"/"Tira ora"/il voto di spostamento continuano a leggere (e, peggio,
+      // a RISALVARE con saveMember più sotto) la versione vecchia della Scheda, sovrascrivendo
+      // nel frattempo qualunque modifica più recente fatta altrove. cachedMe (js/store.js) viene
+      // invece riassegnato a un oggetto fresco a ogni ciclo di polling (~15s, refreshLiveParts):
+      // qui alziamo `me` a quella versione aggiornata quando è disponibile ed è davvero lo stesso
+      // utente, così l'intero resto di questo listener (che lo riusa più volte) lavora sempre sui
+      // dati più recenti senza bisogno di toccare ogni singolo punto sotto.
+      if(typeof cachedMe!=='undefined' && cachedMe && me && cachedMe.username===me.username) me = cachedMe;
       let thread, sourceLog;
       if(usePlayerActiveChat){
         thread = playerActiveChatThread;
@@ -941,6 +982,15 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
             applyStageChange(d, d.stage, target);
             d.currentWounds = d.maxWounds;
             await saveMember(code, me);
+            // BUGFIX (Rocco: "il nome del Digimon anche se si evolve resta quello con cui viene
+            // aggiunto al combattimento"): a differenza del bottone "Evolvi" della Scheda Digimon
+            // (che chiama sempre syncCombatParticipantName dopo applyStageChange — vedi
+            // js/digimon-card.js), questo pulsante rapido in chat duplicava la stessa logica di
+            // evoluzione ma senza quella chiamata: il nome cambiava sulla Scheda ma restava quello
+            // vecchio nel Combat Manager/nei log di combattimento finché non si rientrava e
+            // usciva da un combattimento. Nessun effetto se il Digimon non è in un combattimento
+            // attivo in questo momento (vedi guardia interna alla funzione).
+            if(typeof syncCombatParticipantName==='function') await syncCombatParticipantName(me);
             await pushPlayerNarration(code, me, { who: displayName(me), role:'player', text: `✨ ${oldName} è avvolto da un bagliore di dati... e digivolve in ${d.name||target}!${cost>0?` (spesi ${cost} Evolution Points)`:''} — Stat aggiornate automaticamente. Ricorda di segnare 1 Azione spesa.` });
             evoQuickBtn.disabled = false;
             if(onChanged) onChanged();

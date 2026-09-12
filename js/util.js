@@ -31,3 +31,12 @@ function displayNameFor(username){
   const member = (cachedRoster||[]).find(m=>m.username===username);
   return member ? displayName(member) : username;
 }
+
+// Colore persistente di chat scelto per il Tamer/Digimon di un giocatore (Scheda Tamer → campo
+// "Colore Chat", Scheda Digimon → campo omonimo già esistente) — richiesta utente: "vorrei che i
+// Digimon dei protagonisti e i personaggi stessi avessero un colore fisso impostato in Scheda,
+// senza dover ogni volta rimpostare questa opzione". Ritornano null se non ancora impostato, così
+// chi le chiama può decidere se applicare un fallback o lasciare il messaggio senza colore
+// esplicito (comportamento di prima) invece di forzare sempre lo stesso default per tutti.
+function tamerChatColor(member){ return (member && member.tamer && member.tamer.chatColor) || null; }
+function digimonChatColor(member){ return (member && member.digimon && member.digimon.chatColor) || null; }

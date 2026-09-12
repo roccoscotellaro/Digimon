@@ -2760,13 +2760,26 @@ let editingScene = false;
 
   async function sendDiceRollToChat(panelId, rollText){
     const errEl = document.getElementById(panelId+'-error');
+    if(errEl) errEl.textContent = '';
     try{
       const code = session.code;
       if(panelId==='dice-panel-player'){
         const me = cachedMe || (cachedRoster||[]).find(m=>m.username===session.username);
         const who = me ? displayName(me) : session.username;
         const entry = { who, role:'roll', text: rollText };
-        if(playerChatMode==='subgroup' && playerActiveSubgroupId){
+        if(playerChatMode==='subgroup'){
+          // BUGFIX (Rocco: "il tiro dei dadi non compare nelle chat Privata e Sottogruppo"):
+          // prima, se playerActiveSubgroupId non era ancora valorizzato nel momento esatto del
+          // click su "Tira!" (es. appena aperto il tab "Gruppo", prima che il selettore
+          // sottogruppo finisse di popolarsi), questo ramo falliva silenziosamente il suo `if` e
+          // scivolava fino all'`else` finale, che spediva il tiro nella Chat GENERALE (pubblica)
+          // invece che nel Sottogruppo — il tiro "spariva" dalla chat in cui l'utente lo cercava
+          // (e, peggio, finiva in chiaro nella chat pubblica). Ora un sottogruppo mancante blocca
+          // l'invio con un errore visibile invece di reinstradare di nascosto altrove.
+          if(!playerActiveSubgroupId){
+            if(errEl) errEl.textContent = 'Nessun sottogruppo selezionato: riapri il tab "Gruppo" e riprova.';
+            return;
+          }
           const group = (cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId) || null;
           entry.meta = { location: subgroupLocationKey(group) };
           await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, entry);
@@ -2777,17 +2790,38 @@ let editingScene = false;
           await pushLog(code, entry);
         }
       } else {
-        // Master — segue il tab chat attualmente selezionato (Generale/Privata/Sottogruppo)
+        // Master — segue il tab chat attualmente selezionato (Generale/Privata/Sottogruppo).
+        // Stesso BUGFIX di cui sopra (vedi ramo player): masterPrivateThread/activeSubgroupId
+        // mancanti non devono far scivolare l'invio nella Chat Generale in silenzio.
         const entry = { who:'Master', role:'roll', text: rollText };
-        if(typeof masterChatMode!=='undefined' && masterChatMode==='private' && masterPrivateThread){
+        const mode = (typeof masterChatMode!=='undefined') ? masterChatMode : 'general';
+        if(mode==='private'){
+          if(typeof masterPrivateThread==='undefined' || !masterPrivateThread){
+            if(errEl) errEl.textContent = 'Nessun destinatario selezionato nella Chat Privata: riprova.';
+            return;
+          }
           await pushPrivateLog(code, masterPrivateThread, entry);
-        } else if(typeof masterChatMode!=='undefined' && masterChatMode==='subgroup' && typeof activeSubgroupId!=='undefined' && activeSubgroupId){
+        } else if(mode==='subgroup'){
+          if(typeof activeSubgroupId==='undefined' || !activeSubgroupId){
+            if(errEl) errEl.textContent = 'Nessun sottogruppo selezionato: riprova.';
+            return;
+          }
           const group = (cachedSubgroups||[]).find(g=>g.id===activeSubgroupId) || null;
           entry.meta = { location: subgroupLocationKey(group) };
           await pushPrivateLog(code, 'subgroup:'+activeSubgroupId, entry);
         } else {
           await pushLog(code, entry);
         }
+      }
+      // BUGFIX: pushLog/pushPrivateLog (via apiPost) non rilanciano MAI un'eccezione in caso di
+      // errore di rete/server — la intercettano internamente, valorizzano lastApiError e
+      // restituiscono null. Il try/catch qui sotto quindi non si accorgeva mai di un invio
+      // fallito: il tiro spariva senza alcun messaggio visibile. Controlliamo esplicitamente
+      // lastApiError subito dopo l'invio, così un fallimento reale (es. rete assente, riga
+      // rifiutata dal server) mostra finalmente un errore invece di scomparire nel nulla.
+      if(lastApiError){
+        if(errEl) errEl.textContent = 'Errore invio: ' + lastApiError;
+        return;
       }
       refreshLiveParts();
     } catch(e){
@@ -4647,25 +4681,27 @@ let editingScene = false;
     } else {
       if(participant.defeated || (participant.currentWounds||0)>0) return null;
       participant.defeated = true;
+      // Richiesta utente: "stessa cosa per i nemici" -- anche i Nemici entrano in stato di
+      // Sconfitta "in sospeso" finché il Master non risolve dal pannello "Gestione Combattimento"
+      // (vedi defeatResolutionHTML/data-defeat-enemy-regress/data-defeat-enemy-egg più sotto),
+      // esattamente come già succedeva solo per i PC.
+      participant.defeatPending = true;
       return { name: participant.name, digitama:false, enemy:true };
     }
   }
 
   // Frase pronta per un messaggio di sistema STANDALONE in chat (include il nome del Digimon).
+  // Richiesta utente: "non mi piace il messaggio che esce quando un digimon viene sconfitto. Basta
+  // unicamente: è stato sconfitto." -- niente più citazioni di regolamento o rimandi al pannello,
+  // la scelta Regredisci/Uovo resta comunque disponibile al Master in "Gestione Combattimento".
   function defeatNoticeText(defeatInfo, dispName){
-    if(defeatInfo.enemy) return `🏳️ ${dispName} è Sconfitto!`;
-    return defeatInfo.digitama
-      ? `🏳️ ${dispName} è Sconfitto! È già al Default Stage minimo — da regolamento (9.12a) diventerebbe Digitama. Decidi dal pannello "Gestione Combattimento" (🥚 Richiudi nell'Uovo, o 🏳️ Regredisci se preferisci ignorare il suggerimento).`
-      : `🏳️ ${dispName} è Sconfitto! Da regolamento (9.12a) potrebbe regredire a ${defeatInfo.toStage} con 1 Ferita — decidi dal pannello "Gestione Combattimento" se farlo regredire o richiuderlo nell'Uovo.`;
+    return `🏳️ ${dispName} è stato sconfitto.`;
   }
   // Stessa informazione ma come clausola da APPENDERE in coda a una riga di log già esistente
   // (nessun nome ripetuto: il bersaglio è già nominato subito prima in quella riga).
   function defeatInlineNote(defeatInfo){
     if(!defeatInfo) return '';
-    if(defeatInfo.enemy) return ' 🏳️ Sconfitto!';
-    return defeatInfo.digitama
-      ? ` 🏳️ Sconfitto! Già al Default Stage minimo — da regolamento diventerebbe Digitama (risolvi da "Gestione Combattimento").`
-      : ` 🏳️ Sconfitto! Può regredire a ${defeatInfo.toStage} o essere richiuso nell'Uovo (risolvi da "Gestione Combattimento").`;
+    return ' 🏳️ Sconfitto.';
   }
 
   async function applyDamageToParticipant(code, combat, p, amount){
@@ -5077,8 +5113,13 @@ let editingScene = false;
           // risolta -- pCanRegress/pDefaultStage servono solo a mostrare il suggerimento da regola
           // 9.12a accanto ai due bottoni di scelta del Master (vedi defeatResolutionHTML più sotto).
           const pcMemberForDefeat = p.isPC ? cachedRoster.find(m=>m.username===p.username) : null;
-          const pDefeatPending = !!(pcMemberForDefeat && pcMemberForDefeat.digimon.defeatPending);
-          const pCanRegress = pDefeatPending && stageIndex(pcMemberForDefeat.digimon.stage) > stageIndex(pcMemberForDefeat.digimon.defaultStage);
+          // Richiesta utente: "stessa cosa per i nemici" -- pDefeatPending ora copre anche i
+          // partecipanti Nemico (flag participant.defeatPending, vedi applyDefeatIfNeeded), non
+          // solo i PC (member.digimon.defeatPending). pCanRegress/pDefaultStage restano concetti
+          // solo-PC (i Nemici non hanno un Default Stage in Scheda): per loro il box qui sotto
+          // mostra sempre entrambi i bottoni, senza suggerimento da regola 9.12a.
+          const pDefeatPending = p.isPC ? !!(pcMemberForDefeat && pcMemberForDefeat.digimon.defeatPending) : !!p.defeatPending;
+          const pCanRegress = p.isPC && pDefeatPending && stageIndex(pcMemberForDefeat.digimon.stage) > stageIndex(pcMemberForDefeat.digimon.defaultStage);
           const pDefaultStage = pcMemberForDefeat ? pcMemberForDefeat.digimon.defaultStage : null;
           // Richiesta utente: numerino accanto al nome (vicino alle Ferite) per distinguere Digimon
           // con lo stesso nome — vedi duplicateNameSuffix. Il Master vede sempre i nomi reali.
@@ -5099,14 +5140,21 @@ let editingScene = false;
           // davvero); "Richiudi nell'Uovo" è sempre disponibile (riusa approved=false, non
           // distruttivo, stessa azione già presente sulla Scheda Digimon). "(consigliato)" segue
           // solo il suggerimento di regola 9.12a, il Master resta comunque libero di scegliere l'altro.
-          const defeatResolutionHTML = pDefeatPending ? `
+          const defeatResolutionHTML = !pDefeatPending ? '' : (p.isPC ? `
             <div style="margin:6px 0;padding:8px;border:1px solid rgba(255,93,93,0.4);border-radius:6px;background:rgba(255,93,93,0.06);">
               <div class="muted" style="font-size:11px;margin-bottom:6px;">🏳️ Sconfitto — risolvi la Sconfitta (regola 9.12a: ${pCanRegress?`consigliato regredire a ${escapeHTML(pDefaultStage)}`:'già al Default Stage minimo, consigliato Digitama'}):</div>
               <div class="row">
                 ${pCanRegress ? `<button class="btn ghost small" data-defeat-regress="${p.id}" style="flex:1;">🏳️ Regredisci a ${escapeHTML(pDefaultStage)} (consigliato)</button>` : ''}
                 <button class="btn ghost small" data-defeat-egg="${p.id}" style="flex:1;">🥚 Richiudi nell'Uovo${pCanRegress?'':' (consigliato)'}</button>
               </div>
-            </div>` : '';
+            </div>` : `
+            <div style="margin:6px 0;padding:8px;border:1px solid rgba(255,93,93,0.4);border-radius:6px;background:rgba(255,93,93,0.06);">
+              <div class="muted" style="font-size:11px;margin-bottom:6px;">🏳️ Sconfitto — risolvi la Sconfitta:</div>
+              <div class="row">
+                <button class="btn ghost small" data-defeat-enemy-regress="${p.id}" style="flex:1;">🏳️ Regredisci di Stage</button>
+                <button class="btn ghost small" data-defeat-enemy-egg="${p.id}" style="flex:1;">🥚 Richiudi nell'Uovo</button>
+              </div>
+            </div>`);
           if(!expanded){
             return `<div style="margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--line);">${header}${defeatResolutionHTML}${(p.effects&&p.effects.length)?`<div style="margin-top:4px;">${effectTagsHTML(p)}</div>`:''}</div>`;
           }
@@ -6237,6 +6285,38 @@ let editingScene = false;
         member.digimon.defeatPending = false;
         await patchMember(code, member.username, { approved: false, defeatPending: false });
         await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `🥚 Il Master risolve la Sconfitta di ${narratorName(p)}: torna Digitama (richiuso nell'Uovo -- riapprovalo dalla Scheda Digimon quando si schiude di nuovo).` });
+        await persistAndRefresh();
+      };
+    });
+    // Richiesta utente: "stessa cosa per i nemici" -- stessa scelta a due bottoni dei PC, ma qui
+    // applicata a un partecipante Nemico (nessuna Scheda Digimon dietro: niente Default Stage da
+    // regolamento, quindi il Master sceglie lo Stage a mano; "Richiudi nell'Uovo" per un Nemico non
+    // ha nulla da "riaprire" in seguito, quindi qui rimuove semplicemente il Nemico dal Combattimento).
+    cardEl.querySelectorAll('[data-defeat-enemy-regress]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-defeat-enemy-regress');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p || p.isPC) return;
+        const choice = window.prompt(`A quale Stage regredisce ${p.name}? (${STAGES.join(' / ')})`, p.stage || '');
+        if(choice===null) return;
+        const matched = STAGES.find(s=>s.toLowerCase()===String(choice).trim().toLowerCase());
+        if(!matched){ alert(`Stage non riconosciuto. Usa uno tra: ${STAGES.join(', ')}.`); return; }
+        const fromStage = p.stage || null;
+        p.stage = matched;
+        p.currentWounds = 1;
+        p.defeatPending = false;
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `🏳️ Il Master risolve la Sconfitta di ${narratorName(p)}: regredisce${fromStage?` da ${fromStage}`:''} a ${matched} con 1 Ferita.` });
+        await persistAndRefresh();
+      };
+    });
+    cardEl.querySelectorAll('[data-defeat-enemy-egg]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-defeat-enemy-egg');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p || p.isPC) return;
+        if(!window.confirm(`Richiudere nell'Uovo ${p.name}? Il Nemico verrà rimosso dal Combattimento.`)) return;
+        combat.participants = combat.participants.filter(x=>x.id!==id);
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `🥚 Il Master risolve la Sconfitta di ${p.name}: torna Digitama (rimosso dal Combattimento).` });
         await persistAndRefresh();
       };
     });

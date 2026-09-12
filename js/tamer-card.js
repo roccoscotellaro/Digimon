@@ -62,6 +62,11 @@
 
   function defaultTamer(){
     return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, imageUrl:'', currentWounds:null, inventory:[], skills: defaultSkills(), unspentGrowthPoints:0,
+      // Colore persistente dei messaggi di questo Tamer in chat (richiesta utente: "i personaggi
+      // dei giocatori dovrebbero avere un colore fisso in Scheda, così il Master non deve
+      // reimpostarlo ogni volta") — specchio di digimon.chatColor già esistente sulla Scheda
+      // Digimon. Editabile sia dal giocatore stesso sia dal Master (Scheda Tamer, vedi sotto).
+      chatColor:'#5aa8ff',
       inspirationPoints:0, tormentPenalty:0,
       torments: [],
       majorAspect: { text:'', usesLeft:1 },
@@ -515,7 +520,10 @@
     } else {
       cardEl.innerHTML = `
         <div class="section-title">Scheda Tamer — Modifica</div>
-        <div class="field"><label>URL Immagine (opzionale)</label><input type="text" id="e-t-img" value="${escapeAttr(t.imageUrl)}" placeholder="https://..." /></div>
+        <div class="row">
+          <div class="field" style="flex:3;"><label>URL Immagine (opzionale)</label><input type="text" id="e-t-img" value="${escapeAttr(t.imageUrl)}" placeholder="https://..." /></div>
+          <div class="field" style="max-width:70px;"><label>Colore Chat</label><input type="color" id="e-t-color" value="${t.chatColor||'#5aa8ff'}" style="padding:2px;height:38px;" /></div>
+        </div>
         <div class="field"><label>URL Immagine Digivice (opzionale)</label><input type="text" id="e-t-digivice-img" value="${escapeAttr(t.digiviceImageUrl)}" placeholder="https://..." /></div>
         <div class="grid-stats">
           ${statBox('AGI','e-t-agility',t.agility)}
@@ -541,6 +549,7 @@
           if(el) me.tamer[k] = Number(el.value)||0;
         });
         me.tamer.imageUrl = document.getElementById('e-t-img').value.trim();
+        me.tamer.chatColor = document.getElementById('e-t-color').value;
         me.tamer.digiviceImageUrl = document.getElementById('e-t-digivice-img').value.trim();
         me.tamer.majorAspect.text = document.getElementById('e-t-aspect-major').value.trim();
         me.tamer.minorAspect.text = document.getElementById('e-t-aspect-minor').value.trim();
