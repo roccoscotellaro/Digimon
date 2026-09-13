@@ -229,33 +229,49 @@
     const cardEl = document.getElementById('scan-log-card');
     if(!cardEl) return;
     const log = await getScanLog(code);
+    // BUGFIX/richiesta grafica (Rocco: "manca il crop del bio-scan... troppo lunghe ormai come
+    // sezioni" — confermato da screenshot: questo è proprio il pannello "Log Bio-Resonance Scan"
+    // che cresce di una riga per ogni scan di ogni giocatore, senza alcun limite). Prima
+    // log.slice().reverse().map(...) rendeva TUTTE le righe sempre visibili per intero. Ora solo
+    // le 6 più recenti restano sempre visibili, le altre finiscono in un <details> "▸ Altre N
+    // scansioni" — stesso identico contenuto/bottoni per ogni riga, nessuna funzionalità persa
+    // (Applica/Completa Scheda e ✕ restano cliccabili anche dentro, dato che i binding qui sotto
+    // usano querySelectorAll su tutto cardEl indipendentemente dal nesting).
+    function scanRowHTML(l){
+      // Il bottone "Applica" resta nascosto SOLO se quel Tamer ha già un nome DIVERSO impostato
+      // (per non rischiare di sovrascrivere una creazione in corso non collegata a questo scan).
+      // Se il nome è lo stesso di questa riga (o manca del tutto), il bottone c'è sempre: la
+      // Wizard/applyDexMatchIfNeeded riempiono solo i campi ancora vuoti/di default, senza
+      // toccare quelli che il giocatore ha già personalizzato — quindi è sicuro anche per
+      // "completare" una scheda a metà, non solo per crearne una da zero.
+      const member = cachedRoster.find(m=>m.username===l.username);
+      const currentName = member && member.digimon && member.digimon.name ? member.digimon.name.trim() : '';
+      const sameName = currentName && currentName.toLowerCase() === (l.digimon_name||'').trim().toLowerCase();
+      const blockedByDifferentSheet = currentName && !sameName;
+      const btnLabel = currentName ? '🔧 Completa Scheda (riempie i vuoti)' : '📤 Applica alla Scheda';
+      return `
+        <div class="row" style="align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px;">
+          <div>
+            <b>${escapeHTML(member ? displayName(member) : l.username)}</b> <span class="muted">— tentativo ${l.attempt_number}/2</span><br/>
+            <span class="mono">${escapeHTML(l.digimon_name)}</span>${l.crest_name ? ` <span class="muted">· Crest: ${escapeHTML(l.crest_name)}</span>` : ''}${l.digimental_name ? ` <span class="muted">· ${escapeHTML(l.digimental_name)}</span>` : ''}
+            <div class="muted" style="font-size:10px;">${new Date(l.created_at).toLocaleString('it-IT')}</div>
+          </div>
+          <div style="display:flex;gap:4px;">
+            ${blockedByDifferentSheet ? `<span class="tag" style="font-size:10px;" title="Questo Tamer ha già un Digimon diverso (${escapeAttr(currentName)}) sulla scheda: per non sovrascriverlo per sbaglio, il bottone Applica resta nascosto.">Scheda diversa già creata</span>` : `<button class="btn small" data-scan-push="${escapeAttr(l.username)}" data-scan-push-name="${escapeAttr(l.digimon_name)}" title="Apre la Creazione Guidata per questo Tamer, pre-compilata con questo Digimon — riempie solo Stat/Attributo/Qualities ancora vuoti, non tocca quello che il giocatore ha già personalizzato.">${btnLabel}</button>`}
+            <button class="btn ghost small" data-scan-del="${escapeAttr(l.id)}" title="Cancella questa riga (libera il nome e restituisce il tentativo)">✕</button>
+          </div>
+        </div>
+      `;
+    }
+    const sortedLog = log.slice().reverse();
+    // Richiesta Rocco (2026-09-12): "Mettine zero e tutto croppabile" — nessuna riga resta
+    // sempre visibile, l'intera lista finisce dentro un unico <details> richiudibile.
+    const visibleLog = sortedLog.slice(0, 0);
+    const extraLog = sortedLog.slice(0);
     const rowsHTML = log.length === 0
       ? '<div class="muted">Nessuna scansione registrata finora per questa campagna.</div>'
-      : log.slice().reverse().map(l => {
-          // Il bottone "Applica" resta nascosto SOLO se quel Tamer ha già un nome DIVERSO impostato
-          // (per non rischiare di sovrascrivere una creazione in corso non collegata a questo scan).
-          // Se il nome è lo stesso di questa riga (o manca del tutto), il bottone c'è sempre: la
-          // Wizard/applyDexMatchIfNeeded riempiono solo i campi ancora vuoti/di default, senza
-          // toccare quelli che il giocatore ha già personalizzato — quindi è sicuro anche per
-          // "completare" una scheda a metà, non solo per crearne una da zero.
-          const member = cachedRoster.find(m=>m.username===l.username);
-          const currentName = member && member.digimon && member.digimon.name ? member.digimon.name.trim() : '';
-          const sameName = currentName && currentName.toLowerCase() === (l.digimon_name||'').trim().toLowerCase();
-          const blockedByDifferentSheet = currentName && !sameName;
-          const btnLabel = currentName ? '🔧 Completa Scheda (riempie i vuoti)' : '📤 Applica alla Scheda';
-          return `
-          <div class="row" style="align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px;">
-            <div>
-              <b>${escapeHTML(member ? displayName(member) : l.username)}</b> <span class="muted">— tentativo ${l.attempt_number}/2</span><br/>
-              <span class="mono">${escapeHTML(l.digimon_name)}</span>${l.crest_name ? ` <span class="muted">· Crest: ${escapeHTML(l.crest_name)}</span>` : ''}${l.digimental_name ? ` <span class="muted">· ${escapeHTML(l.digimental_name)}</span>` : ''}
-              <div class="muted" style="font-size:10px;">${new Date(l.created_at).toLocaleString('it-IT')}</div>
-            </div>
-            <div style="display:flex;gap:4px;">
-              ${blockedByDifferentSheet ? `<span class="tag" style="font-size:10px;" title="Questo Tamer ha già un Digimon diverso (${escapeAttr(currentName)}) sulla scheda: per non sovrascriverlo per sbaglio, il bottone Applica resta nascosto.">Scheda diversa già creata</span>` : `<button class="btn small" data-scan-push="${escapeAttr(l.username)}" data-scan-push-name="${escapeAttr(l.digimon_name)}" title="Apre la Creazione Guidata per questo Tamer, pre-compilata con questo Digimon — riempie solo Stat/Attributo/Qualities ancora vuoti, non tocca quello che il giocatore ha già personalizzato.">${btnLabel}</button>`}
-              <button class="btn ghost small" data-scan-del="${escapeAttr(l.id)}" title="Cancella questa riga (libera il nome e restituisce il tentativo)">✕</button>
-            </div>
-          </div>
-        `;}).join('');
+      : visibleLog.map(scanRowHTML).join('')
+        + (extraLog.length ? `<details style="margin-top:4px;"><summary style="cursor:pointer;font-size:11px;color:var(--text-mute);">▸ Mostra ${extraLog.length} scansioni</summary><div style="margin-top:4px;">${extraLog.map(scanRowHTML).join('')}</div></details>` : '');
     cardEl.innerHTML = `
       <div class="section-title">Log Bio-Resonance Scan</div>
       <div class="muted" style="margin-bottom:8px;">Ogni Digimon può uscire ad un solo Tamer per campagna; ogni Tamer ha 2 tentativi. Cancella una riga per correggere un errore, liberare un nome o restituire un tentativo. "📤 Applica alla Scheda" apre la Creazione Guidata già pre-compilata per quel Tamer, se non l'ha ancora fatto lui stesso.</div>

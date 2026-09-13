@@ -289,6 +289,10 @@
       unspentGrowthPoints:0, inspirationPoints:0, tormentPenalty:0, torments:[],
       majorAspect:{text:'',usesLeft:1}, minorAspect:{text:'',usesLeft:2}, built:false,
       age:'', nationality:'', height:'', hairColor:'', eyeColor:'', distinctiveTraits:'', background:'',
+      // BUGFIX (Rocco 2026-09-12: "la scelta dei colori per la chat non compare da nessuna parte"):
+      // il Colore Chat del Tamer non era mai stato aggiunto qui — vedi anche js/tamer-card.js,
+      // dove il campo era stato tolto per errore sostenendo che fosse "spostato" proprio qui.
+      chatColor:'#5aa8ff',
       imageThumbUrl:'', characterName:'' };
   }
   // Nome da mostrare in UI per un membro del roster: il nome del personaggio se è stato impostato,
@@ -439,14 +443,12 @@
     // Origin Transfer Vercel senza un beneficio percepibile per il giocatore.
     pollTimer = setInterval(async ()=>{
       if(!session) return;
-      // Scheda in background: saltiamo il giro, nessun lavoro sprecato mentre non è visibile.
-      if(document.hidden) return;
       cachedRoster = await getRoster(session.code);
       checkNoticesForMe();
       if(isEditingFullForm) return;
       if(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
       render();
-    }, 20000);
+    }, 15000);
   }
 
   function render(){
@@ -546,7 +548,8 @@
       <div style="flex:1;min-width:220px;">
         ${editable
           ? `<div class="field"><label>Nome Personaggio (mostrato nell'interfaccia)</label><input type="text" id="p-characterName" value="${escapeAttr(m.tamer.characterName||'')}" placeholder="${escapeAttr(m.username)}" /></div>
-             <div class="field" style="margin-top:8px;"><label>Nome Utente (login — non modificabile qui)</label><input type="text" value="${escapeAttr(m.username)}" disabled /></div>`
+             <div class="field" style="margin-top:8px;"><label>Nome Utente (login — non modificabile qui)</label><input type="text" value="${escapeAttr(m.username)}" disabled /></div>
+             <div class="field" style="margin-top:8px;max-width:100px;"><label>Colore Chat</label><input type="color" id="p-chatColor" value="${escapeAttr(m.tamer.chatColor||'#5aa8ff')}" style="padding:2px;height:38px;" /></div>`
           : `<div class="pixel-title" style="font-size:22px;color:var(--cyan);text-shadow:0 0 10px rgba(53,232,201,0.4);">${escapeHTML(displayName(m))}</div>`}
         <div class="muted" style="margin-top:2px;">Tamer — Campagna ${escapeHTML(session.code)}</div>
         ${editable ? `
@@ -1129,6 +1132,8 @@
   function collectFormValues(target){
     const charNameEl = document.getElementById('p-characterName');
     if(charNameEl) target.tamer.characterName = charNameEl.value.trim();
+    const chatColorEl = document.getElementById('p-chatColor');
+    if(chatColorEl) target.tamer.chatColor = chatColorEl.value;
     STAT_DEFS.forEach(d=>{
       const el = document.getElementById('p-stat-'+d.key);
       if(el) target.tamer[d.key] = Math.max(0, Number(el.value)||0);

@@ -2754,19 +2754,30 @@ let editingScene = false;
       const rollText = `🎲 ${qty}d${selectedSides}[${results.join(',')}]${modStr} = ${total}`;
       // Animazione 3D
       resEl.innerHTML = `${genericDiceRowHTML(results, selectedSides)}<span class="roll-total">${total}</span>`;
-      sendDiceRollToChat(panelId, rollText);
+      sendDiceRollToChat(panelId, rollText, results);
     };
   }
 
-  async function sendDiceRollToChat(panelId, rollText){
+  // Richiesta utente: "continuo a non vedere il tiro di dadi su tutte e tre le chat" -- il tiro
+  // in realtà arrivava sempre come RIGA DI TESTO (rollText), ma non mostrava mai le faccine 3D
+  // animate dei dadi (diceHTML in chat-log-engine.js/logHTML), perché questa funzione non
+  // valorizzava MAI meta.dice: lo faceva SOLO per aggiungere `location` (Privata/Sottogruppo), e
+  // in Generale non impostava affatto `.meta`. A colpo d'occhio un tiro così sembra un messaggio
+  // di testo qualunque invece che "un vero tiro di dadi" -- per questo sembrava sparito, in
+  // TUTTE e tre le chat (Generale/Privata/Sottogruppo) e per entrambi i lati (qui si vede solo
+  // il ramo Master, ma il ramo Player aveva la stessa mancanza). `results` (i singoli valori dei
+  // dadi, già calcolati dal chiamante) viene ora passato come 3° argomento e messo in meta.dice.
+  async function sendDiceRollToChat(panelId, rollText, results){
     const errEl = document.getElementById(panelId+'-error');
     if(errEl) errEl.textContent = '';
     try{
       const code = session.code;
+      const diceMeta = Array.isArray(results) ? { dice: results } : null;
       if(panelId==='dice-panel-player'){
         const me = cachedMe || (cachedRoster||[]).find(m=>m.username===session.username);
         const who = me ? displayName(me) : session.username;
         const entry = { who, role:'roll', text: rollText };
+        if(diceMeta) entry.meta = diceMeta;
         if(playerChatMode==='subgroup'){
           // BUGFIX (Rocco: "il tiro dei dadi non compare nelle chat Privata e Sottogruppo"):
           // prima, se playerActiveSubgroupId non era ancora valorizzato nel momento esatto del
@@ -2781,10 +2792,10 @@ let editingScene = false;
             return;
           }
           const group = (cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId) || null;
-          entry.meta = { location: subgroupLocationKey(group) };
+          entry.meta = Object.assign({ location: subgroupLocationKey(group) }, diceMeta);
           await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, entry);
         } else if(playerChatMode==='private'){
-          entry.meta = { location: memberLocationKey(me) };
+          entry.meta = Object.assign({ location: memberLocationKey(me) }, diceMeta);
           await pushPrivateLog(code, session.username, entry);
         } else {
           await pushLog(code, entry);
@@ -2794,6 +2805,7 @@ let editingScene = false;
         // Stesso BUGFIX di cui sopra (vedi ramo player): masterPrivateThread/activeSubgroupId
         // mancanti non devono far scivolare l'invio nella Chat Generale in silenzio.
         const entry = { who:'Master', role:'roll', text: rollText };
+        if(diceMeta) entry.meta = diceMeta;
         const mode = (typeof masterChatMode!=='undefined') ? masterChatMode : 'general';
         if(mode==='private'){
           if(typeof masterPrivateThread==='undefined' || !masterPrivateThread){
@@ -2807,7 +2819,7 @@ let editingScene = false;
             return;
           }
           const group = (cachedSubgroups||[]).find(g=>g.id===activeSubgroupId) || null;
-          entry.meta = { location: subgroupLocationKey(group) };
+          entry.meta = Object.assign({ location: subgroupLocationKey(group) }, diceMeta);
           await pushPrivateLog(code, 'subgroup:'+activeSubgroupId, entry);
         } else {
           await pushLog(code, entry);
@@ -5118,7 +5130,12 @@ let editingScene = false;
           // solo i PC (member.digimon.defeatPending). pCanRegress/pDefaultStage restano concetti
           // solo-PC (i Nemici non hanno un Default Stage in Scheda): per loro il box qui sotto
           // mostra sempre entrambi i bottoni, senza suggerimento da regola 9.12a.
-          const pDefeatPending = p.isPC ? !!(pcMemberForDefeat && pcMemberForDefeat.digimon.defeatPending) : !!p.defeatPending;
+          // BUGFIX (Rocco 2026-09-12): un Nemico sconfitto PRIMA di questa fix (deploy precedente)
+          // ha defeated:true ma defeatPending del tutto assente (undefined), quindi il vecchio
+          // `!!p.defeatPending` risultava false e il box di risoluzione non compariva mai per lui,
+          // lasciandolo bloccato col solo bottone ↩️ Rientra. Ora un Nemico già sconfitto ma senza
+          // il flag esplicitamente a false viene comunque trattato come "ancora da risolvere".
+          const pDefeatPending = p.isPC ? !!(pcMemberForDefeat && pcMemberForDefeat.digimon.defeatPending) : (!!p.defeated && p.defeatPending !== false);
           const pCanRegress = p.isPC && pDefeatPending && stageIndex(pcMemberForDefeat.digimon.stage) > stageIndex(pcMemberForDefeat.digimon.defaultStage);
           const pDefaultStage = pcMemberForDefeat ? pcMemberForDefeat.digimon.defaultStage : null;
           // Richiesta utente: numerino accanto al nome (vicino alle Ferite) per distinguere Digimon
@@ -5130,6 +5147,7 @@ let editingScene = false;
               <span style="display:flex;align-items:center;gap:6px;">
                 <input type="number" data-part-init="${p.id}" value="${p.initiative}" style="width:60px;padding:4px;" />
                 ${defeated ? `<button class="btn ghost small" data-part-reenter="${p.id}" title="Rientra a proprio rischio (a discrezione del Master)">↩️</button>` : ''}
+                ${p.isPC ? `<button class="btn ghost small" data-part-sync="${p.id}" title="Se questo Digimon si è evoluto/regredito durante questo combattimento e il nome/immagine qui sono rimasti quelli vecchi (può succedere se l'evoluzione è avvenuta prima di un aggiornamento del sito), clicca per risincronizzarli subito con la Scheda attuale.">🔄</button>` : ''}
                 ${isCurrentTurn ? '' : `<button class="btn ghost small" data-part-toggle="${p.id}">${expanded?'▲':'▼'}</button>`}
                 <button class="btn ghost small" data-part-remove="${p.id}">✕</button>
               </span>
@@ -5997,6 +6015,27 @@ let editingScene = false;
           p.defeated = false;
         }
         await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `↩️ ${p.name} rientra in combattimento a proprio rischio.` });
+        await persistAndRefresh();
+      };
+    });
+    // FEATURE (Rocco 2026-09-12: nome dello stadio pre-evoluzione rimasto in Combat Manager dopo
+    // che il Digimon si è evoluto): syncCombatParticipantName (js/digimon-card.js) sincronizza
+    // automaticamente nome/immagine SOLO per le evoluzioni fatte DOPO che quella fix è stata
+    // caricata — non può correggere retroattivamente un nome già rimasto "incastrato" in un
+    // combattimento iniziato prima. Questo bottone manuale lascia al Master la possibilità di
+    // rifare a mano quella stessa sincronizzazione in qualunque momento durante un fight già in corso.
+    cardEl.querySelectorAll('[data-part-sync]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-part-sync');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p || !p.isPC) return;
+        const member = cachedRoster.find(m=>m.username===p.username);
+        if(!member || !member.digimon){ window.alert('Impossibile trovare la Scheda di questo Tamer nel roster attuale.'); return; }
+        const oldName = p.name;
+        if(oldName===member.digimon.name && p.imageUrl===(member.digimon.imageUrl||p.imageUrl)){ window.alert('Nome e immagine sono già allineati con la Scheda.'); return; }
+        p.name = member.digimon.name;
+        if(member.digimon.imageUrl) p.imageUrl = member.digimon.imageUrl;
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `🔄 ${oldName} → ${p.name} (nome/immagine risincronizzati con la Scheda).` });
         await persistAndRefresh();
       };
     });

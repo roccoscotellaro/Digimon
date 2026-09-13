@@ -520,11 +520,15 @@
     } else {
       cardEl.innerHTML = `
         <div class="section-title">Scheda Tamer — Modifica</div>
-        <div class="row">
-          <div class="field" style="flex:3;"><label>URL Immagine (opzionale)</label><input type="text" id="e-t-img" value="${escapeAttr(t.imageUrl)}" placeholder="https://..." /></div>
-          <div class="field" style="max-width:70px;"><label>Colore Chat</label><input type="color" id="e-t-color" value="${t.chatColor||'#5aa8ff'}" style="padding:2px;height:38px;" /></div>
-        </div>
+        <div class="field"><label>URL Immagine (opzionale)</label><input type="text" id="e-t-img" value="${escapeAttr(t.imageUrl)}" placeholder="https://..." /></div>
         <div class="field"><label>URL Immagine Digivice (opzionale)</label><input type="text" id="e-t-digivice-img" value="${escapeAttr(t.digiviceImageUrl)}" placeholder="https://..." /></div>
+        <!-- BUGFIX (Rocco 2026-09-12: "la scelta dei colori per la chat non compare da nessuna
+             parte"): un edit precedente aveva tolto questo campo qui sostenendo che fosse stato
+             spostato su player.html -- in realtà non era mai stato aggiunto lì, quindi il colore
+             chat del Tamer non era impostabile da NESSUNA parte. Campo ripristinato qui (uguale
+             pattern del Colore Chat già presente su js/digimon-card.js) e aggiunto anche a
+             player.html. -->
+        <div class="field" style="max-width:70px;"><label>Colore Chat</label><input type="color" id="e-t-color" value="${t.chatColor||'#5aa8ff'}" style="padding:2px;height:38px;" /></div>
         <div class="grid-stats">
           ${statBox('AGI','e-t-agility',t.agility)}
           ${statBox('BODY','e-t-body',t.body)}
@@ -549,8 +553,9 @@
           if(el) me.tamer[k] = Number(el.value)||0;
         });
         me.tamer.imageUrl = document.getElementById('e-t-img').value.trim();
-        me.tamer.chatColor = document.getElementById('e-t-color').value;
         me.tamer.digiviceImageUrl = document.getElementById('e-t-digivice-img').value.trim();
+        const tColorEl = document.getElementById('e-t-color');
+        if(tColorEl) me.tamer.chatColor = tColorEl.value;
         me.tamer.majorAspect.text = document.getElementById('e-t-aspect-major').value.trim();
         me.tamer.minorAspect.text = document.getElementById('e-t-aspect-minor').value.trim();
         SKILL_DEFS.forEach(def=>{
