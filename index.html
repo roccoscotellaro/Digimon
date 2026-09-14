@@ -2757,6 +2757,21 @@ let editingScene = false;
       sendDiceRollToChat(panelId, rollText, results);
     };
   }
+  // BUGFIX (segnalato da Rocco: il pannello Dadi resta vuoto in Chat Privata/Sottogruppo del
+  // Master nonostante il markup e la chiamata renderDicePanel(...) siano già presenti in
+  // js/private-chat.js e js/subgroups.js): renderDicePanel è dichiarata QUI dentro la IIFE
+  // principale di index.html (avviata poco sopra con "(function(){"), quindi resta invisibile a
+  // qualunque script classico caricato PRIMA di questo <script> — incluso js/private-chat.js e
+  // js/subgroups.js, entrambi caricati prima nella catena. Il loro `if(typeof renderDicePanel ===
+  // 'function')` non lanciava mai un errore: falliva silenziosamente e basta, saltando il
+  // rendering senza lasciare traccia in console — per questo il pannello "spariva" senza nessun
+  // errore visibile. Le due chiamate che già funzionano (righe con 'dice-panel-player' e
+  // 'dice-panel-master' qui sotto) funzionano SOLO perché partono da codice interno a questa
+  // stessa IIFE. Fix: esporla esplicitamente su window, così ogni script classico della pagina
+  // (prima o dopo questo, l'ordine non conta per un accesso a runtime dopo il caricamento
+  // completo) la trova con lo stesso identico typeof-check già scritto in quei due file, senza
+  // dover toccarli.
+  window.renderDicePanel = renderDicePanel;
 
   // Richiesta utente: "continuo a non vedere il tiro di dadi su tutte e tre le chat" -- il tiro
   // in realtà arrivava sempre come RIGA DI TESTO (rollText), ma non mostrava mai le faccine 3D
