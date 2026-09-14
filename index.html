@@ -1015,6 +1015,25 @@ let editingScene = false;
     }
     return pushLog(session.code, entry);
   }
+  // RICHIESTA UTENTE (2026-09-14, Priority 3): avviso "è il tuo turno" come Web Push VERA (arriva
+  // anche a scheda chiusa/telefono bloccato, via Service Worker — vedi sw.js/subscribeToPush più in
+  // basso), ma indirizzata SOLO al giocatore di quel turno — non scrive NULLA nella chat pubblica né
+  // in nessun log privato/sottogruppo (a differenza del vecchio pushCombatNarration, che finiva nel
+  // log pubblico e quindi mandava la Web Push a TUTTA la campagna — proprio quello che non doveva più
+  // succedere). Usa il nuovo resource=turn-ping di /api/log.js: stessa infrastruttura di invio
+  // (sendPushToSubscriptions/subsForUsername) già usata per i messaggi privati, ma senza alcuna
+  // riga scritta su "logs"/"private_logs". Fire-and-forget: se le Web Push non sono configurate o il
+  // giocatore non le ha attivate, la fetch torna semplicemente {ok:false} e non succede nulla — resta
+  // comunque il banner privato #combat-turn-chat-banner per chi ha la pagina aperta.
+  async function notifyTurnPush(code, username, title, body){
+    try{
+      await fetch('/api/log?resource=turn-ping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, username, title, body })
+      });
+    }catch(e){}
+  }
   // true se il composer di chat che il GIOCATORE sta guardando in questo momento (chatMode +
   // eventuale sottogruppo attivo) è proprio quello bloccato da un combattimento in corso — usata
   // sia per disabilitare visivamente il campo (renderChatArea) sia come controllo definitivo
@@ -1496,12 +1515,16 @@ let editingScene = false;
     await applyStartOfTurnEffects(code, combat, starting);
     await saveCombat(code, combat);
 
-    // Notifica al giocatore specifico quando tocca a lui: invia un messaggio di sistema nella
-    // narrazione di combattimento (e quindi anche come push notification se il campanello è attivo).
-    // Solo per PC, solo se è un giocatore diverso dal Master (il Master vede già tutto).
+    // RICHIESTA UTENTE (2026-09-14): il cambio turno non viene più annunciato nella chat pubblica/
+    // narrazione di combattimento (lo vedevano TUTTI i giocatori, non solo quello di turno — troppo
+    // "rumore" per chi non era coinvolto). Restano: il banner "È il tuo turno!" visibile SOLO al
+    // giocatore di turno quando ha la pagina aperta (#combat-turn-chat-banner in refreshLiveParts,
+    // già presente), la card "Turno Attuale" visibile solo al Master (#combat-turn-now-card) e — per
+    // arrivare anche a scheda chiusa/telefono bloccato — una Web Push VERA indirizzata SOLO a lui
+    // (notifyTurnPush, nessuna scrittura in nessun log).
     if(starting && starting.isPC && starting.username){
       const turnDispName = combatDisplayName(starting, false);
-      await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `⚔️ ${turnDispName}, è il tuo turno!` });
+      notifyTurnPush(code, starting.username, '⚔️ È il tuo turno!', `${turnDispName}, tocca a te in combattimento.`);
     }
 
     renderCombatManager(code, players);
@@ -1510,6 +1533,7 @@ let editingScene = false;
     // Giocatore (bindAttacksCard) — un `true` fisso smascererebbe qui nomi/Digimon nascosti al
     // Giocatore ogni volta che chiude il proprio turno.
     if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, !!(session && session.role==='master'));
+    refreshCombatTurnNowCard();
     bindZoneLineArrows(code, players);
   }
   // Richiesta utente: il Master deve poter spostare manualmente il turno su un partecipante a
@@ -1533,13 +1557,16 @@ let editingScene = false;
     combat.turnStartedAt = new Date().toISOString();
     await applyStartOfTurnEffects(code, combat, starting);
     await saveCombat(code, combat);
+    // RICHIESTA UTENTE (2026-09-14): vedi commento identico in advanceCombatTurn qui sopra — niente
+    // più annuncio in chat pubblica; banner privato + card Master + Web Push mirata al giocatore.
     if(starting && starting.isPC && starting.username){
       const turnDispName = combatDisplayName(starting, false);
-      await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `⚔️ ${turnDispName}, è il tuo turno! (turno spostato manualmente dal Master)` });
+      notifyTurnPush(code, starting.username, '⚔️ È il tuo turno!', `${turnDispName}, tocca a te in combattimento (turno spostato manualmente dal Master).`);
     }
     renderCombatManager(code, players);
     const combatLive = document.getElementById('combat-live');
     if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, !!(session && session.role==='master'));
+    refreshCombatTurnNowCard();
     bindZoneLineArrows(code, players);
   }
   // Richiesta utente: poter "tornare indietro di turni" per correggere un errore di sequenza.
@@ -1567,6 +1594,7 @@ let editingScene = false;
     renderCombatManager(code, players);
     const combatLive = document.getElementById('combat-live');
     if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, !!(session && session.role==='master'));
+    refreshCombatTurnNowCard();
     bindZoneLineArrows(code, players);
   }
   async function endCombatNow(code, players){
@@ -1584,6 +1612,7 @@ let editingScene = false;
     renderCombatManager(code, players);
     const combatLive = document.getElementById('combat-live');
     if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, true);
+    refreshCombatTurnNowCard();
     bindZoneLineArrows(code, players);
   }
 
@@ -2344,6 +2373,42 @@ let editingScene = false;
     if(sameName.length<2) return '';
     const idx = sameName.indexOf(p);
     return idx>=0 ? ` #${idx+1}` : '';
+  }
+
+  // RICHIESTA UTENTE (2026-09-14, Priority 3): card dedicata SOLO al Master ("Turno Attuale",
+  // #combat-turn-now-card in renderMaster) che mostra a colpo d'occhio chi è di turno ORA — stato
+  // attuale, non uno storico — separata dal pannello dettagliato #combat-mgr-card (che resta come
+  // prima). Nasce insieme alla rimozione dell'annuncio "è il tuo turno" dalla chat pubblica (vedi
+  // commenti in advanceCombatTurn/jumpToCombatTurn): il Master ha così un riferimento rapido anche
+  // senza quell'annuncio, mentre il giocatore di turno continua a essere avvisato privatamente dal
+  // banner già esistente #combat-turn-chat-banner (nessuna relazione tra le due — nessuna scrittura
+  // sul server, solo lettura di cachedCombat già in memoria).
+  function combatCurrentTurnCardHTML(combat){
+    if(!combat || !combat.active || !combat.order || combat.order.length===0){
+      return `<div class="section-title">Turno Attuale</div><div class="muted" style="font-size:12px;">Nessun combattimento attivo.</div>`;
+    }
+    const p = currentTurnParticipant(combat);
+    if(!p){
+      return `<div class="section-title">Turno Attuale</div><div class="muted" style="font-size:12px;">Turno non disponibile.</div>`;
+    }
+    const dispName = combatDisplayName(p, true) + duplicateNameSuffix(combat, p, true);
+    const sideLabel = p.side==='ally' ? 'Alleato' : 'Nemico';
+    const sideColor = p.side==='ally' ? 'var(--cyan)' : 'var(--danger)';
+    const img = resolveParticipantImage(p);
+    return `
+      <div class="section-title">Turno Attuale</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        ${img ? `<img src="${escapeAttr(img)}" class="portrait" style="border:2px solid ${sideColor};flex-shrink:0;" />` : ''}
+        <div>
+          <div style="font-size:16px;font-weight:bold;color:${sideColor};">▶ ${escapeHTML(dispName)}</div>
+          <div class="muted" style="font-size:11px;">${sideLabel} · Round ${combat.round}</div>
+        </div>
+      </div>
+    `;
+  }
+  function refreshCombatTurnNowCard(){
+    const el = document.getElementById('combat-turn-now-card');
+    if(el) el.innerHTML = combatCurrentTurnCardHTML(cachedCombat);
   }
 
   // Linea visiva delle 5 posizioni (Molto Corto—Molto Lungo) coi ritratti dei partecipanti piazzati
@@ -3422,6 +3487,7 @@ let editingScene = false;
     const combatLive = document.getElementById('combat-live');
     const isMasterRole = session && session.role==='master';
     if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, isMasterRole);
+    if(isMasterRole) refreshCombatTurnNowCard();
     // Prima si legava solo per il Master: ora le frecce ◀/▶ compaiono anche al Giocatore nel
     // proprio turno (vedi zoneLineHTML/bindZoneLineArrows) — bindZoneLineArrows è comunque un
     // no-op sicuro quando non ci sono bottoni [data-zoneline-move] nel DOM.
@@ -4050,6 +4116,7 @@ let editingScene = false;
               <button class="btn ghost" id="btn-combat-end-top" style="flex:1;">Termina</button>
             </div>
           </div>
+          <div class="hud-frame card" id="combat-turn-now-card">${combatCurrentTurnCardHTML(cachedCombat)}</div>
           <div class="hud-frame card" id="combat-mgr-card"></div>
           <div class="hud-frame card" id="encounter-balance-card"></div>
           </div>
@@ -5112,6 +5179,7 @@ let editingScene = false;
         renderCombatManager(code, players);
         const combatLive = document.getElementById('combat-live');
         if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, true);
+        refreshCombatTurnNowCard();
         bindZoneLineArrows(code, players);
       };
       return;
@@ -5401,6 +5469,7 @@ let editingScene = false;
       renderCombatManager(code, players);
       const combatLive = document.getElementById('combat-live');
       if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, true);
+      refreshCombatTurnNowCard();
       bindZoneLineArrows(code, players);
     };
 

@@ -14,6 +14,15 @@
 //   POST   /api/log?resource=push   { code, username, subscription } -> salva una sottoscrizione Web Push
 //   DELETE /api/log?resource=push&endpoint=...                       -> rimuove una sottoscrizione Web Push
 //
+//   POST   /api/log?resource=turn-ping   { code, username, title, body } -> Web Push mirata a UN
+//     solo giocatore (es. "è il tuo turno" in combattimento), SENZA scrivere nulla in nessun log
+//     (pubblico, privato o sottogruppo). Aggiunta per la richiesta "notifica solo a chi tocca il
+//     turno, mai in chat pubblica" (vedi advanceCombatTurn/jumpToCombatTurn/notifyTurnPush in
+//     index.html) — riusa la stessa infrastruttura di sendPushToSubscriptions/subsForUsername già
+//     usata per i messaggi privati, ma senza toccare "logs"/"private_logs". Se il giocatore non ha
+//     Web Push attive (nessuna riga in push_subscriptions), non fa nulla: resta il solo banner
+//     visibile in pagina, gestito lato client.
+//
 // `username` nel body di POST identifica CHI sta scrivendo (a differenza di `who`, che e' il nome
 // mostrato in UI — puo' essere il characterName). Serve solo per sapere chi ESCLUDERE quando si
 // spedisce la Web Push del nuovo messaggio (non ha senso notificare a se stessi il proprio messaggio):
@@ -90,7 +99,8 @@ async function subsForMasters(campaignCode) {
 }
 
 // Recupera le sottoscrizioni di un singolo username — usata quando il Master scrive nel thread
-// privato di un giocatore (il destinatario e' quel giocatore).
+// privato di un giocatore (il destinatario e' quel giocatore), e ora anche dal nuovo resource
+// "turn-ping" (avviso di turno mirato a un solo giocatore, senza scrivere in nessun log).
 async function subsForUsername(campaignCode, username) {
   const { data } = await supabase.from('push_subscriptions').select('*').eq('campaign_code', campaignCode).eq('username', username);
   return data || [];
@@ -143,6 +153,30 @@ module.exports = async (req, res) => {
       }
       res.setHeader('Allow', 'POST, DELETE');
       return res.status(405).json({ error: 'method not allowed' });
+    }
+
+    // ===== Avviso di turno mirato a UN solo giocatore (nessuna scrittura in nessun log) =====
+    // Vedi commento in cima al file. Richiede solo VAPID configurate + quel giocatore già
+    // sottoscritto alle Web Push: altrimenti sendPushToSubscriptions non fa nulla, silenziosamente
+    // (stesso comportamento "safe no-op" degli altri invii push di questo file).
+    if (req.query && req.query.resource === 'turn-ping') {
+      if (req.method !== 'POST') {
+        res.setHeader('Allow', 'POST');
+        return res.status(405).json({ error: 'method not allowed' });
+      }
+      const { code, username, title, body } = req.body || {};
+      const campaignCode = cleanCode(code);
+      if (!campaignCode || !username || !title) {
+        return res.status(400).json({ error: 'missing code, username or title' });
+      }
+      const recipientSubs = await subsForUsername(campaignCode, username);
+      await sendPushToSubscriptions(recipientSubs, {
+        title: String(title).slice(0, 60),
+        body: String(body || '').slice(0, 140),
+        url: '/index.html',
+        tag: 'dvos-push'
+      }).catch(() => {});
+      return res.status(200).json({ ok: true, sent: recipientSubs.length });
     }
 
     if (req.method === 'GET') {
