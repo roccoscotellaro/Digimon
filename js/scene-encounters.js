@@ -1466,6 +1466,7 @@
           stage: (e && e.stage) || 'Rookie',
           description: (e && e.description) || '',
           imageUrl: (e && e.image) || '',
+          gifUrl: (e && e.gif) || '',
           addedBy: username,
           categories: (e && e.categories) || [],
           baseStats: (e && e.baseStats) || {},
@@ -1633,15 +1634,31 @@
     try{
       if(!dexMatch){
         const d = await addDexEntry(code, {
-          name: e.name, stage: e.stage||'Rookie', description: e.description||'', imageUrl: e.image||'',
+          name: e.name, stage: e.stage||'Rookie', description: e.description||'', imageUrl: e.image||'', gifUrl: e.gif||'',
           categories: e.categories||[], baseStats: e.baseStats||{}, addedBy: username, discovered: true
         });
         if(d && d.entry){ cachedDex.push(d.entry); dexMatch = d.entry; }
       } else if(!dexMatch.discovered){
+        // FIX GIF cancellata dal Digidex (segnalato da Rocco): /api/dex PUT (dex.js) fa un
+        // UPDATE "a tutte le colonne" — qualunque campo NON incluso in questa chiamata viene
+        // sovrascritto col default (stringa vuota/array vuoto/false), non lasciato invariato.
+        // Prima questa chiamata mandava solo un sottoinsieme di campi (mancavano soprattutto
+        // gifUrl, ma anche signatureMove/signatureMove2/extraAttacks/attribute/family/
+        // originType/slideEvolution/slideTargets/digimental/attackDesc/attackDesc2/
+        // evolvesFrom): la primissima volta che chiunque (Master o giocatore) apriva il
+        // dettaglio di un Incontro non ancora "discovered", tutti quei campi dell'entry del
+        // Digidex — GIF compresa — venivano silenziosamente azzerati. Ora rimandiamo indietro
+        // ESATTAMENTE i valori già presenti su dexMatch per ogni campo che questa chiamata non
+        // intende cambiare, così l'unico effetto reale resta discovered: true.
         const ok = await updateDexEntry(code, dexMatch.id, {
           name: dexMatch.name, stage: dexMatch.stage, description: dexMatch.description,
-          imageUrl: dexMatch.image_url, categories: dexMatch.categories||[], baseStats: dexMatch.base_stats||{},
-          evolutions: dexMatch.evolutions||[], qualities: dexMatch.qualities||[], dpTotal: dexMatch.dp_total||0,
+          imageUrl: dexMatch.image_url, gifUrl: dexMatch.gif_url||'', categories: dexMatch.categories||[], baseStats: dexMatch.base_stats||{},
+          evolutions: dexMatch.evolutions||[], evolvesFrom: dexMatch.evolves_from||[], qualities: dexMatch.qualities||[], dpTotal: dexMatch.dp_total||0,
+          attribute: dexMatch.attribute||'', family: dexMatch.family||'', originType: dexMatch.origin_type||'',
+          signatureMove: dexMatch.signature_move||'', signatureMove2: dexMatch.signature_move_2||'',
+          slideEvolution: !!dexMatch.slide_evolution, slideTargets: dexMatch.slide_targets||[],
+          digimental: dexMatch.digimental||'', attackDesc: dexMatch.attack_desc||'', attackDesc2: dexMatch.attack_desc_2||'',
+          extraAttacks: dexMatch.extra_attacks||[],
           discovered: true
         });
         if(ok) dexMatch.discovered = true;
