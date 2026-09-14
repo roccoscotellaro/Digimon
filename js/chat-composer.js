@@ -235,6 +235,79 @@
     renderList();
     searchEl.focus();
   }
+  // Bottone "⭐ Talenti" accanto a un composer: apre il selezionatore dei Tamer Talent sbloccati
+  // del PROPRIO personaggio (computeUnlockedTalents, js/tamer-card.js) e inserisce nel testo un
+  // blocco pronto ("✦ NomeTalento: testo") al punto del cursore. Il giocatore completa/manda il
+  // messaggio come sempre — NON è un invio automatico (richiesta utente: "che stampino nella
+  // chat", cioè testo pronto in bozza, il giocatore preme ancora Invia). L'eventuale consumo di
+  // uno Special Order limitato ("una volta a Riposo"/"a Combattimento", tracciato in
+  // tamer.specialOrdersUsed come i talenti già usati dal Master in combattimento) avviene SOLO
+  // quando il messaggio viene davvero inviato — vedi pendingActionTalentOrder in index.html —
+  // non già qui alla scelta nel picker, altrimenti riaprire il picker senza inviare "brucerebbe"
+  // l'uso a vuoto.
+  function talentButtonHTML(prefix){
+    return `<button type="button" class="btn ghost small" id="${prefix}-talent-btn" style="margin-top:6px;">⭐ Talenti</button>`;
+  }
+  function bindTalentButton(prefix, textareaId, me, onPick){
+    const btn = document.getElementById(prefix+'-talent-btn');
+    if(!btn) return;
+    btn.onclick = ()=> openTalentPicker(me, (text, order)=>{
+      const ta = document.getElementById(textareaId);
+      if(ta){
+        const pos = ta.selectionStart==null ? ta.value.length : ta.selectionStart;
+        ta.value = ta.value.slice(0,pos) + text + ' ' + ta.value.slice(pos);
+        ta.focus();
+        const newPos = pos + text.length + 1;
+        try{ ta.setSelectionRange(newPos, newPos); }catch(e){}
+      }
+      if(onPick) onPick(order);
+    });
+  }
+  function openTalentPicker(me, onPick){
+    const old = document.getElementById('talent-picker-modal');
+    if(old) old.remove();
+    const modal = document.createElement('div');
+    modal.id = 'talent-picker-modal';
+    modal.className = 'enc-modal-backdrop';
+    const unlocked = computeUnlockedTalents(me.tamer||{});
+    const usedMap = (me.tamer && me.tamer.specialOrdersUsed) || {};
+    modal.innerHTML = `
+      <div class="enc-modal-card hud-frame" style="max-width:460px;max-height:80vh;overflow:auto;position:relative;">
+        <button class="btn ghost small" id="talent-picker-close" style="position:absolute;top:8px;right:8px;">✕</button>
+        <div class="section-title" style="margin-top:0;">⭐ Stampa un Talento in chat</div>
+        ${unlocked.length ? '' : '<div class="muted">Nessun Talento sbloccato ancora.</div>'}
+        <div id="talent-picker-list"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    const closeIt = ()=>modal.remove();
+    document.getElementById('talent-picker-close').onclick = closeIt;
+    modal.onclick = (ev)=>{ if(ev.target===modal) closeIt(); };
+    const listEl = document.getElementById('talent-picker-list');
+    listEl.innerHTML = unlocked.map((t,i)=>{
+      const limited = !!(t.order && t.once); // uso limitato tracciato ("una volta a Riposo/Combattimento")
+      const used = limited && !!usedMap[t.order];
+      const freqLabel = t.once==='rest' ? 'una volta a Riposo' : (t.once==='combat' ? 'una volta a Combattimento' : '');
+      return `<div class="roster-item" style="padding:8px;margin-bottom:6px;${used?'opacity:0.5;':'cursor:pointer;'}" data-talent-pick="${i}">
+        <div class="flex-between"><b>${escapeHTML(t.name)}</b><span class="tag">${talentAbbr(t)} ${t.threshold}+</span></div>
+        <div class="sub" style="margin-top:2px;">${escapeHTML(t.text)}</div>
+        ${limited ? `<div class="muted" style="font-size:10px;margin-top:4px;">${used ? '🔒 Già usato — si ricarica con un ' + (t.once==='rest'?'Riposo':'nuovo Combattimento') : '♻️ '+freqLabel}</div>` : ''}
+      </div>`;
+    }).join('');
+    listEl.querySelectorAll('[data-talent-pick]').forEach(el=>{
+      const t = unlocked[Number(el.getAttribute('data-talent-pick'))];
+      if(!t) return;
+      const limited = !!(t.order && t.once);
+      const used = limited && !!usedMap[t.order];
+      if(used) return; // non selezionabile: già consumato, si ricarica con Riposo/Combattimento
+      el.onclick = ()=>{
+        const text = `✦ ${t.name}: ${t.text}`;
+        onPick(text, limited ? t.order : null);
+        closeIt();
+      };
+    });
+  }
+
   // ===== "Parla come" — picker cercabile invece del <select> gigante =====
   // Su mobile un <select> nativo con tutto il Digidex dentro diventa una ruota di scelta
   // interminabile e scomodissima da scorrere. Master/Digimon dei giocatori/Incontri in scena

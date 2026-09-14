@@ -694,6 +694,29 @@ let editingScene = false;
   // js/subgroups.js). Vedi replySnippetFromEntry/renderReplyBanner in js/chat-log-engine.js.
   let pendingReplyTo = null;
   let pendingGmReplyTo = null;
+  // "Stampa un Talento in chat" (richiesta utente): l'ordine dello Special Order scelto nel
+  // picker (js/chat-composer.js, openTalentPicker), in attesa che il messaggio venga DAVVERO
+  // inviato -- il consumo dell'uso limitato ("una volta a Riposo/Combattimento") non avviene alla
+  // scelta nel picker, solo qui, dentro btn-send-action.onclick, per non "bruciare" un uso se il
+  // giocatore cambia idea/svuota il testo senza inviare. null = nessun Talento a consumo limitato
+  // in attesa (Talenti passivi o senza usi limitati non passano mai da qui).
+  let pendingActionTalentOrder = null;
+  // Consuma (se ancora valido) l'uso limitato del Talento in attesa, SOLO quando il messaggio che
+  // lo "stampava" viene davvero inviato -- richiamata da tutte e 3 le modalità del composer del
+  // Giocatore (Generale/Privata/Sottogruppo) subito prima di svuotare la textarea. Riusa lo stesso
+  // campo tamer.specialOrdersUsed già scritto dal Master nel Combat Manager (data-order-use), così
+  // un talento marcato "usato" da qui è visto anche là (e viceversa) senza doppio stato.
+  async function consumeTalentIfPending(code, me){
+    const order = pendingActionTalentOrder;
+    pendingActionTalentOrder = null;
+    if(!order) return;
+    const talent = TALENT_DEFS.find(t=>t.order===order);
+    if(!talent || !talent.once) return;
+    if(!me.tamer.specialOrdersUsed) me.tamer.specialOrdersUsed = {};
+    if(me.tamer.specialOrdersUsed[order]) return; // già consumato altrove nel frattempo (es. dal Master)
+    me.tamer.specialOrdersUsed[order] = true;
+    await patchMember(code, me.username, null, { specialOrdersUsed: me.tamer.specialOrdersUsed });
+  }
   // missionsModalOpen/missionDraftObjectives spostati in js/missions.js
 
   async function getProgression(code){
@@ -3769,6 +3792,7 @@ let editingScene = false;
             <div id="action-roll-result" style="margin-top:6px;"></div>
             ${chatAttachHTML('action')}
             ${mentionButtonHTML('action')}
+            ${talentButtonHTML('action')}
             <div class="row" style="margin-top:6px;">
               <button class="btn" id="btn-correct">Correggi Italiano</button>
             </div>
@@ -3820,6 +3844,7 @@ let editingScene = false;
     document.getElementById('btn-open-missions').onclick = openMissionsModal;
     bindChatAttach('action', code, 'chat', ()=>pendingActionImageUrl, (url)=>{ pendingActionImageUrl = url; });
     bindMentionButton('action', code, 'action-text');
+    bindTalentButton('action', 'action-text', me, (order)=>{ pendingActionTalentOrder = order; });
     renderDicePanel('dice-panel-player');
     renderChatArea(code, me, { forceScrollBottom:true }); // riempie il selettore location + il Registro (vedi sopra)
     // Popola il mini-log nel tab Battle al primo render
@@ -3867,6 +3892,7 @@ let editingScene = false;
           await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { who: displayName(me), role:'player', text: raw, meta: subMeta });
         }
         advanceGameClock('sub:'+playerActiveSubgroupId, 5); // +5min per messaggio sottogruppo
+        await consumeTalentIfPending(code, me);
         ta.value='';
         pendingActionImageUrl = null;
         pendingReplyTo = null;
@@ -3889,6 +3915,7 @@ let editingScene = false;
           await pushPrivateLog(code, session.username, { who: displayName(me), role:'player', text: raw, meta: privTextMeta });
         }
         advanceGameClock('private:'+session.username, 5); // +5min per messaggio privato
+        await consumeTalentIfPending(code, me);
         ta.value='';
         pendingActionImageUrl = null;
         pendingReplyTo = null;
@@ -3927,6 +3954,7 @@ let editingScene = false;
       }
       } // fine else genericDice
       advanceGameClock('general', 5); // +5min per messaggio generale
+      await consumeTalentIfPending(code, me);
       ta.value='';
       pendingActionImageUrl = null;
       pendingReplyTo = null;
@@ -4139,6 +4167,16 @@ let editingScene = false;
                 <option value="baseDodge">Dodge (Pool - Digimon)</option>
                 <option value="baseHealth">Health (Pool - Digimon)</option>
               </select>
+            </div>
+            <div class="field" id="req-attr-field"><label>Caratteristica da abbinare</label>
+              <select id="req-attr">
+                <option value="agility">Agility</option>
+                <option value="body">Body</option>
+                <option value="charisma">Charisma</option>
+                <option value="intelligence">Intelligence</option>
+                <option value="willpower">Willpower</option>
+              </select>
+              <div class="muted" style="font-size:10px;margin-top:2px;">Precompilata con una delle due Caratteristiche standard della Skill scelta — per regolamento (2.05b) il Master può comunque richiedere una combinazione insolita quando la situazione lo giustifica (es. "Agility + Decipher Intent").</div>
             </div>
             <div class="field"><label>TN (opzionale, solo per Skill)</label><input type="number" id="req-tn" placeholder="es. 15" /></div>
             <div class="muted" style="margin:2px 0 6px;font-size:11px;">Dove mostrare la richiesta (almeno una):</div>
@@ -4441,6 +4479,25 @@ let editingScene = false;
     // "Quale sottogruppo" viene popolato al volo (getSubgroups fresco, non cachedSubgroups) solo
     // quando serve, perché in questo punto del render iniziale la cache potrebbe non essere
     // ancora stata riempita dal primo giro di polling.
+    // Caratteristica da abbinare alla Skill scelta in "Richiedi un Tiro": precompilata con la
+    // prima delle due Caratteristiche standard della Skill (def.attrs[0], stesso default già
+    // usato dal Giocatore in openSkillRollPanel/tryParseRollShortcut per il proprio tiro), ma
+    // liberamente sovrascrivibile dal Master -- per regolamento (2.05b) il GM "will almost always
+    // use one of the associated Attributes" ma "may sometimes call for a unique Attribute and
+    // Skill combination". Pool Digimon (baseAccuracy/baseDodge/baseHealth) non hanno Caratteristica
+    // Tamer: il campo si nasconde per quelle 3 opzioni.
+    const reqSkillSel = document.getElementById('req-skill');
+    const reqAttrField = document.getElementById('req-attr-field');
+    const reqAttrSel = document.getElementById('req-attr');
+    if(reqSkillSel && reqAttrSel){
+      const syncReqAttr = ()=>{
+        const def = SKILL_DEFS.find(d=>d.key===reqSkillSel.value);
+        if(reqAttrField) reqAttrField.style.display = def ? 'block' : 'none';
+        if(def) reqAttrSel.value = def.attrs[0];
+      };
+      reqSkillSel.onchange = syncReqAttr;
+      syncReqAttr();
+    }
     const reqSubChk = document.getElementById('req-chan-subgroup');
     const reqSubField = document.getElementById('req-subgroup-field');
     if(reqSubChk){
@@ -4459,6 +4516,12 @@ let editingScene = false;
       reqBtn.onclick = async ()=>{
         const targetUsernames = Array.from(document.querySelectorAll('.req-player-chk:checked')).map(el=>el.value);
         const skillKey = document.getElementById('req-skill').value;
+        const skillDef = SKILL_DEFS.find(d=>d.key===skillKey);
+        const reqAttrEl = document.getElementById('req-attr');
+        // Vuoto per le 3 Pool Digimon (nessuna Caratteristica Tamer coinvolta); per una Skill, la
+        // Caratteristica scelta nel select (di norma una delle due standard, ma il Master può aver
+        // scelto una combinazione insolita -- vedi syncReqAttr sopra).
+        const attrKey = skillDef ? (reqAttrEl ? reqAttrEl.value : skillDef.attrs[0]) : '';
         const tn = document.getElementById('req-tn').value;
         const sendGeneral = document.getElementById('req-chan-general').checked;
         const sendPrivate = document.getElementById('req-chan-private').checked;
@@ -4479,14 +4542,21 @@ let editingScene = false;
           return;
         }
         const poolLabels = { baseAccuracy:'Accuracy (Pool)', baseDodge:'Dodge (Pool)', baseHealth:'Health (Pool)' };
-        const label = poolLabels[skillKey] || (SKILL_DEFS.find(d=>d.key===skillKey)||{}).label || skillKey;
+        const label = poolLabels[skillKey] || (skillDef||{}).label || skillKey;
         const tnPart = (tn && !poolLabels[skillKey]) ? ` (TN ${tn})` : '';
+        // Se il Master ha scelto una Caratteristica diversa dalla prima standard della Skill, lo
+        // segnaliamo nel testo mostrato ai giocatori (regolamento 2.05b: combinazione Skill+
+        // Caratteristica "unica" invece della coppia consueta) -- altrimenti il messaggio resta
+        // identico a prima, per non introdurre rumore quando si usa il default.
+        const attrLabel = { agility:'Agility', body:'Body', charisma:'Charisma', intelligence:'Intelligence', willpower:'Willpower' };
+        const attrPart = (skillDef && attrKey && attrKey!==skillDef.attrs[0]) ? ` (con ${attrLabel[attrKey]||attrKey})` : '';
         // Più destinatari nello stesso payload, separati da virgola: ogni giocatore in lista
         // vede il proprio bottone "🎲 Tira ora" sullo stesso messaggio (vedi logHTML), invece di
-        // dover creare una richiesta separata per ciascuno.
+        // dover creare una richiesta separata per ciascuno. 4° campo (attrKey): Caratteristica da
+        // usare al posto del default della Skill -- vuoto = comportamento di sempre (def.attrs[0]).
         const namesLabel = targetUsernames.map(u=>{ const p = players.find(x=>x.username===u); return p ? displayName(p) : u; }).join(', ');
-        const payload = `${targetUsernames.join(',')}|${skillKey}|${tn||''}`;
-        const entry = { who:'Master', role:'request', text: `Richiesta a ${namesLabel}: tira ${label}${tnPart}::REQ::${payload}` };
+        const payload = `${targetUsernames.join(',')}|${skillKey}|${tn||''}|${attrKey}`;
+        const entry = { who:'Master', role:'request', text: `Richiesta a ${namesLabel}: tira ${label}${attrPart}${tnPart}::REQ::${payload}` };
         if(sendGeneral) await pushLog(code, entry);
         if(sendPrivate){
           // BUGFIX: qui sotto mancava il tag di location (vedi memberLocationKey/pushPrivateLog

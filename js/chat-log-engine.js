@@ -454,8 +454,14 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         // giocatori contemporaneamente) — ognuno vede il proprio bottone sullo stesso messaggio.
         const targets = (parts[0]||'').split(',').filter(Boolean);
         const skillKey = parts[1], tn = parts[2]||'';
+        // 4° campo (aggiunto per la richiesta "il Master deve poter scegliere una Caratteristica
+        // alternativa" — regolamento 2.05b): Attributo esplicito da usare invece del default della
+        // Skill. Assente/vuoto su ogni messaggio precedente a questa modifica → comportamento
+        // identico a prima (il bottone porta solo skill/tn, e attachLogModeration ricade sul
+        // vecchio def.attrs[0]).
+        const attrKey = parts[3] || '';
         if(session && session.role==='player' && targets.includes(session.username)){
-          fulfillBtn = `<button class="btn amber small" style="margin-top:6px;" data-fulfill-target="${escapeAttr(parts[0])}" data-fulfill-skill="${escapeAttr(skillKey)}" data-fulfill-tn="${escapeAttr(tn)}">🎲 Tira ora</button>`;
+          fulfillBtn = `<button class="btn amber small" style="margin-top:6px;" data-fulfill-target="${escapeAttr(parts[0])}" data-fulfill-skill="${escapeAttr(skillKey)}" data-fulfill-tn="${escapeAttr(tn)}" data-fulfill-attr="${escapeAttr(attrKey)}">🎲 Tira ora</button>`;
         }
       }
       // Richiesta mirata di un Torment Check specifico (Master → un solo giocatore, un solo
@@ -774,6 +780,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       if(fulfillBtn && me){
         const skillKey = fulfillBtn.getAttribute('data-fulfill-skill');
         const tn = fulfillBtn.getAttribute('data-fulfill-tn');
+        const requestedAttr = fulfillBtn.getAttribute('data-fulfill-attr') || '';
         const poolKeys = ['baseAccuracy','baseDodge','baseHealth'];
         let text = null;
         let rollMeta = null;
@@ -785,7 +792,11 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         } else {
           const def = SKILL_DEFS.find(d=>d.key===skillKey);
           if(def){
-            const attr = def.attrs[0];
+            // Caratteristica da usare per questo tiro: quella scelta dal Master nel pannello
+            // "Richiedi un Tiro" (data-fulfill-attr, regolamento 2.05b — combinazione Skill+
+            // Caratteristica non necessariamente standard), altrimenti il vecchio comportamento
+            // fisso su def.attrs[0] (messaggi mandati prima di questa modifica, o senza scelta).
+            const attr = (requestedAttr && me.tamer && me.tamer[requestedAttr]!==undefined) ? requestedAttr : def.attrs[0];
             const attrVal = me.tamer[attr];
             const digimonBonus = prodigiousSkillBonus(me, def);
             const skillVal = Number(me.tamer.skills[def.key]||0) + digimonBonus;
@@ -1021,11 +1032,11 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       }
     });
     // Battuta fuori tono (richiesta utente: "quando i giocatori scrivono (scherzo: ...) si può
-    // aprire un piccolo trafiletto con la battuta, così da non smorzare il tono del resto"):
-    // "(scherzo: testo)" o "(scherzo, testo)" (accetta anche solo "(scherzo testo)", senza
-    // separatore, per tolleranza) viene estratto dal flusso principale e sostituito con un chip
-    // "😄 scherzo" chiuso di default (vedi .log-joke nel CSS di index.html) — un click lo apre e
-    // mostra la battuta in un riquadro a parte. Va PRIMA dell'evidenziazione delle virgolette qui
+    // aprire un piccolo trafiletto con la battuta, così da non smorzare il tono del resto
+    // dell'azione"): "(scherzo: testo)" o "(scherzo, testo)" (accetta anche solo "(scherzo testo)",
+    // senza separatore, per tolleranza) viene estratto dal flusso principale e sostituito con un
+    // chip "😄 scherzo" chiuso di default (vedi .log-joke nel CSS di index.html) — un click lo apre
+    // e mostra la battuta in un riquadro a parte. Va PRIMA dell'evidenziazione delle virgolette qui
     // sotto, così un'eventuale "..." dentro la battuta viene comunque evidenziata al suo interno.
     // [^<)]+ (non "<" né ")") resta dentro una singola riga/battuta, senza attraversare eventuali
     // <br>/<div> già inseriti sopra o "mangiarsi" la parentesi di chiusura vera.
