@@ -28,7 +28,7 @@
 // parametro onChanged opzionale e lo invocano al posto suo (if(onChanged) onChanged(););
 // index.html lo passa esplicitamente ad ogni chiamata esterna (refreshLiveParts). renderInventoryCard
 // e renderBugReportCard non toccano mai refreshLiveParts, quindi la loro firma resta invariata.
-
+ 
   function rollTormentCheck(boxes){
     const dice = [rollD6(), rollD6(), rollD6()];
     const total = dice.reduce((a,b)=>a+b,0);
@@ -44,10 +44,10 @@
     else outcome = 'fail';
     return { dice, total, tn, outcome };
   }
-
+ 
   // diceRowHTML e' stata spostata in js/dice.js (usa DIE_FACES, ora definita li').
-
-
+ 
+ 
   function defaultSkills(){
     const s = {};
     SKILL_DEFS.forEach(sk=>{ s[sk.key] = 0; });
@@ -59,7 +59,7 @@
   function skillMax(t, def){
     return Math.max(...def.attrs.map(a=>Number(t[a])||0));
   }
-
+ 
   function defaultTamer(){
     return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, imageUrl:'', currentWounds:null, inventory:[], skills: defaultSkills(), unspentGrowthPoints:0,
       // Colore persistente dei messaggi di questo Tamer in chat (richiesta utente: "i personaggi
@@ -79,11 +79,11 @@
       characterName:'' // nome del personaggio mostrato in UI, indipendente dallo username di login (fallback: username)
     };
   }
-
+ 
   let editingSkills = false;
-
+ 
   // siblingCardId spostato in js/ui-helpers.js
-
+ 
   function renderSkillsCard(me, containerId, onChanged){
     containerId = containerId || 'skills-card';
     const cardEl = document.getElementById(containerId);
@@ -203,7 +203,7 @@
       };
     }
   }
-
+ 
   const TALENT_DEFS = [
     { attr:'agility', threshold:3, name:'Quick Step', text:'Quando prendi l\'Azione Reposition, guadagni +1 Successo al risultato finale.' },
     { attr:'agility', threshold:5, name:'Strike Fast', text:'Special Order "FULL SPEED AHEAD" (2 Azioni): il Digimon guadagna 1 Azione extra, da usare per Muovi o Movimento Difficile.', order:'strikeFast', cost:2, once:null },
@@ -222,72 +222,72 @@
     { attr:'willpower', threshold:5, name:'Purify Partner', text:'Special Order "TOUGH IT OUT" (1 Azione): cura il Digimon da un Effetto Negativo, come [CLEANSE].', order:'purifyPartner', cost:1, once:null },
     { attr:'willpower', threshold:6, name:'Challenger', text:'Quando si tira l\'Iniziativa, il tuo Digimon guadagna Ferite Temporanee pari ai tuoi Successi Willpower + lo Stage più alto tra i nemici (max 5).' },
     { attr:'willpower', threshold:7, name:'Miracle', text:'Spendendo 7 IP puoi aggiungere/sottrarre Willpower+5 a un Check, Dodge o Accuracy Pool.', order:'miracle', cost:0, once:null },
-
+ 
     // --- Talent basati su Skill (soglia 3/5/7, stesso framework delle soglie Attributo) ---
     { attr:'evade', skill:true, threshold:3, name:'Avoiding Consequences', text:'Un Fallimento Critico su Check/Torment Check diventa Fallimento normale se sommando i punti in Evade si raggiungerebbe quel risultato.' },
     { attr:'evade', skill:true, threshold:5, name:'Tuck and Roll', text:'Una Evade fallita in combattimento può diventare un Successo, una volta a Rest.' },
     { attr:'evade', skill:true, threshold:7, name:'Quickening', text:'Special Order "YOU\'RE ONE STEP BEHIND" (Interrupt, una volta a combattimento): il Digimon schiva automaticamente un Attacco in arrivo, senza tirare (nessuna Quality che richieda una Evade riuscita si attiva).', order:'quickening', cost:0, once:'combat' },
-
+ 
     { attr:'precision', skill:true, threshold:3, name:'Busy Hands', text:'Crea senza tiro un oggetto utile durante un Rest, che dà un bonus a una Skill scelta pari ai punti in Precision sopra 2 (un solo uso, un oggetto per Rest).' },
     { attr:'precision', skill:true, threshold:5, name:'Aim Assist', text:'Dirigendo il Digimon per migliorare l\'Accuracy con 2 Azioni (Highest Attribute), il bonus al Direct sale di +2.' },
     { attr:'precision', skill:true, threshold:7, name:'Auto Hit', text:'Special Order "PUT 100% INTO THIS" (2 Azioni, una volta a combattimento): un Attacco (non Signature Move) colpisce automaticamente con successi pari all\'SV dell\'attaccante, senza tirare Accuracy né Dodge.', order:'autoHit', cost:2, once:'combat' },
-
+ 
     { attr:'stealth', skill:true, threshold:3, name:'Overlooked', text:'Si mimetizza senza tiro; in combattimento può muoversi/agire senza essere notato finché non colpisce un nemico. Individuabile con Awareness TN 9 + punti in Stealth.' },
     { attr:'stealth', skill:true, threshold:5, name:'Silent Movement', text:'Tamer e Digimon non fanno rumore né lasciano impronte camminando.' },
     { attr:'stealth', skill:true, threshold:7, name:'Vanish', text:'Special Order "NOW YOU SEE US" (1 Azione, una volta a combattimento): Tamer e Digimon spariscono dalla vista di un nemico scelto ([BLIND] fino al prossimo turno del Tamer, durata non riducibile). Non dichiarabile se sono già state usate altre azioni quel turno; il turno in cui la si usa, il Digimon può solo Move o Reposition.', order:'vanish', cost:1, once:'combat' },
-
+ 
     { attr:'athletics', skill:true, threshold:3, name:'Natural Explorer', text:'Usa Athletics o Agility (il più alto) per il Movement; ottiene Climb/Swim/Jump pari al Movement e ignora il Terreno Difficile. Può guidare alleati (numero = punti in Athletics) attraverso terreno ostile usando la propria Athletics, a patto che restino dietro di lui.' },
     { attr:'athletics', skill:true, threshold:5, name:'Experienced Step', text:'Reposition da 2 Azioni: +1 Successo al risultato finale.' },
     { attr:'athletics', skill:true, threshold:7, name:'Bullrush', text:'Special Order "THIS TRAIN WON\'T STOP" (1 Azione, una volta a combattimento): il Digimon ottiene Difficult Move come Azione Gratuita, e fino a fine turno lo stesso Difficult Move costa 1 Azione in meno (min. 1).', order:'bullrush', cost:1, once:'combat' },
-
+ 
     { attr:'endurance', skill:true, threshold:3, name:'No Pain, No Gain', text:'Un Check fallito (non Torment) può essere ritirato come Check di Endurance con l\'Attributo pertinente, un numero di volte pari ai punti in Endurance sopra 2 (si ricarica a ogni Rest).' },
     { attr:'endurance', skill:true, threshold:5, name:'Grit', text:'Può schivare gli attacchi con Endurance invece di Evade (subisce comunque min. 1 danno anche se supera il Check); se ridotto a 0 Wound Box resta a 1. Una volta a Rest.' },
     { attr:'endurance', skill:true, threshold:7, name:'Thick Skin', text:'Special Order "NO, YOU MOVE" (Interrupt, una volta a combattimento): il Digimon ignora uno spostamento forzato subito. Con 1 Azione extra, la fonte dello spostamento lo subisce a sua volta.', order:'thickSkin', cost:0, once:'combat' },
-
+ 
     { attr:'featsOfStrength', skill:true, threshold:3, name:'Heavy Force', text:'Usa Feats of Strength al posto di Precision per attaccare in combattimento. Una volta a Rest, può aggiungere ai Check di Body/Agility un bonus pari ai punti in Feats of Strength.' },
     { attr:'featsOfStrength', skill:true, threshold:5, name:'Joint Effort', text:'In un Check di squadra (Feats of Strength) col proprio Digimon, il Tamer aggiunge l\'SV del Digimon al tiro.' },
     { attr:'featsOfStrength', skill:true, threshold:7, name:'Adrenaline Hit', text:'Special Order "HAVE SOME OF THIS" (2 Azioni, una volta a combattimento): il Tamer lancia un oggetto (approvato dal GM) infliggendo Danno Unalterable pari al proprio SV e [STUN] fino al prossimo turno del Tamer.', order:'adrenalineHit', cost:2, once:'combat' },
-
+ 
     { attr:'manipulate', skill:true, threshold:3, name:'Planted Idea', text:'Se il Tamer supera un Check di Manipulate in Roleplay, può impiantare un\'idea minore e ragionevole in un PNG, per una durata in minuti pari ai propri punti in Manipulate. Una volta a Rest; un PNG può subirlo una sola volta tra un Rest e l\'altro.' },
     { attr:'manipulate', skill:true, threshold:5, name:'Fakeout', text:'Se il Tamer usa 2 Azioni per Dirigere il proprio Digimon migliorandone l\'Accuracy, e l\'Attacco con quel bonus manca, il bersaglio subisce -2 al Dodge invece di -1 da quell\'Attacco.' },
     { attr:'manipulate', skill:true, threshold:7, name:'Hacking Pride', text:'Special Order "YOU\'VE ALREADY LOST" (1 Azione, una volta a combattimento): un Direct negativo contro un nemico, penalità al prossimo Pool di Accuracy o Dodge a scelta del Tamer. Non si può usare Direct lo stesso turno.', order:'hackingPride', cost:1, once:'combat' },
-
+ 
     { attr:'perform', skill:true, threshold:3, name:'Endless Dream', text:'Senza tirare nulla, un\'esibizione del Tamer dà IP Temporanei agli alleati, pari ai propri punti in Performance sopra 2, da dividere come preferisce (non a se stesso). Max 2 IP Temporanei a testa. Una volta a Rest.' },
     { attr:'perform', skill:true, threshold:5, name:'Personal Cheerleader', text:'Un Digimon che beneficia del Direct del Tamer, tirando un Accuracy o Dodge Pool, può ritirare fino a 2 dadi (deve tenere il nuovo risultato).' },
     { attr:'perform', skill:true, threshold:7, name:'Distracting Gesture', text:'Special Order "HEY, OVER HERE" (Interrupt, una volta a combattimento): quando un nemico attacca un alleato, dimezza i dadi tirati dal nemico per l\'Attacco.', order:'distractingGesture', cost:0, once:'combat' },
-
+ 
     { attr:'persuasion', skill:true, threshold:3, name:'Charming Influence', text:'Se il Tamer supera un Check di Persuasion in Roleplay, può "usare il fascino": i PNG bersaglio diventano amichevoli per una durata in minuti pari ai propri punti in Persuasion. Una volta a Rest; un PNG può subirlo una sola volta tra un Rest e l\'altro.' },
     { attr:'persuasion', skill:true, threshold:5, name:'Be the Winners', text:'Con 1 Azione extra, il Tamer può dividere il bonus del Direct fra il proprio Digimon e un altro Digimon consenziente, senza penalità per Dirigere il Digimon altrui (il proprio Digimon deve sempre ricevere almeno +2).' },
     { attr:'persuasion', skill:true, threshold:7, name:'Next Order', text:'Special Order "WE CAN DO THIS, TOGETHER" (1 Azione, una volta a combattimento): concede i benefici di un Direct a 2 alleati consenzienti (proprio Digimon incluso), senza penalità per Digimon altrui.', order:'nextOrder', cost:1, once:'combat' },
-
+ 
     { attr:'decipherIntent', skill:true, threshold:3, name:'Cyber Sleuth', text:'Il giocatore può fare una domanda al GM su un\'azione immediatamente disponibile, e il GM deve rispondere se avrà esiti buoni, cattivi o entrambi. Usi pari ai punti in Decipher Intent sopra 2, recuperati a ogni Rest.' },
     { attr:'decipherIntent', skill:true, threshold:5, name:'Best Laid Plans', text:'Usando Hold Action per sommare Intelligence all\'Accuracy/Dodge del Digimon, +1 Successo al risultato finale. Un nemico che stava investigando/interrogando o mentendo apertamente è considerato Sorpreso se il Tamer entra in Combattimento contro di lui.' },
     { attr:'decipherIntent', skill:true, threshold:7, name:'Predictable', text:'Special Order "I ALREADY KNOW YOUR NEXT MOVE" (2 Azioni, una volta a combattimento): dichiara un Hold Action con Trigger su qualsiasi Azione (Intercede incluse) del nemico bersaglio.', order:'predictable', cost:2, once:'combat' },
-
+ 
     { attr:'survival', skill:true, threshold:3, name:'Glorious World', text:'Senza tirare nulla, il Tamer cucina un pasto che dà Wound Box Temporanee a chi lo mangia, pari ai propri punti in Survival sopra 2, fino al prossimo Rest. Un personaggio ne beneficia una sola volta tra un Rest e l\'altro.' },
     { attr:'survival', skill:true, threshold:5, name:'Trailblazer', text:'Il Tamer ha un innato senso dell\'orientamento: sa sempre dov\'è il nord e la strada esatta per tornare all\'ultimo insediamento civilizzato visitato.' },
     { attr:'survival', skill:true, threshold:7, name:'Survival Instinct', text:'Special Order "FLOW WITH IT" (Interrupt, una volta a combattimento): il Danno di un Attacco subito viene dimezzato dopo l\'Armor e nessun Danno Unalterable viene applicato.', order:'survivalInstinct', cost:0, once:'combat' },
-
+ 
     { attr:'knowledge', skill:true, threshold:3, name:'Academic Advice', text:'Aiutando in un Check di Teamwork, il Tamer può usare un Check di Knowledge al posto di quello richiesto. Su Successo, il bonus dato aumenta per ogni punto in Knowledge sopra 2.' },
     { attr:'knowledge', skill:true, threshold:5, name:'Living Encyclopedia', text:'Se un Check di Knowledge per ricordare informazioni avrebbe TN 15 o meno, il Tamer può Riuscire Criticamente in automatico. Una volta a Rest.' },
     { attr:'knowledge', skill:true, threshold:7, name:'Hacker\'s Memory', text:'Special Order "I KNOW ALL YOUR TRICKS" (2 Azioni, una volta a combattimento): contro un nemico già affrontato, +1 alla Potenza delle proprie Quality/Effetti basati su Stat Derivate contro di lui, oppure -1 a quelle del nemico.', order:'hackersMemory', cost:2, once:'combat' },
-
+ 
     { attr:'fortitude', skill:true, threshold:3, name:'Calming Influence', text:'Se un altro Tamer fallisce un Torment Check, questo Tamer può fargli ritirare il Check con un bonus pari ai propri punti in Fortitude. Se diventa un Successo, entrambi i Tamer guadagnano 1 IP. Una volta a Rest.' },
     { attr:'fortitude', skill:true, threshold:5, name:'Team Player', text:'Partecipando in Teamwork con alleati: se aiuta, l\'alleato può ritirare gli 1 del Check (tenendo il nuovo risultato); se è chi inizia il Check, può ignorare il Fallimento Critico di un alleato.' },
     { attr:'fortitude', skill:true, threshold:7, name:'Take the Lead', text:'Special Order "NOW FOCUS" (1 Azione, una volta a combattimento): +5 a un Check del proprio Digimon, anche dopo aver visto il risultato; usabile come Interrupt se il Check avviene fuori turno.', order:'takeTheLead', cost:1, once:'combat' },
-
+ 
     { attr:'bravery', skill:true, threshold:3, name:'Break the Chain', text:'Il Tamer ottiene un bonus ai Torment Check pari ai propri punti in Bravery. Se Calming Influence viene usato per ritirare un Torment Check con questo bonus, si prende il bonus più alto invece di sommarli.' },
     { attr:'bravery', skill:true, threshold:5, name:'With the Will', text:'Se il Tamer dovrebbe fare un Torment Check, il proprio Digimon può usare un\'Interrupt Action per trasformarlo in un Teamwork Check, tirando un Check di Bravery (usando DOS) per aiutare. Una volta a Rest.' },
     { attr:'bravery', skill:true, threshold:7, name:'Heroic Exemplar', text:'Special Order "SHOW THEM WHAT YOU\'RE MADE OF" (2 Azioni, una volta a combattimento): dopo un Attacco andato a segno, Digimon e tutti gli alleati ottengono [BASTION 1] (Durata 3).', order:'heroicExemplar', cost:2, once:'combat' },
-
+ 
     { attr:'awareness', skill:true, threshold:3, name:'Hyper Alert', text:'Senza tirare, il Tamer può usare un Check di Awareness al posto del Check normale per evitare pericoli a sorpresa. Il Digimon del Tamer ottiene un bonus all\'Iniziativa per ogni punto in Awareness sopra 2.' },
     { attr:'awareness', skill:true, threshold:5, name:'Danger Sense', text:'Quando il Digimon userebbe un\'Interrupt Action, il Tamer può spendere 1 Azione propria al posto del Digimon. Una volta a Rest.' },
     { attr:'awareness', skill:true, threshold:7, name:'Realization', text:'Special Order "I\'VE FIGURED IT OUT" (2 Azioni, una volta a combattimento): infligge [EXPLOIT 3] a un nemico, bypassando immunità da Overwrite o Resistance, fino a fine combattimento.', order:'realization', cost:2, once:'combat' }
   ];
-
+ 
   const SKILL_LABEL_BY_KEY = { evade:'EVADE', precision:'PREC', stealth:'STEALTH', athletics:'ATHL', endurance:'END', featsOfStrength:'FOS', manipulate:'MANIP', perform:'PERF', persuasion:'PERS', decipherIntent:'D.INTENT', survival:'SURV', knowledge:'KNOW', fortitude:'FORT', bravery:'BRAV', awareness:'AWARE' };
   function talentAbbr(t){ return t.skill ? (SKILL_LABEL_BY_KEY[t.attr] || t.attr) : ATTR_ABBR[t.attr]; }
-
+ 
   function computeUnlockedTalents(tamer){
     const cfg = campaignConfig();
     const stdIdx = { 3:0, 5:1, 6:2, 7:3 };
@@ -298,9 +298,9 @@
       return value >= effectiveThreshold;
     });
   }
-
+ 
   // STAGE_CREATION spostato in js/digimon-card.js
-
+ 
   function renderTamerCard(me, containerId, onChanged){
     containerId = containerId || 'tamer-card';
     const cardEl = document.getElementById(containerId);
@@ -349,8 +349,8 @@
             <div class="muted" style="margin-top:2px;">⚠️ <b>Penalità</b> (-4 Major / -2 Minor): invocala quando il lato "problematico" del tratto crea davvero complicazioni nella scena — ripristina gli usi (il Major ti dà anche 1 IP, il Minor no). Conviene solo se la scena/narrazione ci guadagna più di quanto perdi sul tiro.</div>
             <div class="divider" style="margin:8px 0;"></div>
             <b>Torments</b>
-            <div class="muted" style="margin-top:2px;">Il Torment Check (una volta a Riposo, TN 8+caselle) può: <b>Successo Critico</b> → -1 casella e +1 IP; <b>Successo</b> → +1 IP; <b>Fallimento</b> → nessun effetto (si ritenta al prossimo Riposo); <b>Fallimento Critico</b> → -2 a Check/bonus fino al Riposo; <b>Fallimento Critico Profondo</b> → +1 casella, e se sei in Combattimento puoi scegliere tra -5 fino al Riposo oppure -3 + niente Azioni Tamer fino a fine Combattimento (altrimenti solo -5).</div>
-            <div class="muted" style="margin-top:2px;">A 10 caselle il Torment è al massimo (il Master decide come si manifesta pesantemente in scena). Le caselle scendono solo per decisione del Master o con un Successo Critico al Torment Check — non c'è un modo "automatico" per svuotarle.</div>
+            <div class="muted" style="margin-top:2px;">✅ <b>Pro</b>: tentare il Torment Check (una volta a Riposo, TN 8+caselle) conviene quasi sempre — Successo e Successo Critico danno entrambi +1 IP, e il Successo Critico toglie pure 1 casella. Interpretarlo attivamente in scena è anche buon roleplay.</div>
+            <div class="muted" style="margin-top:2px;">⚠️ <b>Contro</b>: più il Torment cresce, più il suo Check diventa difficile (TN sale con le caselle). Un Fallimento Critico dà -2 a Check/bonus fino al Riposo; un Fallimento Critico Profondo aggiunge 1 casella e, se sei in Combattimento, ti obbliga a scegliere tra -5 fino al Riposo oppure -3 + niente Azioni Tamer fino a fine Combattimento (altrimenti solo -5). A 10 caselle il Torment è al massimo — le caselle scendono solo per decisione del Master o con un Successo Critico al Check, non c'è un modo "automatico" per svuotarle.</div>
           </div>
         </details>
         <div class="muted" style="margin-bottom:6px;">Aspects — tratti di personalità che danno bonus o penalità ai Check, a scelta del giocatore</div>
@@ -395,11 +395,13 @@
               ${(()=>{
                 const unlocked = computeUnlockedTalents(t);
                 if(unlocked.length===0) return '<div class="muted">Nessun Talent ancora sbloccato (servono almeno 3 punti in un Attributo).</div>';
-                // Cliccabile per "stampare" il Talento in chat SOLO sulla propria Scheda Tamer
-                // (containerId===undefined, il render dalla propria Sidebar) -- quando il Master la
-                // guarda dal Roster (renderTamerCard(p,'m-tamer-'+i,...)) resta un elenco di sola
-                // lettura, perché non ha senso scrivere nel composer di un altro giocatore.
-                const clickable = containerId===undefined;
+                // Cliccabile per "stampare" il Talento in chat SOLO sulla propria Scheda Tamer --
+                // NON su containerId===undefined (il parametro viene già riscritto in
+                // 'tamer-card' alla riga 305, prima di arrivare qui: sarebbe sempre falso), ma
+                // sull'assenza del prefisso 'm-tamer-' che identifica invece la vista di sola
+                // lettura del Master sul Roster (renderTamerCard(p,'m-tamer-'+i,...), vedi anche
+                // il bottone "Azzera" poco sopra che usa esattamente lo stesso controllo).
+                const clickable = containerId.indexOf('m-tamer-')!==0;
                 const usedMap = (t.specialOrdersUsed) || {};
                 return unlocked.map((tal,i)=>{
                   const limited = !!(tal.order && tal.once);
@@ -567,12 +569,12 @@
       });
       // Click su un Talento sbloccato nella propria Scheda Tamer per "stamparlo" in chat (richiesta
       // Rocco: prima l'unico modo era il bottone "⭐ Talenti" nel composer -- ora anche cliccare
-      // direttamente la voce qui sotto fa lo stesso). Solo sulla propria Scheda (containerId
-      // undefined, vedi il markup sopra): printTalentIntoComposer è definita in
-      // js/chat-composer.js e riusa la stessa textarea/stato del picker, quindi l'eventuale uso
-      // limitato viene comunque consumato solo all'invio del messaggio (consumeTalentIfPending in
-      // index.html), non qui al click.
-      if(containerId===undefined){
+      // direttamente la voce qui sotto fa lo stesso). Solo sulla propria Scheda (stesso controllo
+      // "clickable" usato sopra nel markup, non containerId===undefined che qui è sempre falso --
+      // vedi il commento lì): printTalentIntoComposer è definita in js/chat-composer.js e riusa la
+      // stessa textarea/stato del picker, quindi l'eventuale uso limitato viene comunque consumato
+      // solo all'invio del messaggio (consumeTalentIfPending in index.html), non qui al click.
+      if(containerId.indexOf('m-tamer-')!==0){
         const unlockedForClick = computeUnlockedTalents(t);
         cardEl.querySelectorAll('[data-talent-print]').forEach(el=>{
           const tal = unlockedForClick[Number(el.getAttribute('data-talent-print'))];
@@ -639,7 +641,7 @@
       };
     }
   }
-
+ 
   function renderInventoryCard(me, containerId){
     containerId = containerId || 'inventory-card';
     const cardEl = document.getElementById(containerId);
@@ -683,7 +685,7 @@
       saveMember(session.code, me).then(ok=>{ if(!ok) renderInventoryCard(me, containerId); });
     };
   }
-
+ 
   function renderSidebar(me, onChanged){
     const content = document.getElementById('sidebar-content');
     if(!content) return;
@@ -711,7 +713,7 @@
       renderSidebar(me, onChanged);
     }
   }
-
+ 
   function renderBugReportCard(){
     const cardEl = document.getElementById('bugreport-card');
     if(!cardEl) return;
@@ -736,15 +738,15 @@
       }
     };
   }
-
+ 
   // renderDexPanel spostata in js/dex-admin.js
-
+ 
   // Scheda Digimon / Evoluzione (SIZE_DEFS, computeDerivedStats, evolutionsReadonlyHTML/EditableHTML,
   // attributeIconHTML/attributeLegendHTML/attributeBadgeHTML/splitCategoriesAttribute, epDigiviceHTML,
   // memoryUpgradeRanks, maxAttackSlots, evolutionCost/snapshotCurrentStatsToStage/showEvolutionTransition/
   // applyStageChange (con STAGE_CREATION), attackTagsPlain/attackTagsHTML, computeDpSpent,
   // qualitiesReadonlyHTML/EditableHTML, renderDigimonCard) spostati in js/digimon-card.js
-
+ 
   function openSkillRollPanel(me, skillKey, containerId, onChanged){
     const def = SKILL_DEFS.find(d=>d.key===skillKey);
     if(!def) return;
@@ -833,7 +835,7 @@
         const resEl = document.getElementById('roll-result-'+containerId);
         const logText = `tira ${def.label} (${ATTR_ABBR[chosenAttr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict ? ` vs TN ${tnVal} → ${verdict.label}` : '');
         await pushLog(session.code, { who: displayName(me), role:'roll', text: logText, meta: { dice, total, verdict: verdict?verdict.label:null } });
-
+ 
         // ---------- Ispirazione: Ritira (richiesta utente: "Come funziona l'ispirazione? ...
         // implementiamo la funzione automatica per il lancio") ----------
         // Regola 2.05a "Reroll": 1 IP per ri-tirare per intero un Check/Pool, guardi il nuovo
@@ -871,7 +873,7 @@
     };
     draw();
   }
-
+ 
   async function tryParseRollShortcut(raw, me){
     const m = raw.match(/^\/(tira|r)\s+(.+)$/i);
     if(!m) return null;
@@ -889,7 +891,7 @@
     rest = parts.join(' ');
     const query = rest.trim().toLowerCase();
     if(!query) return { text: `⚠ comando non riconosciuto: "${rest}". Usa /tira <NomeSkill|Accuracy|Dodge|Health> [TN] [major|minor]`, dice:null };
-
+ 
     const poolMap = { 'accuracy':'baseAccuracy', 'acc':'baseAccuracy', 'dodge':'baseDodge', 'schivata':'baseDodge', 'health':'baseHealth', 'hp':'baseHealth', 'salute':'baseHealth' };
     if(poolMap[query]){
       const statKey = poolMap[query];
@@ -899,7 +901,7 @@
         text: `tira Pool Check ${query.toUpperCase()} (${me.digimon[statKey]}d6): [${dice.join(',')}] → ${successes} successi`
       };
     }
-
+ 
     const def = SKILL_DEFS.find(d=>d.label.toLowerCase()===query || d.label.toLowerCase().startsWith(query) || query.startsWith(d.label.toLowerCase()));
     if(def){
       const attr = def.attrs[0];
@@ -930,7 +932,8 @@
     }
     return { text: `⚠ comando non riconosciuto: "${rest}". Usa /tira <NomeSkill|Accuracy|Dodge|Health> [TN] [major|minor]`, dice:null };
   }
-
+ 
   function statBox(label, id, val){
     return `<div class="stat-box"><div class="l">${label}</div><input type="number" min="0" max="10" id="${id}" value="${val}" /></div>`;
   }
+ 
