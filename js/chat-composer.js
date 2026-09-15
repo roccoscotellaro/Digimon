@@ -242,28 +242,41 @@
   // chat", cioè testo pronto in bozza, il giocatore preme ancora Invia). L'eventuale consumo di
   // uno Special Order limitato ("una volta a Riposo"/"a Combattimento", tracciato in
   // tamer.specialOrdersUsed come i talenti già usati dal Master in combattimento) avviene SOLO
-  // quando il messaggio viene davvero inviato — vedi pendingActionTalentOrder in index.html —
-  // non già qui alla scelta nel picker, altrimenti riaprire il picker senza inviare "brucerebbe"
-  // l'uso a vuoto.
+  // quando il messaggio viene davvero inviato — vedi pendingActionTalentOrder qui sotto e
+  // consumeTalentIfPending in index.html — non già qui alla scelta nel picker, altrimenti riaprire
+  // il picker senza inviare "brucerebbe" l'uso a vuoto.
+  // Stato dell'eventuale Talento "stampato" in bozza (vedi sopra) in attesa di essere davvero
+  // inviato: variabile globale di QUESTO file (script classico, non la IIFE di index.html) perché
+  // ora due punti diversi la scrivono -- il picker (bindTalentButton/openTalentPicker qui sotto) E
+  // il click diretto su un Talento già sbloccato nella propria Scheda Tamer (js/tamer-card.js,
+  // renderTamerCard) -- ed entrambi devono condividere lo stesso stato che index.html
+  // (consumeTalentIfPending, richiamato da tutte e 3 le modalità del composer subito prima
+  // dell'invio) legge e azzera al momento dell'invio effettivo del messaggio.
+  let pendingActionTalentOrder = null;
+  // Inserisce il testo di un Talento nella textarea indicata, al punto del cursore, e traccia
+  // l'eventuale uso limitato in pendingActionTalentOrder -- usata sia dal picker (bottone "⭐
+  // Talenti" nel composer) sia dal click diretto su un Talento nella propria Scheda Tamer.
+  function printTalentIntoComposer(textareaId, talent){
+    const text = `✦ ${talent.name}: ${talent.text}`;
+    const ta = document.getElementById(textareaId);
+    if(ta){
+      const pos = ta.selectionStart==null ? ta.value.length : ta.selectionStart;
+      ta.value = ta.value.slice(0,pos) + text + ' ' + ta.value.slice(pos);
+      ta.focus();
+      const newPos = pos + text.length + 1;
+      try{ ta.setSelectionRange(newPos, newPos); }catch(e){}
+    }
+    pendingActionTalentOrder = (talent.order && talent.once) ? talent.order : null;
+  }
   function talentButtonHTML(prefix){
     return `<button type="button" class="btn ghost small" id="${prefix}-talent-btn" style="margin-top:6px;">⭐ Talenti</button>`;
   }
-  function bindTalentButton(prefix, textareaId, me, onPick){
+  function bindTalentButton(prefix, textareaId, me){
     const btn = document.getElementById(prefix+'-talent-btn');
     if(!btn) return;
-    btn.onclick = ()=> openTalentPicker(me, (text, order)=>{
-      const ta = document.getElementById(textareaId);
-      if(ta){
-        const pos = ta.selectionStart==null ? ta.value.length : ta.selectionStart;
-        ta.value = ta.value.slice(0,pos) + text + ' ' + ta.value.slice(pos);
-        ta.focus();
-        const newPos = pos + text.length + 1;
-        try{ ta.setSelectionRange(newPos, newPos); }catch(e){}
-      }
-      if(onPick) onPick(order);
-    });
+    btn.onclick = ()=> openTalentPicker(me, textareaId);
   }
-  function openTalentPicker(me, onPick){
+  function openTalentPicker(me, textareaId){
     const old = document.getElementById('talent-picker-modal');
     if(old) old.remove();
     const modal = document.createElement('div');
@@ -301,8 +314,7 @@
       const used = limited && !!usedMap[t.order];
       if(used) return; // non selezionabile: già consumato, si ricarica con Riposo/Combattimento
       el.onclick = ()=>{
-        const text = `✦ ${t.name}: ${t.text}`;
-        onPick(text, limited ? t.order : null);
+        printTalentIntoComposer(textareaId, t);
         closeIt();
       };
     });

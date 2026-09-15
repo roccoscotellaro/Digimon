@@ -341,6 +341,18 @@
         </div>
         ${Number(t.tormentPenalty||0)!==0 ? `<div class="muted" style="color:var(--danger);margin-bottom:8px;">Penalità Torment attiva: ${t.tormentPenalty} su Tiri/bonus finché non fai un Rest.</div>` : ''}
         <div class="divider"></div>
+        <details class="hud-frame" style="padding:8px;border-color:var(--cyan-dim);margin-bottom:10px;">
+          <summary class="mono" style="cursor:pointer;color:var(--cyan);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;">❓ Pro e contro — Aspects &amp; Torments</summary>
+          <div style="margin-top:8px;font-size:11px;line-height:1.5;">
+            <b>Aspects (Major/Minor)</b>
+            <div class="muted" style="margin-top:2px;">✅ <b>Bonus</b> (+4 Major / +2 Minor): usalo su un Check dove il tratto ti aiuta davvero — consuma un uso, nessun IP.</div>
+            <div class="muted" style="margin-top:2px;">⚠️ <b>Penalità</b> (-4 Major / -2 Minor): invocala quando il lato "problematico" del tratto crea davvero complicazioni nella scena — ripristina gli usi (il Major ti dà anche 1 IP, il Minor no). Conviene solo se la scena/narrazione ci guadagna più di quanto perdi sul tiro.</div>
+            <div class="divider" style="margin:8px 0;"></div>
+            <b>Torments</b>
+            <div class="muted" style="margin-top:2px;">Il Torment Check (una volta a Riposo, TN 8+caselle) può: <b>Successo Critico</b> → -1 casella e +1 IP; <b>Successo</b> → +1 IP; <b>Fallimento</b> → nessun effetto (si ritenta al prossimo Riposo); <b>Fallimento Critico</b> → -2 a Check/bonus fino al Riposo; <b>Fallimento Critico Profondo</b> → +1 casella, e se sei in Combattimento puoi scegliere tra -5 fino al Riposo oppure -3 + niente Azioni Tamer fino a fine Combattimento (altrimenti solo -5).</div>
+            <div class="muted" style="margin-top:2px;">A 10 caselle il Torment è al massimo (il Master decide come si manifesta pesantemente in scena). Le caselle scendono solo per decisione del Master o con un Successo Critico al Torment Check — non c'è un modo "automatico" per svuotarle.</div>
+          </div>
+        </details>
         <div class="muted" style="margin-bottom:6px;">Aspects — tratti di personalità che danno bonus o penalità ai Check, a scelta del giocatore</div>
         <div class="roster-item" style="padding:8px;margin-bottom:6px;">
           <div class="flex-between"><b>Major</b><span class="mono">${t.majorAspect.usesLeft||0} usi</span></div>
@@ -380,9 +392,28 @@
           <details ${computeUnlockedTalents(t).length>0?'open':''}>
             <summary class="mono" style="cursor:pointer;color:var(--cyan);font-size:12px;text-transform:uppercase;letter-spacing:0.05em;">⭐ Tamer Talents sbloccati — ${computeUnlockedTalents(t).length}</summary>
             <div style="margin-top:8px;">
-              ${(()=>{ const unlocked = computeUnlockedTalents(t); return unlocked.length===0
-                ? '<div class="muted">Nessun Talent ancora sbloccato (servono almeno 3 punti in un Attributo).</div>'
-                : unlocked.map(tal=>`<div class="roster-item" style="padding:6px 8px;margin-bottom:4px;"><div class="flex-between"><b>${escapeHTML(tal.name)}</b><span class="tag">${talentAbbr(tal)} ${tal.threshold}+</span></div><div class="sub" style="margin-top:2px;">${escapeHTML(tal.text)}</div></div>`).join(''); })()}
+              ${(()=>{
+                const unlocked = computeUnlockedTalents(t);
+                if(unlocked.length===0) return '<div class="muted">Nessun Talent ancora sbloccato (servono almeno 3 punti in un Attributo).</div>';
+                // Cliccabile per "stampare" il Talento in chat SOLO sulla propria Scheda Tamer
+                // (containerId===undefined, il render dalla propria Sidebar) -- quando il Master la
+                // guarda dal Roster (renderTamerCard(p,'m-tamer-'+i,...)) resta un elenco di sola
+                // lettura, perché non ha senso scrivere nel composer di un altro giocatore.
+                const clickable = containerId===undefined;
+                const usedMap = (t.specialOrdersUsed) || {};
+                return unlocked.map((tal,i)=>{
+                  const limited = !!(tal.order && tal.once);
+                  const used = limited && !!usedMap[tal.order];
+                  const freqLabel = tal.once==='rest' ? 'una volta a Riposo' : (tal.once==='combat' ? 'una volta a Combattimento' : '');
+                  const canPrint = clickable && !used;
+                  return `<div class="roster-item" ${canPrint?`data-talent-print="${i}"`:''} style="padding:6px 8px;margin-bottom:4px;${canPrint?'cursor:pointer;':''}${used?'opacity:0.5;':''}" ${canPrint?'title="Clicca per inserirlo nella chat"':''}>
+                    <div class="flex-between"><b>${escapeHTML(tal.name)}</b><span class="tag">${talentAbbr(tal)} ${tal.threshold}+</span></div>
+                    <div class="sub" style="margin-top:2px;">${escapeHTML(tal.text)}</div>
+                    ${limited ? `<div class="muted" style="font-size:10px;margin-top:4px;">${used ? '🔒 Già usato — si ricarica con un ' + (tal.once==='rest'?'Riposo':'nuovo Combattimento') : '♻️ '+freqLabel}</div>` : ''}
+                    ${canPrint ? '<div class="muted" style="font-size:10px;margin-top:4px;color:var(--cyan);">✦ Clicca per stamparlo in chat</div>' : ''}
+                  </div>`;
+                }).join('');
+              })()}
             </div>
           </details>
         </div>
@@ -494,9 +525,26 @@
             outcomeText = 'Successo! Guadagna 1 IP.';
           } else if(result.outcome==='deep-crit-fail'){
             tor.boxes = Math.min(10, tor.boxes+1);
-            me.tamer.tormentPenalty = -5;
             tor.usedThisRest = true;
-            outcomeText = 'Fallimento Critico Profondo! +1 Casella Torment, penalità -5 fino al Rest.';
+            // BUGFIX (regola, richiesto da Rocco "Riusciamo a sistemarlo da regola?"): non è un -5
+            // automatico -- RAW (2.05b) dà al giocatore una SCELTA tra -5 (sempre disponibile)
+            // oppure, solo se il Tamer è in quel momento partecipante di un Combattimento attivo,
+            // -3 e "non può più usare Azioni Tamer fino alla fine del Combattimento". Il blocco vero
+            // e proprio è in trySpendAction (index.html) via participant.tamerActionsLocked -- si
+            // azzera da solo a fine Combattimento perché endCombatNow ripulisce l'intero array
+            // participants. Stessa identica logica duplicata in js/chat-log-engine.js
+            // (fulfillTormentBtn), per lo stesso Torment Check evaso da una richiesta del Master.
+            const combatant = (cachedCombat && cachedCombat.active && Array.isArray(cachedCombat.participants))
+              ? cachedCombat.participants.find(p=>p.isPC && p.username===session.username) : null;
+            if(combatant && window.confirm('Fallimento Critico Profondo! Scegli la penalità del Torment (regola 2.05b):\n\nOK = -3 fino al Rest, ma non potrai più usare Azioni Tamer fino alla fine del Combattimento.\nAnnulla = -5 fino al Rest (nessun altro effetto).')){
+              me.tamer.tormentPenalty = -3;
+              combatant.tamerActionsLocked = true;
+              await apiPost('/api/state', { resource:'combat', code: session.code, data: cachedCombat });
+              outcomeText = 'Fallimento Critico Profondo! +1 Casella Torment, penalità -3 fino al Rest — non può più usare Azioni Tamer fino alla fine del Combattimento.';
+            } else {
+              me.tamer.tormentPenalty = -5;
+              outcomeText = 'Fallimento Critico Profondo! +1 Casella Torment, penalità -5 fino al Rest.';
+            }
           } else if(result.outcome==='crit-fail'){
             me.tamer.tormentPenalty = -2;
             tor.usedThisRest = true;
@@ -517,6 +565,24 @@
           if(onChanged) onChanged();
         };
       });
+      // Click su un Talento sbloccato nella propria Scheda Tamer per "stamparlo" in chat (richiesta
+      // Rocco: prima l'unico modo era il bottone "⭐ Talenti" nel composer -- ora anche cliccare
+      // direttamente la voce qui sotto fa lo stesso). Solo sulla propria Scheda (containerId
+      // undefined, vedi il markup sopra): printTalentIntoComposer è definita in
+      // js/chat-composer.js e riusa la stessa textarea/stato del picker, quindi l'eventuale uso
+      // limitato viene comunque consumato solo all'invio del messaggio (consumeTalentIfPending in
+      // index.html), non qui al click.
+      if(containerId===undefined){
+        const unlockedForClick = computeUnlockedTalents(t);
+        cardEl.querySelectorAll('[data-talent-print]').forEach(el=>{
+          const tal = unlockedForClick[Number(el.getAttribute('data-talent-print'))];
+          if(!tal) return;
+          el.onclick = ()=>{
+            printTalentIntoComposer('action-text', tal);
+            if(typeof isMobile==='function' && isMobile() && typeof switchMobileTab==='function') switchMobileTab('chat');
+          };
+        });
+      }
     } else {
       cardEl.innerHTML = `
         <div class="section-title">Scheda Tamer — Modifica</div>

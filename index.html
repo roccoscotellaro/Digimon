@@ -694,13 +694,15 @@ let editingScene = false;
   // js/subgroups.js). Vedi replySnippetFromEntry/renderReplyBanner in js/chat-log-engine.js.
   let pendingReplyTo = null;
   let pendingGmReplyTo = null;
-  // "Stampa un Talento in chat" (richiesta utente): l'ordine dello Special Order scelto nel
-  // picker (js/chat-composer.js, openTalentPicker), in attesa che il messaggio venga DAVVERO
-  // inviato -- il consumo dell'uso limitato ("una volta a Riposo/Combattimento") non avviene alla
-  // scelta nel picker, solo qui, dentro btn-send-action.onclick, per non "bruciare" un uso se il
-  // giocatore cambia idea/svuota il testo senza inviare. null = nessun Talento a consumo limitato
-  // in attesa (Talenti passivi o senza usi limitati non passano mai da qui).
-  let pendingActionTalentOrder = null;
+  // "Stampa un Talento in chat" (richiesta utente, estesa per includere anche il click diretto su
+  // un Talento nella propria Scheda Tamer, non solo il picker "⭐ Talenti"): l'ordine dello Special
+  // Order eventualmente scelto vive in pendingActionTalentOrder, una variabile GLOBALE di
+  // js/chat-composer.js (non più locale a questa IIFE, perché ora sia openTalentPicker sia
+  // js/tamer-card.js/renderTamerCard la scrivono tramite printTalentIntoComposer) -- il consumo
+  // dell'uso limitato ("una volta a Riposo/Combattimento") non avviene alla scelta/click, solo qui,
+  // dentro btn-send-action.onclick, per non "bruciare" un uso se il giocatore cambia idea/svuota il
+  // testo senza inviare. null = nessun Talento a consumo limitato in attesa (Talenti passivi o
+  // senza usi limitati non passano mai da qui).
   // Consuma (se ancora valido) l'uso limitato del Talento in attesa, SOLO quando il messaggio che
   // lo "stampava" viene davvero inviato -- richiamata da tutte e 3 le modalità del composer del
   // Giocatore (Generale/Privata/Sottogruppo) subito prima di svuotare la textarea. Riusa lo stesso
@@ -1135,6 +1137,14 @@ let editingScene = false;
   function trySpendAction(participant, actionKey){
     const def = ACTION_DEFS.find(a=>a.key===actionKey);
     if(!def) return { ok:false, msg:'Azione non valida' };
+    // Torment Check, Fallimento Critico Profondo, scelta "-3 e non può più usare Azioni Tamer fino
+    // alla fine del Combattimento" (regola 2.05b -- vedi js/tamer-card.js data-torment-check e
+    // js/chat-log-engine.js fulfillTormentBtn, dove participant.tamerActionsLocked viene impostato
+    // su true). Si azzera da solo a fine Combattimento: endCombatNow rimpiazza l'intero array
+    // participants con uno vuoto, quindi non serve alcuna pulizia dedicata di questo flag.
+    if(def.pool==='tamer' && participant.tamerActionsLocked){
+      return { ok:false, msg:'Il Tamer è sopraffatto dal Torment: non può più usare Azioni Tamer fino alla fine del Combattimento.' };
+    }
     const poolKey = def.pool==='tamer' ? 'tamerActions' : 'actions';
     if(actionKey==='move' && (participant.effects||[]).some(e=>e.key==='root')){
       return { ok:false, msg:'È sotto [ROOT]: non può usare Muovi finché l\'Effetto non termina.' };
@@ -2629,7 +2639,7 @@ let editingScene = false;
         <div style="padding:6px 8px;margin-bottom:4px;border-radius:4px;${i===combat.currentIndex?'background:rgba(53,232,201,0.15);border:1px solid var(--cyan);':'background:var(--panel-2);border:1px solid var(--line);'}${p.side==='enemy'?'border-left:3px solid var(--danger);':''}">
           <div class="flex-between">
             <span>${i===combat.currentIndex?'▶ ':''}<b>${escapeHTML(dispName)}</b>${dupSuffix?`<span class="mono" style="color:var(--amber);">${escapeHTML(dupSuffix)}</span>`:''} <span class="tag" style="margin-left:4px;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};">${p.side==='ally'?'Alleato':'Nemico'}</span></span>
-            <span class="mono">Iniz. ${p.initiative} · Az.Dig ${p.actions===undefined?2:p.actions}/2 · Az.Tam ${p.tamerActions===undefined?2:p.tamerActions}/2 · <span style="color:var(--amber);">${zoneLabel(p.zone||'Medio')}</span></span>
+            <span class="mono">Iniz. ${p.initiative} · Az.Dig ${p.actions===undefined?2:p.actions}/2 · Az.Tam ${p.tamerActions===undefined?2:p.tamerActions}/2${p.tamerActionsLocked?' 🔒':''} · <span style="color:var(--amber);">${zoneLabel(p.zone||'Medio')}</span></span>
           </div>
           ${miniHpBarHTML(wounds.current, wounds.max, wounds.temp, 'HP')}
           ${battery ? `<div style="display:flex;align-items:center;gap:6px;margin-top:4px;"><span class="hp-mini-label">⚡</span>${batteryCellsHTML(battery.current, battery.max, true)}<span class="hp-mini-val">${battery.current}/${battery.max}</span></div>` : ''}
@@ -3844,7 +3854,7 @@ let editingScene = false;
     document.getElementById('btn-open-missions').onclick = openMissionsModal;
     bindChatAttach('action', code, 'chat', ()=>pendingActionImageUrl, (url)=>{ pendingActionImageUrl = url; });
     bindMentionButton('action', code, 'action-text');
-    bindTalentButton('action', 'action-text', me, (order)=>{ pendingActionTalentOrder = order; });
+    bindTalentButton('action', 'action-text', me);
     renderDicePanel('dice-panel-player');
     renderChatArea(code, me, { forceScrollBottom:true }); // riempie il selettore location + il Registro (vedi sopra)
     // Popola il mini-log nel tab Battle al primo render
