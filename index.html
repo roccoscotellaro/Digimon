@@ -3447,7 +3447,19 @@ let editingScene = false;
       refreshSceneDaytimeBadge();
     }
     bindSceneAudio(cachedScene);
-    if(missionsModalOpen) refreshMissionsModal();
+    if(missionsModalOpen){
+      // BUGFIX (segnalato da Rocco: "si aggiorna ogni tot secondi e non mi fa scrivere"): questa
+      // riga sovrascriveva SEMPRE #missions-list con l'HTML fresco dal server ogni 15s (ciclo di
+      // refreshLiveParts), anche mentre il Master aveva un campo del form di modifica missione
+      // (medit-title/medit-desc/ecc.) attivo e ci stava scrivendo dentro — il testo digitato e il
+      // focus sparivano ad ogni giro di poll. Stesso pattern già usato altrove (Scheda Digimon,
+      // Combattimento) per non farsi "mangiare" le modifiche non ancora salvate dal poll: saltiamo
+      // il refresh automatico solo mentre il focus è dentro #missions-list su un input/textarea.
+      const activeEl = document.activeElement;
+      const missionsListEl = document.getElementById('missions-list');
+      const isEditingMission = missionsListEl && activeEl && missionsListEl.contains(activeEl) && (activeEl.tagName==='INPUT' || activeEl.tagName==='TEXTAREA');
+      if(!isEditingMission) refreshMissionsModal();
+    }
     const sceneLuoghiLive = document.getElementById('scene-luoghi-live');
     if(sceneLuoghiLive){
       sceneLuoghiLive.innerHTML = sceneCurrentSectorLuoghiHTML();
