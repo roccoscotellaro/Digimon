@@ -55,6 +55,39 @@
   async function addDexEntry(code, entry){ return apiPost('/api/dex', { code, ...entry }); }
   async function updateDexEntry(code, id, fields){ return apiPut('/api/dex', { code, id, ...fields }); }
 
+  // Marca una voce del Digidex GIÀ ESISTENTE come "discovered" senza toccare nessun altro campo.
+  // /api/dex PUT (dex.js) fa un UPDATE "a tutte le colonne" — qualunque campo NON incluso in questa
+  // chiamata viene sovrascritto col default (stringa vuota/array vuoto/false), non lasciato
+  // invariato (vedi il fix GIF-cancellata-dal-Digidex più sotto in openEncounterDetail). Rimandiamo
+  // quindi indietro ESATTAMENTE i valori già presenti su dexMatch per ogni campo, così l'unico
+  // effetto reale è discovered:true. Condivisa tra openEncounterDetail (scoperta automatica al
+  // primo sguardo di qualcuno sulla card in Scena) e il bottone "📖 Scopri nel Dex" del pannello
+  // Incontri del Master (richiesta di Rocco: "manca un tasto per far scoprire il digimon in scena
+  // direttamente sul dex" — scoperta manuale immediata, senza dover aspettare che qualcuno clicchi
+  // sulla card in Scena né passare da dex.html).
+  async function markDexEntryDiscovered(code, dexMatch){
+    if(!dexMatch || dexMatch.discovered) return true;
+    const ok = await updateDexEntry(code, dexMatch.id, {
+      name: dexMatch.name, stage: dexMatch.stage, description: dexMatch.description,
+      imageUrl: dexMatch.image_url, gifUrl: dexMatch.gif_url||'', categories: dexMatch.categories||[], baseStats: dexMatch.base_stats||{},
+      evolutions: dexMatch.evolutions||[], evolvesFrom: dexMatch.evolves_from||[], qualities: dexMatch.qualities||[], dpTotal: dexMatch.dp_total||0,
+      attribute: dexMatch.attribute||'', family: dexMatch.family||'', originType: dexMatch.origin_type||'',
+      signatureMove: dexMatch.signature_move||'', signatureMove2: dexMatch.signature_move_2||'',
+      slideEvolution: !!dexMatch.slide_evolution, slideTargets: dexMatch.slide_targets||[],
+      digimental: dexMatch.digimental||'', attackDesc: dexMatch.attack_desc||'', attackDesc2: dexMatch.attack_desc_2||'',
+      extraAttacks: dexMatch.extra_attacks||[],
+      discovered: true
+    });
+    if(ok) dexMatch.discovered = true;
+    return ok;
+  }
+
+  // Trova, se esiste, la voce del Digidex collegata a un Incontro — prima per dexId (link diretto),
+  // poi per nome (fallback, stesso identico criterio già usato in vari altri punti del file).
+  function dexMatchForEncounter(e){
+    return (e && e.dexId && cachedDex.find(d=>d.id===e.dexId)) || cachedDex.find(d=>String(d.name).trim().toLowerCase()===String(e && e.name || '').trim().toLowerCase());
+  }
+
 // ---------- stato di modulo (spostato da index.html, usato solo qui) ----------
   let sectorMapSelectedId = null; // which Settore is expanded in the compact Mappa panel
   let moveOpenUsername = null; // quale giocatore ha aperto il modulo "Sposta" nel pannello unico "Posizione dei giocatori"
@@ -1021,6 +1054,13 @@
     if(items.length===0) return '<div class="muted">Nessun Digimon ancora aggiunto a questa scena.</div>';
     return items.map((e,i)=>{
       const already = !!e.dexId || isInDex(e.name);
+      // Bottone "📖 Scopri nel Dex" (richiesta di Rocco: "manca un tasto per far scoprire il
+      // digimon in scena direttamente sul dex") — visibile solo se l'Incontro è già collegato a
+      // una voce del Digidex ma quella voce non è ancora discovered. Prima l'unico modo era
+      // aspettare che qualcuno cliccasse sulla card in Scena (openEncounterDetail) o passare da
+      // dex.html: ora il Master può rivelarlo all'istante da qui.
+      const dexMatch = already ? dexMatchForEncounter(e) : null;
+      const needsDiscover = !!(dexMatch && !dexMatch.discovered);
       const visible = e.revealed!==false;
       const maxW = encounterMaxWounds(e);
       const curW = encounterCurrentWounds(e);
@@ -1029,7 +1069,7 @@
         <div class="roster-item" style="padding:6px 8px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;${e.isBoss?'border-color:var(--danger);':''}border-left:3px solid ${disp.color};">
           ${(()=>{ const img = bestDigimonImage(e.dexId, e.name, e.gif || e.image); return img ? `<img src="${escapeAttr(img)}" onerror="this.style.display='none'" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0;" />` : ''; })()}
           <div style="flex:1;min-width:140px;">
-            <div><b>${escapeHTML(e.name)}</b> ${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}${attributeIconHTML(dexAttributeFor(e.dexId, e.name), 14)}<button class="tag" data-cycle-disposition="${i}" style="cursor:pointer;color:${disp.color};border-color:${disp.color};background:none;" title="Clicca per cambiare (Nemico/Alleato/Neutrale) — si riflette nell'aggiunta al combattimento">${disp.icon} ${disp.label}</button>${e.isBoss?`<span class="tag" style="color:var(--danger);border-color:var(--danger);" title="${e.bossBonusStat?('Bonus Boss: +'+e.bossBonusAmount+' '+escapeAttr(BOSS_BONUS_STATS[e.bossBonusStat]||e.bossBonusStat)):'Nessun bonus Statistica assegnato'}">👑 Boss${e.bossBonusStat?` (+${e.bossBonusAmount} ${escapeHTML(BOSS_BONUS_STATS[e.bossBonusStat]||e.bossBonusStat)})`:''}</span>`:''}${e.nameHidden?`<span class="tag" style="color:var(--violet, #b98cf0);border-color:var(--violet, #b98cf0);">🎭 Nome Nascosto</span>`:''}${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>
+            <div><b>${escapeHTML(e.name)}</b> ${e.stage?`<span class="tag">${escapeHTML(e.stage)}</span>`:''}${attributeIconHTML(dexAttributeFor(e.dexId, e.name), 14)}<button class="tag" data-cycle-disposition="${i}" style="cursor:pointer;color:${disp.color};border-color:${disp.color};background:none;" title="Clicca per cambiare (Nemico/Alleato/Neutrale) — si riflette nell'aggiunta al combattimento">${disp.icon} ${disp.label}</button>${e.isBoss?`<span class="tag" style="color:var(--danger);border-color:var(--danger);" title="${e.bossBonusStat?('Bonus Boss: +'+e.bossBonusAmount+' '+escapeAttr(BOSS_BONUS_STATS[e.bossBonusStat]||e.bossBonusStat)):'Nessun bonus Statistica assegnato'}">👑 Boss${e.bossBonusStat?` (+${e.bossBonusAmount} ${escapeHTML(BOSS_BONUS_STATS[e.bossBonusStat]||e.bossBonusStat)})`:''}</span>`:''}${e.nameHidden?`<span class="tag" style="color:var(--violet, #b98cf0);border-color:var(--violet, #b98cf0);">🎭 Nome Nascosto</span>`:''}${needsDiscover?`<span class="tag" style="color:var(--text-mute);border-color:var(--line);" title="Non ancora scoperto sul Digidex">❔ Non scoperto</span>`:''}${(e.categories||[]).map(c=>`<span class="tag" style="font-size:9px;">${escapeHTML(c)}</span>`).join('')}</div>
             <div class="muted" style="font-size:11px;">${visible ? '👁️ Visibile ai giocatori' : '🙈 Nascosto — solo il Master lo vede'}${visible ? (e.nameHidden ? ' · 🎭 Presenza visibile, nome e descrizione nascosti ai giocatori' : '') : ''} · ${encounterLocationLabel(e)}</div>
             <div style="margin-top:4px;">
               <select data-enc-location="${i}" style="font-size:10px;padding:2px 4px;max-width:260px;" title="Dove si trova questo Digimon nella Scena — i giocatori lo vedranno in Scena solo quando la loro posizione corrisponde. 'Ovunque' = comportamento di prima, sempre visibile.">
@@ -1062,6 +1102,7 @@
           <button class="btn ${e.nameHidden?'':'ghost'} small" data-toggle-namehidden="${i}" style="padding:4px 8px;font-size:10px;" title="Il Digimon resta visibile in Scena, ma nome/descrizione restano '???' per i giocatori finché non lo riveli">${e.nameHidden?'🏷️ Rivela Nome':'🎭 Nascondi Nome'}</button>
           <button class="btn ghost small" data-dupe-enc="${i}" style="padding:4px 8px;font-size:10px;" title="Aggiunge una copia identica">+1 copia</button>
           ${already ? `<button class="btn ghost small" data-refresh-atk="${i}" style="padding:4px 8px;font-size:10px;" title="Ricarica Attacchi + Immagine/GIF dal Digidex — utile se sono stati aggiornati o se erano stati importati prima di una correzione">🔄 Sincronizza da Dex</button>` : ''}
+          ${needsDiscover ? `<button class="btn small" data-discover-dex="${i}" style="padding:4px 8px;font-size:10px;background:var(--amber, #ffb347);color:#241a03;" title="Segna questo Digimon come scoperto sul Digidex — lo rivela lì (nome/immagine/evoluzioni) subito, senza dover aspettare che qualcuno lo clicchi in Scena">📖 Scopri nel Dex</button>` : ''}
           ${already ? '' : `<button class="btn small" data-quickdex="${i}" style="padding:4px 8px;font-size:10px;">+Dex</button>`}
           <button class="btn ghost small" data-rmenc="${i}" style="padding:4px 8px;font-size:10px;">×</button>
         </div>
@@ -1482,6 +1523,33 @@
         }
       };
     });
+    // Bottone "📖 Scopri nel Dex" (richiesta di Rocco): marca all'istante come discovered la
+    // voce del Digidex già collegata a questo Incontro, senza dover aspettare che qualcuno
+    // clicchi sulla sua card in Scena (openEncounterDetail) né passare da dex.html. Usa
+    // markDexEntryDiscovered, la stessa funzione (fattorizzata da questo stesso file) che fa la
+    // scoperta automatica, quindi stessa identica salvaguardia contro la cancellazione di
+    // GIF/mosse/evoluzioni per un PUT parziale su /api/dex.
+    live.querySelectorAll('[data-discover-dex]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const idx = Number(btn.getAttribute('data-discover-dex'));
+        const e = cachedScene.encounters[idx];
+        if(!e) return;
+        const dexMatch = dexMatchForEncounter(e);
+        if(!dexMatch) return;
+        btn.disabled = true;
+        const ok = await markDexEntryDiscovered(code, dexMatch);
+        if(!ok){
+          btn.disabled = false;
+          alert('⚠ Errore: impossibile aggiornare il Digidex (' + (lastApiError || 'sconosciuto') + ').');
+          return;
+        }
+        live.innerHTML = encountersEditableHTML(cachedScene.encounters);
+        bindEncountersInnerActions(code, username, onChanged);
+        const dexLive = document.getElementById('dex-live');
+        if(dexLive){ dexLive.innerHTML = dexListHTML(cachedDex, true); bindDexEditButtons(code); }
+        if(onChanged) onChanged();
+      };
+    });
   }
 
   // Risolve l'avatar da mostrare in chat per ogni entry del log. Per i player usa la miniatura
@@ -1639,29 +1707,12 @@
         });
         if(d && d.entry){ cachedDex.push(d.entry); dexMatch = d.entry; }
       } else if(!dexMatch.discovered){
-        // FIX GIF cancellata dal Digidex (segnalato da Rocco): /api/dex PUT (dex.js) fa un
-        // UPDATE "a tutte le colonne" — qualunque campo NON incluso in questa chiamata viene
-        // sovrascritto col default (stringa vuota/array vuoto/false), non lasciato invariato.
-        // Prima questa chiamata mandava solo un sottoinsieme di campi (mancavano soprattutto
-        // gifUrl, ma anche signatureMove/signatureMove2/extraAttacks/attribute/family/
-        // originType/slideEvolution/slideTargets/digimental/attackDesc/attackDesc2/
-        // evolvesFrom): la primissima volta che chiunque (Master o giocatore) apriva il
-        // dettaglio di un Incontro non ancora "discovered", tutti quei campi dell'entry del
-        // Digidex — GIF compresa — venivano silenziosamente azzerati. Ora rimandiamo indietro
-        // ESATTAMENTE i valori già presenti su dexMatch per ogni campo che questa chiamata non
-        // intende cambiare, così l'unico effetto reale resta discovered: true.
-        const ok = await updateDexEntry(code, dexMatch.id, {
-          name: dexMatch.name, stage: dexMatch.stage, description: dexMatch.description,
-          imageUrl: dexMatch.image_url, gifUrl: dexMatch.gif_url||'', categories: dexMatch.categories||[], baseStats: dexMatch.base_stats||{},
-          evolutions: dexMatch.evolutions||[], evolvesFrom: dexMatch.evolves_from||[], qualities: dexMatch.qualities||[], dpTotal: dexMatch.dp_total||0,
-          attribute: dexMatch.attribute||'', family: dexMatch.family||'', originType: dexMatch.origin_type||'',
-          signatureMove: dexMatch.signature_move||'', signatureMove2: dexMatch.signature_move_2||'',
-          slideEvolution: !!dexMatch.slide_evolution, slideTargets: dexMatch.slide_targets||[],
-          digimental: dexMatch.digimental||'', attackDesc: dexMatch.attack_desc||'', attackDesc2: dexMatch.attack_desc_2||'',
-          extraAttacks: dexMatch.extra_attacks||[],
-          discovered: true
-        });
-        if(ok) dexMatch.discovered = true;
+        // FIX GIF cancellata dal Digidex (segnalato da Rocco) + fattorizzazione (richiesta "manca
+        // un tasto per far scoprire il digimon in scena direttamente sul dex"): questa logica ora
+        // vive in markDexEntryDiscovered (data layer, cima del file), condivisa con il bottone
+        // "📖 Scopri nel Dex" del pannello Incontri — stessa identica salvaguardia contro un PUT
+        // parziale su /api/dex che azzererebbe GIF/mosse/evoluzioni non incluse nella chiamata.
+        await markDexEntryDiscovered(code, dexMatch);
       }
       const dexLive = document.getElementById('dex-live');
       if(dexLive) dexLive.innerHTML = dexListHTML(cachedDex, session && session.role==='master');
