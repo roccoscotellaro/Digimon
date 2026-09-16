@@ -516,6 +516,22 @@
     .chat-seg-btn{
       padding:10px 4px;-webkit-tap-highlight-color:transparent;
     }
+    /* Richiesta utente ("i 3 selettori Generale/Privata/Sottogruppo che da mobile seguono la
+       chat, così da non costringere le persone a tornare su"): la card della Chat su mobile può
+       diventare più alta dello schermo (Registro + composer + "Parla come" + allegati + Invia),
+       quindi scorrendo verso il basso per scrivere o allegare qualcosa il segmented control
+       finiva fuori dallo schermo in alto — per cambiare chat bisognava risalire fino in cima alla
+       card. position:sticky lo aggancia al bordo superiore dello schermo appena esce dal flusso
+       normale, restando sempre a portata di tap. Nessuno sfondo da aggiungere: ogni .chat-seg-btn
+       ha già var(--panel-2) opaco, quindi il contenuto sottostante non traspare quando resta
+       agganciato. z-index sotto al menu in basso (9000, sempre visibile) e ai widget audio/
+       attributi (8500), ma sopra al resto del contenuto scorrevole della card. #player-chat-seg
+       (Vista Giocatore) e #master-chat-seg (Vista Master) sono entrambi dentro
+       .mobile-section[data-mobile-tab="chat"], quindi la stessa regola vale per entrambi. */
+    .mobile-section[data-mobile-tab="chat"] #player-chat-seg,
+    .mobile-section[data-mobile-tab="chat"] #master-chat-seg{
+      position:sticky;top:0;z-index:40;
+    }
 
     /* Schede pieghevoli mobile: card con section-title cliccabile per espandere/comprimere */
     .hud-frame.card .section-title{cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;}
@@ -2728,7 +2744,17 @@ let editingScene = false;
   // Esporta (come file .txt scaricabile, generato lato client — nessuna chiamata al server)
   // esattamente ciò che il Registro sta mostrando in questo momento.
   // saveScene spostata in js/scene-encounters.js
-  async function getLog(code){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code)); return d ? (d.log||[]) : []; }
+  // BUGFIX/richiesta utente ("rendere non leggibili le chat a chi non è in quel settore"): manda
+  // anche `username` (lo username dichiarato in sessione) — log.js ora usa questo parametro per
+  // restituire, a un giocatore (non al Master), SOLO i messaggi della Chat Generale marcati col
+  // proprio Settore attuale (+ quelli senza tag di posizione), invece dell'intero log pubblico.
+  // Prima il filtro "Storico per Settore" (filterByLocation) era solo un comodo modo per RIVEDERE
+  // lo storico lato client: i messaggi di OGNI Settore arrivavano comunque nel browser di tutti,
+  // bastava aprire quel selettore per leggere cosa succedeva in un Settore in cui non si era. Usata
+  // sia per il Master (session.username risolve a ruolo 'master' lato server -> nessun filtro,
+  // vede sempre tutto come prima) sia per i giocatori: stessa funzione, stesso comportamento di
+  // sempre se `session` non è ancora impostata (nessun parametro mandato -> log invariato).
+  async function getLog(code){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code) + (session && session.username ? ('&username=' + encodeURIComponent(session.username)) : '')); return d ? (d.log||[]) : []; }
   async function heartbeat(code, username){ return apiPost('/api/roster', { resource:'heartbeat', code, username }); }
   async function getDex(code){ const d = await apiGet('/api/dex?code=' + encodeURIComponent(code)); return d ? (d.entries||[]) : []; }
   // addDexEntry spostata in js/scene-encounters.js
