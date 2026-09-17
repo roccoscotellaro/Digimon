@@ -198,6 +198,44 @@
     border-radius:8px;background:rgba(255,138,61,0.07);font-size:12px;font-style:italic;color:var(--text);
   }
 
+  /* Richiesta utente ("come per lo scherzo, aggiungerei una nota e un avviso del Master"): stesso
+     meccanismo di .log-joke qui sopra, applicato a due nuovi marcatori testuali riconosciuti da
+     formatLogText() in chat-log-engine.js: "(nota: testo)" e "(avviso: testo)". Entrambi chiusi
+     di default (richiesto esplicitamente: "Chiusa di default come lo scherzo"). Nessuna
+     restrizione di ruolo su chi può scriverli: sono pure convenzioni testuali, come scherzo -- non
+     imponibili lato server, coerente col resto del sito che non ha permessi sul contenuto dei
+     messaggi (a differenza del filtro per Settore in log.js, quello sì server-side).
+     .log-note = nota generica (chiunque), colore ciano neutro per non confondersi con l'amber
+     dello scherzo. .log-warning = avviso del Master, colore rosso (--danger) anche da chiuso così
+     da risaltare pur restando un chip compatto. */
+  .log-note{display:inline-block;vertical-align:middle;}
+  .log-note summary{
+    display:inline-flex;align-items:center;gap:3px;cursor:pointer;list-style:none;
+    font-size:11px;padding:1px 8px;border:1px solid var(--cyan-dim);border-radius:12px;
+    background:rgba(53,232,201,0.1);color:var(--cyan);user-select:none;line-height:1.6;
+  }
+  .log-note summary::-webkit-details-marker{display:none;}
+  .log-note summary::marker{content:'';}
+  .log-note summary:hover{background:rgba(53,232,201,0.2);}
+  .log-note .log-note-text{
+    display:block;margin-top:4px;padding:6px 9px;border:1px solid var(--cyan-dim);
+    border-radius:8px;background:rgba(53,232,201,0.07);font-size:12px;color:var(--text);
+  }
+
+  .log-warning{display:inline-block;vertical-align:middle;}
+  .log-warning summary{
+    display:inline-flex;align-items:center;gap:3px;cursor:pointer;list-style:none;
+    font-size:11px;padding:1px 8px;border:1px solid var(--danger);border-radius:12px;
+    background:rgba(255,93,93,0.14);color:var(--danger);user-select:none;line-height:1.6;font-weight:700;
+  }
+  .log-warning summary::-webkit-details-marker{display:none;}
+  .log-warning summary::marker{content:'';}
+  .log-warning summary:hover{background:rgba(255,93,93,0.26);}
+  .log-warning .log-warning-text{
+    display:block;margin-top:4px;padding:6px 9px;border:1px solid var(--danger);
+    border-radius:8px;background:rgba(255,93,93,0.1);font-size:12px;color:var(--text);font-weight:600;
+  }
+
   .dice-perspective{perspective:400px;display:inline-flex;gap:6px;vertical-align:middle;}
   .die3d{display:inline-block;font-size:26px;line-height:1;color:var(--cyan);animation:diceroll 0.7s cubic-bezier(.3,1.4,.6,1);}
   @keyframes diceroll{
