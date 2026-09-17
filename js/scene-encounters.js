@@ -90,6 +90,10 @@
 
 // ---------- stato di modulo (spostato da index.html, usato solo qui) ----------
   let sectorMapSelectedId = null; // which Settore is expanded in the compact Mappa panel
+  // Sottosezioni: quale Sottosezione è espansa nel pannello del Settore selezionato — resettata a
+  // null ogni volta che cambia il Settore selezionato (vedi renderSectorMap più sotto), stesso
+  // pattern di sectorMapSelectedId quando cambia la Macroscena.
+  let subsectionMapSelectedId = null;
   let moveOpenUsername = null; // quale giocatore ha aperto il modulo "Sposta" nel pannello unico "Posizione dei giocatori"
   let encounterDraft = null; // pending Digimon (from Dex or homebrew) being reviewed before adding to the scene
   let sectorMapSubgroupsLoaded = false; // true dopo il primo fetch di cachedSubgroups innescato da renderSectorMap (vedi sotto)
@@ -129,47 +133,95 @@
   // di prima. Un Incontro con sectorId impostato si vede solo a chi si trova (effettivamente,
   // gruppo o singolo separato) in quel Settore; se ha anche luogoId, serve essere esattamente in
   // quel Luogo, non basta il solo Settore.
-  function encounterMatchesLocation(e, viewSectorId, viewLuogoId){
+  // Sottosezioni (fase Sottosezioni): un Incontro con sectorId ma SENZA subsectionId resta
+  // visibile in tutto il Settore, comprese le sue Sottosezioni (comportamento storico invariato);
+  // un Incontro con subsectionId impostato richiede di essere ESATTAMENTE in quella Sottosezione
+  // (e, se ha anche luogoId, in quel Luogo preciso dentro la Sottosezione). Un luogoId senza
+  // subsectionId resta un Luogo "diretto" del Settore, come sempre.
+  function encounterMatchesLocation(e, viewSectorId, viewSubsectionId, viewLuogoId){
     if(!e || !e.sectorId) return true;
     if(e.sectorId !== viewSectorId) return false;
+    if(e.subsectionId){
+      if(e.subsectionId !== viewSubsectionId) return false;
+      if(e.luogoId && e.luogoId !== viewLuogoId) return false;
+      return true;
+    }
     if(e.luogoId && e.luogoId !== viewLuogoId) return false;
     return true;
   }
 
-  // Etichetta leggibile ("Macroscena → Settore → Luogo") della posizione assegnata a un Incontro,
-  // usata sia nel pannello di gestione del Master sia per titolare le opzioni del selettore
-  // posizione. Cerca il Settore in TUTTE le Macroscene (non solo quella attiva), perché un
-  // Incontro può restare assegnato a un Settore anche dopo che il Master è passato a un'altra
+  // Etichetta leggibile ("Macroscena → Settore → Sottosezione → Luogo") della posizione assegnata
+  // a un Incontro, usata sia nel pannello di gestione del Master sia per titolare le opzioni del
+  // selettore posizione. Cerca il Settore in TUTTE le Macroscene (non solo quella attiva), perché
+  // un Incontro può restare assegnato a un Settore anche dopo che il Master è passato a un'altra
   // Macroscena.
   function encounterLocationLabel(e){
     if(!e || !e.sectorId) return '🌐 Ovunque nella scena';
     const found = findSectorAnywhere(cachedScene, e.sectorId);
     if(!found) return '🌐 Ovunque nella scena';
-    const lg = e.luogoId ? (found.sector.luoghi||[]).find(l=>l.id===e.luogoId) : null;
-    return '📍 ' + [found.macro.name, found.sector.name, lg?lg.name:null].filter(Boolean).map(escapeHTML).join(' → ');
+    let sub = null, lg = null;
+    if(e.subsectionId){
+      sub = (found.sector.subsections||[]).find(x=>x.id===e.subsectionId) || null;
+      lg = (e.luogoId && sub) ? (sub.luoghi||[]).find(l=>l.id===e.luogoId) : null;
+    } else {
+      lg = e.luogoId ? (found.sector.luoghi||[]).find(l=>l.id===e.luogoId) : null;
+    }
+    return '📍 ' + [found.macro.name, found.sector.name, sub?sub.name:null, lg?lg.name:null].filter(Boolean).map(escapeHTML).join(' → ');
   }
 
   // Opzioni del <select> di posizione: "Ovunque nella scena" + ogni Settore di ogni Macroscena +
-  // ogni Luogo di ogni Settore (valore "sectorId" o "sectorId:luogoId"). Usato sia nella card di
-  // creazione (renderEncounterDraftCard) sia nella riga di ogni Incontro già esistente
-  // (encountersEditableHTML).
-  function locationOptionsHTML(selectedSectorId, selectedLuogoId){
+  // ogni Luogo diretto del Settore + ogni Sottosezione del Settore + ogni Luogo di ogni
+  // Sottosezione. Valori: "sectorId" | "sectorId:luogoId" (Luogo diretto, invariato) |
+  // "sectorId:sub:subsectionId" (nuovo) | "sectorId:sub:subsectionId:luogoId" (nuovo, Luogo dentro
+  // una Sottosezione). Usato sia nella card di creazione (renderEncounterDraftCard) sia nella riga
+  // di ogni Incontro già esistente (encountersEditableHTML).
+  function locationOptionsHTML(selectedSectorId, selectedSubsectionId, selectedLuogoId){
     const macros = cachedScene.macroScenes || [];
     let opts = `<option value="">🌐 Ovunque nella scena</option>`;
     macros.forEach(m=>{
       (m.sectors||[]).forEach(s=>{
-        opts += `<option value="${escapeAttr(s.id)}" ${(selectedSectorId===s.id && !selectedLuogoId)?'selected':''}>${escapeHTML(m.name)} → ${escapeHTML(s.name)}</option>`;
+        const sectorSel = selectedSectorId===s.id && !selectedSubsectionId && !selectedLuogoId;
+        opts += `<option value="${escapeAttr(s.id)}" ${sectorSel?'selected':''}>${escapeHTML(m.name)} → ${escapeHTML(s.name)}</option>`;
         (s.luoghi||[]).forEach(lg=>{
           const val = `${s.id}:${lg.id}`;
-          opts += `<option value="${escapeAttr(val)}" ${(selectedSectorId===s.id && selectedLuogoId===lg.id)?'selected':''}>${escapeHTML(m.name)} → ${escapeHTML(s.name)} → ${escapeHTML(lg.name)}</option>`;
+          const sel = selectedSectorId===s.id && !selectedSubsectionId && selectedLuogoId===lg.id;
+          opts += `<option value="${escapeAttr(val)}" ${sel?'selected':''}>${escapeHTML(m.name)} → ${escapeHTML(s.name)} → ${escapeHTML(lg.name)}</option>`;
+        });
+        (s.subsections||[]).forEach(sub=>{
+          const subVal = `${s.id}:sub:${sub.id}`;
+          const subSel = selectedSectorId===s.id && selectedSubsectionId===sub.id && !selectedLuogoId;
+          opts += `<option value="${escapeAttr(subVal)}" ${subSel?'selected':''}>${escapeHTML(m.name)} → ${escapeHTML(s.name)} → ${escapeHTML(sub.name)}</option>`;
+          (sub.luoghi||[]).forEach(lg=>{
+            const val = `${s.id}:sub:${sub.id}:${lg.id}`;
+            const sel = selectedSectorId===s.id && selectedSubsectionId===sub.id && selectedLuogoId===lg.id;
+            opts += `<option value="${escapeAttr(val)}" ${sel?'selected':''}>${escapeHTML(m.name)} → ${escapeHTML(s.name)} → ${escapeHTML(sub.name)} → ${escapeHTML(lg.name)}</option>`;
+          });
         });
       });
     });
     return opts;
   }
 
+  // Legge il valore del <select> di posizione costruito da locationOptionsHTML e lo scompone in
+  // {sectorId, subsectionId, luogoId} — condivisa tra renderEncounterDraftCard/bindEncounterDraftCard
+  // e bindEncountersInnerActions (data-enc-location) invece di ripetere due volte lo stesso parsing.
+  function parseLocationOptionValue(val){
+    if(!val) return { sectorId:null, subsectionId:null, luogoId:null };
+    const parts = val.split(':');
+    if(parts[1]==='sub') return { sectorId: parts[0], subsectionId: parts[2]||null, luogoId: parts[3]||null };
+    return { sectorId: parts[0], subsectionId:null, luogoId: parts[1]||null };
+  }
+
   function getGridSize(macro){
     const n = macro && Number(macro.gridSize);
+    if(!n || isNaN(n) || n<1 || n>6) return 3;
+    return n;
+  }
+
+  // Sottosezioni: stessa identica logica di getGridSize ma per la griglia di Sottosezioni dentro
+  // un Settore (settore.subsectionGridSize, default 3 — stesso default della griglia di Settori).
+  function getSubsectionGridSize(sector){
+    const n = sector && Number(sector.subsectionGridSize);
     if(!n || isNaN(n) || n<1 || n>6) return 3;
     return n;
   }
@@ -205,6 +257,16 @@
     }
     if(sectors.length===0) sectorMapSelectedId = null;
     const selectedSector = sectors.find(s=>s.id===sectorMapSelectedId) || null;
+    // Sottosezioni: stessa griglia N×N dei Settori, ma dentro il Settore selezionato. Diversamente
+    // da sectorMapSelectedId (che sceglie sempre una Settore di default), qui NON forziamo una
+    // selezione: il pannello di dettaglio Sottosezione resta chiuso finché il Master non ne apre
+    // esplicitamente una dalla griglia, per non affollare la UI ogni volta che si cambia Settore.
+    const subsections = selectedSector ? (selectedSector.subsections||[]) : [];
+    if(!subsections.find(sub=>sub.id===subsectionMapSelectedId)) subsectionMapSelectedId = null;
+    const selectedSubsection = subsections.find(sub=>sub.id===subsectionMapSelectedId) || null;
+    const subGridSize = selectedSector ? getSubsectionGridSize(selectedSector) : 3;
+    const subGridTotal = subGridSize*subGridSize;
+    const usedSubPositions = subsections.map(s=>s.gridPos).filter(p=>p!=null);
     el.innerHTML = `
       <div class="section-title">🗺️ Mappa: Macroscene → Settori → Luoghi</div>
       <div class="muted" style="margin-bottom:8px;">Una Macroscena rappresenta una regione/location ampia (es. "Foresta di File"); si divide in Settori collegati tra loro (es. "Radura Nord"), che a loro volta contengono Luoghi specifici (es. "Vecchia Quercia"). Non sostituisce le zone Corto/Medio/Lungo del Combattimento. Assegna un'immagine e una posizione a ogni Settore per vederli nella griglia (dimensione impostabile in <b>map.html</b>, attualmente ${gridSize}×${gridSize}).</div>
@@ -223,10 +285,11 @@
       <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px;">
         ${(cachedRoster||[]).filter(m=>m.role==='player').map(m=>{
           const sId = memberEffectiveSectorId(m);
+          const subId = memberEffectiveSubsectionId(m);
           const lId = memberEffectiveLuogoId(m);
           const found2 = sId ? findSectorAnywhere(cachedScene, sId) : null;
-          const crumb = [found2?found2.macro.name:null, found2?found2.sector.name:null, lId?luogoNameById(sId,lId):null].filter(Boolean).map(escapeHTML).join(' → ');
-          const separated = !!(m.tamer && (m.tamer.currentSectorId || m.tamer.currentLuogoId));
+          const crumb = [found2?found2.macro.name:null, found2?found2.sector.name:null, subId?subsectionNameById(sId,subId):null, lId?luogoNameAnywhere(sId,subId,lId):null].filter(Boolean).map(escapeHTML).join(' → ');
+          const separated = !!(m.tamer && (m.tamer.currentSectorId || m.tamer.currentSubsectionId || m.tamer.currentLuogoId));
           const isOpen = moveOpenUsername === m.username;
           const label = isDigimonHiddenFromViewer(m) ? '❔' : (m.digimon && m.digimon.name ? m.digimon.name : '(senza nome)');
           return `
@@ -245,6 +308,7 @@
                 ${macroScenes.map(mm=>`<option value="${mm.id}">${escapeHTML(mm.name)}</option>`).join('')}
               </select>
               <select id="move-sector-${escapeAttr(m.username)}" disabled><option value="">— prima scegli la Macroscena —</option></select>
+              <select id="move-subsection-${escapeAttr(m.username)}" disabled><option value="">— nessuna, resta nel Settore —</option></select>
               <select id="move-luogo-${escapeAttr(m.username)}" disabled><option value="">— nessuno, segue solo il Settore —</option></select>
               <button class="btn small" data-move-confirm="${escapeAttr(m.username)}" disabled>🧭 Conferma spostamento</button>
             </div>
@@ -333,6 +397,83 @@
               <button class="btn small" data-luogo-add="${selectedSector.id}" style="flex:1;font-size:11px;">+ Luogo</button>
             </div>
           </div>
+          <div class="divider"></div>
+          <div class="muted" style="margin-bottom:6px;">🧩 Sottosezioni di "${escapeHTML(selectedSector.name)}" (${subsections.length}) <span title="Una Sottosezione divide il Settore in una griglia N×N (come i Settori dentro la Macroscena) — utile per stanze/aree interne di un Settore grande (es. un edificio). I Luoghi possono vivere sia direttamente nel Settore (sopra) sia dentro una Sottosezione (qui)." style="cursor:help;">ⓘ</span></div>
+          ${subsections.length===0 ? '<div class="muted" style="font-size:11px;margin-bottom:8px;">Nessuna sottosezione ancora creata in questo Settore.</div>' : `
+            <div class="field"><label>Seleziona Sottosezione da gestire</label>
+              <select id="subsection-select">
+                <option value="">— nessuna selezionata —</option>
+                ${subsections.map(sub=>`<option value="${sub.id}" ${subsectionMapSelectedId===sub.id?'selected':''}>${escapeHTML(sub.name)} — Casella ${sub.gridPos!=null?(Number(sub.gridPos)+1):'—'}${cachedScene.currentSubsectionId===sub.id?' · 📍 Attuale':''}</option>`).join('')}
+              </select>
+            </div>
+            ${selectedSubsection ? `
+            <div class="roster-item" style="padding:6px 8px;margin-bottom:6px;${cachedScene.currentSubsectionId===selectedSubsection.id?'border-color:var(--cyan);':''}">
+              <div class="flex-between">
+                <span style="display:flex;align-items:center;gap:6px;">
+                  ${selectedSubsection.image ? `<img src="${escapeAttr(selectedSubsection.image)}" onerror="this.style.display='none'" style="width:26px;height:26px;object-fit:cover;border-radius:4px;" />` : ''}
+                  <b>${escapeHTML(selectedSubsection.name)}</b> ${terrainBadge(selectedSubsection.terrain)} <span class="tag">#${selectedSubsection.gridPos!=null?(Number(selectedSubsection.gridPos)+1):'—'}</span> ${cachedScene.currentSubsectionId===selectedSubsection.id && !cachedScene.currentLuogoId ?'<span class="tag" style="color:var(--cyan);border-color:var(--cyan);">📍 Attuale</span>':''}
+                </span>
+              </div>
+              ${selectedSubsection.description ? `<div class="sub" style="margin-top:2px;">${escapeHTML(selectedSubsection.description)}</div>` : ''}
+              <div class="muted" style="margin-top:2px;font-size:11px;">Collegata a: ${(selectedSubsection.connections||[]).map(cid=>{ const c = subsections.find(x=>x.id===cid); return c?escapeHTML(c.name):''; }).filter(Boolean).join(', ') || 'nessuna'}</div>
+              <input type="text" data-subsec-music="${selectedSubsection.id}" value="${escapeAttr(selectedSubsection.music||'')}" placeholder="🎵 URL Musica Sottosezione (opzionale, sovrascrive quella del Settore)" style="width:100%;margin-top:4px;font-size:11px;" />
+              <input type="text" data-subsec-combat-music="${selectedSubsection.id}" value="${escapeAttr(selectedSubsection.combatMusic||'')}" placeholder="🗡️ URL Musica da Combattimento Sottosezione (opzionale)" style="width:100%;margin-top:4px;font-size:11px;" />
+              <div class="row" style="margin-top:4px;">
+                <button class="btn small" data-subsec-activate="${selectedSubsection.id}" style="flex:1;" title="Sposta qui l'intero gruppo, riunendo anche chi si era separato">📍 Sposta qui tutto il gruppo</button>
+                <button class="btn ghost small" data-subsec-image="${selectedSubsection.id}" style="flex:1;">🖼️ Immagine</button>
+                <select data-subsec-gridpos="${selectedSubsection.id}" style="flex:1;">
+                  ${(()=>{ const opts=[]; for(let p=0;p<subGridTotal;p++) opts.push(p); if(selectedSubsection.gridPos!=null && selectedSubsection.gridPos>=subGridTotal) opts.push(selectedSubsection.gridPos); return opts; })().map(p=>`<option value="${p}" ${selectedSubsection.gridPos===p?'selected':''}>Casella ${p+1}${p>=subGridTotal?' (fuori griglia)':''}${usedSubPositions.includes(p) && selectedSubsection.gridPos!==p?' (occupata)':''}</option>`).join('')}
+                </select>
+                <button class="btn ghost small" data-subsec-remove="${selectedSubsection.id}" style="flex:1;">🗑️</button>
+              </div>
+              <div class="checkbox-row">
+                <input type="checkbox" id="subsec-player-movable" ${selectedSubsection.playerMovable?'checked':''} />
+                <label for="subsec-player-movable">🚦 I giocatori possono raggiungere da soli questa Sottosezione (in <b>map.html</b>, con "spostamento libero" attivo e se collegata — di default chiuso)</label>
+              </div>
+              <button class="btn ghost small" data-subsec-chat-invite="${selectedSubsection.id}" style="width:100%;margin-top:6px;" title="Usa destinatario e modalità scelti più sopra nel pannello del Settore">💬 Proponi qui la Sottosezione</button>
+              <div class="muted" style="margin-top:6px;font-size:11px;">Luoghi in questa Sottosezione:</div>
+              ${(selectedSubsection.luoghi||[]).length===0 ? '<div class="muted" style="font-size:11px;">Nessun luogo ancora.</div>' : (selectedSubsection.luoghi||[]).map(lg=>`
+                <div class="flex-between" style="margin-top:3px;padding:3px 6px;background:rgba(255,255,255,0.03);border-radius:6px;">
+                  <span style="font-size:12px;display:flex;align-items:center;gap:5px;">${lg.image?`<img src="${escapeAttr(lg.image)}" onerror="this.style.display='none'" style="width:18px;height:18px;object-fit:cover;border-radius:3px;" />`:''}${escapeHTML(lg.name)} ${(cachedScene.currentSubsectionId===selectedSubsection.id && cachedScene.currentLuogoId===lg.id)?'<span class="tag" style="color:var(--cyan);border-color:var(--cyan);font-size:9px;">📍</span>':''}${lg.description?`<span class="muted" style="font-size:10px;"> — ${escapeHTML(lg.description)}</span>`:''}</span>
+                  <span>
+                    <button class="btn small" data-subsec-luogo-activate="${selectedSector.id}:${selectedSubsection.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">📍</button>
+                    <button class="btn ghost small" data-subsec-luogo-chat-invite="${selectedSector.id}:${selectedSubsection.id}:${lg.id}" style="padding:2px 6px;font-size:10px;" title="Manda l'invito 'Vuoi andare qui?' al destinatario e con la modalità scelti sopra">💬</button>
+                    <button class="btn ghost small" data-subsec-luogo-image="${selectedSector.id}:${selectedSubsection.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">🖼️</button>
+                    <button class="btn ghost small" data-subsec-luogo-remove="${selectedSector.id}:${selectedSubsection.id}:${lg.id}" style="padding:2px 6px;font-size:10px;">🗑️</button>
+                  </span>
+                </div>
+              `).join('')}
+              <div class="row" style="margin-top:6px;">
+                <input type="text" class="subsec-luogo-name-input" data-for-subsection="${selectedSector.id}:${selectedSubsection.id}" placeholder="Nuovo Luogo (es. Sala del Trono)" style="flex:2;font-size:11px;" />
+                <button class="btn small" data-subsec-luogo-add="${selectedSector.id}:${selectedSubsection.id}" style="flex:1;font-size:11px;">+ Luogo</button>
+              </div>
+            </div>
+            ` : ''}
+          `}
+          <div class="muted" style="margin-bottom:4px;">Nuova Sottosezione in "${escapeHTML(selectedSector.name)}"</div>
+          <div class="row">
+            <input type="text" id="subsec-name" placeholder="es. Ala Est" style="flex:2;" />
+            <select id="subsec-terrain" style="flex:1;">
+              <option value="Basic">Terreno Normale</option>
+              <option value="Difficult">Terreno Difficile</option>
+              <option value="Dangerous">Terreno Pericoloso</option>
+            </select>
+          </div>
+          <input type="text" id="subsec-desc" placeholder="Breve descrizione (opzionale)" style="width:100%;margin-top:6px;" />
+          <input type="text" id="subsec-image" placeholder="URL Immagine (opzionale)" style="width:100%;margin-top:6px;" />
+          <input type="text" id="subsec-music" placeholder="🎵 URL Musica Sottosezione (opzionale)" style="width:100%;margin-top:6px;" />
+          <div class="field" style="margin-top:6px;"><label>Posizione in griglia (1-${subGridTotal})</label>
+            <select id="subsec-gridpos">
+              ${Array.from({length:subGridTotal},(_,p)=>p).map(p=>`<option value="${p}" ${usedSubPositions.includes(p)?'disabled':''}>Casella ${p+1}${usedSubPositions.includes(p)?' (occupata)':''}</option>`).join('')}
+            </select>
+          </div>
+          ${subsections.length>0 ? `
+            <div class="muted" style="margin:6px 0 2px;">Collega a:</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">
+              ${subsections.map(sub=>`<label style="display:flex;align-items:center;gap:4px;font-size:11px;"><input type="checkbox" class="subsec-connect-chk" value="${sub.id}" /> ${escapeHTML(sub.name)}</label>`).join('')}
+            </div>
+          ` : ''}
+          <button class="btn small" id="btn-add-subsection" style="width:100%;margin-top:4px;">+ Aggiungi Sottosezione</button>
           ` : ''}
         `}
         <div class="divider"></div>
@@ -367,8 +508,10 @@
     if(macroSel) macroSel.onchange = async ()=>{
       cachedScene.currentMacroSceneId = macroSel.value || null;
       cachedScene.currentSectorId = null;
+      cachedScene.currentSubsectionId = null;
       cachedScene.currentLuogoId = null;
       sectorMapSelectedId = null;
+      subsectionMapSelectedId = null;
       await saveScene(code, cachedScene);
       renderSectorMap(code, onChanged);
       if(onChanged) onChanged();
@@ -400,11 +543,13 @@
         if(!member) return;
         btn.disabled = true;
         const prevSectorId = member.tamer.currentSectorId;
+        const prevSubsectionId = member.tamer.currentSubsectionId;
         const prevLuogoId = member.tamer.currentLuogoId;
         member.tamer.currentSectorId = null;
+        member.tamer.currentSubsectionId = null;
         member.tamer.currentLuogoId = null;
         const ok = await saveMember(code, member);
-        if(!ok){ member.tamer.currentSectorId = prevSectorId; member.tamer.currentLuogoId = prevLuogoId; btn.disabled = false; return; }
+        if(!ok){ member.tamer.currentSectorId = prevSectorId; member.tamer.currentSubsectionId = prevSubsectionId; member.tamer.currentLuogoId = prevLuogoId; btn.disabled = false; return; }
         await pushLog(code, { who:'Sistema', role:'gm', text: `↩️ ${displayName(member)} rientra nel gruppo.` });
         renderSectorMap(code, onChanged);
         if(onChanged) onChanged();
@@ -413,41 +558,59 @@
     if(moveOpenUsername){
       const mvMacroSel = document.getElementById('move-macro-'+moveOpenUsername);
       const mvSectorSel = document.getElementById('move-sector-'+moveOpenUsername);
+      const mvSubsectionSel = document.getElementById('move-subsection-'+moveOpenUsername);
       const mvLuogoSel = document.getElementById('move-luogo-'+moveOpenUsername);
       const mvConfirmBtn = el.querySelector('[data-move-confirm="'+moveOpenUsername+'"]');
+      // Sottosezioni: cascata estesa a 4 livelli (Macroscena → Settore → Sottosezione (opzionale)
+      // → Luogo). I Luoghi mostrati sono quelli della Sottosezione scelta se ce n'è una, altrimenti
+      // quelli diretti del Settore — stesso criterio di sceneHTML/luogoNameAnywhere.
       function mvRefreshLuogo(){
         const m = macroScenes.find(x=>x.id===mvMacroSel.value);
         const s = m ? (m.sectors||[]).find(x=>x.id===mvSectorSel.value) : null;
-        const luoghi = s ? (s.luoghi||[]) : [];
-        mvLuogoSel.innerHTML = '<option value="">— nessuno, segue solo il Settore —</option>' + luoghi.map(lg=>`<option value="${lg.id}">${escapeHTML(lg.name)}</option>`).join('');
+        const sub = s ? (s.subsections||[]).find(x=>x.id===mvSubsectionSel.value) : null;
+        const luoghi = sub ? (sub.luoghi||[]) : (s ? (s.luoghi||[]) : []);
+        mvLuogoSel.innerHTML = `<option value="">— nessuno, segue solo ${sub?'la Sottosezione':'il Settore'} —</option>` + luoghi.map(lg=>`<option value="${lg.id}">${escapeHTML(lg.name)}</option>`).join('');
         mvLuogoSel.disabled = !s;
         if(mvConfirmBtn) mvConfirmBtn.disabled = !s;
+      }
+      function mvRefreshSubsection(){
+        const m = macroScenes.find(x=>x.id===mvMacroSel.value);
+        const s = m ? (m.sectors||[]).find(x=>x.id===mvSectorSel.value) : null;
+        const subs = s ? (s.subsections||[]) : [];
+        mvSubsectionSel.innerHTML = '<option value="">— nessuna, resta nel Settore —</option>' + subs.map(sub=>`<option value="${sub.id}">${escapeHTML(sub.name)}</option>`).join('');
+        mvSubsectionSel.disabled = !s;
+        mvRefreshLuogo();
       }
       function mvRefreshSector(){
         const m = macroScenes.find(x=>x.id===mvMacroSel.value);
         const secs = m ? (m.sectors||[]) : [];
         mvSectorSel.innerHTML = '<option value="">— scegli Settore —</option>' + secs.map(s=>`<option value="${s.id}">${escapeHTML(s.name)}</option>`).join('');
         mvSectorSel.disabled = !m;
-        mvRefreshLuogo();
+        mvRefreshSubsection();
       }
       if(mvMacroSel){
         mvMacroSel.onchange = mvRefreshSector;
-        mvSectorSel.onchange = mvRefreshLuogo;
+        mvSectorSel.onchange = mvRefreshSubsection;
+        mvSubsectionSel.onchange = mvRefreshLuogo;
         mvRefreshSector();
         if(mvConfirmBtn) mvConfirmBtn.onclick = async ()=>{
           const username = moveOpenUsername;
           const sectorId = mvSectorSel.value;
+          const subsectionId = mvSubsectionSel.value || null;
           const luogoId = mvLuogoSel.value || null;
           const member = (cachedRoster||[]).find(m=>m.username===username);
           if(!member || !sectorId) return;
           mvConfirmBtn.disabled = true;
           const prevSectorId = member.tamer.currentSectorId;
+          const prevSubsectionId = member.tamer.currentSubsectionId;
           const prevLuogoId = member.tamer.currentLuogoId;
           member.tamer.currentSectorId = sectorId;
+          member.tamer.currentSubsectionId = subsectionId;
           member.tamer.currentLuogoId = luogoId;
           const ok = await saveMember(code, member);
           if(!ok){
             member.tamer.currentSectorId = prevSectorId;
+            member.tamer.currentSubsectionId = prevSubsectionId;
             member.tamer.currentLuogoId = prevLuogoId;
             mvConfirmBtn.disabled = false;
             return;
@@ -464,6 +627,7 @@
     const sectorSel = document.getElementById('sector-select');
     if(sectorSel) sectorSel.onchange = ()=>{
       sectorMapSelectedId = sectorSel.value;
+      subsectionMapSelectedId = null; // la Sottosezione aperta apparteneva al Settore precedente
       renderSectorMap(code, onChanged);
     };
     const addMacroBtn = document.getElementById('btn-add-macro');
@@ -476,6 +640,7 @@
       cachedScene.macroScenes.push({ id, name, description:'', sectors:[], allowPlayerMovement:false });
       cachedScene.currentMacroSceneId = id;
       cachedScene.currentSectorId = null;
+      cachedScene.currentSubsectionId = null;
       cachedScene.currentLuogoId = null;
       await saveScene(code, cachedScene);
       renderSectorMap(code, onChanged);
@@ -514,7 +679,7 @@
       if(!liveMacro) return;
       const id = liveMacro.id;
       cachedScene.macroScenes = (cachedScene.macroScenes||[]).filter(m=>m.id!==id);
-      if(cachedScene.currentMacroSceneId===id){ cachedScene.currentMacroSceneId=null; cachedScene.currentSectorId=null; cachedScene.currentLuogoId=null; }
+      if(cachedScene.currentMacroSceneId===id){ cachedScene.currentMacroSceneId=null; cachedScene.currentSectorId=null; cachedScene.currentSubsectionId=null; cachedScene.currentLuogoId=null; }
       await saveScene(code, cachedScene);
       renderSectorMap(code, onChanged);
       if(onChanged) onChanged();
@@ -524,6 +689,7 @@
         const liveMacro = liveActiveMacro();
         if(!liveMacro) return;
         cachedScene.currentSectorId = btn.getAttribute('data-sector-activate');
+        cachedScene.currentSubsectionId = null;
         cachedScene.currentLuogoId = null;
         const s = (liveMacro.sectors||[]).find(x=>x.id===cachedScene.currentSectorId);
         if(s) s.revealed = true; // standing there means the party has now seen it on the map
@@ -532,9 +698,9 @@
         if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); return; }
         if(statusEl) statusEl.textContent = '';
         // Muovere l'intero gruppo riunisce anche chi si era separato: azzeriamo l'override di Settore
-        // di ogni membro così tornano a seguire il Settore attuale della Scena.
-        const separatedMembers = (cachedRoster||[]).filter(m=>m.role==='player' && m.tamer && (m.tamer.currentSectorId || m.tamer.currentLuogoId));
-        for(const m of separatedMembers){ m.tamer.currentSectorId = null; m.tamer.currentLuogoId = null; await saveMember(code, m); }
+        // (e Sottosezione/Luogo) di ogni membro così tornano a seguire la posizione attuale della Scena.
+        const separatedMembers = (cachedRoster||[]).filter(m=>m.role==='player' && m.tamer && (m.tamer.currentSectorId || m.tamer.currentSubsectionId || m.tamer.currentLuogoId));
+        for(const m of separatedMembers){ m.tamer.currentSectorId = null; m.tamer.currentSubsectionId = null; m.tamer.currentLuogoId = null; await saveMember(code, m); }
         await pushLog(code, { who:'Sistema', role:'gm', text: `📍 Il gruppo si sposta a "${s?s.name:''}".` });
         renderSectorMap(code, onChanged);
         if(onChanged) onChanged();
@@ -545,11 +711,11 @@
         const liveMacro = liveActiveMacro();
         if(!liveMacro) return;
         const id = btn.getAttribute('data-sector-remove');
-        if(!window.confirm('Eliminare questo Settore e tutti i suoi Luoghi?')) return;
+        if(!window.confirm('Eliminare questo Settore, le sue Sottosezioni e tutti i suoi Luoghi?')) return;
         liveMacro.sectors = (liveMacro.sectors||[]).filter(s=>s.id!==id);
         liveMacro.sectors.forEach(s=>{ s.connections = (s.connections||[]).filter(cid=>cid!==id); });
-        if(cachedScene.currentSectorId===id){ cachedScene.currentSectorId = null; cachedScene.currentLuogoId = null; }
-        if(sectorMapSelectedId===id) sectorMapSelectedId = null;
+        if(cachedScene.currentSectorId===id){ cachedScene.currentSectorId = null; cachedScene.currentSubsectionId = null; cachedScene.currentLuogoId = null; }
+        if(sectorMapSelectedId===id){ sectorMapSelectedId = null; subsectionMapSelectedId = null; }
         await saveScene(code, cachedScene);
         renderSectorMap(code, onChanged);
         if(onChanged) onChanged();
@@ -626,13 +792,16 @@
     // "Modalità spostamento" scelta accanto al destinatario decide se ogni click sposta solo chi
     // clicca, o se serve un primo sì/una maggioranza per spostare tutto il sottogruppo insieme —
     // vedi js/chat-log-engine.js (logHTML/attachLogModeration) per la logica di voto vera e propria.
-    async function sendMoveInvite(label, sectorId, luogoId){
+    // subsectionId (nuovo, Sottosezioni): sempre presente nel payload (anche vuoto), SEMPRE con
+    // mode esplicito — vedi parseMoveReqPayload in js/chat-log-engine.js per il perché (distingue
+    // senza ambiguità il payload nuovo a 4 campi da quello storico a 2-3 campi).
+    async function sendMoveInvite(label, sectorId, subsectionId, luogoId){
       const targetEl = document.getElementById('invite-target-select');
       const target = targetEl ? targetEl.value : '';
       const isSubgroup = target.startsWith('subgroup:');
       const modeEl = document.getElementById('invite-mode-select');
       const mode = (isSubgroup && modeEl) ? modeEl.value : 'each';
-      const text = `Vuoi andare a "${label}"?::MOVEREQ::${sectorId}|${luogoId||''}|${mode}`;
+      const text = `Vuoi andare a "${label}"?::MOVEREQ::${sectorId}|${subsectionId||''}|${luogoId||''}|${mode}`;
       if(target) await pushPrivateLog(code, target, { who:'Master', role:'moverequest', text });
       else await pushLog(code, { who:'Master', role:'moverequest', text });
     }
@@ -648,7 +817,7 @@
         const statusEl = document.getElementById('sector-status');
         if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); return; }
         if(statusEl) statusEl.textContent = '';
-        await sendMoveInvite(s.name, sectorId, '');
+        await sendMoveInvite(s.name, sectorId, '', '');
         renderSectorMap(code, onChanged);
         if(onChanged) onChanged();
       };
@@ -667,7 +836,7 @@
         const statusEl = document.getElementById('sector-status');
         if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); return; }
         if(statusEl) statusEl.textContent = '';
-        await sendMoveInvite(lg.name, sectorId, luogoId);
+        await sendMoveInvite(lg.name, sectorId, '', luogoId);
         renderSectorMap(code, onChanged);
         if(onChanged) onChanged();
       };
@@ -678,6 +847,7 @@
         if(!liveMacro) return;
         const [sectorId, luogoId] = btn.getAttribute('data-luogo-activate').split(':');
         cachedScene.currentSectorId = sectorId;
+        cachedScene.currentSubsectionId = null; // questo Luogo è diretto del Settore, non dentro una Sottosezione
         cachedScene.currentLuogoId = luogoId;
         const s = (liveMacro.sectors||[]).find(x=>x.id===sectorId);
         const lg = s ? (s.luoghi||[]).find(x=>x.id===luogoId) : null;
@@ -761,6 +931,268 @@
           if(other){ if(!other.connections) other.connections=[]; if(!other.connections.includes(id)) other.connections.push(id); }
         });
         sectorMapSelectedId = id;
+        await saveScene(code, cachedScene);
+        renderSectorMap(code, onChanged);
+        if(onChanged) onChanged();
+      };
+    }
+    // ---------- Sottosezioni (dentro il Settore selezionato) ----------
+    // Stesso identico set di handler dei Settori qui sopra, un livello più in profondità: ogni
+    // handler parte sempre dal Settore selezionato (sectorMapSelectedId), mai da uno "attivo"
+    // implicito, perché una Sottosezione appartiene sempre a un Settore preciso.
+    const subsectionSel = document.getElementById('subsection-select');
+    if(subsectionSel) subsectionSel.onchange = ()=>{
+      subsectionMapSelectedId = subsectionSel.value || null;
+      renderSectorMap(code, onChanged);
+    };
+    el.querySelectorAll('[data-subsec-activate]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorMapSelectedId);
+        if(!s) return;
+        const subId = btn.getAttribute('data-subsec-activate');
+        const sub = (s.subsections||[]).find(x=>x.id===subId);
+        if(!sub) return;
+        cachedScene.currentSectorId = s.id;
+        cachedScene.currentSubsectionId = subId;
+        cachedScene.currentLuogoId = null;
+        s.revealed = true;
+        sub.revealed = true;
+        const ok = await saveScene(code, cachedScene);
+        const statusEl = document.getElementById('sector-status');
+        if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); return; }
+        if(statusEl) statusEl.textContent = '';
+        const separatedMembers = (cachedRoster||[]).filter(m=>m.role==='player' && m.tamer && (m.tamer.currentSectorId || m.tamer.currentSubsectionId || m.tamer.currentLuogoId));
+        for(const m of separatedMembers){ m.tamer.currentSectorId = null; m.tamer.currentSubsectionId = null; m.tamer.currentLuogoId = null; await saveMember(code, m); }
+        await pushLog(code, { who:'Sistema', role:'gm', text: `📍 Il gruppo si sposta a "${sub.name}" (${s.name}).` });
+        renderSectorMap(code, onChanged);
+        if(onChanged) onChanged();
+      };
+    });
+    el.querySelectorAll('[data-subsec-remove]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorMapSelectedId);
+        if(!s) return;
+        const id = btn.getAttribute('data-subsec-remove');
+        if(!window.confirm('Eliminare questa Sottosezione e tutti i suoi Luoghi?')) return;
+        s.subsections = (s.subsections||[]).filter(sub=>sub.id!==id);
+        s.subsections.forEach(sub=>{ sub.connections = (sub.connections||[]).filter(cid=>cid!==id); });
+        if(cachedScene.currentSubsectionId===id){ cachedScene.currentSubsectionId = null; cachedScene.currentLuogoId = null; }
+        if(subsectionMapSelectedId===id) subsectionMapSelectedId = null;
+        await saveScene(code, cachedScene);
+        renderSectorMap(code, onChanged);
+        if(onChanged) onChanged();
+      };
+    });
+    el.querySelectorAll('[data-subsec-image]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorMapSelectedId);
+        if(!s) return;
+        const id = btn.getAttribute('data-subsec-image');
+        const sub = (s.subsections||[]).find(x=>x.id===id);
+        if(!sub) return;
+        const url = window.prompt('URL immagine per "'+sub.name+'":', sub.image||'');
+        if(url===null) return;
+        sub.image = url.trim();
+        await saveScene(code, cachedScene);
+        renderSectorMap(code, onChanged);
+        if(onChanged) onChanged();
+      };
+    });
+    el.querySelectorAll('[data-subsec-gridpos]').forEach(sel=>{
+      sel.onchange = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorMapSelectedId);
+        if(!s) return;
+        const id = sel.getAttribute('data-subsec-gridpos');
+        const sub = (s.subsections||[]).find(x=>x.id===id);
+        if(!sub) return;
+        sub.gridPos = Number(sel.value);
+        await saveScene(code, cachedScene);
+        renderSectorMap(code, onChanged);
+        if(onChanged) onChanged();
+      };
+    });
+    el.querySelectorAll('[data-subsec-music]').forEach(inp=>{
+      inp.onchange = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorMapSelectedId);
+        if(!s) return;
+        const id = inp.getAttribute('data-subsec-music');
+        const sub = (s.subsections||[]).find(x=>x.id===id);
+        if(!sub) return;
+        sub.music = inp.value.trim();
+        await saveScene(code, cachedScene);
+        renderSectorMap(code, onChanged);
+        if(onChanged) onChanged();
+      };
+    });
+    el.querySelectorAll('[data-subsec-combat-music]').forEach(inp=>{
+      inp.onchange = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorMapSelectedId);
+        if(!s) return;
+        const id = inp.getAttribute('data-subsec-combat-music');
+        const sub = (s.subsections||[]).find(x=>x.id===id);
+        if(!sub) return;
+        sub.combatMusic = inp.value.trim();
+        await saveScene(code, cachedScene);
+        renderSectorMap(code, onChanged);
+        if(onChanged) onChanged();
+      };
+    });
+    const subsecPlayerMovableEl = document.getElementById('subsec-player-movable');
+    if(subsecPlayerMovableEl) subsecPlayerMovableEl.onchange = async ()=>{
+      if(!selectedSubsection) return;
+      selectedSubsection.playerMovable = !!subsecPlayerMovableEl.checked;
+      await saveScene(code, cachedScene);
+      renderSectorMap(code, onChanged);
+      if(onChanged) onChanged();
+    };
+    el.querySelectorAll('[data-subsec-chat-invite]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorMapSelectedId);
+        if(!s) return;
+        const subId = btn.getAttribute('data-subsec-chat-invite');
+        const sub = (s.subsections||[]).find(x=>x.id===subId);
+        if(!sub) return;
+        s.revealed = true;
+        sub.revealed = true;
+        const ok = await saveScene(code, cachedScene);
+        const statusEl = document.getElementById('sector-status');
+        if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); return; }
+        if(statusEl) statusEl.textContent = '';
+        await sendMoveInvite(sub.name, s.id, subId, '');
+        renderSectorMap(code, onChanged);
+        if(onChanged) onChanged();
+      };
+    });
+    el.querySelectorAll('[data-subsec-luogo-activate]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
+        const [sectorId, subsectionId, luogoId] = btn.getAttribute('data-subsec-luogo-activate').split(':');
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorId);
+        const sub = s ? (s.subsections||[]).find(x=>x.id===subsectionId) : null;
+        const lg = sub ? (sub.luoghi||[]).find(x=>x.id===luogoId) : null;
+        if(!s || !sub || !lg) return;
+        cachedScene.currentSectorId = sectorId;
+        cachedScene.currentSubsectionId = subsectionId;
+        cachedScene.currentLuogoId = luogoId;
+        s.revealed = true; sub.revealed = true; lg.revealed = true;
+        const ok = await saveScene(code, cachedScene);
+        const statusEl = document.getElementById('sector-status');
+        if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); return; }
+        if(statusEl) statusEl.textContent = '';
+        await pushLog(code, { who:'Sistema', role:'gm', text: `📍 Il gruppo arriva a "${lg.name}" (${sub.name} — ${s.name}).` });
+        renderSectorMap(code, onChanged);
+        if(onChanged) onChanged();
+      };
+    });
+    el.querySelectorAll('[data-subsec-luogo-chat-invite]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
+        const [sectorId, subsectionId, luogoId] = btn.getAttribute('data-subsec-luogo-chat-invite').split(':');
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorId);
+        const sub = s ? (s.subsections||[]).find(x=>x.id===subsectionId) : null;
+        const lg = sub ? (sub.luoghi||[]).find(x=>x.id===luogoId) : null;
+        if(!s || !sub || !lg) return;
+        s.revealed = true; sub.revealed = true; lg.revealed = true;
+        const ok = await saveScene(code, cachedScene);
+        const statusEl = document.getElementById('sector-status');
+        if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore: ' + (lastApiError || 'salvataggio non riuscito'); return; }
+        if(statusEl) statusEl.textContent = '';
+        await sendMoveInvite(lg.name, sectorId, subsectionId, luogoId);
+        renderSectorMap(code, onChanged);
+        if(onChanged) onChanged();
+      };
+    });
+    el.querySelectorAll('[data-subsec-luogo-image]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
+        const [sectorId, subsectionId, luogoId] = btn.getAttribute('data-subsec-luogo-image').split(':');
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorId);
+        const sub = s ? (s.subsections||[]).find(x=>x.id===subsectionId) : null;
+        const lg = sub ? (sub.luoghi||[]).find(l=>l.id===luogoId) : null;
+        if(!lg) return;
+        const url = window.prompt('URL immagine per "'+lg.name+'":', lg.image||'');
+        if(url===null) return;
+        lg.image = url.trim();
+        await saveScene(code, cachedScene);
+        renderSectorMap(code, onChanged);
+        if(onChanged) onChanged();
+      };
+    });
+    el.querySelectorAll('[data-subsec-luogo-remove]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
+        const [sectorId, subsectionId, luogoId] = btn.getAttribute('data-subsec-luogo-remove').split(':');
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorId);
+        const sub = s ? (s.subsections||[]).find(x=>x.id===subsectionId) : null;
+        if(sub) sub.luoghi = (sub.luoghi||[]).filter(l=>l.id!==luogoId);
+        if(cachedScene.currentSubsectionId===subsectionId && cachedScene.currentLuogoId===luogoId) cachedScene.currentLuogoId = null;
+        await saveScene(code, cachedScene);
+        renderSectorMap(code, onChanged);
+        if(onChanged) onChanged();
+      };
+    });
+    el.querySelectorAll('[data-subsec-luogo-add]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
+        const key = btn.getAttribute('data-subsec-luogo-add');
+        const [sectorId, subsectionId] = key.split(':');
+        const input = el.querySelector(`.subsec-luogo-name-input[data-for-subsection="${key}"]`);
+        const name = input ? input.value.trim() : '';
+        if(!name) return;
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorId);
+        const sub = s ? (s.subsections||[]).find(x=>x.id===subsectionId) : null;
+        if(!sub) return;
+        if(!sub.luoghi) sub.luoghi = [];
+        sub.luoghi.push({ id:'l'+Date.now()+Math.random().toString(36).slice(2,6), name, description:'', revealed:false });
+        await saveScene(code, cachedScene);
+        renderSectorMap(code, onChanged);
+        if(onChanged) onChanged();
+      };
+    });
+    const addSubsecBtn = document.getElementById('btn-add-subsection');
+    if(addSubsecBtn){
+      addSubsecBtn.onclick = async ()=>{
+        const liveMacro = liveActiveMacro();
+        if(!liveMacro) return;
+        const s = (liveMacro.sectors||[]).find(x=>x.id===sectorMapSelectedId);
+        if(!s) return;
+        const name = document.getElementById('subsec-name').value.trim();
+        const statusEl = document.getElementById('sector-status');
+        if(!name){ statusEl.textContent = 'Inserisci un nome per la sottosezione.'; return; }
+        const terrain = document.getElementById('subsec-terrain').value;
+        const description = document.getElementById('subsec-desc').value.trim();
+        const image = document.getElementById('subsec-image').value.trim();
+        const music = document.getElementById('subsec-music').value.trim();
+        const gridPosSel = document.getElementById('subsec-gridpos').value;
+        const gridPos = gridPosSel!=='' ? Number(gridPosSel) : null;
+        const connections = Array.from(el.querySelectorAll('.subsec-connect-chk:checked')).map(c=>c.value);
+        const id = 'sub'+Date.now()+Math.random().toString(36).slice(2,6);
+        if(!s.subsections) s.subsections = [];
+        s.subsections.push({ id, name, description, terrain, connections, luoghi: [], image, music, combatMusic:'', gridPos, revealed:false, playerMovable:false });
+        connections.forEach(cid=>{
+          const other = s.subsections.find(sub=>sub.id===cid);
+          if(other){ if(!other.connections) other.connections=[]; if(!other.connections.includes(id)) other.connections.push(id); }
+        });
+        subsectionMapSelectedId = id;
         await saveScene(code, cachedScene);
         renderSectorMap(code, onChanged);
         if(onChanged) onChanged();
@@ -934,8 +1366,10 @@
     const macroScenes = (scene && Array.isArray(scene.macroScenes)) ? scene.macroScenes : [];
     const groupMacro = scene && scene.currentMacroSceneId ? macroScenes.find(m=>m.id===scene.currentMacroSceneId) : null;
     const effSectorId = viewerMember ? memberEffectiveSectorId(viewerMember) : (scene && scene.currentSectorId);
+    // Sottosezioni: stesso pattern di effSectorId/effLuogoId qui sotto, un livello in mezzo.
+    const effSubsectionId = viewerMember ? memberEffectiveSubsectionId(viewerMember) : (scene && scene.currentSubsectionId);
     const effLuogoId = viewerMember ? memberEffectiveLuogoId(viewerMember) : (scene && scene.currentLuogoId);
-    const isSeparated = !!(viewerMember && (effSectorId !== (scene && scene.currentSectorId) || effLuogoId !== (scene && scene.currentLuogoId)));
+    const isSeparated = !!(viewerMember && (effSectorId !== (scene && scene.currentSectorId) || effSubsectionId !== (scene && scene.currentSubsectionId) || effLuogoId !== (scene && scene.currentLuogoId)));
     // Il Settore effettivo di un giocatore separato può appartenere a una Macroscena diversa da
     // quella attiva per il resto del gruppo (vedi il pannello "🧭 Separa in un'altra Macroscena"):
     // lo cerchiamo ovunque invece di limitarci ai Settori della sola Macroscena di gruppo, altrimenti
@@ -944,21 +1378,29 @@
     const current = found ? found.sector : null;
     const activeMacro = found ? found.macro : groupMacro;
     const sectors = activeMacro ? (activeMacro.sectors||[]) : [];
-    const currentLuogo = current && effLuogoId ? (current.luoghi||[]).find(l=>l.id===effLuogoId) : null;
+    const currentSubsection = current && effSubsectionId ? (current.subsections||[]).find(x=>x.id===effSubsectionId) : null;
+    const subsections = current ? (current.subsections||[]) : [];
+    // Un Luogo effettivo vive dentro la Sottosezione attuale (se c'è) o direttamente nel Settore —
+    // stesso criterio di luogoNameAnywhere in js/chat-log-engine.js.
+    const currentLuogo = effLuogoId
+      ? (currentSubsection ? (currentSubsection.luoghi||[]).find(l=>l.id===effLuogoId) : (current ? (current.luoghi||[]).find(l=>l.id===effLuogoId) : null))
+      : null;
     const sectorBadge = current ? `<span class="tag">${current.terrain==='Dangerous'?'☠':(current.terrain==='Difficult'?'⚠':'')} ${escapeHTML(current.terrain)}</span>` : '';
     const separatedBadge = isSeparated ? `<span class="tag" style="color:var(--amber);border-color:var(--amber);">🧭 Ti sei separato dal gruppo</span>` : '';
-    const breadcrumb = [activeMacro?activeMacro.name:null, current?current.name:null, currentLuogo?currentLuogo.name:null].filter(Boolean).map(escapeHTML).join(' → ');
+    const breadcrumb = [activeMacro?activeMacro.name:null, current?current.name:null, currentSubsection?currentSubsection.name:null, currentLuogo?currentLuogo.name:null].filter(Boolean).map(escapeHTML).join(' → ');
     const sectorHTML = current ? `
       <div class="hud-frame card" style="margin-top:8px;padding:8px 10px;">
         <div class="flex-between" style="flex-wrap:wrap;gap:6px;"><span class="mono" style="color:var(--cyan);">📍 ${breadcrumb}</span><span style="display:flex;flex-wrap:wrap;gap:4px;">${sectorBadge}${separatedBadge}</span></div>
-        ${currentLuogo && currentLuogo.description ? `<div class="sub" style="margin-top:4px;">${escapeHTML(currentLuogo.description)}</div>` : (current.description ? `<div class="sub" style="margin-top:4px;">${escapeHTML(current.description)}</div>` : '')}
-        ${!currentLuogo && (current.luoghi||[]).length>0 ? `<div class="muted" style="margin-top:4px;font-size:11px;">Luoghi qui: ${(current.luoghi||[]).map(l=>escapeHTML(l.name)).join(', ')}</div>` : ''}
+        ${currentLuogo && currentLuogo.description ? `<div class="sub" style="margin-top:4px;">${escapeHTML(currentLuogo.description)}</div>` : (currentSubsection && currentSubsection.description ? `<div class="sub" style="margin-top:4px;">${escapeHTML(currentSubsection.description)}</div>` : (current.description ? `<div class="sub" style="margin-top:4px;">${escapeHTML(current.description)}</div>` : ''))}
+        ${!currentLuogo && !currentSubsection && (current.luoghi||[]).length>0 ? `<div class="muted" style="margin-top:4px;font-size:11px;">Luoghi qui: ${(current.luoghi||[]).map(l=>escapeHTML(l.name)).join(', ')}</div>` : ''}
+        ${!currentLuogo && currentSubsection && (currentSubsection.luoghi||[]).length>0 ? `<div class="muted" style="margin-top:4px;font-size:11px;">Luoghi qui: ${(currentSubsection.luoghi||[]).map(l=>escapeHTML(l.name)).join(', ')}</div>` : ''}
+        ${currentSubsection ? `<div class="muted" style="margin-top:4px;font-size:11px;">Sottosezione: puoi raggiungere ${(currentSubsection.connections||[]).map(cid=>{ const c=subsections.find(x=>x.id===cid); return c?escapeHTML(c.name):''; }).filter(Boolean).join(', ') || 'nessuna altra sottosezione collegata'}</div>` : ''}
         <div class="muted" style="margin-top:4px;font-size:11px;">Puoi raggiungere: ${(current.connections||[]).map(cid=>{ const c=sectors.find(x=>x.id===cid); return c?escapeHTML(c.name):''; }).filter(Boolean).join(', ') || 'nessun altro settore collegato'}</div>
       </div>
     ` : '';
-    const bgImage = (currentLuogo && currentLuogo.image) || (current && current.image) || (scene && scene.background) || '';
+    const bgImage = (currentLuogo && currentLuogo.image) || (currentSubsection && currentSubsection.image) || (current && current.image) || (scene && scene.background) || '';
     if(!scene || (!bgImage && !scene.title)){
-      return `<div class="scene-box"><div class="scene-empty">Nessuna scena impostata dal Master</div></div>` + sectorHTML + encountersReadonlyHTML(scene, effSectorId, effLuogoId);
+      return `<div class="scene-box"><div class="scene-empty">Nessuna scena impostata dal Master</div></div>` + sectorHTML + encountersReadonlyHTML(scene, effSectorId, effSubsectionId, effLuogoId);
     }
     return `
       <div class="scene-box" ${bgImage?`data-scene-img-expand="${escapeAttr(bgImage)}"`:''}>
@@ -967,7 +1409,7 @@
         ${bgImage ? `<div class="scene-expand-hint">🔍</div>` : ''}
         ${scene.title ? `<div class="title">${escapeHTML(scene.title)}</div>` : ''}
       </div>
-    ` + sectorHTML + encountersReadonlyHTML(scene, effSectorId, effLuogoId);
+    ` + sectorHTML + encountersReadonlyHTML(scene, effSectorId, effSubsectionId, effLuogoId);
   }
 
   function getEncImgLarge(){ try{ return localStorage.getItem('digivice_enc_img_large')==='1'; }catch(e){ return false; } }
@@ -986,9 +1428,9 @@
   // così ogni giocatore vede in Scena solo i Digimon del punto in cui si trova davvero. Un
   // Incontro senza posizione assegnata (sectorId nullo, il default storico) resta visibile a
   // chiunque, come sempre.
-  function encountersReadonlyHTML(scene, viewSectorId, viewLuogoId){
+  function encountersReadonlyHTML(scene, viewSectorId, viewSubsectionId, viewLuogoId){
     const enc = (scene && Array.isArray(scene.encounters)) ? scene.encounters.map(normalizeEncounter) : [];
-    const visible = enc.filter(e=>e.revealed!==false && encounterMatchesLocation(e, viewSectorId, viewLuogoId));
+    const visible = enc.filter(e=>e.revealed!==false && encounterMatchesLocation(e, viewSectorId, viewSubsectionId, viewLuogoId));
     if(visible.length===0) return '';
     const isMasterView = !!(session && session.role==='master');
     // Group visually-identical entries (same name/stage/image/nameHidden) so duplicates show a
@@ -1073,7 +1515,7 @@
             <div class="muted" style="font-size:11px;">${visible ? '👁️ Visibile ai giocatori' : '🙈 Nascosto — solo il Master lo vede'}${visible ? (e.nameHidden ? ' · 🎭 Presenza visibile, nome e descrizione nascosti ai giocatori' : '') : ''} · ${encounterLocationLabel(e)}</div>
             <div style="margin-top:4px;">
               <select data-enc-location="${i}" style="font-size:10px;padding:2px 4px;max-width:260px;" title="Dove si trova questo Digimon nella Scena — i giocatori lo vedranno in Scena solo quando la loro posizione corrisponde. 'Ovunque' = comportamento di prima, sempre visibile.">
-                ${locationOptionsHTML(e.sectorId, e.luogoId)}
+                ${locationOptionsHTML(e.sectorId, e.subsectionId, e.luogoId)}
               </select>
             </div>
             <div style="display:flex;align-items:center;gap:6px;max-width:220px;">
@@ -1136,7 +1578,7 @@
         <div class="field"><label>URL Immagine</label><input type="text" id="draft-image" value="${escapeAttr(d.image)}" placeholder="https://..." /></div>
         <div class="field"><label>Descrizione</label><textarea id="draft-desc" rows="2">${escapeHTML(d.description)}</textarea></div>
         <div class="field" style="margin-top:6px;"><label>📍 Dove si trova (i giocatori lo vedranno in Scena solo da lì — "Ovunque" = comportamento di prima, sempre visibile)</label>
-          <select id="draft-location">${locationOptionsHTML(cachedScene.currentSectorId, cachedScene.currentLuogoId)}</select>
+          <select id="draft-location">${locationOptionsHTML(cachedScene.currentSectorId, cachedScene.currentSubsectionId, cachedScene.currentLuogoId)}</select>
         </div>
         <div class="chat-color-field" style="margin-top:6px;">
           <label class="muted">🎨 Colore scritta in chat (quando lo fai "Parlare" — resta questo ogni volta, senza doverlo re-impostare)</label>
@@ -1192,8 +1634,7 @@
       const isBoss = document.getElementById('draft-isboss').checked;
       const locEl = document.getElementById('draft-location');
       const locVal = locEl ? locEl.value : '';
-      const sectorId = locVal ? locVal.split(':')[0] : null;
-      const luogoId = (locVal && locVal.includes(':')) ? locVal.split(':')[1] : null;
+      const { sectorId, subsectionId, luogoId } = parseLocationOptionValue(locVal);
       const chatColorEl = document.getElementById('draft-chatcolor');
       const chatColor = chatColorEl ? chatColorEl.value : '#ff5d5d';
       const baseStats = {
@@ -1219,7 +1660,7 @@
           bossBonusAmount = amount;
         }
       }
-      const finalEncounter = { id: encounterDraft.id, name, dexId: encounterDraft.dexId, stage, categories, image, description, baseStats, attacks: encounterDraft.attacks || [], revealed:false, isBoss, bossBonusStat, bossBonusAmount, sectorId, luogoId, chatColor };
+      const finalEncounter = { id: encounterDraft.id, name, dexId: encounterDraft.dexId, stage, categories, image, description, baseStats, attacks: encounterDraft.attacks || [], revealed:false, isBoss, bossBonusStat, bossBonusAmount, sectorId, subsectionId, luogoId, chatColor };
       cachedScene.encounters = cachedScene.encounters || [];
       cachedScene.encounters.push(finalEncounter);
       encounterDraft = null;
@@ -1323,12 +1764,10 @@
         const e = cachedScene.encounters[idx];
         if(!e) return;
         const val = sel.value;
-        if(!val){ e.sectorId = null; e.luogoId = null; }
-        else {
-          const [sectorId, luogoId] = val.split(':');
-          e.sectorId = sectorId;
-          e.luogoId = luogoId || null;
-        }
+        const { sectorId, subsectionId, luogoId } = parseLocationOptionValue(val);
+        e.sectorId = sectorId;
+        e.subsectionId = subsectionId;
+        e.luogoId = luogoId;
         await saveScene(code, cachedScene);
         live.innerHTML = encountersEditableHTML(cachedScene.encounters);
         bindEncountersInnerActions(code, username, onChanged);

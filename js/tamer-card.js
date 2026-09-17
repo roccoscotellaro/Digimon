@@ -28,7 +28,7 @@
 // parametro onChanged opzionale e lo invocano al posto suo (if(onChanged) onChanged(););
 // index.html lo passa esplicitamente ad ogni chiamata esterna (refreshLiveParts). renderInventoryCard
 // e renderBugReportCard non toccano mai refreshLiveParts, quindi la loro firma resta invariata.
- 
+
   function rollTormentCheck(boxes){
     const dice = [rollD6(), rollD6(), rollD6()];
     const total = dice.reduce((a,b)=>a+b,0);
@@ -44,10 +44,10 @@
     else outcome = 'fail';
     return { dice, total, tn, outcome };
   }
- 
+
   // diceRowHTML e' stata spostata in js/dice.js (usa DIE_FACES, ora definita li').
- 
- 
+
+
   function defaultSkills(){
     const s = {};
     SKILL_DEFS.forEach(sk=>{ s[sk.key] = 0; });
@@ -59,7 +59,7 @@
   function skillMax(t, def){
     return Math.max(...def.attrs.map(a=>Number(t[a])||0));
   }
- 
+
   function defaultTamer(){
     return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, imageUrl:'', currentWounds:null, inventory:[], skills: defaultSkills(), unspentGrowthPoints:0,
       // Colore persistente dei messaggi di questo Tamer in chat (richiesta utente: "i personaggi
@@ -68,6 +68,17 @@
       // Digimon. Editabile sia dal giocatore stesso sia dal Master (Scheda Tamer, vedi sotto).
       chatColor:'#5aa8ff',
       inspirationPoints:0, tormentPenalty:0,
+      // Richiesta utente (Razioni): "Affaticamento" — nuovo house-rule, gemello di tormentPenalty
+      // ma con vita diversa: si accumula di 1 livello ogni volta che a un Rest il Tamer NON
+      // consuma entrambe le 2 razioni giornaliere previste (vedi il marcatore ::RATIONREQ:: in
+      // js/chat-log-engine.js e il loop di js/progression.js che lo invia ad ogni Rest), e a
+      // differenza del Torment NON si azzera mai da solo con un Rest qualunque — si azzera SOLO
+      // quando il Tamer consuma entrambe le razioni in un singolo Rest (in quel caso si azzera
+      // insieme all'Affaticamento gemello sul Digimon, me.digimon.fatigueLevel, vedi
+      // js/digimon-card.js). Ogni livello vale -1 a TUTTI i Tiri del Tamer (Check/Pool), sommato
+      // insieme a tormentPenalty ovunque un Tiro calcoli un totale (vedi openSkillRollPanel e
+      // tryParseRollShortcut qui sotto) — nessun tetto massimo, si accumula Rest dopo Rest.
+      fatigueLevel:0,
       torments: [],
       majorAspect: { text:'', usesLeft:1 },
       minorAspect: { text:'', usesLeft:2 },
@@ -75,15 +86,21 @@
       teamworkBonus: 0,
       built: false, // diventa true al completamento della Creazione Guidata — segnala che la scheda non è più "vuota"
       currentSectorId: null, // null = segue il Settore attuale del gruppo; un id esplicito = si è separato dal gruppo
-      currentLuogoId: null, // null = segue il Luogo attuale del gruppo (solo se nello stesso Settore); un id esplicito = si è spostato da solo a un Luogo diverso
+      // Richiesta utente ("Macroarea - Settore - Sottosezioni del settore ... e Luoghi"): stesso
+      // meccanismo di currentSectorId/currentLuogoId, un livello più in profondità — null = segue
+      // la Sottosezione attuale del gruppo (o nessuna, se il gruppo non è in una Sottosezione);
+      // un id esplicito = questo Tamer si è spostato da solo in quella Sottosezione (sempre
+      // insieme a un currentSectorId esplicito: le UI di spostamento impostano sempre entrambi).
+      currentSubsectionId: null,
+      currentLuogoId: null, // null = segue il Luogo attuale del gruppo (solo se nello stesso Settore/Sottosezione); un id esplicito = si è spostato da solo a un Luogo diverso
       characterName:'' // nome del personaggio mostrato in UI, indipendente dallo username di login (fallback: username)
     };
   }
- 
+
   let editingSkills = false;
- 
+
   // siblingCardId spostato in js/ui-helpers.js
- 
+
   function renderSkillsCard(me, containerId, onChanged){
     containerId = containerId || 'skills-card';
     const cardEl = document.getElementById(containerId);
@@ -203,7 +220,7 @@
       };
     }
   }
- 
+
   const TALENT_DEFS = [
     { attr:'agility', threshold:3, name:'Quick Step', text:'Quando prendi l\'Azione Reposition, guadagni +1 Successo al risultato finale.' },
     { attr:'agility', threshold:5, name:'Strike Fast', text:'Special Order "FULL SPEED AHEAD" (2 Azioni): il Digimon guadagna 1 Azione extra, da usare per Muovi o Movimento Difficile.', order:'strikeFast', cost:2, once:null },
@@ -222,72 +239,72 @@
     { attr:'willpower', threshold:5, name:'Purify Partner', text:'Special Order "TOUGH IT OUT" (1 Azione): cura il Digimon da un Effetto Negativo, come [CLEANSE].', order:'purifyPartner', cost:1, once:null },
     { attr:'willpower', threshold:6, name:'Challenger', text:'Quando si tira l\'Iniziativa, il tuo Digimon guadagna Ferite Temporanee pari ai tuoi Successi Willpower + lo Stage più alto tra i nemici (max 5).' },
     { attr:'willpower', threshold:7, name:'Miracle', text:'Spendendo 7 IP puoi aggiungere/sottrarre Willpower+5 a un Check, Dodge o Accuracy Pool.', order:'miracle', cost:0, once:null },
- 
+
     // --- Talent basati su Skill (soglia 3/5/7, stesso framework delle soglie Attributo) ---
     { attr:'evade', skill:true, threshold:3, name:'Avoiding Consequences', text:'Un Fallimento Critico su Check/Torment Check diventa Fallimento normale se sommando i punti in Evade si raggiungerebbe quel risultato.' },
     { attr:'evade', skill:true, threshold:5, name:'Tuck and Roll', text:'Una Evade fallita in combattimento può diventare un Successo, una volta a Rest.' },
     { attr:'evade', skill:true, threshold:7, name:'Quickening', text:'Special Order "YOU\'RE ONE STEP BEHIND" (Interrupt, una volta a combattimento): il Digimon schiva automaticamente un Attacco in arrivo, senza tirare (nessuna Quality che richieda una Evade riuscita si attiva).', order:'quickening', cost:0, once:'combat' },
- 
+
     { attr:'precision', skill:true, threshold:3, name:'Busy Hands', text:'Crea senza tiro un oggetto utile durante un Rest, che dà un bonus a una Skill scelta pari ai punti in Precision sopra 2 (un solo uso, un oggetto per Rest).' },
     { attr:'precision', skill:true, threshold:5, name:'Aim Assist', text:'Dirigendo il Digimon per migliorare l\'Accuracy con 2 Azioni (Highest Attribute), il bonus al Direct sale di +2.' },
     { attr:'precision', skill:true, threshold:7, name:'Auto Hit', text:'Special Order "PUT 100% INTO THIS" (2 Azioni, una volta a combattimento): un Attacco (non Signature Move) colpisce automaticamente con successi pari all\'SV dell\'attaccante, senza tirare Accuracy né Dodge.', order:'autoHit', cost:2, once:'combat' },
- 
+
     { attr:'stealth', skill:true, threshold:3, name:'Overlooked', text:'Si mimetizza senza tiro; in combattimento può muoversi/agire senza essere notato finché non colpisce un nemico. Individuabile con Awareness TN 9 + punti in Stealth.' },
     { attr:'stealth', skill:true, threshold:5, name:'Silent Movement', text:'Tamer e Digimon non fanno rumore né lasciano impronte camminando.' },
     { attr:'stealth', skill:true, threshold:7, name:'Vanish', text:'Special Order "NOW YOU SEE US" (1 Azione, una volta a combattimento): Tamer e Digimon spariscono dalla vista di un nemico scelto ([BLIND] fino al prossimo turno del Tamer, durata non riducibile). Non dichiarabile se sono già state usate altre azioni quel turno; il turno in cui la si usa, il Digimon può solo Move o Reposition.', order:'vanish', cost:1, once:'combat' },
- 
+
     { attr:'athletics', skill:true, threshold:3, name:'Natural Explorer', text:'Usa Athletics o Agility (il più alto) per il Movement; ottiene Climb/Swim/Jump pari al Movement e ignora il Terreno Difficile. Può guidare alleati (numero = punti in Athletics) attraverso terreno ostile usando la propria Athletics, a patto che restino dietro di lui.' },
     { attr:'athletics', skill:true, threshold:5, name:'Experienced Step', text:'Reposition da 2 Azioni: +1 Successo al risultato finale.' },
     { attr:'athletics', skill:true, threshold:7, name:'Bullrush', text:'Special Order "THIS TRAIN WON\'T STOP" (1 Azione, una volta a combattimento): il Digimon ottiene Difficult Move come Azione Gratuita, e fino a fine turno lo stesso Difficult Move costa 1 Azione in meno (min. 1).', order:'bullrush', cost:1, once:'combat' },
- 
+
     { attr:'endurance', skill:true, threshold:3, name:'No Pain, No Gain', text:'Un Check fallito (non Torment) può essere ritirato come Check di Endurance con l\'Attributo pertinente, un numero di volte pari ai punti in Endurance sopra 2 (si ricarica a ogni Rest).' },
     { attr:'endurance', skill:true, threshold:5, name:'Grit', text:'Può schivare gli attacchi con Endurance invece di Evade (subisce comunque min. 1 danno anche se supera il Check); se ridotto a 0 Wound Box resta a 1. Una volta a Rest.' },
     { attr:'endurance', skill:true, threshold:7, name:'Thick Skin', text:'Special Order "NO, YOU MOVE" (Interrupt, una volta a combattimento): il Digimon ignora uno spostamento forzato subito. Con 1 Azione extra, la fonte dello spostamento lo subisce a sua volta.', order:'thickSkin', cost:0, once:'combat' },
- 
+
     { attr:'featsOfStrength', skill:true, threshold:3, name:'Heavy Force', text:'Usa Feats of Strength al posto di Precision per attaccare in combattimento. Una volta a Rest, può aggiungere ai Check di Body/Agility un bonus pari ai punti in Feats of Strength.' },
     { attr:'featsOfStrength', skill:true, threshold:5, name:'Joint Effort', text:'In un Check di squadra (Feats of Strength) col proprio Digimon, il Tamer aggiunge l\'SV del Digimon al tiro.' },
     { attr:'featsOfStrength', skill:true, threshold:7, name:'Adrenaline Hit', text:'Special Order "HAVE SOME OF THIS" (2 Azioni, una volta a combattimento): il Tamer lancia un oggetto (approvato dal GM) infliggendo Danno Unalterable pari al proprio SV e [STUN] fino al prossimo turno del Tamer.', order:'adrenalineHit', cost:2, once:'combat' },
- 
+
     { attr:'manipulate', skill:true, threshold:3, name:'Planted Idea', text:'Se il Tamer supera un Check di Manipulate in Roleplay, può impiantare un\'idea minore e ragionevole in un PNG, per una durata in minuti pari ai propri punti in Manipulate. Una volta a Rest; un PNG può subirlo una sola volta tra un Rest e l\'altro.' },
     { attr:'manipulate', skill:true, threshold:5, name:'Fakeout', text:'Se il Tamer usa 2 Azioni per Dirigere il proprio Digimon migliorandone l\'Accuracy, e l\'Attacco con quel bonus manca, il bersaglio subisce -2 al Dodge invece di -1 da quell\'Attacco.' },
     { attr:'manipulate', skill:true, threshold:7, name:'Hacking Pride', text:'Special Order "YOU\'VE ALREADY LOST" (1 Azione, una volta a combattimento): un Direct negativo contro un nemico, penalità al prossimo Pool di Accuracy o Dodge a scelta del Tamer. Non si può usare Direct lo stesso turno.', order:'hackingPride', cost:1, once:'combat' },
- 
+
     { attr:'perform', skill:true, threshold:3, name:'Endless Dream', text:'Senza tirare nulla, un\'esibizione del Tamer dà IP Temporanei agli alleati, pari ai propri punti in Performance sopra 2, da dividere come preferisce (non a se stesso). Max 2 IP Temporanei a testa. Una volta a Rest.' },
     { attr:'perform', skill:true, threshold:5, name:'Personal Cheerleader', text:'Un Digimon che beneficia del Direct del Tamer, tirando un Accuracy o Dodge Pool, può ritirare fino a 2 dadi (deve tenere il nuovo risultato).' },
     { attr:'perform', skill:true, threshold:7, name:'Distracting Gesture', text:'Special Order "HEY, OVER HERE" (Interrupt, una volta a combattimento): quando un nemico attacca un alleato, dimezza i dadi tirati dal nemico per l\'Attacco.', order:'distractingGesture', cost:0, once:'combat' },
- 
+
     { attr:'persuasion', skill:true, threshold:3, name:'Charming Influence', text:'Se il Tamer supera un Check di Persuasion in Roleplay, può "usare il fascino": i PNG bersaglio diventano amichevoli per una durata in minuti pari ai propri punti in Persuasion. Una volta a Rest; un PNG può subirlo una sola volta tra un Rest e l\'altro.' },
     { attr:'persuasion', skill:true, threshold:5, name:'Be the Winners', text:'Con 1 Azione extra, il Tamer può dividere il bonus del Direct fra il proprio Digimon e un altro Digimon consenziente, senza penalità per Dirigere il Digimon altrui (il proprio Digimon deve sempre ricevere almeno +2).' },
     { attr:'persuasion', skill:true, threshold:7, name:'Next Order', text:'Special Order "WE CAN DO THIS, TOGETHER" (1 Azione, una volta a combattimento): concede i benefici di un Direct a 2 alleati consenzienti (proprio Digimon incluso), senza penalità per Digimon altrui.', order:'nextOrder', cost:1, once:'combat' },
- 
+
     { attr:'decipherIntent', skill:true, threshold:3, name:'Cyber Sleuth', text:'Il giocatore può fare una domanda al GM su un\'azione immediatamente disponibile, e il GM deve rispondere se avrà esiti buoni, cattivi o entrambi. Usi pari ai punti in Decipher Intent sopra 2, recuperati a ogni Rest.' },
     { attr:'decipherIntent', skill:true, threshold:5, name:'Best Laid Plans', text:'Usando Hold Action per sommare Intelligence all\'Accuracy/Dodge del Digimon, +1 Successo al risultato finale. Un nemico che stava investigando/interrogando o mentendo apertamente è considerato Sorpreso se il Tamer entra in Combattimento contro di lui.' },
     { attr:'decipherIntent', skill:true, threshold:7, name:'Predictable', text:'Special Order "I ALREADY KNOW YOUR NEXT MOVE" (2 Azioni, una volta a combattimento): dichiara un Hold Action con Trigger su qualsiasi Azione (Intercede incluse) del nemico bersaglio.', order:'predictable', cost:2, once:'combat' },
- 
+
     { attr:'survival', skill:true, threshold:3, name:'Glorious World', text:'Senza tirare nulla, il Tamer cucina un pasto che dà Wound Box Temporanee a chi lo mangia, pari ai propri punti in Survival sopra 2, fino al prossimo Rest. Un personaggio ne beneficia una sola volta tra un Rest e l\'altro.' },
     { attr:'survival', skill:true, threshold:5, name:'Trailblazer', text:'Il Tamer ha un innato senso dell\'orientamento: sa sempre dov\'è il nord e la strada esatta per tornare all\'ultimo insediamento civilizzato visitato.' },
     { attr:'survival', skill:true, threshold:7, name:'Survival Instinct', text:'Special Order "FLOW WITH IT" (Interrupt, una volta a combattimento): il Danno di un Attacco subito viene dimezzato dopo l\'Armor e nessun Danno Unalterable viene applicato.', order:'survivalInstinct', cost:0, once:'combat' },
- 
+
     { attr:'knowledge', skill:true, threshold:3, name:'Academic Advice', text:'Aiutando in un Check di Teamwork, il Tamer può usare un Check di Knowledge al posto di quello richiesto. Su Successo, il bonus dato aumenta per ogni punto in Knowledge sopra 2.' },
     { attr:'knowledge', skill:true, threshold:5, name:'Living Encyclopedia', text:'Se un Check di Knowledge per ricordare informazioni avrebbe TN 15 o meno, il Tamer può Riuscire Criticamente in automatico. Una volta a Rest.' },
     { attr:'knowledge', skill:true, threshold:7, name:'Hacker\'s Memory', text:'Special Order "I KNOW ALL YOUR TRICKS" (2 Azioni, una volta a combattimento): contro un nemico già affrontato, +1 alla Potenza delle proprie Quality/Effetti basati su Stat Derivate contro di lui, oppure -1 a quelle del nemico.', order:'hackersMemory', cost:2, once:'combat' },
- 
+
     { attr:'fortitude', skill:true, threshold:3, name:'Calming Influence', text:'Se un altro Tamer fallisce un Torment Check, questo Tamer può fargli ritirare il Check con un bonus pari ai propri punti in Fortitude. Se diventa un Successo, entrambi i Tamer guadagnano 1 IP. Una volta a Rest.' },
     { attr:'fortitude', skill:true, threshold:5, name:'Team Player', text:'Partecipando in Teamwork con alleati: se aiuta, l\'alleato può ritirare gli 1 del Check (tenendo il nuovo risultato); se è chi inizia il Check, può ignorare il Fallimento Critico di un alleato.' },
     { attr:'fortitude', skill:true, threshold:7, name:'Take the Lead', text:'Special Order "NOW FOCUS" (1 Azione, una volta a combattimento): +5 a un Check del proprio Digimon, anche dopo aver visto il risultato; usabile come Interrupt se il Check avviene fuori turno.', order:'takeTheLead', cost:1, once:'combat' },
- 
+
     { attr:'bravery', skill:true, threshold:3, name:'Break the Chain', text:'Il Tamer ottiene un bonus ai Torment Check pari ai propri punti in Bravery. Se Calming Influence viene usato per ritirare un Torment Check con questo bonus, si prende il bonus più alto invece di sommarli.' },
     { attr:'bravery', skill:true, threshold:5, name:'With the Will', text:'Se il Tamer dovrebbe fare un Torment Check, il proprio Digimon può usare un\'Interrupt Action per trasformarlo in un Teamwork Check, tirando un Check di Bravery (usando DOS) per aiutare. Una volta a Rest.' },
     { attr:'bravery', skill:true, threshold:7, name:'Heroic Exemplar', text:'Special Order "SHOW THEM WHAT YOU\'RE MADE OF" (2 Azioni, una volta a combattimento): dopo un Attacco andato a segno, Digimon e tutti gli alleati ottengono [BASTION 1] (Durata 3).', order:'heroicExemplar', cost:2, once:'combat' },
- 
+
     { attr:'awareness', skill:true, threshold:3, name:'Hyper Alert', text:'Senza tirare, il Tamer può usare un Check di Awareness al posto del Check normale per evitare pericoli a sorpresa. Il Digimon del Tamer ottiene un bonus all\'Iniziativa per ogni punto in Awareness sopra 2.' },
     { attr:'awareness', skill:true, threshold:5, name:'Danger Sense', text:'Quando il Digimon userebbe un\'Interrupt Action, il Tamer può spendere 1 Azione propria al posto del Digimon. Una volta a Rest.' },
     { attr:'awareness', skill:true, threshold:7, name:'Realization', text:'Special Order "I\'VE FIGURED IT OUT" (2 Azioni, una volta a combattimento): infligge [EXPLOIT 3] a un nemico, bypassando immunità da Overwrite o Resistance, fino a fine combattimento.', order:'realization', cost:2, once:'combat' }
   ];
- 
+
   const SKILL_LABEL_BY_KEY = { evade:'EVADE', precision:'PREC', stealth:'STEALTH', athletics:'ATHL', endurance:'END', featsOfStrength:'FOS', manipulate:'MANIP', perform:'PERF', persuasion:'PERS', decipherIntent:'D.INTENT', survival:'SURV', knowledge:'KNOW', fortitude:'FORT', bravery:'BRAV', awareness:'AWARE' };
   function talentAbbr(t){ return t.skill ? (SKILL_LABEL_BY_KEY[t.attr] || t.attr) : ATTR_ABBR[t.attr]; }
- 
+
   function computeUnlockedTalents(tamer){
     const cfg = campaignConfig();
     const stdIdx = { 3:0, 5:1, 6:2, 7:3 };
@@ -298,9 +315,9 @@
       return value >= effectiveThreshold;
     });
   }
- 
+
   // STAGE_CREATION spostato in js/digimon-card.js
- 
+
   function renderTamerCard(me, containerId, onChanged){
     containerId = containerId || 'tamer-card';
     const cardEl = document.getElementById(containerId);
@@ -339,7 +356,8 @@
             <button class="btn ghost small" id="gp-manual-plus">+</button>
           </span>
         </div>
-        ${Number(t.tormentPenalty||0)!==0 ? `<div class="muted" style="color:var(--danger);margin-bottom:8px;">Penalità Torment attiva: ${t.tormentPenalty} su Tiri/bonus finché non fai un Rest.</div>` : ''}
+        ${Number(t.tormentPenalty||0)!==0 ? `<div class="muted" style="color:var(--danger);margin-bottom:8px;">Penalità Torment attiva: ${t.tormentPenalty} — applicata automaticamente ai Tiri finché non fai un Rest.</div>` : ''}
+        ${Number(t.fatigueLevel||0)>0 ? `<div class="muted" style="color:var(--danger);margin-bottom:8px;">😴 Affaticamento: ${t.fatigueLevel} livell${t.fatigueLevel===1?'o':'i'} (-${t.fatigueLevel} a tutti i Tiri, applicato automaticamente) — si azzera solo con un Rest in cui consumi entrambe le razioni.</div>` : ''}
         <div class="divider"></div>
         <details class="hud-frame" style="padding:8px;border-color:var(--cyan-dim);margin-bottom:10px;">
           <summary class="mono" style="cursor:pointer;color:var(--cyan);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;">❓ Pro e contro — Aspects &amp; Torments</summary>
@@ -641,7 +659,25 @@
       };
     }
   }
- 
+
+  // Richiesta utente (Razioni): identificatori d'inventario a piccolo elenco fisso — "cibo",
+  // "indossabile" ecc — cosicché un item con category==='cibo' possa rappresentare direttamente,
+  // tramite il suo campo qty già esistente, quante razioni/pasti vale quello stack (mostrato come
+  // "x{qty} pasti" invece del semplice "x{qty}" nell'elenco qui sotto). Nessun campo numerico
+  // aggiuntivo: qty resta l'unico numero, il significato cambia solo in base alla category.
+  const INVENTORY_CATEGORIES = [
+    { value:'altro', label:'Altro' },
+    { value:'cibo', label:'Cibo' },
+    { value:'indossabile', label:'Indossabile' },
+    { value:'arma', label:'Arma' },
+    { value:'strumento', label:'Strumento' },
+    { value:'chiave', label:'Chiave/Quest' }
+  ];
+  function inventoryCategoryLabel(cat){
+    const def = INVENTORY_CATEGORIES.find(c=>c.value===cat);
+    return def ? def.label : '';
+  }
+
   function renderInventoryCard(me, containerId){
     containerId = containerId || 'inventory-card';
     const cardEl = document.getElementById(containerId);
@@ -652,7 +688,7 @@
       ${items.length===0 ? '<div class="muted" style="margin-bottom:10px;">Nessun oggetto.</div>' : items.map((it,i)=>`
         <div class="roster-item" style="padding:8px 10px;">
           <div class="flex-between">
-            <div><span class="name">${escapeHTML(it.name)}</span> <span class="tag" style="margin-left:6px;">x${Number(it.qty)||1}</span></div>
+            <div><span class="name">${escapeHTML(it.name)}</span> ${it.category && it.category!=='altro' ? `<span class="tag" style="margin-left:6px;">${escapeHTML(inventoryCategoryLabel(it.category))}</span>` : ''} <span class="tag" style="margin-left:6px;">x${Number(it.qty)||1}${it.category==='cibo' ? ' pasti' : ''}</span></div>
             <button class="btn ghost small" data-remove-item="${i}">Rimuovi</button>
           </div>
           ${it.desc ? `<div class="sub" style="margin-top:3px;">${escapeHTML(it.desc)}</div>` : ''}
@@ -662,6 +698,9 @@
       <div class="row">
         <div class="field"><label>Oggetto</label><input type="text" id="inv-name" placeholder="es. Digivice" /></div>
         <div class="field" style="max-width:70px;"><label>Q.tà</label><input type="number" id="inv-qty" value="1" min="1" /></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Categoria</label><select id="inv-category">${INVENTORY_CATEGORIES.map(c=>`<option value="${c.value}" ${c.value==='altro'?'selected':''}>${escapeHTML(c.label)}</option>`).join('')}</select></div>
       </div>
       <div class="field"><label>Descrizione (opz.)</label><input type="text" id="inv-desc" placeholder="cosa fa..." /></div>
       <button class="btn solid" id="btn-inv-add" style="width:100%;">Aggiungi Oggetto</button>
@@ -680,12 +719,14 @@
       if(!name) return;
       const qty = Number(document.getElementById('inv-qty').value)||1;
       const desc = document.getElementById('inv-desc').value.trim();
-      me.tamer.inventory.push({ name, qty, desc });
+      const catEl = document.getElementById('inv-category');
+      const category = (catEl && catEl.value) || 'altro';
+      me.tamer.inventory.push({ name, qty, desc, category });
       renderInventoryCard(me, containerId);
       saveMember(session.code, me).then(ok=>{ if(!ok) renderInventoryCard(me, containerId); });
     };
   }
- 
+
   function renderSidebar(me, onChanged){
     const content = document.getElementById('sidebar-content');
     if(!content) return;
@@ -713,7 +754,7 @@
       renderSidebar(me, onChanged);
     }
   }
- 
+
   function renderBugReportCard(){
     const cardEl = document.getElementById('bugreport-card');
     if(!cardEl) return;
@@ -738,15 +779,15 @@
       }
     };
   }
- 
+
   // renderDexPanel spostata in js/dex-admin.js
- 
+
   // Scheda Digimon / Evoluzione (SIZE_DEFS, computeDerivedStats, evolutionsReadonlyHTML/EditableHTML,
   // attributeIconHTML/attributeLegendHTML/attributeBadgeHTML/splitCategoriesAttribute, epDigiviceHTML,
   // memoryUpgradeRanks, maxAttackSlots, evolutionCost/snapshotCurrentStatsToStage/showEvolutionTransition/
   // applyStageChange (con STAGE_CREATION), attackTagsPlain/attackTagsHTML, computeDpSpent,
   // qualitiesReadonlyHTML/EditableHTML, renderDigimonCard) spostati in js/digimon-card.js
- 
+
   function openSkillRollPanel(me, skillKey, containerId, onChanged){
     const def = SKILL_DEFS.find(d=>d.key===skillKey);
     if(!def) return;
@@ -830,19 +871,30 @@
           me.tamer.inspirationPoints -= 7;
           aspectNote += ` +${bonus} Miracle (-7 IP)`;
         }
+        // Richiesta utente (Torment/Affaticamento sommati per davvero ai Tiri, non più solo
+        // banner informativi): sia la Penalità Torment (tormentPenalty, già esistente ma mai
+        // sommata a nessun Tiro finora) sia il nuovo Affaticamento da Razioni (fatigueLevel,
+        // -1/livello) vengono sommati qui al totale del Check, PRIMA che flatExtra=total-baseTotal
+        // venga calcolato più sotto per il Ritira con Ispirazione — così anche il ri-tiro eredita
+        // automaticamente la stessa penalità senza bisogno di ricalcolarla a parte.
+        const restPenalty = Number(me.tamer.tormentPenalty||0) - Number(me.tamer.fatigueLevel||0);
+        if(restPenalty!==0){
+          total += restPenalty;
+          aspectNote += ` ${restPenalty>0?'+':''}${restPenalty} Torment/Affaticamento`;
+        }
         await saveMember(session.code, me);
         const verdict = evaluateVsTN(total, tnVal, dice);
         const resEl = document.getElementById('roll-result-'+containerId);
         const logText = `tira ${def.label} (${ATTR_ABBR[chosenAttr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict ? ` vs TN ${tnVal} → ${verdict.label}` : '');
         await pushLog(session.code, { who: displayName(me), role:'roll', text: logText, meta: { dice, total, verdict: verdict?verdict.label:null } });
- 
+
         // ---------- Ispirazione: Ritira (richiesta utente: "Come funziona l'ispirazione? ...
         // implementiamo la funzione automatica per il lancio") ----------
         // Regola 2.05a "Reroll": 1 IP per ri-tirare per intero un Check/Pool, guardi il nuovo
         // risultato e scegli se tenerlo o tenere il vecchio. Non è vincolato ai tiri falliti --
         // qui lo offriamo dopo OGNI tiro, finché il Tamer ha almeno 1 IP. flatExtra raccoglie
-        // tutti i bonus NON-dado già applicati sopra (Stunt/Teamwork/Aspects/Miracle) così il
-        // ri-tiro rifà solo i 3d6 e riusa automaticamente gli stessi bonus fissi.
+        // tutti i bonus NON-dado già applicati sopra (Stunt/Teamwork/Aspects/Miracle/Torment-
+        // Affaticamento) così il ri-tiro rifà solo i 3d6 e riusa automaticamente gli stessi bonus fissi.
         const flatExtra = total - baseTotal;
         const renderResult = (curDice, curTotal, curVerdict)=>{
           const ipNow = Number(me.tamer.inspirationPoints||0);
@@ -873,7 +925,7 @@
     };
     draw();
   }
- 
+
   async function tryParseRollShortcut(raw, me){
     const m = raw.match(/^\/(tira|r)\s+(.+)$/i);
     if(!m) return null;
@@ -891,17 +943,24 @@
     rest = parts.join(' ');
     const query = rest.trim().toLowerCase();
     if(!query) return { text: `⚠ comando non riconosciuto: "${rest}". Usa /tira <NomeSkill|Accuracy|Dodge|Health> [TN] [major|minor]`, dice:null };
- 
+
     const poolMap = { 'accuracy':'baseAccuracy', 'acc':'baseAccuracy', 'dodge':'baseDodge', 'schivata':'baseDodge', 'health':'baseHealth', 'hp':'baseHealth', 'salute':'baseHealth' };
     if(poolMap[query]){
       const statKey = poolMap[query];
-      const { dice, successes } = rollPool(me.digimon[statKey]);
+      // Richiesta utente (Affaticamento del Digimon, gemello di quello del Tamer): -1 livello =
+      // -1 dado nel Pool di questo Check (non esiste un "totale" a cui sottrarre un flat -1 su un
+      // Pool Check, quindi la traduzione meccanica più sensata è ridurre il pool tirato, come
+      // discusso e confermato con Rocco — vedi anche il bottone 🎲 in js/digimon-card.js che usa
+      // la stessa identica formula).
+      const fatigueLevel = Number(me.digimon.fatigueLevel||0);
+      const poolSize = Math.max(0, Number(me.digimon[statKey]||0) - fatigueLevel);
+      const { dice, successes } = rollPool(poolSize);
       return {
         dice, isPool:true, resultLabel: `${successes} successi`, verdict:null,
-        text: `tira Pool Check ${query.toUpperCase()} (${me.digimon[statKey]}d6): [${dice.join(',')}] → ${successes} successi`
+        text: `tira Pool Check ${query.toUpperCase()} (${poolSize}d6): [${dice.join(',')}] → ${successes} successi` + (fatigueLevel>0 ? ` (−${fatigueLevel} dadi per Affaticamento)` : '')
       };
     }
- 
+
     const def = SKILL_DEFS.find(d=>d.label.toLowerCase()===query || d.label.toLowerCase().startsWith(query) || query.startsWith(d.label.toLowerCase()));
     if(def){
       const attr = def.attrs[0];
@@ -924,6 +983,13 @@
       } else if(aspectWanted){
         aspectNote = ` (nessun uso di Aspect ${aspectWanted} disponibile, ignorato)`;
       }
+      // Richiesta utente: stessa somma di Penalità Torment + Affaticamento già applicata in
+      // openSkillRollPanel, qui per lo shortcut testuale "/tira <Skill>".
+      const restPenalty = Number(me.tamer.tormentPenalty||0) - Number(me.tamer.fatigueLevel||0);
+      if(restPenalty!==0){
+        total += restPenalty;
+        aspectNote += ` ${restPenalty>0?'+':''}${restPenalty} Torment/Affaticamento`;
+      }
       const verdict = evaluateVsTN(total, tn, dice);
       return {
         dice, isPool:false, resultLabel: String(total), verdict,
@@ -932,8 +998,7 @@
     }
     return { text: `⚠ comando non riconosciuto: "${rest}". Usa /tira <NomeSkill|Accuracy|Dodge|Health> [TN] [major|minor]`, dice:null };
   }
- 
+
   function statBox(label, id, val){
     return `<div class="stat-box"><div class="l">${label}</div><input type="number" min="0" max="10" id="${id}" value="${val}" /></div>`;
   }
- 

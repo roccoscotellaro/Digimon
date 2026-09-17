@@ -350,10 +350,16 @@
     let base;
     let stanceMod = { accuracy:0, dodge:0, damage:0, armor:0 };
     let qMech = { certainStrike:0, weapon:0, ammoRank:0, combatMonster:0, monsterStrength:false };
+    // Richiesta utente (Razioni/Affaticamento): -1 per livello di fatigueLevel su TUTTE e 4 le Stat
+    // di Combattimento effettive (accuracy/damage/dodge/armor), stessa penalità gemella di
+    // tormentPenalty (mai sommata qui prima d'ora) applicata invece ai Tiri del Tamer in
+    // js/tamer-card.js/js/chat-log-engine.js. Solo i PC hanno un Digimon con fatigueLevel — i
+    // Nemici (else sotto) non accumulano Affaticamento, quindi restano a 0.
+    let fatigueLevel = 0;
     if(p.isPC){
       const member = cachedRoster.find(m=>m.username===p.username);
       base = member ? { accuracy: member.digimon.baseAccuracy, damage: member.digimon.baseDamage, dodge: member.digimon.baseDodge, armor: member.digimon.baseArmor } : { accuracy:0, damage:0, dodge:0, armor:0 };
-      if(member){ stanceMod = stanceModifiers(member.digimon); qMech = computeQualityMechanics(member.digimon.qualities); }
+      if(member){ stanceMod = stanceModifiers(member.digimon); qMech = computeQualityMechanics(member.digimon.qualities); fatigueLevel = Number(member.digimon.fatigueLevel||0); }
     } else {
       base = { accuracy: p.accuracy||0, damage: p.damage||0, dodge: p.dodge||0, armor: p.armor||0 };
     }
@@ -377,10 +383,10 @@
       cpu = Math.max(0, Math.floor(Number(p.armor||0)/3));
     }
     return {
-      accuracy: Math.max(0, base.accuracy + mod.accuracy + stanceMod.accuracy + qMech.weapon + nw.accuracy + sc),
-      damage: Math.max(0, base.damage + mod.damage + stanceMod.damage + qMech.weapon + nw.damage + sc),
-      dodge: Math.max(0, base.dodge + mod.dodge + stanceMod.dodge + (qMech.instinctDodge||0) + nw.dodge + sc),
-      armor: Math.max(0, base.armor + mod.armor + stanceMod.armor + (qMech.wardenArmor||0) + nw.armor + sc),
+      accuracy: Math.max(0, base.accuracy + mod.accuracy + stanceMod.accuracy + qMech.weapon + nw.accuracy + sc - fatigueLevel),
+      damage: Math.max(0, base.damage + mod.damage + stanceMod.damage + qMech.weapon + nw.damage + sc - fatigueLevel),
+      dodge: Math.max(0, base.dodge + mod.dodge + stanceMod.dodge + (qMech.instinctDodge||0) + nw.dodge + sc - fatigueLevel),
+      armor: Math.max(0, base.armor + mod.armor + stanceMod.armor + (qMech.wardenArmor||0) + nw.armor + sc - fatigueLevel),
       certainStrike: qMech.certainStrike,
       combatMonsterRank: qMech.combatMonster,
       monsterStrength: qMech.monsterStrength,

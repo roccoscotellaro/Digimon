@@ -14,8 +14,7 @@ const { supabase, cleanCode } = require('../lib/db');
 const TABLES = {
   combat: 'combat_state',
   progression: 'progression',
-  scene: 'scenes',
-  gameclock: 'game_clock'
+  scene: 'scenes'
 };
 
 // Il client manda i flag in camelCase (campaignLevel, blastEvolutionEnabled, ...) ma li rilegge
@@ -58,6 +57,17 @@ const MIGRATION_HINT = "Progressi base salvati, ma le impostazioni di campagna (
 //   alter table progression add column if not exists slide_evolution_enabled boolean default false;
 //   alter table progression add column if not exists dark_evolution_enabled boolean default false;
 
+// Migrazione da eseguire una volta sul SQL Editor di Supabase per il nuovo livello Sottosezione
+// (vedi SCENE_DEFAULT.currentSubsectionId qui sotto e il POST di resource=scene più in basso).
+// Il nome colonna è tra virgolette perché in questa tabella le colonne sono in camelCase
+// (comportamento insolito ma coerente con currentSectorId/currentLuogoId già esistenti):
+//
+//   alter table scenes add column if not exists "currentSubsectionId" text;
+//
+// Senza questa migrazione il salvataggio della Scena continua comunque a funzionare (vedi il
+// retry più sotto), semplicemente la Sottosezione "attuale" del gruppo non viene ricordata tra
+// un salvataggio e l'altro.
+
 const SCENE_DEFAULT = {
   title: '',
   background: '',
@@ -66,6 +76,13 @@ const SCENE_DEFAULT = {
   macroScenes: [],
   currentMacroSceneId: null,
   currentSectorId: null,
+  // Richiesta utente ("Macroarea - Settore - Sottosezioni del settore ... e Luoghi"): nuovo
+  // livello opzionale tra Settore e Luogo, con la stessa griglia/collegamenti/spostamento
+  // libero dei Settori. currentSubsectionId segue lo stesso pattern di currentSectorId/
+  // currentLuogoId: puntatore scalare alla Sottosezione "attuale" per l'intero gruppo, dentro
+  // il Settore attuale. Le Sottosezioni stesse vivono dentro ogni oggetto Settore, in
+  // macroScenes[].sectors[].subsections (array JSONB, nessuna migrazione SQL richiesta).
+  currentSubsectionId: null,
   currentLuogoId: null
 };
 
@@ -78,7 +95,7 @@ module.exports = async (req, res) => {
     const resource = query.resource || body.resource;
 
     if (!resource || !TABLES[resource]) {
-      return res.status(400).json({ error: 'resource mancante o non valida (usa combat, progression, scene o gameclock)' });
+      return res.status(400).json({ error: 'resource mancante o non valida (usa combat, progression o scene)' });
     }
     const table = TABLES[resource];
 
@@ -96,9 +113,6 @@ module.exports = async (req, res) => {
       if (resource === 'combat') {
         return res.status(200).json({ combat: data ? data.data : null });
       }
-      if (resource === 'gameclock') {
-        return res.status(200).json({ gameclock: data ? data.data : null });
-      }
       if (resource === 'progression') {
         return res.status(200).json({ progression: data || { milestone: 0, xp: 0, inspiration: 0 } });
       }
@@ -113,7 +127,7 @@ module.exports = async (req, res) => {
       await supabase.from('campaigns').upsert({ code: campaignCode }, { onConflict: 'code' });
 
       let row;
-      if (resource === 'combat' || resource === 'gameclock') {
+      if (resource === 'combat') {
         row = {
           campaign_code: campaignCode,
           data: body.data || {},
@@ -147,13 +161,32 @@ module.exports = async (req, res) => {
           macroScenes: Array.isArray(body.macroScenes) ? body.macroScenes : [],
           currentMacroSceneId: body.currentMacroSceneId || null,
           currentSectorId: body.currentSectorId || null,
+          // Vedi commento su SCENE_DEFAULT.currentSubsectionId qui sopra. A differenza di
+          // macroScenes (JSONB, dove le Sottosezioni vivono già senza bisogno di migrazione),
+          // currentSubsectionId è una colonna scalare nuova sulla tabella `scenes`, come lo
+          // erano a suo tempo currentSectorId/currentLuogoId. Se la colonna non esiste ancora,
+          // l'upsert sotto fallisce con un errore "colonna mancante": stesso identico problema
+          // già visto per `progression`, quindi stesso rimedio (retry senza il campo nuovo,
+          // così il resto della Scena si salva comunque invece di rompersi del tutto).
+          currentSubsectionId: body.currentSubsectionId || null,
           currentLuogoId: body.currentLuogoId || null
         };
       }
 
       const { error } = await supabase.from(table).upsert(row, { onConflict: 'campaign_code' });
-      if (error) return res.status(500).json({ error: error.message });
-      return res.status(200).json({ ok: true });
+      if (!error) return res.status(200).json({ ok: true });
+
+      if (resource === 'scene' && isMissingColumn(error)) {
+        const { currentSubsectionId, ...rowWithoutSubsection } = row;
+        const retry = await supabase.from(table).upsert(rowWithoutSubsection, { onConflict: 'campaign_code' });
+        if (retry.error) return res.status(500).json({ error: retry.error.message });
+        return res.status(200).json({
+          ok: true,
+          warning: "Scena salvata, ma manca la colonna \"currentSubsectionId\" sulla tabella `scenes`: la posizione attuale a livello di Sottosezione non viene ricordata finché non esegui la migrazione SQL indicata in api/state.js. Le Sottosezioni stesse (dentro ogni Settore) restano salvate normalmente, perché vivono nella colonna JSONB macroScenes."
+        });
+      }
+
+      return res.status(500).json({ error: error.message });
     }
 
     res.setHeader('Allow', 'GET, POST');

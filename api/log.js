@@ -139,8 +139,14 @@ async function subsForSubgroup(campaignCode, threadValue, excludeUsername) {
 // a chi manomette deliberatamente le chiamate API.
 //
 // findSectorAnywhere/computeMemberLocationKey rispecchiano ESATTAMENTE findSectorAnywhere/
-// memberLocationKey di js/chat-log-engine.js (stessa identica chiave "macroId|settoreId|luogoId"),
-// così un messaggio marcato lato client risulta visibile/non visibile in modo coerente qui.
+// memberLocationKey di js/chat-log-engine.js (stessa identica chiave, ora a 4 parti dopo
+// l'introduzione delle Sottosezioni: "macroId|settoreId|sottosezioneId|luogoId"), così un
+// messaggio marcato lato client risulta visibile/non visibile in modo coerente qui. Messaggi
+// marcati PRIMA di questa modifica (chiave a 3 parti, senza Sottosezione) semplicemente non fanno
+// più match per confronto di stringa — stessa conseguenza già accettata lato client (vedi
+// locationLabelForKey in js/chat-log-engine.js), non serve gestirla qui: filterLogForRequester
+// sotto lascia comunque sempre visibili i messaggi SENZA meta.location, che sono la maggioranza
+// dello storico "di sistema".
 function findSectorAnywhere(macroScenes, sectorId) {
   if (!sectorId) return null;
   for (const m of (macroScenes || [])) {
@@ -158,9 +164,16 @@ function computeMemberLocationKey(scene, member) {
   if (tamer.currentLuogoId) luogoId = tamer.currentLuogoId;
   else if (sectorOverride) luogoId = null; // Settore proprio senza Luogo: non eredita quello di gruppo
   else luogoId = (scene && scene.currentLuogoId) || null;
+  // Stesso pattern di luogoId qui sopra, un livello più in alto (vedi memberEffectiveSubsectionId
+  // in js/chat-log-engine.js): un override esplicito di Sottosezione vince, altrimenti chi si è
+  // separato a livello di Settore non eredita la Sottosezione del gruppo, altrimenti la segue.
+  let subsectionId;
+  if (tamer.currentSubsectionId) subsectionId = tamer.currentSubsectionId;
+  else if (sectorOverride) subsectionId = null;
+  else subsectionId = (scene && scene.currentSubsectionId) || null;
   const found = sectorId ? findSectorAnywhere(scene && scene.macroScenes, sectorId) : null;
   const macroId = found ? found.macro.id : ((scene && scene.currentMacroSceneId) || null);
-  return `${macroId || '_'}|${sectorId || '_'}|${luogoId || '_'}`;
+  return `${macroId || '_'}|${sectorId || '_'}|${subsectionId || '_'}|${luogoId || '_'}`;
 }
 
 // Filtra un elenco di righe del log pubblico per la posizione EFFETTIVA di `requesterUsername`.
@@ -173,7 +186,10 @@ async function filterLogForRequester(campaignCode, rows, requesterUsername) {
   if (!requesterUsername) return rows;
   const { data: member } = await supabase.from('members').select('role, tamer').eq('campaign_code', campaignCode).eq('username', requesterUsername).maybeSingle();
   if (!member || member.role === 'master') return rows;
-  const { data: scene } = await supabase.from('scenes').select('currentMacroSceneId, currentSectorId, currentLuogoId, macroScenes').eq('campaign_code', campaignCode).maybeSingle();
+  // currentSubsectionId può non esistere ancora come colonna (vedi api/state.js, fallback
+  // "colonna mancante"): select('*') invece di elencare le colonne esplicitamente evita che questa
+  // query fallisca del tutto su installazioni senza la migrazione SQL ancora eseguita.
+  const { data: scene } = await supabase.from('scenes').select('*').eq('campaign_code', campaignCode).maybeSingle();
   const myKey = computeMemberLocationKey(scene, member);
   return rows.filter(l => !(l.meta && l.meta.location) || l.meta.location === myKey);
 }

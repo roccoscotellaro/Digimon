@@ -35,8 +35,18 @@
 // gestito da un 7° parametro opzionale `onReply` di attachLogModeration.
 //
 // Inviti di spostamento "Vuoi andare a...?" (::MOVEREQ::) — MODALITÀ (aggiunte dopo la richiesta
-// di Rocco su Foggia/Koromon Village): il payload è ora `sectorId|luogoId|mode`, dove `mode` manca
-// (undefined → trattato come 'each') su tutti i messaggi vecchi, quindi restano identici a prima.
+// di Rocco su Foggia/Koromon Village): il payload storico era `sectorId|luogoId|mode`, dove `mode`
+// manca (undefined → trattato come 'each') su tutti i messaggi vecchi, quindi restano identici a
+// prima.
+//
+// AGGIORNAMENTO (Sottosezioni, richiesta "Macroarea - Settore - Sottosezioni del settore ... e
+// Luoghi"): il payload NUOVO è `sectorId|subsectionId|luogoId|mode`, SEMPRE con tutti e 4 i campi
+// (subsectionId vuoto ma presente quando non si punta a una Sottosezione, mode sempre scritto
+// esplicitamente anche per 'each' — vedi sendMoveInvite in js/scene-encounters.js). Questo evita
+// ambiguità nel riconoscere i due formati contando solo il numero di segmenti: un payload con 4+
+// segmenti è sempre nuovo formato, uno con meno di 4 è sempre vecchio formato (subsectionId
+// implicitamente assente). Vedi parseMoveReqPayload più sotto, usata sia da logHTML (per
+// costruire i bottoni) sia dai branch [data-move-accept-sector]/[data-move-vote-id] più in basso.
 //   - 'each' (default, Generale/Privata/Sottogruppo): comportamento storico — chi clicca si sposta
 //     DA SOLO, subito, come sempre (vedi branch [data-move-accept-sector] più sotto).
 //   - 'all'/'majority'/'unanimous' (SOLO quando l'invito è mandato a un Sottogruppo, scelto dal
@@ -129,9 +139,16 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
   async function saveSubgroup(code, { id, name, members }){ return apiPost('/api/notice', { resource:'subgroup', code, id, name, members }); }
   async function deleteSubgroup(code, id){ return apiDelete('/api/notice?resource=subgroup&code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id)); }
 
+  // Chiave di posizione: FORMATO NUOVO a 4 parti (Sottosezioni), macroId|sectorId|subsectionId|
+  // luogoId. I messaggi salvati PRIMA di questa modifica hanno chiavi a 3 parti (macroId|sectorId|
+  // luogoId, nessuna Sottosezione) — locationLabelForKey qui sotto riconosce e mostra correttamente
+  // anche quelle, ma NON fa match di stringa con le chiavi nuove (buildLocationOptions/
+  // filterByLocation trattano la chiave come stringa opaca): lo storico più vecchio di questa
+  // modifica smette quindi di comparire sotto il filtro "Settore attuale" di un punto specifico,
+  // conseguenza accettata (come per le precedenti evoluzioni dello schema di questa app).
   function currentLocationKey(){
-    if(!cachedScene) return '_|_|_';
-    return `${cachedScene.currentMacroSceneId||'_'}|${cachedScene.currentSectorId||'_'}|${cachedScene.currentLuogoId||'_'}`;
+    if(!cachedScene) return '_|_|_|_';
+    return `${cachedScene.currentMacroSceneId||'_'}|${cachedScene.currentSectorId||'_'}|${cachedScene.currentSubsectionId||'_'}|${cachedScene.currentLuogoId||'_'}`;
   }
 
   function currentLocationLabel(){
@@ -141,14 +158,26 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
   function locationLabelForKey(key){
     if(!key || key==='__legacy__') return 'Storico precedente';
     const parts = String(key).split('|');
-    const sectorId = parts[1], luogoId = parts[2];
+    // Formato nuovo (4+ parti): macroId|sectorId|subsectionId|luogoId. Formato legacy (meno di 4
+    // parti, chiavi salvate prima delle Sottosezioni): macroId|sectorId|luogoId.
+    let sectorId, subsectionId, luogoId;
+    if(parts.length >= 4){
+      sectorId = parts[1]; subsectionId = parts[2]; luogoId = parts[3];
+    } else {
+      sectorId = parts[1]; subsectionId = null; luogoId = parts[2];
+    }
     if(!sectorId || sectorId==='_') return 'Nessun Settore';
     const sName = sectorNameById(sectorId) || 'Settore eliminato';
-    if(luogoId && luogoId!=='_'){
-      const lName = luogoNameById(sectorId, luogoId);
-      if(lName) return `${sName} — ${lName}`;
+    let label = sName;
+    if(subsectionId && subsectionId!=='_'){
+      const subName = subsectionNameById(sectorId, subsectionId);
+      if(subName) label += ` — ${subName}`;
     }
-    return sName;
+    if(luogoId && luogoId!=='_'){
+      const lName = luogoNameAnywhere(sectorId, (subsectionId && subsectionId!=='_') ? subsectionId : null, luogoId);
+      if(lName) label += ` — ${lName}`;
+    }
+    return label;
   }
 
   function buildLocationOptions(entries, currentKey){
@@ -293,8 +322,24 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
     return (cachedScene && cachedScene.currentLuogoId) || null;
   }
 
+  // Sottosezioni (richiesta utente "Macroarea - Settore - Sottosezioni del settore ... e Luoghi"):
+  // stesso identico pattern di memberEffectiveLuogoId qui sopra, un livello più in alto — un
+  // override esplicito di Sottosezione vince sempre; altrimenti, se il membro si è separato dal
+  // gruppo a livello di Settore (currentSectorId esplicito), non segue nessuna Sottosezione
+  // specifica; altrimenti segue la Sottosezione attuale del gruppo. Per l'invariante mantenuto da
+  // tutte le UI di spostamento (currentSectorId sempre impostato esplicitamente insieme a
+  // currentSubsectionId/currentLuogoId), quando subOverride è presente anche sectorOverride lo è
+  // sempre, quindi non serve controllarlo qui.
+  function memberEffectiveSubsectionId(member){
+    const subOverride = member && member.tamer && member.tamer.currentSubsectionId;
+    if(subOverride) return subOverride;
+    const sectorOverride = member && member.tamer && member.tamer.currentSectorId;
+    if(sectorOverride) return null;
+    return (cachedScene && cachedScene.currentSubsectionId) || null;
+  }
+
   function memberLocationKey(member){
-    if(!cachedScene) return '_|_|_';
+    if(!cachedScene) return '_|_|_|_';
     const sectorId = memberEffectiveSectorId(member);
     // Il Settore effettivo di un membro separato può appartenere a una Macroscena DIVERSA da
     // quella che il gruppo sta guardando in quel momento (es. gruppo su "Yokohama" ma il membro,
@@ -305,7 +350,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
     // a fallire.
     const found = sectorId ? findSectorAnywhere(cachedScene, sectorId) : null;
     const macroId = found ? found.macro.id : (cachedScene.currentMacroSceneId || null);
-    return `${macroId||'_'}|${sectorId||'_'}|${memberEffectiveLuogoId(member)||'_'}`;
+    return `${macroId||'_'}|${sectorId||'_'}|${memberEffectiveSubsectionId(member)||'_'}|${memberEffectiveLuogoId(member)||'_'}`;
   }
 
   function subgroupLocationKey(group){
@@ -332,6 +377,41 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
     return null;
   }
 
+  // Sottosezioni: stesso pattern di sectorNameById, un livello più in profondità — cerca dentro
+  // s.subsections invece che direttamente dentro le Macroscene.
+  function subsectionNameById(sectorId, subsectionId){
+    if(!sectorId || !subsectionId) return null;
+    for(const m of (cachedScene.macroScenes||[])){
+      const s = (m.sectors||[]).find(x=>x.id===sectorId);
+      if(s){ const sub = (s.subsections||[]).find(x=>x.id===subsectionId); return sub ? sub.name : null; }
+    }
+    return null;
+  }
+
+  // Un Luogo può vivere direttamente dentro un Settore (s.luoghi, come sempre) oppure dentro una
+  // sua Sottosezione (sub.luoghi, nuovo). Se subsectionId è passato, cerca prima lì; altrimenti (o
+  // se non trovato) ricade su luogoNameById come prima — così i call site che non sanno se un
+  // Luogo è "diretto" o dentro una Sottosezione possono passare comunque entrambi gli id.
+  function luogoNameInSubsection(sectorId, subsectionId, luogoId){
+    if(!sectorId || !subsectionId || !luogoId) return null;
+    for(const m of (cachedScene.macroScenes||[])){
+      const s = (m.sectors||[]).find(x=>x.id===sectorId);
+      if(s){
+        const sub = (s.subsections||[]).find(x=>x.id===subsectionId);
+        if(sub){ const lg = (sub.luoghi||[]).find(x=>x.id===luogoId); return lg ? lg.name : null; }
+      }
+    }
+    return null;
+  }
+
+  function luogoNameAnywhere(sectorId, subsectionId, luogoId){
+    if(subsectionId){
+      const n = luogoNameInSubsection(sectorId, subsectionId, luogoId);
+      if(n) return n;
+    }
+    return luogoNameById(sectorId, luogoId);
+  }
+
   function findSectorAnywhere(scene, sectorId){
     if(!sectorId) return null;
     for(const m of ((scene && scene.macroScenes) || [])){
@@ -339,6 +419,30 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       if(s) return { sector: s, macro: m };
     }
     return null;
+  }
+
+  // Come findSectorAnywhere ma per le Sottosezioni: cerca in ogni Settore di ogni Macroscena,
+  // restituendo anche il Settore/Macroscena contenitori (servono a chi la chiama per risalire il
+  // resto della gerarchia senza dover rifare la ricerca).
+  function findSubsectionAnywhere(scene, subsectionId){
+    if(!subsectionId) return null;
+    for(const m of ((scene && scene.macroScenes) || [])){
+      for(const s of (m.sectors||[])){
+        const sub = (s.subsections||[]).find(x=>x.id===subsectionId);
+        if(sub) return { subsection: sub, sector: s, macro: m };
+      }
+    }
+    return null;
+  }
+
+  // Vedi nota di testa del file ("Inviti di spostamento ::MOVEREQ::" — aggiornamento Sottosezioni)
+  // per la spiegazione del criterio di riconoscimento formato vecchio/nuovo.
+  function parseMoveReqPayload(payload){
+    const parts = String(payload||'').split('|');
+    if(parts.length >= 4){
+      return { sectorId: parts[0]||'', subsectionId: parts[1]||'', luogoId: parts[2]||'', mode: parts[3]||'each' };
+    }
+    return { sectorId: parts[0]||'', subsectionId: '', luogoId: parts[1]||'', mode: parts[2]||'each' };
   }
 
   // Fonte di verità unica per l'immagine "migliore" di un Digimon: cerca prima nel Digidex live
@@ -490,17 +594,53 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
           }
         }
       }
+      // Richiesta Razioni (Rest) — richiesta utente (Razioni/Affaticamento): payload =
+      // username|restId. A differenza di ::REQ::/::TORMENTREQ:: (un solo bottone che tira e
+      // basta), qui il giocatore deve PRIMA scegliere quante razioni consumare (0/1/2, un
+      // <select> capato dai "pasti" (oggetti Inventario con category==='cibo') che ha davvero a
+      // disposizione — vedi INVENTORY_CATEGORIES/qty "x{qty} pasti" in js/tamer-card.js) e SOLO
+      // DOPO confermare con un bottone (data-ration-confirm, gestito in attachLogModeration più
+      // sotto). restId lega la richiesta al singolo Rest che l'ha generata (vedi il loop in
+      // js/progression.js dopo btn-take-rest): tamer.lastRationRestId, salvato al momento della
+      // conferma, impedisce di ri-gestire le razioni due volte per lo stesso Rest se il
+      // giocatore riapre/rilegge il messaggio più tardi.
+      if(l.role==='rationrequest' && l.text.includes('::RATIONREQ::')){
+        const [shown, payload] = l.text.split('::RATIONREQ::');
+        displayText = shown;
+        const parts = payload.split('|');
+        const rationTargetUser = parts[0] || '';
+        const restId = parts[1] || '';
+        if(session && session.role==='player' && session.username===rationTargetUser){
+          const selfMember = (cachedRoster||[]).find(m=>m.username===session.username);
+          const alreadyDone = !!(selfMember && selfMember.tamer && selfMember.tamer.lastRationRestId && selfMember.tamer.lastRationRestId===restId);
+          if(alreadyDone){
+            fulfillBtn = `<div class="muted" style="margin-top:6px;font-size:11px;">✅ Razioni già gestite per questo Rest.</div>`;
+          } else {
+            const ciboItems = (selfMember && selfMember.tamer && Array.isArray(selfMember.tamer.inventory)) ? selfMember.tamer.inventory.filter(it=>it.category==='cibo') : [];
+            const totalPasti = ciboItems.reduce((s,it)=>s+(Number(it.qty)||0),0);
+            const maxSelectable = Math.min(2, totalPasti);
+            let opts = '';
+            for(let q=0; q<=2; q++){
+              opts += `<option value="${q}" ${q>maxSelectable?'disabled':''} ${q===maxSelectable?'selected':''}>${q} razion${q===1?'e':'i'}</option>`;
+            }
+            fulfillBtn = `<div style="margin-top:6px;">
+              <div class="muted" style="font-size:10px;margin-bottom:4px;">🍙 Pasti disponibili in Inventario: ${totalPasti}${totalPasti<2?' (meno di 2 — Affaticamento in arrivo se non ne trovi altri)':''}</div>
+              <select id="ration-qty-${escapeAttr(l.id)}" style="max-width:170px;display:inline-block;">${opts}</select>
+              <button class="btn amber small" style="margin-left:4px;" data-ration-confirm="${escapeAttr(l.id)}" data-ration-rest="${escapeAttr(restId)}">🍙 Conferma Razioni</button>
+            </div>`;
+          }
+        }
+      }
       // Invito del Master a spostarsi ("Vuoi andare a XXX?"): payload = sectorId|luogoId|mode
       // (mode manca sui messaggi vecchi → 'each', vedi nota di testa del file per le 3 modalità).
       if(l.role==='moverequest' && l.text.includes('::MOVEREQ::')){
         const [shown, payload] = l.text.split('::MOVEREQ::');
         displayText = shown;
-        const payloadParts = payload.split('|');
-        const moveSectorId = payloadParts[0], moveLuogoId = payloadParts[1] || '', moveMode = payloadParts[2] || 'each';
+        const { sectorId: moveSectorId, subsectionId: moveSubsectionId, luogoId: moveLuogoId, mode: moveMode } = parseMoveReqPayload(payload);
         if(session && session.role==='player' && moveSectorId){
           if(moveMode==='each'){
             // Comportamento storico: chi clicca si sposta DA SOLO, subito.
-            fulfillBtn = `<button class="btn small" style="margin-top:6px;background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);" data-move-accept-sector="${escapeAttr(moveSectorId)}" data-move-accept-luogo="${escapeAttr(moveLuogoId)}">🚶 Sì, andiamo!</button>`;
+            fulfillBtn = `<button class="btn small" style="margin-top:6px;background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);" data-move-accept-sector="${escapeAttr(moveSectorId)}" data-move-accept-subsection="${escapeAttr(moveSubsectionId)}" data-move-accept-luogo="${escapeAttr(moveLuogoId)}">🚶 Sì, andiamo!</button>`;
           } else {
             // 'all'/'majority'/'unanimous': il contatore "N/Tot" (richiesto da Rocco) usa il
             // numero REALE di membri del sottogruppo, letto da cachedSubgroups tramite
@@ -525,7 +665,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
                   ? 'devono dire "sì" TUTTI i membri del sottogruppo'
                   : 'serve la maggioranza dei membri del sottogruppo');
               fulfillBtn = `<div style="margin-top:6px;">
-                <button class="btn small ${already?'ghost':''}" ${already?'disabled':''} style="${already?'':'background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);'}" data-move-vote-id="${escapeAttr(l.id)}" data-move-vote-sector="${escapeAttr(moveSectorId)}" data-move-vote-luogo="${escapeAttr(moveLuogoId)}" data-move-vote-mode="${escapeAttr(moveMode)}">${already?'✅ Hai accettato':'🚶 Sì, andiamo!'}</button>
+                <button class="btn small ${already?'ghost':''}" ${already?'disabled':''} style="${already?'':'background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);'}" data-move-vote-id="${escapeAttr(l.id)}" data-move-vote-sector="${escapeAttr(moveSectorId)}" data-move-vote-subsection="${escapeAttr(moveSubsectionId)}" data-move-vote-luogo="${escapeAttr(moveLuogoId)}" data-move-vote-mode="${escapeAttr(moveMode)}">${already?'✅ Hai accettato':'🚶 Sì, andiamo!'}</button>
                 <div class="muted" style="font-size:10px;margin-top:2px;">${totalLabel} hanno detto sì — ${modeExplainer}${already?', in attesa degli altri':''}.</div>
               </div>`;
             }
@@ -730,6 +870,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       const replyBtn = e.target.closest('[data-log-reply]');
       const fulfillBtn = e.target.closest('[data-fulfill-target]');
       const fulfillTormentBtn = e.target.closest('[data-fulfill-torment]');
+      const rationConfirmBtn = e.target.closest('[data-ration-confirm]');
       const moveAcceptBtn = e.target.closest('[data-move-accept-sector]');
       const moveVoteBtn = e.target.closest('[data-move-vote-id]');
       const evoQuickBtn = e.target.closest('[data-evo-quick-username]');
@@ -785,9 +926,16 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         let text = null;
         let rollMeta = null;
         if(poolKeys.includes(skillKey)){
-          const { dice, successes } = rollPool(me.digimon[skillKey]);
+          // Richiesta utente (Affaticamento): stesso -1 dado/livello già applicato al Pool Check
+          // "in autonomia" del bottone 🎲 di js/digimon-card.js e allo shortcut testuale di
+          // tryParseRollShortcut/js/tamer-card.js — qui il tiro parte da una richiesta del
+          // Master in chat (::REQ::) invece che da un'azione diretta del giocatore, ma è lo
+          // stesso identico Pool Check e deve subire la stessa penalità.
+          const fatigueLevel = Number((me.digimon && me.digimon.fatigueLevel)||0);
+          const poolSize = Math.max(0, Number(me.digimon[skillKey]||0) - fatigueLevel);
+          const { dice, successes } = rollPool(poolSize);
           const label = skillKey==='baseAccuracy'?'Accuracy':(skillKey==='baseDodge'?'Dodge':'Health');
-          text = `tira Pool Check ${label} (${me.digimon[skillKey]}d6): [${dice.join(',')}] → ${successes} successi (richiesto dal Master)`;
+          text = `tira Pool Check ${label} (${poolSize}d6): [${dice.join(',')}] → ${successes} successi (richiesto dal Master)` + (fatigueLevel>0 ? ` (−${fatigueLevel} dadi per Affaticamento)` : '');
           rollMeta = { dice, successes };
         } else {
           const def = SKILL_DEFS.find(d=>d.key===skillKey);
@@ -816,6 +964,18 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
                 aspectNote = ` +2 Minor Aspect (${me.tamer.minorAspect.text})`;
                 await saveMember(session.code, me);
               }
+            }
+            // Richiesta utente (Razioni/Affaticamento): terzo (e ultimo) dei 3 punti dove il
+            // totale di un Check del Tamer deve sommare TORMENT PENALTY + AFFATICAMENTO insieme
+            // (gli altri due sono openSkillRollPanel e tryParseRollShortcut in js/tamer-card.js)
+            // — qui il tiro parte da una richiesta del Master in chat (::REQ::) invece che da
+            // un'azione diretta del giocatore, ma è lo stesso identico Check e deve subire la
+            // stessa penalità. tormentPenalty non era MAI stato sommato per davvero da nessuna
+            // parte prima di questa modifica (nonostante il campo esistesse già).
+            const restPenalty = Number(me.tamer.tormentPenalty||0) - Number(me.tamer.fatigueLevel||0);
+            if(restPenalty!==0){
+              total += restPenalty;
+              aspectNote += ` ${restPenalty>0?'+':''}${restPenalty} Torment/Affaticamento`;
             }
             const verdict = evaluateVsTN(total, tn, dice);
             text = `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict?` vs TN ${tn} → ${verdict.label}`:'') + ' (richiesto dal Master)';
@@ -905,26 +1065,82 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
           if(onChanged) onChanged();
         }
       }
+      if(rationConfirmBtn && me){
+        // Richiesta utente (Razioni/Affaticamento): conferma della scelta 0/1/2 fatta col
+        // <select> mostrato da logHTML sopra (::RATIONREQ::). A differenza di fulfillTormentBtn/
+        // fulfillBtn qui non c'è un solo tiro da fare — c'è un consumo di Inventario (2 pasti =
+        // 2 unità di qty tra gli oggetti category==='cibo', a scalare dal primo oggetto disponibile)
+        // e un aggiornamento di fatigueLevel su ENTRAMBI Tamer e Digimon, secondo la regola
+        // decisa con Rocco: 2/2 razioni consumate → fatigueLevel azzerato su entrambi (anche se
+        // era accumulato da Rest precedenti); meno di 2 → +1 livello di Affaticamento su entrambi
+        // (nessun tetto massimo, si accumula Rest dopo Rest finché non si consumano 2 razioni in
+        // un colpo solo).
+        const msgId = rationConfirmBtn.getAttribute('data-ration-confirm');
+        const restId = rationConfirmBtn.getAttribute('data-ration-rest');
+        const qtySelect = document.getElementById('ration-qty-'+msgId);
+        const chosenQty = qtySelect ? Math.max(0, Math.min(2, Number(qtySelect.value)||0)) : 0;
+        if(me.tamer.lastRationRestId !== restId){
+          rationConfirmBtn.disabled = true;
+          // Scala chosenQty "pasti" dagli oggetti category==='cibo' dell'Inventario, dal primo
+          // in poi finché non ne rimangono da scalare — gli oggetti svuotati (qty<=0) vengono
+          // rimossi dall'Inventario, stesso comportamento di un consumo normale.
+          let remaining = chosenQty;
+          const inv = me.tamer.inventory || [];
+          inv.forEach(it=>{
+            if(remaining<=0 || it.category!=='cibo') return;
+            const take = Math.min(remaining, Number(it.qty)||0);
+            it.qty = Number(it.qty||0) - take;
+            remaining -= take;
+          });
+          me.tamer.inventory = inv.filter(it=> !(it.category==='cibo' && Number(it.qty)<=0));
+          me.tamer.lastRationRestId = restId;
+          let outcomeText;
+          if(chosenQty>=2){
+            me.tamer.fatigueLevel = 0;
+            if(me.digimon) me.digimon.fatigueLevel = 0;
+            outcomeText = '✅ 2/2 razioni consumate: Affaticamento azzerato (Tamer e Digimon).';
+          } else {
+            me.tamer.fatigueLevel = Number(me.tamer.fatigueLevel||0) + 1;
+            if(me.digimon) me.digimon.fatigueLevel = Number(me.digimon.fatigueLevel||0) + 1;
+            outcomeText = `😴 Solo ${chosenQty}/2 razioni consumate: +1 livello di Affaticamento (Tamer e Digimon).`;
+          }
+          await saveMember(session.code, me);
+          const entry = { who: displayName(me), role:'player', text: `🍙 ${displayName(me)} gestisce le razioni del Rest (${chosenQty}/2 consumate). ${outcomeText}` };
+          if(playerChatMode==='private'){
+            await pushPrivateLog(code, session.username, { ...entry, meta: { location: memberLocationKey(me) } });
+          } else if(playerChatMode==='subgroup' && playerActiveSubgroupId){
+            const group = (cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId) || null;
+            await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { ...entry, meta: { location: subgroupLocationKey(group) } });
+          } else {
+            await pushLog(code, entry);
+          }
+          if(onChanged) onChanged();
+        }
+      }
       if(moveAcceptBtn && me){
         // Il Master ha esplicitamente proposto questa destinazione in chat: lo spostamento va a
         // buon fine anche se lo "spostamento libero"/le connessioni non lo permetterebbero — qui
         // non è il giocatore a decidere di muoversi da solo, è un invito diretto del Master.
         // (Modalità 'each', comportamento storico — vedi nota di testa del file per 'all'/'majority'.)
         const sectorId = moveAcceptBtn.getAttribute('data-move-accept-sector');
+        const subsectionId = moveAcceptBtn.getAttribute('data-move-accept-subsection') || null;
         const luogoId = moveAcceptBtn.getAttribute('data-move-accept-luogo') || null;
         if(sectorId){
           moveAcceptBtn.disabled = true;
           const prevSectorId = me.tamer.currentSectorId;
+          const prevSubsectionId = me.tamer.currentSubsectionId;
           const prevLuogoId = me.tamer.currentLuogoId;
           me.tamer.currentSectorId = sectorId;
+          me.tamer.currentSubsectionId = subsectionId;
           me.tamer.currentLuogoId = luogoId;
           const ok = await saveMember(code, me);
           if(!ok){
             me.tamer.currentSectorId = prevSectorId;
+            me.tamer.currentSubsectionId = prevSubsectionId;
             me.tamer.currentLuogoId = prevLuogoId;
             moveAcceptBtn.disabled = false;
           } else {
-            const destName = luogoId ? luogoNameById(sectorId, luogoId) : sectorNameById(sectorId);
+            const destName = luogoId ? luogoNameAnywhere(sectorId, subsectionId, luogoId) : (subsectionId ? subsectionNameById(sectorId, subsectionId) : sectorNameById(sectorId));
             const entry = { who: displayName(me), role:'player', text: `🚶 ${displayName(me)} si sposta a "${destName||''}".` };
             if(playerChatMode==='private') await pushPrivateLog(code, session.username, entry);
             else if(playerChatMode==='subgroup' && playerActiveSubgroupId) await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, entry);
@@ -944,6 +1160,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         // questo handler richiama onChanged, senza bisogno di un messaggio di chat a parte.
         const msgId = moveVoteBtn.getAttribute('data-move-vote-id');
         const sectorId = moveVoteBtn.getAttribute('data-move-vote-sector');
+        const subsectionId = moveVoteBtn.getAttribute('data-move-vote-subsection') || null;
         const luogoId = moveVoteBtn.getAttribute('data-move-vote-luogo') || null;
         const mode = moveVoteBtn.getAttribute('data-move-vote-mode');
         const entry = sourceLog.find(l=>String(l.id)===String(msgId));
@@ -970,10 +1187,11 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
               const member = (cachedRoster||[]).find(m=>m.username===username);
               if(!member || !member.tamer) continue;
               member.tamer.currentSectorId = sectorId;
+              member.tamer.currentSubsectionId = subsectionId;
               member.tamer.currentLuogoId = luogoId;
               await saveMember(code, member);
             }
-            const destName = luogoId ? luogoNameById(sectorId, luogoId) : sectorNameById(sectorId);
+            const destName = luogoId ? luogoNameAnywhere(sectorId, subsectionId, luogoId) : (subsectionId ? subsectionNameById(sectorId, subsectionId) : sectorNameById(sectorId));
             await pushPrivateLog(code, thread, { who:'Sistema', role:'gm', text: `📍 Il sottogruppo si sposta a "${destName||''}" (${votes.length}/${totalMembers} hanno accettato).` });
           }
           if(onChanged) onChanged();

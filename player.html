@@ -286,7 +286,11 @@
   function defaultTamer(){
     const skills = {}; SKILL_DEFS.forEach(s=>skills[s.key]=0);
     return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, imageUrl:'', currentWounds:null, inventory:[], skills,
-      unspentGrowthPoints:0, inspirationPoints:0, tormentPenalty:0, torments:[],
+      unspentGrowthPoints:0, inspirationPoints:0, tormentPenalty:0,
+      // Richiesta utente (Razioni/Affaticamento): gemello di tormentPenalty ma non si azzera con
+      // un Rest qualunque — si azzera solo insieme al Digimon quando il Tamer consuma entrambe le
+      // 2 razioni in un Rest (vedi ::RATIONREQ:: in js/chat-log-engine.js). -1/livello ai Check.
+      fatigueLevel:0, torments:[],
       majorAspect:{text:'',usesLeft:1,desc:'',pro:'',con:''}, minorAspect:{text:'',usesLeft:2,desc:'',pro:'',con:''}, built:false,
       age:'', nationality:'', height:'', hairColor:'', eyeColor:'', distinctiveTraits:'', background:'',
       imageThumbUrl:'', characterName:'',
@@ -641,6 +645,7 @@
           <div class="field"><label>Punti Crescita non spesi</label><div class="mono">${t.unspentGrowthPoints||0}</div></div>
           <div class="field"><label>Punti Ispirazione</label><div class="mono">${t.inspirationPoints||0}</div></div>
           <div class="field"><label>Penalità Torment</label><div class="mono">${t.tormentPenalty||0}</div></div>
+          <div class="field"><label>😴 Affaticamento</label><div class="mono">${t.fatigueLevel||0}</div></div>
         </div>
       </div>`;
     }
@@ -652,6 +657,7 @@
         <div class="field"><label>Punti Crescita non spesi</label><input type="number" id="p-unspentGrowthPoints" value="${t.unspentGrowthPoints||0}" /></div>
         <div class="field"><label>Punti Ispirazione</label><input type="number" id="p-inspirationPoints" value="${t.inspirationPoints||0}" /></div>
         <div class="field"><label>Penalità Torment</label><input type="number" id="p-tormentPenalty" value="${t.tormentPenalty||0}" /></div>
+        <div class="field"><label>😴 Affaticamento (Razioni)</label><input type="number" id="p-fatigueLevel" value="${t.fatigueLevel||0}" /></div>
       </div>
     </div>`;
   }
@@ -702,6 +708,24 @@
     </div>`;
   }
 
+  // Richiesta utente (Razioni): stessa lista di Categorie di js/tamer-card.js (INVENTORY_CATEGORIES)
+  // riproposta qui perché player.html è una pagina satellite con la propria copia della logica
+  // di Inventario (non condivide globali con index.html/tamer-card.js). 'cibo' è la Categoria che
+  // rende il campo qty un conteggio di "pasti"/razioni per il consumo al Rest (vedi ::RATIONREQ::
+  // in js/chat-log-engine.js).
+  const INVENTORY_CATEGORIES = [
+    { value:'altro', label:'Altro' },
+    { value:'cibo', label:'Cibo' },
+    { value:'indossabile', label:'Indossabile' },
+    { value:'arma', label:'Arma' },
+    { value:'strumento', label:'Strumento' },
+    { value:'chiave', label:'Chiave/Quest' }
+  ];
+  function inventoryCategoryLabel(cat){
+    const def = INVENTORY_CATEGORIES.find(c=>c.value===cat);
+    return def ? def.label : '';
+  }
+
   function inventoryBlockHTML(m, editable){
     const items = m.tamer.inventory || [];
     return `
@@ -710,7 +734,7 @@
       ${items.length===0 ? '<div class="muted">Nessun oggetto.</div>' : items.map((it,i)=>`
         <div class="list-item">
           <div class="top-row">
-            <span class="name">${escapeHTML(it.name)} <span class="muted">x${Number(it.qty)||1}</span></span>
+            <span class="name">${escapeHTML(it.name)} <span class="muted">${it.category==='cibo' ? `x${Number(it.qty)||1} pasti` : `x${Number(it.qty)||1}`}</span>${it.category && it.category!=='altro' ? ` <span class="muted mono" style="font-size:9px;">[${escapeHTML(inventoryCategoryLabel(it.category))}]</span>` : ''}</span>
             ${editable ? `<button class="btn ghost small" data-inv-remove="${i}">Rimuovi</button>` : ''}
           </div>
           ${it.desc ? `<div class="sub">${escapeHTML(it.desc)}</div>` : ''}
@@ -721,6 +745,9 @@
         <div class="row">
           <div class="field"><label>Oggetto</label><input type="text" id="p-inv-name" placeholder="es. Digivice" /></div>
           <div class="field" style="max-width:70px;"><label>Q.tà</label><input type="number" id="p-inv-qty" value="1" min="1" /></div>
+        </div>
+        <div class="field"><label>Categoria</label>
+          <select id="p-inv-category">${INVENTORY_CATEGORIES.map(c=>`<option value="${c.value}">${escapeHTML(c.label)}</option>`).join('')}</select>
         </div>
         <div class="field"><label>Descrizione (opz.)</label><input type="text" id="p-inv-desc" placeholder="cosa fa..." /></div>
         <button class="btn ghost small" id="p-inv-add" style="width:100%;">+ Aggiungi Oggetto</button>
@@ -1186,6 +1213,8 @@
     if(ipEl) target.tamer.inspirationPoints = Math.max(0, Number(ipEl.value)||0);
     const tpEl = document.getElementById('p-tormentPenalty');
     if(tpEl) target.tamer.tormentPenalty = Number(tpEl.value)||0;
+    const fatEl = document.getElementById('p-fatigueLevel');
+    if(fatEl) target.tamer.fatigueLevel = Math.max(0, Number(fatEl.value)||0);
     const majorTextEl = document.getElementById('p-majorText');
     if(majorTextEl) target.tamer.majorAspect.text = majorTextEl.value.trim();
     const majorUsesEl = document.getElementById('p-majorUses');
@@ -1232,8 +1261,12 @@
       if(!name) return;
       const qty = Number(document.getElementById('p-inv-qty').value)||1;
       const desc = document.getElementById('p-inv-desc').value.trim();
+      // Richiesta utente (Razioni): Categoria letta dal nuovo select — stesso pattern di
+      // js/tamer-card.js, con default 'altro' se il select non è presente per qualche motivo.
+      const categoryEl = document.getElementById('p-inv-category');
+      const category = categoryEl ? categoryEl.value : 'altro';
       collectFormValues(target);
-      target.tamer.inventory.push({ name, qty, desc });
+      target.tamer.inventory.push({ name, qty, desc, category });
       // Aggiornamento ottimistico: ridisegna SUBITO con l'oggetto già in lista, senza aspettare
       // la risposta del server (che comunque salva l'intera riga member — tamer+digimon — quindi
       // può richiedere qualche centinaio di ms). Prima si aspettava saveMember() prima di ridisegnare,

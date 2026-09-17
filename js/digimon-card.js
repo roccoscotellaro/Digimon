@@ -44,6 +44,16 @@
       evolveUnlocked:false,
       unlockedEvolutions:[], // nomi delle evoluzioni (dal Digidex) che il Master ha sbloccato per il giocatore
       battery:0, usedSigMoveThisTurn:false,
+      // Richiesta utente (Razioni/Affaticamento): livello di Affaticamento del Digimon, gemello di
+      // tamer.fatigueLevel (js/tamer-card.js) — primo campo di questo tipo lato Digimon, nessun
+      // precedente nel codice. Si accumula di 1 ad ogni Rest in cui il Tamer non consuma entrambe
+      // le 2 razioni giornaliere (vedi js/progression.js e il marcatore ::RATIONREQ:: gestito in
+      // js/chat-log-engine.js) e si azzera SOLO insieme al gemello del Tamer quando entrambe le
+      // razioni vengono consumate in un Rest — non si azzera con un Rest qualunque, a differenza
+      // del Torment. -1/livello ai Pool Check (baseAccuracy/baseDodge/baseHealth, vedi il bottone
+      // 🎲 qui sotto e tryParseRollShortcut in js/tamer-card.js) e alle 4 Stat di Combattimento
+      // effettive (vedi getParticipantCombatStats in js/combat-engine.js).
+      fatigueLevel:0,
       size:'Medium', stance:'Neutral', chatColor:'#c896ff',
       resolveCurrent:0, resolveMax:4,
       stageStats:{},
@@ -715,6 +725,7 @@
         </div>
         ${barHTML('Caselle Ferita', d.currentWounds, d.maxWounds, 'hp', 'dig-w-minus-'+containerId, 'dig-w-plus-'+containerId)}
         ${Number(d.tempWounds||0)>0 ? `<div class="muted" style="margin-top:-4px;margin-bottom:8px;color:var(--cyan);">🛡️ +${d.tempWounds} Caselle Ferita Temporanee (Shield)</div>` : ''}
+        ${Number(d.fatigueLevel||0)>0 ? `<div class="muted" style="margin-top:-4px;margin-bottom:8px;color:var(--danger);">😴 Affaticamento: ${d.fatigueLevel} livell${d.fatigueLevel===1?'o':'i'} (-${d.fatigueLevel} a Pool Check e Stat di Combattimento, applicato automaticamente).</div>` : ''}
         ${barHTML('MP', d.currentMp, d.maxMp, 'mp', 'dig-mp-minus-'+containerId, 'dig-mp-plus-'+containerId)}
         ${d.personality ? `<div class="muted" style="margin-top:8px;"><i>${escapeHTML(d.personality)}</i></div>` : ''}
         <div class="divider"></div>
@@ -1192,10 +1203,15 @@
         btn.onclick = async ()=>{
           const statKey = btn.getAttribute('data-pool');
           const statLabel = statKey==='baseAccuracy' ? 'Accuracy' : (statKey==='baseDodge' ? 'Dodge' : 'Health');
-          const { dice, successes } = rollPool(d[statKey]);
+          // Richiesta utente (Affaticamento): -1 dado nel Pool per livello di fatigueLevel (niente
+          // "totale" su un Pool Check a cui sottrarre un flat -1 — vedi lo stesso identico calcolo
+          // in tryParseRollShortcut/js/tamer-card.js per lo shortcut testuale equivalente).
+          const fatigueLevel = Number(d.fatigueLevel||0);
+          const poolSize = Math.max(0, Number(d[statKey]||0) - fatigueLevel);
+          const { dice, successes } = rollPool(poolSize);
           const resEl = document.getElementById('pool-roll-result-'+containerId);
           if(resEl) resEl.innerHTML = `${diceRowHTML(dice)}<span class="roll-total">${successes} successi</span>`;
-          const logText = `Pool Check ${statLabel} (${d[statKey]}d6): [${dice.join(',')}] → ${successes} successi`;
+          const logText = `Pool Check ${statLabel} (${poolSize}d6): [${dice.join(',')}] → ${successes} successi` + (fatigueLevel>0 ? ` (−${fatigueLevel} dadi per Affaticamento)` : '');
           await pushPlayerNarration(session.code, me, { who: (d.name||displayName(me)), role:'roll', text: logText, meta: { dice, successes } });
           if(onChanged) onChanged();
         };

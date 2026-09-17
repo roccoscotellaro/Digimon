@@ -48,6 +48,15 @@
 // esterno rimasto (dentro renderMaster). grantMilestoneRewards non tocca mai refreshLiveParts
 // (viene sempre chiamata da dentro renderProgressionMaster, che gestisce lei il refresh dopo),
 // quindi la sua firma resta invariata.
+//
+// Nota regole (2.05 -- Inspiration Points): l'IP e' una risorsa INDIVIDUALE di ogni Tamer (pool
+// personale, cap 2+Willpower), non un pool condiviso dal party -- vedi p.tamer.inspirationPoints
+// (gia' gestito correttamente per-giocatore da grantMilestoneRewards e dalla Scheda Tamer in
+// js/tamer-card.js, coi bottoni +/- IP). Il vecchio campo party-wide cachedProgression.inspiration
+// (mostrato prima come singolo numero "Ispirazione" qui e nella topbar) e' stato rimosso
+// dall'interfaccia perche' ridondante/fuorviante: non veniva mai speso da nessuna parte nel
+// codice, solo mostrato accanto al vero valore per-giocatore. Questo pannello ora mostra invece un
+// riepilogo di sola lettura dell'IP di ciascun giocatore (la modifica resta sulla Scheda Tamer).
 
   async function saveProgression(code, data){ return apiPost('/api/state', { resource:'progression', code, ...data }); }
 
@@ -57,19 +66,10 @@
       p.tamer.unspentGrowthPoints = Number(p.tamer.unspentGrowthPoints||0) + 3;
       p.tamer.inspirationPoints = Number(p.tamer.inspirationPoints||0) + 1;
       p.digimon.unspentBonusDP = Number(p.digimon.unspentBonusDP||0) + 3;
-      // Traccia l'origine di ogni concessione (quale Milestone, quando, come) — prima si perdeva,
-      // lasciando solo un numero grezzo senza modo di risalire al perché per il Master.
       p.digimon.bonusDpLog = Array.isArray(p.digimon.bonusDpLog) ? p.digimon.bonusDpLog : [];
       p.digimon.bonusDpLog.push({ amount: 3, milestone: milestoneNumber, date: new Date().toISOString(), reason: reason || 'Milestone' });
       await saveMember(code, p);
     }
-    // Richiesta utente: poter annullare l'ULTIMA Milestone consegnata per errore. Registra qui
-    // (unico punto in cui una Milestone viene davvero concessa, sia da XP sia Narrativa) un
-    // istantanea di cosa è stato dato, così "btn-milestone-undo" può ripetere esattamente
-    // l'operazione inversa senza dover indovinare — sovrascritta a ogni nuova Milestone concessa (solo
-    // l'ULTIMA è annullabile, non uno storico completo). `xpConsumed` è i 7 XP tolti dal pool per
-    // arrivare a questa Milestone (0 per una Milestone Narrativa, che non tocca gli XP) — da
-    // restituire se annullata, altrimenti gli XP "spariscono" insieme alla Milestone.
     if(prog){
       prog.lastMilestoneGrant = {
         milestone: milestoneNumber,
@@ -249,10 +249,6 @@
       renderProgressionMaster(code, onChanged);
       if(onChanged) onChanged();
     };
-    // Richiesta utente: "un modo per tornare indietro e recuperare l'ultima milestone consegnata
-    // per errore". Ripete al contrario esattamente ciò che grantMilestoneRewards ha registrato in
-    // prog.lastMilestoneGrant (unica Milestone annullabile: l'ultima, non uno storico completo —
-    // sovrascritto ad ogni nuova concessione).
     const undoBtn = document.getElementById('btn-milestone-undo');
     if(undoBtn){
       undoBtn.onclick = async ()=>{
@@ -261,7 +257,7 @@
         if(!window.confirm(`Annullare la Milestone ${grant.milestone} (${grant.reason})? Toglierà 3 Growth Points, 1 IP e 3 DP Bonus a ogni giocatore che l'aveva ricevuta, e riporterà indietro la Milestone${grant.xpConsumed?` (e ${grant.xpConsumed} XP)`:''}. Se un giocatore ha già SPESO quei Growth Points/DP/IP, non è possibile recuperarli indietro automaticamente — resterà a 0 invece che in negativo, da sistemare a mano.`)) return;
         for(const username of (grant.playerUsernames||[])){
           const p = cachedRoster.find(m=>m.role==='player' && m.username===username);
-          if(!p) continue; // giocatore non più nel roster: nulla da annullare per lui
+          if(!p) continue;
           p.tamer.unspentGrowthPoints = Math.max(0, Number(p.tamer.unspentGrowthPoints||0) - 3);
           p.tamer.inspirationPoints = Math.max(0, Number(p.tamer.inspirationPoints||0) - 1);
           p.digimon.unspentBonusDP = Math.max(0, Number(p.digimon.unspentBonusDP||0) - 3);
@@ -281,12 +277,6 @@
         if(onChanged) onChanged();
       };
     }
-    // Destinazione dell'esito di Break/Rest: stesso pattern Generale/Privata/Sottogruppo già
-    // usato per "Richiedi un Tiro" in index.html (checkbox multiple, il messaggio va in tutti i
-    // canali scelti). "Privata" qui manda una copia della stessa riga nella chat privata di
-    // OGNI giocatore (Break/Rest sono azioni di party, non mirate a un singolo) invece che a un
-    // sottoinsieme scelto — a differenza di "Richiedi un Tiro"/"Richiedi Torment Check" non c'è
-    // qui una selezione di destinatari, è sempre tutto il party.
     const downtimeSubChk = document.getElementById('downtime-chan-subgroup');
     const downtimeSubField = document.getElementById('downtime-subgroup-field');
     if(downtimeSubChk){
@@ -307,8 +297,6 @@
       const subSel = document.getElementById('downtime-subgroup-select');
       const subgroupId = subSel ? subSel.value : '';
       if(!sendGeneral && !sendPrivate && !(sendSubgroup && subgroupId)){
-        // Nessun canale valido selezionato (es. Sottogruppo spuntato ma non ancora scelto): invia
-        // comunque alla Chat Generale, invece di far sparire nel nulla l'esito di Break/Rest.
         await pushLog(code, entry);
         return;
       }
@@ -350,6 +338,20 @@
         await saveMember(code, p);
       }
       await publishDowntimeMessage({ who:'Sistema', role:'gm', text: `😴 Il party fa un Rest: Ferite ed Evolution Points recuperati del tutto, penalità Torment rimosse, Torment Check di nuovo disponibili.` });
+      // Richiesta utente (Razioni): oltre al Rest ufficiale (8.04) sopra, invia a OGNI giocatore,
+      // nella sua Chat Privata, un prompt per consumare le razioni giornaliere (2, oggetti
+      // inventario categoria 'cibo' — vedi js/tamer-card.js/renderInventoryCard e il marcatore
+      // ::RATIONREQ:: gestito in js/chat-log-engine.js). Un restId univoco per Rest (timestamp)
+      // distingue Rest diversi sullo stesso giocatore, così un vecchio prompt già gestito non
+      // torna cliccabile e un prompt nuovo non viene scambiato per uno già risolto.
+      const rationRestId = Date.now();
+      for(const p of players){
+        await pushPrivateLog(code, p.username, {
+          who:'Sistema', role:'rationrequest',
+          text: `🍱 Momento delle razioni: quante ne consumi questo Rest (2 al giorno)?::RATIONREQ::${p.username}|${rationRestId}`,
+          meta: { location: memberLocationKey(p) }
+        });
+      }
       if(onChanged) onChanged();
     };
     document.getElementById('btn-prog-manual-save').onclick = async ()=>{
