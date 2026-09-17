@@ -31,14 +31,14 @@
 // Serve a restare sotto il limite di 12 Serverless Functions del piano Vercel Hobby.
 const { supabase, cleanCode } = require('../lib/db');
 const webpush = require('web-push');
- 
+
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:noreply@example.com';
 if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 }
- 
+
 // Spedisce una Web Push a un elenco di sottoscrizioni (righe di push_subscriptions) e ripulisce
 // da sole quelle scadute/revocate (404/410 = il browser non le riconosce piu'). Non lancia mai
 // eccezioni verso il chiamante: un fallimento di invio non deve mai far fallire la scrittura del
@@ -78,7 +78,7 @@ async function sendPushToSubscriptions(subs, payload) {
     await supabase.from('push_subscriptions').delete().in('id', staleIds);
   }
 }
- 
+
 // Recupera le sottoscrizioni di TUTTI i membri della campagna tranne (facoltativamente) chi ha
 // appena scritto — usata per il log pubblico, che tutti vedono.
 async function subsForCampaign(campaignCode, excludeUsername) {
@@ -87,7 +87,7 @@ async function subsForCampaign(campaignCode, excludeUsername) {
   const { data } = await q;
   return data || [];
 }
- 
+
 // Recupera le sottoscrizioni del/dei Master di una campagna — usata quando un GIOCATORE scrive
 // nel proprio thread privato (il destinatario e' il Master, non tutta la campagna).
 async function subsForMasters(campaignCode) {
@@ -97,7 +97,7 @@ async function subsForMasters(campaignCode) {
   const { data } = await supabase.from('push_subscriptions').select('*').eq('campaign_code', campaignCode).in('username', usernames);
   return data || [];
 }
- 
+
 // Recupera le sottoscrizioni di un singolo username — usata quando il Master scrive nel thread
 // privato di un giocatore (il destinatario e' quel giocatore), e ora anche dal nuovo resource
 // "turn-ping" (avviso di turno mirato a un solo giocatore, senza scrivere in nessun log).
@@ -105,7 +105,7 @@ async function subsForUsername(campaignCode, username) {
   const { data } = await supabase.from('push_subscriptions').select('*').eq('campaign_code', campaignCode).eq('username', username);
   return data || [];
 }
- 
+
 // Recupera le sottoscrizioni dei destinatari di un SOTTOGRUPPO di chat (thread nel formato
 // "subgroup:<id>"): i membri del gruppo (tabella `subgroups`, gestita da api/notice.js) più
 // tutti i Master della campagna, esclusa la persona che ha appena scritto — altrimenti nessuno
@@ -122,7 +122,7 @@ async function subsForSubgroup(campaignCode, threadValue, excludeUsername) {
   const { data } = await supabase.from('push_subscriptions').select('*').eq('campaign_code', campaignCode).in('username', usernames);
   return data || [];
 }
- 
+
 // ===== Lettura ristretta per Settore (Chat Generale) =====
 // Richiesta di Rocco: "rendere non leggibili le chat a chi non è in quel settore" — i messaggi
 // della Chat Generale marcati con un Settore (meta.location, vedi pushLog/currentLocationKey in
@@ -149,7 +149,7 @@ function findSectorAnywhere(macroScenes, sectorId) {
   }
   return null;
 }
- 
+
 function computeMemberLocationKey(scene, member) {
   const tamer = (member && member.tamer) || {};
   const sectorOverride = tamer.currentSectorId || null;
@@ -162,7 +162,7 @@ function computeMemberLocationKey(scene, member) {
   const macroId = found ? found.macro.id : ((scene && scene.currentMacroSceneId) || null);
   return `${macroId || '_'}|${sectorId || '_'}|${luogoId || '_'}`;
 }
- 
+
 // Filtra un elenco di righe del log pubblico per la posizione EFFETTIVA di `requesterUsername`.
 // Nessun filtro (log invariato) se: manca requesterUsername (chiamante non ancora aggiornato a
 // mandarlo, o pagina diversa dal Tavolo), il membro non esiste ancora sul roster, o è il Master
@@ -177,7 +177,7 @@ async function filterLogForRequester(campaignCode, rows, requesterUsername) {
   const myKey = computeMemberLocationKey(scene, member);
   return rows.filter(l => !(l.meta && l.meta.location) || l.meta.location === myKey);
 }
- 
+
 module.exports = async (req, res) => {
   try {
     // ===== Sottoscrizioni Web Push (risorsa separata, stesso file per restare sotto il limite
@@ -209,7 +209,7 @@ module.exports = async (req, res) => {
       res.setHeader('Allow', 'POST, DELETE');
       return res.status(405).json({ error: 'method not allowed' });
     }
- 
+
     // ===== Avviso di turno mirato a UN solo giocatore (nessuna scrittura in nessun log) =====
     // Vedi commento in cima al file. Richiede solo VAPID configurate + quel giocatore già
     // sottoscritto alle Web Push: altrimenti sendPushToSubscriptions non fa nulla, silenziosamente
@@ -233,13 +233,13 @@ module.exports = async (req, res) => {
       }).catch(() => {});
       return res.status(200).json({ ok: true, sent: recipientSubs.length });
     }
- 
+
     if (req.method === 'GET') {
       const code = cleanCode(req.query.code);
       if (!code) return res.status(400).json({ error: 'missing code' });
- 
+
       const threadUsername = req.query.thread;
- 
+
       // NOTA: qui sotto ordiniamo per id DESCENDING (dal più recente) prima di applicare il
       // limit, e poi ri-ordiniamo in ascending prima di rispondere. Con l'ordinamento inverso
       // (ascending + limit) la query restituiva sempre e solo i primi N messaggi in assoluto:
@@ -249,7 +249,7 @@ module.exports = async (req, res) => {
       // vengono cancellati (clearLog/deleteLogEntry): la finestra segue il conteggio reale delle
       // righe rimaste, non un cursore fisso sui primi N mai scritti.
       const LOG_FETCH_LIMIT = 2000; // 10x il precedente limite di 200
- 
+
       if (threadUsername) {
         const { data, error } = await supabase
           .from('private_logs')
@@ -261,7 +261,7 @@ module.exports = async (req, res) => {
         if (error) return res.status(500).json({ error: error.message });
         return res.status(200).json({ log: (data || []).reverse() });
       }
- 
+
       const { data, error } = await supabase
         .from('logs')
         .select('*')
@@ -276,11 +276,11 @@ module.exports = async (req, res) => {
       const visibleLog = await filterLogForRequester(code, (data || []).reverse(), req.query.username);
       return res.status(200).json({ log: visibleLog });
     }
- 
+
     if (req.method === 'POST') {
       const { code, thread, username, who, role, text, meta } = req.body || {};
       const campaignCode = cleanCode(code);
- 
+
       if (thread) {
         if (!campaignCode || !who || !text) {
           return res.status(400).json({ error: 'missing code, thread, who or text' });
@@ -314,7 +314,7 @@ module.exports = async (req, res) => {
         }).catch(() => {});
         return res.status(200).json({ entry: data });
       }
- 
+
       if (!campaignCode || !who || !text) {
         return res.status(400).json({ error: 'missing code, who or text' });
       }
@@ -336,7 +336,7 @@ module.exports = async (req, res) => {
       }).catch(() => {});
       return res.status(200).json({ entry: data });
     }
- 
+
     if (req.method === 'PUT') {
       // Aggiornamento di un messaggio già inviato: `text` sostituisce il testo come sempre, ma
       // ora accetta anche `who`/`role`/`meta` (opzionali) — servivano già dal client (vedi
@@ -353,33 +353,33 @@ module.exports = async (req, res) => {
       if (text === undefined && meta === undefined && who === undefined) {
         return res.status(400).json({ error: 'missing text, meta or who: nothing to update' });
       }
- 
+
       const table = thread ? 'private_logs' : 'logs';
       let selectQuery = supabase.from(table).select('meta').eq('campaign_code', campaignCode).eq('id', id);
       if (thread) selectQuery = selectQuery.eq('thread_username', thread);
       const { data: existing, error: fetchError } = await selectQuery.maybeSingle();
       if (fetchError) return res.status(500).json({ error: fetchError.message });
- 
+
       const patch = {};
       if (text !== undefined) patch.text = String(text).slice(0, 8000);
       if (who !== undefined) patch.who = String(who).slice(0, 60);
       if (role !== undefined) patch.role = role;
       if (meta !== undefined) patch.meta = Object.assign({}, (existing && existing.meta) || {}, meta);
- 
+
       let updateQuery = supabase.from(table).update(patch).eq('campaign_code', campaignCode).eq('id', id);
       if (thread) updateQuery = updateQuery.eq('thread_username', thread);
       const { error } = await updateQuery;
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true });
     }
- 
+
     if (req.method === 'DELETE') {
       const code = cleanCode(req.query.code);
       const id = req.query.id;
       const thread = req.query.thread;
       const clearAll = req.query.clearAll === '1' || req.query.clearAll === 'true';
       if (!code) return res.status(400).json({ error: 'missing code' });
- 
+
       if (thread) {
         if (!id) return res.status(400).json({ error: 'missing id' });
         const { error } = await supabase
@@ -391,7 +391,7 @@ module.exports = async (req, res) => {
         if (error) return res.status(500).json({ error: error.message });
         return res.status(200).json({ ok: true });
       }
- 
+
       if (clearAll) {
         const { error } = await supabase
           .from('logs')
@@ -400,7 +400,7 @@ module.exports = async (req, res) => {
         if (error) return res.status(500).json({ error: error.message });
         return res.status(200).json({ ok: true, clearedAll: true });
       }
- 
+
       if (!id) return res.status(400).json({ error: 'missing id (or pass clearAll=1)' });
       const { error } = await supabase
         .from('logs')
@@ -410,11 +410,10 @@ module.exports = async (req, res) => {
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true });
     }
- 
+
     res.setHeader('Allow', 'GET, POST, PUT, DELETE');
     return res.status(405).json({ error: 'method not allowed' });
   } catch (e) {
     return res.status(500).json({ error: e.message || String(e) });
   }
 };
- 
