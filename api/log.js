@@ -141,12 +141,34 @@ async function subsForSubgroup(campaignCode, threadValue, excludeUsername) {
 // findSectorAnywhere/computeMemberLocationKey rispecchiano ESATTAMENTE findSectorAnywhere/
 // memberLocationKey di js/chat-log-engine.js (stessa identica chiave, ora a 4 parti dopo
 // l'introduzione delle Sottosezioni: "macroId|settoreId|sottosezioneId|luogoId"), così un
-// messaggio marcato lato client risulta visibile/non visibile in modo coerente qui. Messaggi
-// marcati PRIMA di questa modifica (chiave a 3 parti, senza Sottosezione) semplicemente non fanno
-// più match per confronto di stringa — stessa conseguenza già accettata lato client (vedi
-// locationLabelForKey in js/chat-log-engine.js), non serve gestirla qui: filterLogForRequester
-// sotto lascia comunque sempre visibili i messaggi SENZA meta.location, che sono la maggioranza
-// dello storico "di sistema".
+// messaggio marcato lato client risulta visibile/non visibile in modo coerente qui.
+//
+// AGGIORNAMENTO ("chat del luogo duplicate" + "non perdere la chat di dove sei già stato",
+// richiesta Rocco): due modifiche.
+//
+// 1) normalizeLocationKey (mirror di js/chat-log-engine.js): i messaggi marcati PRIMA
+//    dell'introduzione delle Sottosezioni hanno una chiave a 3 parti (macroId|settoreId|luogoId,
+//    senza Sottosezione), quelli marcati dopo ne hanno 4. Confrontare le chiavi grezze faceva sì
+//    che un vecchio e un nuovo messaggio dello STESSO luogo fisico non facessero mai match tra
+//    loro — lato client questo si vedeva come lo stesso luogo duplicato due volte nel filtro
+//    "Storico per Settore"; qui sotto significava anche che filterLogForRequester poteva negare
+//    l'accesso a messaggi che in realtà riguardavano il luogo giusto. Normalizzando entrambi i
+//    lati del confronto al formato a 4 parti prima di paragonarli, il problema sparisce senza
+//    bisogno di toccare i dati già salvati (la normalizzazione avviene solo in lettura).
+//
+// 2) unlockedLocationKeys: prima, un giocatore vedeva SOLO i messaggi del suo luogo ATTUALE (al
+//    momento della richiesta) — appena si spostava, perdeva l'accesso anche allo storico passato
+//    del luogo che aveva appena lasciato (anche ai messaggi letti mentre era ancora lì). Rocco ha
+//    chiesto di non perdere la chat di un luogo già visitato: ora ogni membro tiene, dentro
+//    member.tamer.unlockedLocationKeys, l'elenco di TUTTE le chiavi di posizione in cui è stato
+//    presente almeno una volta (aggiornato pigramente qui sotto, alla prima GET fatta da quella
+//    posizione); filterLogForRequester lascia passare un messaggio se la sua chiave di posizione è
+//    tra quelle "sbloccate" per il richiedente, non solo se coincide con quella attuale. Lo
+//    sblocco resta permanente (non si "ri-blocca" quando il giocatore se ne va) e continua a
+//    valere anche per i messaggi scritti in quel luogo DOPO che il giocatore se n'è andato — è un
+//    "hai diritto di seguire quel luogo" una volta che ci sei stato, non un'istantanea congelata
+//    al momento della partenza. Nessuna migrazione SQL: il campo vive nella colonna JSONB
+//    `tamer` già esistente su `members`.
 function findSectorAnywhere(macroScenes, sectorId) {
   if (!sectorId) return null;
   for (const m of (macroScenes || [])) {
@@ -176,22 +198,47 @@ function computeMemberLocationKey(scene, member) {
   return `${macroId || '_'}|${sectorId || '_'}|${subsectionId || '_'}|${luogoId || '_'}`;
 }
 
-// Filtra un elenco di righe del log pubblico per la posizione EFFETTIVA di `requesterUsername`.
-// Nessun filtro (log invariato) se: manca requesterUsername (chiamante non ancora aggiornato a
-// mandarlo, o pagina diversa dal Tavolo), il membro non esiste ancora sul roster, o è il Master
-// (vede sempre tutto, come nel pannello Master di sempre). I messaggi senza meta.location (scritti
-// prima di questa funzione, o di sistema) restano SEMPRE visibili, esattamente come già fa il
-// filtro client-side storico.
+// Vedi punto 1) della nota di testa qui sopra.
+function normalizeLocationKey(key) {
+  if (!key) return key;
+  const parts = String(key).split('|');
+  if (parts.length === 3) return `${parts[0]}|${parts[1]}|_|${parts[2]}`;
+  return key;
+}
+
+// Filtra un elenco di righe del log pubblico per i luoghi SBLOCCATI da `requesterUsername` (il
+// luogo attuale più ogni altro luogo in cui è già stato presente almeno una volta — vedi punto 2
+// della nota di testa). Nessun filtro (log invariato) se: manca requesterUsername (chiamante non
+// ancora aggiornato a mandarlo, o pagina diversa dal Tavolo), il membro non esiste ancora sul
+// roster, o è il Master (vede sempre tutto, come nel pannello Master di sempre). I messaggi senza
+// meta.location (scritti prima di questa funzione, o di sistema) restano SEMPRE visibili,
+// esattamente come già fa il filtro client-side storico.
 async function filterLogForRequester(campaignCode, rows, requesterUsername) {
   if (!requesterUsername) return rows;
-  const { data: member } = await supabase.from('members').select('role, tamer').eq('campaign_code', campaignCode).eq('username', requesterUsername).maybeSingle();
+  const { data: member } = await supabase.from('members').select('id, role, tamer').eq('campaign_code', campaignCode).eq('username', requesterUsername).maybeSingle();
   if (!member || member.role === 'master') return rows;
   // currentSubsectionId può non esistere ancora come colonna (vedi api/state.js, fallback
   // "colonna mancante"): select('*') invece di elencare le colonne esplicitamente evita che questa
   // query fallisca del tutto su installazioni senza la migrazione SQL ancora eseguita.
   const { data: scene } = await supabase.from('scenes').select('*').eq('campaign_code', campaignCode).maybeSingle();
-  const myKey = computeMemberLocationKey(scene, member);
-  return rows.filter(l => !(l.meta && l.meta.location) || l.meta.location === myKey);
+  const myKey = normalizeLocationKey(computeMemberLocationKey(scene, member));
+
+  const tamer = member.tamer || {};
+  const visited = Array.isArray(tamer.unlockedLocationKeys) ? tamer.unlockedLocationKeys.map(normalizeLocationKey) : [];
+  if (!visited.includes(myKey)) {
+    // Prima visita a questo luogo (rilevata pigramente, alla prima lettura del log fatta da lì):
+    // lo aggiungiamo alla lista permanente e la salviamo. SELECT + merge + UPDATE sul solo campo
+    // unlockedLocationKeys (stesso pattern di rischio, minore, già accettato altrove in questo
+    // codebase per i salvataggi "di contorno" — un eventuale aggiornamento perso qui non cancella
+    // dati del giocatore, si ripresenta identico al prossimo polling, quindi non richiede il
+    // meccanismo più cauto di roster.js/resource=patch).
+    const newVisited = visited.concat([myKey]).slice(-300);
+    const newTamer = Object.assign({}, tamer, { unlockedLocationKeys: newVisited });
+    const { error: updateError } = await supabase.from('members').update({ tamer: newTamer }).eq('id', member.id);
+    if (!updateError) visited.push(myKey);
+  }
+
+  return rows.filter(l => !(l.meta && l.meta.location) || visited.includes(normalizeLocationKey(l.meta.location)));
 }
 
 module.exports = async (req, res) => {
@@ -287,8 +334,8 @@ module.exports = async (req, res) => {
       if (error) return res.status(500).json({ error: error.message });
       // Vedi "Lettura ristretta per Settore" in cima al file: `username` (facoltativo, mandato
       // ora da getLog in index.html) identifica chi sta chiedendo il log pubblico — un giocatore
-      // vede solo i messaggi del proprio Settore attuale (+ quelli senza tag), il Master vede
-      // sempre tutto come prima.
+      // vede solo i messaggi dei luoghi che ha sbloccato (quello attuale + quelli già visitati in
+      // passato, vedi filterLogForRequester), il Master vede sempre tutto come prima.
       const visibleLog = await filterLogForRequester(code, (data || []).reverse(), req.query.username);
       return res.status(200).json({ log: visibleLog });
     }

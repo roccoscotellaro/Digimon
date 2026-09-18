@@ -141,11 +141,22 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
 
   // Chiave di posizione: FORMATO NUOVO a 4 parti (Sottosezioni), macroId|sectorId|subsectionId|
   // luogoId. I messaggi salvati PRIMA di questa modifica hanno chiavi a 3 parti (macroId|sectorId|
-  // luogoId, nessuna Sottosezione) — locationLabelForKey qui sotto riconosce e mostra correttamente
-  // anche quelle, ma NON fa match di stringa con le chiavi nuove (buildLocationOptions/
-  // filterByLocation trattano la chiave come stringa opaca): lo storico più vecchio di questa
-  // modifica smette quindi di comparire sotto il filtro "Settore attuale" di un punto specifico,
-  // conseguenza accettata (come per le precedenti evoluzioni dello schema di questa app).
+  // luogoId, nessuna Sottosezione) — normalizeLocationKey qui sotto le converte al formato nuovo
+  // (inserendo '_' come Sottosezione) PRIMA di qualunque confronto/raggruppamento per chiave, così
+  // un vecchio messaggio e uno nuovo dello STESSO luogo fisico contano come la stessa chiave invece
+  // di comparire come due voci separate nel filtro "Storico per Settore" (bug segnalato da Rocco:
+  // "si sono duplicate le chat del luogo"). locationLabelForKey già gestiva entrambi i formati per
+  // l'etichetta testuale, ma buildLocationOptions/filterByLocation confrontavano le chiavi grezze,
+  // quindi due stringhe diverse per lo stesso posto finivano per essere trattate come due luoghi
+  // distinti. Nessuna migrazione dei dati esistenti: la normalizzazione avviene sempre al momento
+  // della lettura, mai scritta indietro sui messaggi già salvati.
+  function normalizeLocationKey(key){
+    if(!key) return key;
+    const parts = String(key).split('|');
+    if(parts.length === 3) return `${parts[0]}|${parts[1]}|_|${parts[2]}`;
+    return key;
+  }
+
   function currentLocationKey(){
     if(!cachedScene) return '_|_|_|_';
     return `${cachedScene.currentMacroSceneId||'_'}|${cachedScene.currentSectorId||'_'}|${cachedScene.currentSubsectionId||'_'}|${cachedScene.currentLuogoId||'_'}`;
@@ -183,8 +194,9 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
   function buildLocationOptions(entries, currentKey){
     const map = new Map();
     (entries||[]).forEach(e=>{
-      const key = (e.meta && e.meta.location) || null;
-      if(!key) return; // i messaggi "legacy" senza tag non diventano una voce a sé: restano sempre visibili (vedi filterByLocation)
+      const rawKey = (e.meta && e.meta.location) || null;
+      if(!rawKey) return; // i messaggi "legacy" senza tag non diventano una voce a sé: restano sempre visibili (vedi filterByLocation)
+      const key = normalizeLocationKey(rawKey);
       if(!map.has(key)) map.set(key, locationLabelForKey(key));
     });
     if(currentKey && !map.has(currentKey)) map.set(currentKey, locationLabelForKey(currentKey));
@@ -200,7 +212,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
   function filterByLocation(entries, selected, currentKey){
     const effective = (selected===null || selected===undefined) ? currentKey : selected;
     if(effective==='__all__') return entries||[];
-    return (entries||[]).filter(e => !(e.meta && e.meta.location) || e.meta.location===effective);
+    return (entries||[]).filter(e => !(e.meta && e.meta.location) || normalizeLocationKey(e.meta.location)===effective);
   }
 
   function locationFilterSelectHTML(id, entries, currentKey, selected){
