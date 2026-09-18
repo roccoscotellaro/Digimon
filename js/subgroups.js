@@ -283,7 +283,13 @@
     const logLive = document.getElementById('subgroup-log-live');
     if(logLive){
       attachLogModeration(logLive, code, null, false, ()=>'subgroup:'+activeSubgroupId, onChanged, onSubgroupReply);
-      logLive.scrollTop = logLive.scrollHeight;
+      // BUGFIX (Rocco: "la chat può mostrare sempre partendo dall'ultimo messaggio?"): un semplice
+      // `scrollTop = scrollHeight` subito dopo aver riscritto innerHTML non basta se il log contiene
+      // immagini non ancora in cache (avatar/allegati) — scrollLogToBottomRobust (index.html) lo
+      // riapplica anche dopo che quelle finiscono di caricare, invece di fermarsi al valore
+      // calcolato con l'altezza "provvisoria" del log.
+      if(typeof scrollLogToBottomRobust === 'function') scrollLogToBottomRobust(logLive);
+      else logLive.scrollTop = logLive.scrollHeight;
     }
     if(activeGroup) attachDigimojiInput('subgroup-text', 'subgroup-digimoji-toggle');
   }

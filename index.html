@@ -3305,6 +3305,31 @@ let editingScene = false;
     };
   }
 
+  // Richiesta utente (Rocco: "la chat può mostrare sempre partendo dall'ultimo messaggio?"):
+  // impostare `el.scrollTop = el.scrollHeight` SUBITO dopo aver riscritto innerHTML non basta
+  // sempre — se il Registro contiene immagini non ancora in cache (avatar, GIF di Digivoluzione,
+  // allegati in chat, digimoji...), il browser calcola scrollHeight PRIMA che quelle immagini
+  // finiscano di caricare e occupino il loro spazio reale: lo scroll "in fondo" atterra dove
+  // finiva il log nel momento dello scroll, non dove finisce DAVVERO una volta che tutto è
+  // caricato — visivamente sembra che la chat si sia fermata al primo messaggio (o comunque non
+  // all'ultimo). Questa funzione centralizza il pattern "vai in fondo" per tutti i punti del file
+  // che lo fanno (Registro giocatore, Registro/Privata/Sottogruppo Master, mini-log Battaglia):
+  // applica subito lo scroll, lo riapplica al prossimo frame (copre i casi di solo re-layout), e
+  // lo riapplica ancora ogni volta che un'immagine ancora in caricamento finisce (successo o
+  // errore) — così l'ultimo messaggio resta davvero visibile anche quando il contenuto cambia
+  // altezza dopo il primo scroll.
+  function scrollLogToBottomRobust(el){
+    if(!el) return;
+    el.scrollTop = el.scrollHeight;
+    requestAnimationFrame(()=>{ if(el && el.isConnected) el.scrollTop = el.scrollHeight; });
+    el.querySelectorAll('img').forEach(img=>{
+      if(img.complete) return;
+      const snap = ()=>{ if(el && el.isConnected) el.scrollTop = el.scrollHeight; };
+      img.addEventListener('load', snap, { once:true });
+      img.addEventListener('error', snap, { once:true });
+    });
+  }
+
   // Disegna insieme il selettore "Storico per Settore" (con le opzioni ricavate dal thread
   // attualmente aperto) e il Registro sottostante, per QUALSIASI delle tre chat del giocatore
   // (Generale/Privata/Gruppo) — sono condivisi lo stesso #chat-location-bar e #log-live, cambia
@@ -3367,7 +3392,7 @@ let editingScene = false;
       logLive.innerHTML = generalLockedHere
         ? '<div class="muted" style="padding:12px;text-align:center;color:var(--danger);">🔒 Il Master ha bloccato la Chat Generale per te.</div>'
         : logHTML(filtered, false);
-      if(opts.forceScrollBottom || wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
+      if(opts.forceScrollBottom || wasAtBottom) scrollLogToBottomRobust(logLive);
     }
     const barWrap = document.getElementById('chat-location-bar');
     if(barWrap){
@@ -3563,7 +3588,7 @@ let editingScene = false;
         // Registro del Master (ricostruito direttamente, non passa da renderChatArea).
         const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
         logLive.innerHTML = logHTML(sceneLog(), session && session.role==='master');
-        if(wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
+        if(wasAtBottom) scrollLogToBottomRobust(logLive);
         refreshLocationSelectOptions(document.getElementById('master-chat-location-select'), scenePublicRawLog(), currentLocationKey(), publicLocationFilter);
       }
     }
@@ -3585,7 +3610,7 @@ let editingScene = false;
         const privKey = memberLocationKey(cachedRoster.find(m=>m.username===masterPrivateThread));
         privLogLive.innerHTML = logHTML(filterByLocation(plog, masterPrivateLocationFilter[masterPrivateThread], privKey), true);
         attachLogModeration(privLogLive, session.code, null, true, undefined, refreshLiveParts, onPrivateReply);
-        if(wasAtBottom) privLogLive.scrollTop = privLogLive.scrollHeight;
+        if(wasAtBottom) scrollLogToBottomRobust(privLogLive);
         markPrivateThreadRead(session.code, masterPrivateThread, plog);
         refreshLocationSelectOptions(document.getElementById('private-location-select'), plog, privKey, masterPrivateLocationFilter[masterPrivateThread]);
       }
@@ -3602,7 +3627,7 @@ let editingScene = false;
         const subKey = subgroupLocationKey(activeGroupForKey);
         subLogLive.innerHTML = logHTML(filterByLocation(plog, masterSubgroupLocationFilter[activeSubgroupId], subKey), true);
         attachLogModeration(subLogLive, session.code, null, false, ()=>'subgroup:'+activeSubgroupId, refreshLiveParts, onSubgroupReply);
-        if(wasAtBottom) subLogLive.scrollTop = subLogLive.scrollHeight;
+        if(wasAtBottom) scrollLogToBottomRobust(subLogLive);
         refreshLocationSelectOptions(document.getElementById('subgroup-location-select'), plog, subKey, masterSubgroupLocationFilter[activeSubgroupId]);
       }
     }
@@ -3718,7 +3743,7 @@ let editingScene = false;
       if(miniLogEl && miniLogSource && miniLogSource.length > 0){
         const last4 = miniLogSource.slice(-4);
         miniLogEl.innerHTML = typeof logHTML === 'function' ? logHTML(last4, false) : last4.map(e=>`<div style="padding:2px 0;font-size:12px;"><b style="color:var(--cyan);font-size:11px;">${escapeHTML(e.who||'')}</b> <span>${escapeHTML(e.text||'')}</span></div>`).join('');
-        miniLogEl.scrollTop = miniLogEl.scrollHeight;
+        scrollLogToBottomRobust(miniLogEl);
       }
       // ===== Banner "È il tuo turno, ora puoi parlare!" nel tab Battle =====
       const turnBannerEl = document.getElementById('combat-turn-chat-banner');
@@ -3782,7 +3807,7 @@ let editingScene = false;
       const wasAtBottom = privateLogLiveMaster.scrollHeight - privateLogLiveMaster.scrollTop <= privateLogLiveMaster.clientHeight + 40;
       privateLogLiveMaster.innerHTML = logHTML(plog, true);
       attachLogModeration(privateLogLiveMaster, session.code, null, true, undefined, refreshLiveParts, onPrivateReply);
-      if(wasAtBottom) privateLogLiveMaster.scrollTop = privateLogLiveMaster.scrollHeight;
+      if(wasAtBottom) scrollLogToBottomRobust(privateLogLiveMaster);
     }
     const errBanner = document.getElementById('api-err-banner');
     if(errBanner) errBanner.outerHTML = lastApiError ? `<div id="api-err-banner" class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(lastApiError)}</div>` : '<div id="api-err-banner"></div>';
@@ -3969,7 +3994,7 @@ let editingScene = false;
       if(_ml && cachedLog && cachedLog.length > 0){
         const _last4 = cachedLog.slice(-4);
         _ml.innerHTML = typeof logHTML === 'function' ? logHTML(_last4, false) : _last4.map(e=>`<div style="padding:2px 0;font-size:12px;"><b style="color:var(--cyan);font-size:11px;">${escapeHTML(e.who||'')}</b> <span>${escapeHTML(e.text||'')}</span></div>`).join('');
-        _ml.scrollTop = _ml.scrollHeight;
+        scrollLogToBottomRobust(_ml);
       }
       // Banner turno iniziale
       const _tb = document.getElementById('combat-turn-chat-banner');
@@ -4437,6 +4462,15 @@ let editingScene = false;
       const gmTaReply = document.getElementById('gm-text');
       if(gmTaReply) gmTaReply.focus();
     });
+    // BUGFIX (segnalato da Rocco: "la chat parte sempre dal primo messaggio"): a differenza della
+    // Vista Giocatore (che passa sempre da renderChatArea, il quale forza lo scroll in fondo al
+    // primo render — vedi { forceScrollBottom:true } più sotto), il Registro Generale del Master
+    // viene scritto qui sopra direttamente dentro root.innerHTML (riga con logHTML(sceneLog()...))
+    // e non veniva MAI portato in fondo al primo caricamento della Vista Master: il div "log"
+    // resta scrollato in cima di default finché non arriva il primo poll automatico (che scrolla
+    // solo se l'utente era già in fondo — mai vero al primissimo render). Il Master vedeva quindi
+    // sempre il messaggio più vecchio finché non scrollava a mano.
+    scrollLogToBottomRobust(document.getElementById('log-live'));
     bindSceneAudio(cachedScene);
     bindSceneAudioUpload(code);
     bindSceneCombatAudioUpload(code);
