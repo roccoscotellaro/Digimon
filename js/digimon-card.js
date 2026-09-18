@@ -380,7 +380,17 @@
       const group = (cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId) || null;
       return pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { ...entry, meta: { ...(entry.meta||{}), location: subgroupLocationKey(group) } });
     }
-    return pushLog(code, entry);
+    // BUGFIX (segnalato dall'utente, spostamento a Drill Tunnel su Generale: "non si apre nessuna
+    // chat" / "resta sempre sul primo messaggio"): quando il giocatore sta guardando Chat Generale
+    // (playerChatMode è 'general' o non impostato), pushLog(code, entry) da solo taggava il
+    // messaggio con currentLocationKey() -- la posizione CONDIVISA di scena, non quella EFFETTIVA
+    // del mittente (vedi memberLocationKey qui sopra e computeMemberLocationKey lato server in
+    // log.js) -- stesso identico bug già risolto per Private/Subgroup pochi righe sopra, mai
+    // applicato al ramo Generale stesso. Un giocatore separato dal gruppo (override personale
+    // currentSectorId/currentSubsectionId/currentLuogoId) vedeva quindi le proprie narrazioni
+    // taggate con la posizione sbagliata, finendo fuori dal set di luoghi "sbloccati" per lui e
+    // sparendo dalla sua stessa Chat Generale.
+    return pushLog(code, { ...entry, meta: { ...(entry.meta||{}), location: memberLocationKey(me) } });
   }
 
   // Richiesta utente: un piccolo tool "guidato" per creare Attacchi nella Scheda Digimon, che

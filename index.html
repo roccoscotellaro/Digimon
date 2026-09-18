@@ -2975,6 +2975,12 @@ let editingScene = false;
           entry.meta = Object.assign({ location: memberLocationKey(me) }, diceMeta);
           await pushPrivateLog(code, session.username, entry);
         } else {
+          // BUGFIX (Rocco, spostamento a Drill Tunnel su Generale): stesso motivo dei rami
+          // Privata/Sottogruppo qui sopra — senza `location` esplicita, pushLog taggava il tiro
+          // con la posizione CONDIVISA del gruppo (currentLocationKey) invece di quella EFFETTIVA
+          // del giocatore che tira (memberLocationKey), facendolo sparire dalla sua stessa Chat
+          // Generale se si era separato dal gruppo.
+          entry.meta = Object.assign({ location: memberLocationKey(me) }, diceMeta);
           await pushLog(code, entry);
         }
       } else {
@@ -3328,7 +3334,13 @@ let editingScene = false;
     } else {
       raw = scenePublicRawLog();
       filterVal = publicLocationFilter;
-      effectiveKey = currentLocationKey();
+      // BUGFIX (segnalato da Rocco: dopo uno spostamento a "Drill Tunnel" su Generale, "non si
+      // apre nessuna chat" e il log resta fisso sul primo messaggio): come per Privata/Sottogruppo
+      // qui sopra, la Chat Generale deve usare la posizione EFFETTIVA del giocatore stesso
+      // (memberLocationKey, che tiene conto di un eventuale spostamento separato dal gruppo), non
+      // la posizione CONDIVISA di scena (currentLocationKey) — altrimenti chi si è mosso da solo
+      // continua a filtrare sul luogo vecchio del gruppo, che spesso non ha (più) messaggi nuovi.
+      effectiveKey = memberLocationKey(me);
     }
     // BUGFIX (segnalato da Rocco: "il tasto Sì andiamo... non sposta i giocatori"): esponiamo
     // qui il thread/log EFFETTIVAMENTE mostrati in questo momento (vedi playerActiveChatThread/
@@ -4015,10 +4027,15 @@ let editingScene = false;
       // perché la notazione dado non entra mai in conflitto con i nomi delle Skill.
       const genericDice = parseGenericDiceRoll(raw);
       if(genericDice){
-        const rollMeta = {};
+        // BUGFIX (Rocco, spostamento a Drill Tunnel su Generale — vedi memberLocationKey più
+        // sopra in renderChatArea): senza `location` esplicita qui, pushLog tagga il messaggio con
+        // currentLocationKey() (la posizione CONDIVISA del gruppo) invece della posizione EFFETTIVA
+        // del mittente, esattamente come già corretto per Privata/Sottogruppo poco sopra in questo
+        // stesso handler.
+        const rollMeta = { location: memberLocationKey(me) };
         if(pendingActionImageUrl) rollMeta.image = pendingActionImageUrl;
         if(pendingReplyTo) rollMeta.replyTo = pendingReplyTo;
-        await pushLog(code, { who: displayName(me), role:'roll', text: genericDice.text, meta: Object.keys(rollMeta).length ? rollMeta : null });
+        await pushLog(code, { who: displayName(me), role:'roll', text: genericDice.text, meta: rollMeta });
       } else {
       const rollResult = await tryParseRollShortcut(raw, me);
       const resEl = document.getElementById('action-roll-result');
@@ -4028,15 +4045,18 @@ let editingScene = false;
         } else if(resEl){
           resEl.innerHTML = '';
         }
-        const rollMeta = rollResult.dice ? { dice: rollResult.dice } : {};
+        // BUGFIX: stesso motivo del ramo genericDice qui sopra.
+        const rollMeta = Object.assign({ location: memberLocationKey(me) }, rollResult.dice ? { dice: rollResult.dice } : {});
         if(pendingActionImageUrl) rollMeta.image = pendingActionImageUrl;
         if(pendingReplyTo) rollMeta.replyTo = pendingReplyTo;
-        await pushLog(code, { who: displayName(me), role:'roll', text: rollResult.text, meta: Object.keys(rollMeta).length ? rollMeta : null });
+        await pushLog(code, { who: displayName(me), role:'roll', text: rollResult.text, meta: rollMeta });
       } else {
-        const textMeta = {};
+        // BUGFIX: stesso motivo dei due rami sopra — il testo libero in Generale è il caso più
+        // frequente in assoluto, quindi quello con il maggior impatto sul bug segnalato.
+        const textMeta = { location: memberLocationKey(me) };
         if(pendingActionImageUrl) textMeta.image = pendingActionImageUrl;
         if(pendingReplyTo) textMeta.replyTo = pendingReplyTo;
-        await pushLog(code, { who: displayName(me), role:'player', text: raw, meta: Object.keys(textMeta).length ? textMeta : null });
+        await pushLog(code, { who: displayName(me), role:'player', text: raw, meta: textMeta });
       }
       } // fine else genericDice
       advanceGameClock('general', 5); // +5min per messaggio generale

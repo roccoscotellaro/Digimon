@@ -470,11 +470,16 @@
         const asPenalty = window.confirm('OK = usa come bonus (+4, consuma 1 uso). Annulla = invoca la penalità (-4, ripristina l\'uso e guadagni 1 IP).');
         if(asPenalty){
           me.tamer.majorAspect.usesLeft = Math.max(0,(me.tamer.majorAspect.usesLeft||0)-1);
-          await pushLog(session.code, { who: displayName(me), role:'player', text: `Usa il Major Aspect "${me.tamer.majorAspect.text}" (+4 al prossimo Check).` });
+          // BUGFIX (Rocco, spostamento a Drill Tunnel su Generale — stesso bug di memberLocationKey
+          // in pushPlayerNarration/js/digimon-card.js): pushLog(session.code, ...) da solo taggava
+          // sempre con la posizione CONDIVISA del gruppo; pushPlayerNarration instrada anche verso
+          // Privata/Sottogruppo se il giocatore li ha aperti, e su Generale tagga con la sua
+          // posizione EFFETTIVA invece di quella del gruppo.
+          await pushPlayerNarration(session.code, me, { who: displayName(me), role:'player', text: `Usa il Major Aspect "${me.tamer.majorAspect.text}" (+4 al prossimo Check).` });
         } else {
           me.tamer.majorAspect.usesLeft = 1;
           me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1;
-          await pushLog(session.code, { who: displayName(me), role:'player', text: `Invoca la penalità del Major Aspect "${me.tamer.majorAspect.text}" (-4), ripristina l'uso e guadagna 1 IP.` });
+          await pushPlayerNarration(session.code, me, { who: displayName(me), role:'player', text: `Invoca la penalità del Major Aspect "${me.tamer.majorAspect.text}" (-4), ripristina l'uso e guadagna 1 IP.` });
         }
         await saveMember(session.code, me);
         renderTamerCard(me, containerId, onChanged);
@@ -485,10 +490,11 @@
         const asPenalty = window.confirm('OK = usa come bonus (+2, consuma 1 uso). Annulla = invoca la penalità (-2, ripristina entrambi gli usi).');
         if(asPenalty){
           me.tamer.minorAspect.usesLeft = Math.max(0,(me.tamer.minorAspect.usesLeft||0)-1);
-          await pushLog(session.code, { who: displayName(me), role:'player', text: `Usa il Minor Aspect "${me.tamer.minorAspect.text}" (+2 al prossimo Check).` });
+          // BUGFIX: stesso motivo del Major Aspect qui sopra.
+          await pushPlayerNarration(session.code, me, { who: displayName(me), role:'player', text: `Usa il Minor Aspect "${me.tamer.minorAspect.text}" (+2 al prossimo Check).` });
         } else {
           me.tamer.minorAspect.usesLeft = 2;
-          await pushLog(session.code, { who: displayName(me), role:'player', text: `Invoca la penalità del Minor Aspect "${me.tamer.minorAspect.text}" (-2), ripristina entrambi gli usi.` });
+          await pushPlayerNarration(session.code, me, { who: displayName(me), role:'player', text: `Invoca la penalità del Minor Aspect "${me.tamer.minorAspect.text}" (-2), ripristina entrambi gli usi.` });
         }
         await saveMember(session.code, me);
         renderTamerCard(me, containerId, onChanged);
@@ -580,7 +586,9 @@
           // in chat non nomina più il Torment — solo l'esito generico. Il nome vero viaggia nel
           // payload ::TORMENTRESULT:: e viene rivelato da logHTML (js/chat-log-engine.js) solo al
           // giocatore che ha tirato e al Master.
-          await pushLog(session.code, { who: displayName(me), role:'roll', text: `Ha completato un Torment Check: 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText}::TORMENTRESULT::${session.username}|${tor.name}`, meta:{dice: result.dice} });
+          // BUGFIX: stesso motivo dei Major/Minor Aspect qui sopra (memberLocationKey via
+          // pushPlayerNarration invece del pushLog diretto che taggava con la posizione del gruppo).
+          await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: `Ha completato un Torment Check: 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText}::TORMENTRESULT::${session.username}|${tor.name}`, meta:{dice: result.dice} });
           if(tor.usedThisRest){ btn.disabled = true; btn.textContent = 'Già tentato (Rest)'; }
           if(onChanged) onChanged();
         };
@@ -886,7 +894,8 @@
         const verdict = evaluateVsTN(total, tnVal, dice);
         const resEl = document.getElementById('roll-result-'+containerId);
         const logText = `tira ${def.label} (${ATTR_ABBR[chosenAttr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict ? ` vs TN ${tnVal} → ${verdict.label}` : '');
-        await pushLog(session.code, { who: displayName(me), role:'roll', text: logText, meta: { dice, total, verdict: verdict?verdict.label:null } });
+        // BUGFIX: stesso motivo di Torment Check/Aspect qui sopra.
+        await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: logText, meta: { dice, total, verdict: verdict?verdict.label:null } });
 
         // ---------- Ispirazione: Ritira (richiesta utente: "Come funziona l'ispirazione? ...
         // implementiamo la funzione automatica per il lancio") ----------
@@ -913,7 +922,8 @@
               const finalTotal = keepNew ? total2 : curTotal;
               const finalVerdict = keepNew ? verdict2 : curVerdict;
               const rerollLogText = `Ispirazione (-1 IP): ri-tira ${def.label} → 3d6[${dice2.join(',')}] + ${attrVal} + ${skillVal}${flatExtra?` +${flatExtra} (bonus già applicati)`:''} = ${total2}` + (verdict2 ? ` vs TN ${tnVal} → ${verdict2.label}` : '') + ` — tenuto: ${keepNew?'il NUOVO':'il VECCHIO'} risultato (${finalTotal})`;
-              await pushLog(session.code, { who: displayName(me), role:'roll', text: rerollLogText, meta: { dice: finalDice, total: finalTotal, verdict: finalVerdict?finalVerdict.label:null } });
+              // BUGFIX: stesso motivo del tiro originale qui sopra.
+              await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: rerollLogText, meta: { dice: finalDice, total: finalTotal, verdict: finalVerdict?finalVerdict.label:null } });
               renderResult(finalDice, finalTotal, finalVerdict);
               if(onChanged) onChanged();
             };
