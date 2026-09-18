@@ -33,56 +33,39 @@ module.exports = async (req, res) => {
         return res.status(200).json({ ok: true });
       }
 
-      // ---- PATCH (nuovo): aggiorna SOLO le chiavi passate in digimonPatch/tamerPatch,
-      // lasciando intatto tutto il resto della colonna JSONB tamer/digimon.
-      //
-      // Perché serve: il salvataggio "normale" qui sotto (SALVATAGGIO MEMBRO) fa un upsert che
-      // SOSTITUISCE per intero tamer/digimon con l'oggetto ricevuto. index.html tiene una copia
-      // in memoria (cachedRoster) aggiornata solo ogni ~15s: se nel frattempo il Master fa un
-      // salvataggio automatico "di contorno" durante il combattimento (reset Stance dopo un
-      // Clash, Battery consumata, danno applicato...) partendo da quella copia leggermente
-      // vecchia, e nel frattempo il giocatore ha cambiato un campo NON correlato da un'altra
-      // scheda (Default Stage, Attributo, URL immagine/GIF...), il salvataggio "di contorno"
-      // riscrive l'intero oggetto e cancella silenziosamente quella modifica — anche se i due
-      // salvataggi non toccavano affatto lo stesso campo. Il merge superficiale qui sotto
-      // (SELECT + Object.assign solo sulle chiavi passate + UPDATE) evita il problema per i punti
-      // di index.html convertiti a patchMember: qualunque campo NON esplicitamente passato in
-      // digimonPatch/tamerPatch resta quello che c'è già sul server in quel momento, anche se
-      // diverso da quello nella cachedRoster di chi ha fatto la patch.
-      //
-      // A differenza del salvataggio normale, il patch NON crea la riga se non esiste già
-      // (niente upsert): richiede che il membro sia già stato salvato almeno una volta.
+      // ---- PATCH PARZIALE (nuovo — vedi patchMember in chat-log-engine.js) ----
+      // BUGFIX (mai implementato finora, nonostante fosse già usato dal client — es. il bottone
+      // "👁️ Visibile al gruppo"/"❔ Nascosto al gruppo" in index.html, e ora anche il nuovo blocco
+      // manuale di Chat Generale): senza questo `if`, un POST con resource:'patch' cadeva nel
+      // ramo "SALVATAGGIO MEMBRO" qui sotto, che richiede un `member.username` mai presente in
+      // questo payload (qui c'è `username` in cima al body, non dentro un oggetto `member`) — la
+      // richiesta falliva sempre con 400 "missing code or member.username", silenziosamente (i
+      // chiamanti mostrano un window.alert solo se controllano `ok`, non tutti lo fanno).
+      // SELECT + merge superficiale + UPDATE solo sulle chiavi passate, esattamente come descritto
+      // nel commento di patchMember: non tocca il resto di tamer/digimon anche se modificato nel
+      // frattempo da un salvataggio concorrente (altra scheda aperta, altro giocatore).
       if (body.resource === 'patch') {
         const campaignCode = cleanCode(body.code);
-        const username = body.username;
-        if (!campaignCode || !username) {
-          return res.status(400).json({ error: 'missing code or username' });
-        }
-        const digimonPatch = (body.digimonPatch && typeof body.digimonPatch === 'object') ? body.digimonPatch : null;
-        const tamerPatch = (body.tamerPatch && typeof body.tamerPatch === 'object') ? body.tamerPatch : null;
-        if (!digimonPatch && !tamerPatch) {
-          return res.status(400).json({ error: 'missing digimonPatch or tamerPatch' });
-        }
-
-        const { data: current, error: selError } = await supabase
+        const username = body.username ? String(body.username).slice(0, 60) : null;
+        if (!campaignCode || !username) return res.status(400).json({ error: 'missing code or username' });
+        if (!body.digimonPatch && !body.tamerPatch) return res.status(400).json({ error: 'missing digimonPatch or tamerPatch: nothing to patch' });
+        const { data: existing, error: fetchError } = await supabase
           .from('members')
-          .select('digimon, tamer')
+          .select('tamer, digimon')
           .eq('campaign_code', campaignCode)
-          .eq('username', String(username).slice(0, 60))
+          .eq('username', username)
           .maybeSingle();
-        if (selError) return res.status(500).json({ error: selError.message });
-        if (!current) return res.status(404).json({ error: 'member not found' });
-
-        const updatePayload = { last_seen: new Date().toISOString() };
-        if (digimonPatch) updatePayload.digimon = Object.assign({}, current.digimon || {}, digimonPatch);
-        if (tamerPatch) updatePayload.tamer = Object.assign({}, current.tamer || {}, tamerPatch);
-
-        const { error: updError } = await supabase
+        if (fetchError) return res.status(500).json({ error: fetchError.message });
+        if (!existing) return res.status(404).json({ error: 'member not found' });
+        const patch = {};
+        if (body.tamerPatch) patch.tamer = Object.assign({}, existing.tamer || {}, body.tamerPatch);
+        if (body.digimonPatch) patch.digimon = Object.assign({}, existing.digimon || {}, body.digimonPatch);
+        const { error: updateError } = await supabase
           .from('members')
-          .update(updatePayload)
+          .update(patch)
           .eq('campaign_code', campaignCode)
-          .eq('username', String(username).slice(0, 60));
-        if (updError) return res.status(500).json({ error: updError.message });
+          .eq('username', username);
+        if (updateError) return res.status(500).json({ error: updateError.message });
         return res.status(200).json({ ok: true });
       }
 

@@ -217,6 +217,12 @@ async function filterLogForRequester(campaignCode, rows, requesterUsername) {
   if (!requesterUsername) return rows;
   const { data: member } = await supabase.from('members').select('id, role, tamer').eq('campaign_code', campaignCode).eq('username', requesterUsername).maybeSingle();
   if (!member || member.role === 'master') return rows;
+  // Richiesta utente (Rocco): blocco manuale TOTALE della Chat Generale (generalChatLocked, vedi
+  // js/tamer-card.js defaultTamer) — in aggiunta all'automatismo per presenza qui sotto, non in
+  // sostituzione. Un giocatore bloccato non vede NESSUN messaggio di Generale, nemmeno quelli
+  // senza meta.location (di norma sempre visibili) — enforcement qui lato server così non basta
+  // modificare il client per aggirarlo.
+  if (member.tamer && member.tamer.generalChatLocked) return [];
   // currentSubsectionId può non esistere ancora come colonna (vedi api/state.js, fallback
   // "colonna mancante"): select('*') invece di elencare le colonne esplicitamente evita che questa
   // query fallisca del tutto su installazioni senza la migrazione SQL ancora eseguita.
@@ -380,6 +386,18 @@ module.exports = async (req, res) => {
 
       if (!campaignCode || !who || !text) {
         return res.status(400).json({ error: 'missing code, who or text' });
+      }
+      // Richiesta utente (Rocco): blocco manuale TOTALE della Chat Generale (generalChatLocked) —
+      // rifiuta anche il POST lato server, non solo il filtro in lettura qui sopra, così il
+      // controllo lato client (index.html) resta solo un feedback immediato e non l'unica difesa.
+      // `username` qui è sempre chi ha effettivamente premuto Invia (session.username, vedi
+      // pushLog in js/chat-log-engine.js) — un Master che parla per conto di un NPC/Nemico posta
+      // comunque come se stesso, quindi questo controllo non lo tocca mai per errore.
+      if (username) {
+        const { data: sender } = await supabase.from('members').select('role, tamer').eq('campaign_code', campaignCode).eq('username', username).maybeSingle();
+        if (sender && sender.role !== 'master' && sender.tamer && sender.tamer.generalChatLocked) {
+          return res.status(403).json({ error: 'Chat Generale bloccata dal Master per questo giocatore.' });
+        }
       }
       await supabase.from('campaigns').upsert({ code: campaignCode }, { onConflict: 'code' });
       const { data, error } = await supabase.from('logs').insert({

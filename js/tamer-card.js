@@ -93,7 +93,15 @@
       // insieme a un currentSectorId esplicito: le UI di spostamento impostano sempre entrambi).
       currentSubsectionId: null,
       currentLuogoId: null, // null = segue il Luogo attuale del gruppo (solo se nello stesso Settore/Sottosezione); un id esplicito = si è spostato da solo a un Luogo diverso
-      characterName:'' // nome del personaggio mostrato in UI, indipendente dallo username di login (fallback: username)
+      characterName:'', // nome del personaggio mostrato in UI, indipendente dallo username di login (fallback: username)
+      // Richiesta utente (Rocco): controllo manuale del Master, in aggiunta all'automatismo per
+      // presenza (unlockedLocationKeys, vedi log.js). true = questo giocatore non vede né può
+      // scrivere in Chat Generale affatto, qualunque luogo abbia sbloccato — utile per isolarlo
+      // narrativamente del tutto (es. cutscene privata), indipendente dai luoghi visitati. Non
+      // tocca Chat Privata/Sottogruppo. Bottone in Roster Campagna (Master, vedi rosterItemHTML/
+      // bindRosterManageButtons in index.html); applicato lato server in filterLogForRequester/
+      // POST /api/log (log.js) così non basta modificare il client per aggirarlo.
+      generalChatLocked: false
     };
   }
 

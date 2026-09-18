@@ -2975,6 +2975,12 @@ let editingScene = false;
           entry.meta = Object.assign({ location: memberLocationKey(me) }, diceMeta);
           await pushPrivateLog(code, session.username, entry);
         } else {
+          // Richiesta utente (Rocco): blocco manuale TOTALE di Chat Generale — anche qui, non solo
+          // nel composer principale (l'enforcement vero resta comunque server-side in log.js).
+          if(me && me.tamer && me.tamer.generalChatLocked){
+            if(errEl) errEl.textContent = 'Il Master ha bloccato la Chat Generale per te.';
+            return;
+          }
           // BUGFIX (Rocco, spostamento a Drill Tunnel su Generale): stesso motivo dei rami
           // Privata/Sottogruppo qui sopra — senza `location` esplicita, pushLog taggava il tiro
           // con la posizione CONDIVISA del gruppo (currentLocationKey) invece di quella EFFETTIVA
@@ -3350,10 +3356,17 @@ let editingScene = false;
     playerActiveChatThread = thread;
     playerActiveChatLog = raw;
     const filtered = filterByLocation(raw, filterVal, effectiveKey);
+    // Richiesta utente (Rocco): blocco manuale TOTALE di Chat Generale (generalChatLocked) — il
+    // server (log.js, filterLogForRequester) restituisce già un log vuoto per questo giocatore,
+    // ma senza questo messaggio esplicito la chat sembrerebbe solo "vuota"/rotta invece che
+    // chiaramente bloccata dal Master (lo stesso equivoco all'origine del bug segnalato prima).
+    const generalLockedHere = thread===null && !!(me.tamer && me.tamer.generalChatLocked);
     const logLive = document.getElementById('log-live');
     if(logLive){
       const wasAtBottom = logLive.scrollHeight - logLive.scrollTop <= logLive.clientHeight + 40;
-      logLive.innerHTML = logHTML(filtered, false);
+      logLive.innerHTML = generalLockedHere
+        ? '<div class="muted" style="padding:12px;text-align:center;color:var(--danger);">🔒 Il Master ha bloccato la Chat Generale per te.</div>'
+        : logHTML(filtered, false);
       if(opts.forceScrollBottom || wasAtBottom) logLive.scrollTop = logLive.scrollHeight;
     }
     const barWrap = document.getElementById('chat-location-bar');
@@ -3741,14 +3754,19 @@ let editingScene = false;
       // a prescindere dal turno — usato per mostrare il messaggio "è il tuo turno" proprio lì, dove
       // prima compariva il lucchetto 🔒 (ora sbloccato per il turno di myTurnNow, vedi sopra).
       const isCombatLockChat = combatChatLockLocationMatches(playerChatMode, playerActiveSubgroupId, false);
-      const lockPublicChat = turnLockPublicChat || chatLocked;
+      // Richiesta utente (Rocco): blocco manuale TOTALE della Chat Generale (generalChatLocked,
+      // vedi js/tamer-card.js/log.js) — indipendente dal combattimento, non tocca Privata/Sottogruppo.
+      const generalManuallyLocked = playerChatMode!=='private' && playerChatMode!=='subgroup' && !!(me.tamer && me.tamer.generalChatLocked);
+      const lockPublicChat = turnLockPublicChat || chatLocked || generalManuallyLocked;
       ['action-text','btn-send-action','btn-correct','action-img-btn'].forEach(id=>{
         const el = document.getElementById(id);
         if(el) el.disabled = lockPublicChat;
       });
       const actionHintEl = document.getElementById('action-hint');
       if(actionHintEl){
-        actionHintEl.innerHTML = chatLocked
+        actionHintEl.innerHTML = generalManuallyLocked
+          ? '<span style="color:var(--danger);">🔒 Il Master ha bloccato la Chat Generale per te. Puoi comunque scrivere in privato al Master.</span>'
+          : chatLocked
           ? '<span style="color:var(--danger);">🔒 Questa chat è bloccata: è in corso un combattimento. Puoi comunque scrivere in privato al Master.</span>'
           : (isCombatLockChat && myTurnNow)
             ? `<span style="color:var(--cyan);">⚔️ È il tuo turno, ${escapeHTML(displayNameFor(session.username))}! Ora puoi parlare e fare azioni.</span>`
@@ -3975,6 +3993,14 @@ let editingScene = false;
       if(combatChatLockLocationMatches(playerChatMode, playerActiveSubgroupId, isMyCombatTurn(cachedCombat, session.username))){
         const actionHintEl = document.getElementById('action-hint');
         if(actionHintEl) actionHintEl.innerHTML = '<span style="color:var(--danger);">🔒 Questa chat è bloccata: è in corso un combattimento.</span>';
+        return;
+      }
+      // Richiesta utente (Rocco): blocco manuale TOTALE di Chat Generale — controllo lato client
+      // (per un feedback immediato), ma l'enforcement vero è server-side in log.js: anche
+      // aggirando questo controllo, il POST verrebbe comunque rifiutato.
+      if(playerChatMode!=='private' && playerChatMode!=='subgroup' && me.tamer.generalChatLocked){
+        const actionHintEl = document.getElementById('action-hint');
+        if(actionHintEl) actionHintEl.innerHTML = '<span style="color:var(--danger);">🔒 Il Master ha bloccato la Chat Generale per te.</span>';
         return;
       }
       if(playerChatMode==='subgroup' && playerActiveSubgroupId){
@@ -4822,6 +4848,25 @@ let editingScene = false;
           hideBtn.disabled = true;
           const ok = await patchMember(session.code, p.username, { hiddenFromParty: p.digimon.hiddenFromParty });
           if(!ok){ p.digimon.hiddenFromParty = !p.digimon.hiddenFromParty; hideBtn.disabled = false; window.alert('Errore: ' + (lastApiError||'salvataggio non riuscito')); return; }
+          refreshLiveParts();
+        };
+      }
+      // Richiesta utente (Rocco): controllo manuale, in aggiunta all'automatismo per presenza —
+      // blocco/sblocco TOTALE della Chat Generale per questo giocatore (vedi generalChatLocked in
+      // js/tamer-card.js defaultTamer, e l'enforcement server-side in log.js). Usa patchMember
+      // (non saveMember) per toccare solo questo campo del Tamer, senza rischiare di sovrascrivere
+      // altre modifiche in corso sulla stessa scheda (vedi commento di patchMember).
+      const genChatBtn = document.getElementById('btn-toggle-generalchat-'+i);
+      if(genChatBtn){
+        genChatBtn.onclick = async ()=>{
+          const next = !p.tamer.generalChatLocked;
+          genChatBtn.disabled = true;
+          const ok = await patchMember(session.code, p.username, null, { generalChatLocked: next });
+          if(!ok){ genChatBtn.disabled = false; window.alert('Errore: ' + (lastApiError||'salvataggio non riuscito')); return; }
+          p.tamer.generalChatLocked = next;
+          await pushLog(session.code, { who:'Master', role:'gm', text: next
+            ? `🔒 Il Master ha bloccato la Chat Generale per ${displayName(p)}.`
+            : `🔓 Il Master ha sbloccato la Chat Generale per ${displayName(p)}.` });
           refreshLiveParts();
         };
       }
@@ -6979,6 +7024,7 @@ let editingScene = false;
               <button class="btn ghost small" id="btn-manage-${i}">Gestisci Scheda</button>
               <button class="btn small" id="btn-suggest-${i}">Suggerisci Battuta</button>
               <button class="btn ghost small" id="btn-toggle-hidden-${i}" title="${p.digimon.hiddenFromParty ? 'Il Digimon è nascosto agli altri giocatori — clicca per rivelarlo al gruppo' : 'Nascondi questo Digimon agli altri giocatori (il proprietario continua a vederlo)'}" style="${p.digimon.hiddenFromParty ? 'color:var(--amber);border-color:var(--amber);' : ''}">${p.digimon.hiddenFromParty ? '❔ Nascosto al gruppo' : '👁️ Visibile al gruppo'}</button>
+              <button class="btn ghost small" id="btn-toggle-generalchat-${i}" title="${p.tamer.generalChatLocked ? 'Chat Generale bloccata per questo giocatore — clicca per sbloccarla' : 'Blocca del tutto la Chat Generale per questo giocatore (non la vedrà né potrà scriverci, indipendentemente dai luoghi sbloccati)'}" style="${p.tamer.generalChatLocked ? 'color:var(--danger);border-color:var(--danger);' : ''}">${p.tamer.generalChatLocked ? '🔒 Generale bloccata' : '🔓 Generale sbloccata'}</button>
               <button class="btn ghost small" id="btn-delete-${i}" style="color:var(--danger);border-color:rgba(255,93,93,0.4);">🗑</button>
             </div>
           </div>
