@@ -1221,7 +1221,13 @@
           const { dice, successes } = rollPool(poolSize);
           const resEl = document.getElementById('pool-roll-result-'+containerId);
           if(resEl) resEl.innerHTML = `${diceRowHTML(dice)}<span class="roll-total">${successes} successi</span>`;
-          const logText = `Pool Check ${statLabel} (${poolSize}d6): [${dice.join(',')}] → ${successes} successi` + (fatigueLevel>0 ? ` (−${fatigueLevel} dadi per Affaticamento)` : '');
+          // Richiesta utente ("estendi il reroll con Ispirazione anche al Pool Check del
+          // Digimon"): stesso marcatore ::REROLL:: di /tira e delle Richieste del Master — vedi
+          // logHTML/attachLogModeration in chat-log-engine.js. L'IP speso è sempre del TAMER
+          // (me.tamer), anche se questo è un tiro del Digimon: l'Ispirazione è una risorsa del
+          // Tamer, non del Digimon (regolamento 2.05a).
+          const rerollPayload = `${session.username}|pool|${encodeURIComponent(statLabel)}|${poolSize}`;
+          const logText = `Pool Check ${statLabel} (${poolSize}d6): [${dice.join(',')}] → ${successes} successi` + (fatigueLevel>0 ? ` (−${fatigueLevel} dadi per Affaticamento)` : '') + `::REROLL::${rerollPayload}`;
           await pushPlayerNarration(session.code, me, { who: (d.name||displayName(me)), role:'roll', text: logText, meta: { dice, successes } });
           if(onChanged) onChanged();
         };

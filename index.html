@@ -4098,6 +4098,19 @@ let editingScene = false;
         }
         // BUGFIX: stesso motivo del ramo genericDice qui sopra.
         const rollMeta = Object.assign({ location: memberLocationKey(me) }, rollResult.dice ? { dice: rollResult.dice } : {});
+        // Richiesta utente ("estendi il reroll con Ispirazione anche a /tira"): il bottone
+        // "🔄 Ritira" (marcatore ::REROLL:: dentro rollResult.text, vedi tryParseRollShortcut in
+        // js/tamer-card.js) confronta il nuovo tiro col vecchio leggendo meta.total/meta.successes/
+        // meta.verdict del messaggio originale — senza salvarli qui, il confronto "vecchio" non
+        // avrebbe alcun dato da mostrare per i tiri fatti con /tira.
+        if(rollResult.dice){
+          if(rollResult.isPool){
+            rollMeta.successes = parseInt(rollResult.resultLabel, 10) || 0;
+          } else {
+            rollMeta.total = Number(rollResult.resultLabel) || 0;
+            if(rollResult.verdict) rollMeta.verdict = rollResult.verdict.label;
+          }
+        }
         if(pendingActionImageUrl) rollMeta.image = pendingActionImageUrl;
         if(pendingReplyTo) rollMeta.replyTo = pendingReplyTo;
         await pushLog(code, { who: displayName(me), role:'roll', text: rollResult.text, meta: rollMeta });

@@ -695,6 +695,30 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
           fulfillBtn = `<button class="btn amber small evo-pulse-btn" style="margin-top:6px;" data-evo-quick-username="${escapeAttr(targetUsername)}">🧬 Evolvi ora!</button>`;
         }
       }
+      // Richiesta utente ("estendi il bottone di reroll con Ispirazione anche a /tira, alle
+      // Richieste del Master e al Pool Check del Digimon"): marcatore tecnico ::REROLL:: — mai
+      // usato finora fuori dal pannello 🎲 Skill (openSkillRollPanel, che ri-tira sul posto senza
+      // bisogno di passare dalla chat). Payload = username|pool|etichetta|poolSize OPPURE
+      // username|skill|etichetta|attrVal|skillVal|stuntDice|flatExtra|tn — generato da
+      // tryParseRollShortcut (js/tamer-card.js), dal bottone Pool Check del Digimon
+      // (js/digimon-card.js) e dall'evasione di ::REQ:: qui sotto. role==='roll' su questi
+      // messaggi non è mai controllato da nessun altro blocco ::marker:: sopra, quindi fulfillBtn
+      // è sempre vuoto a questo punto per loro.
+      if(l.role==='roll' && l.text && l.text.includes('::REROLL::')){
+        const [shown, payload] = l.text.split('::REROLL::');
+        displayText = shown;
+        const rerollUsername = (payload.split('|')[0]||'');
+        if(session && session.role==='player' && session.username===rerollUsername){
+          // Come il pannello 🎲 Skill (openSkillRollPanel): il bottone compare solo se il Tamer
+          // ha almeno 1 IP disponibile ADESSO (non al momento del tiro originale) — cachedRoster
+          // dà lo stato aggiornato, stesso pattern già usato sopra per ::TORMENTREQ::.
+          const selfMember = (cachedRoster||[]).find(m=>m.username===session.username);
+          const ipNow = selfMember && selfMember.tamer ? Number(selfMember.tamer.inspirationPoints||0) : 0;
+          if(ipNow>=1){
+            fulfillBtn = `<button class="btn ghost small" style="margin-top:6px;" data-reroll-id="${escapeAttr(l.id)}" data-reroll-payload="${escapeAttr(payload)}">🔄 Ispirazione: Ritira (1 IP, hai ${ipNow})</button>`;
+          }
+        }
+      }
       let diceHTML = '';
       if(!hideDiceInline && l.meta && Array.isArray(l.meta.dice)){
         const alreadyAnimated = animatedLogIds.has(l.id);
@@ -886,6 +910,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       const moveAcceptBtn = e.target.closest('[data-move-accept-sector]');
       const moveVoteBtn = e.target.closest('[data-move-vote-id]');
       const evoQuickBtn = e.target.closest('[data-evo-quick-username]');
+      const rerollBtn = e.target.closest('[data-reroll-id]');
       // BUGFIX (Rocco: "il Master ha costruito e sbloccato lo Stage Champion ma il gioco
       // continua a dire che non è pronto"): questo listener viene agganciato UNA SOLA VOLTA,
       // quando la Chat del giocatore viene costruita (vedi il commento su usePlayerActiveChat
@@ -947,7 +972,10 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
           const poolSize = Math.max(0, Number(me.digimon[skillKey]||0) - fatigueLevel);
           const { dice, successes } = rollPool(poolSize);
           const label = skillKey==='baseAccuracy'?'Accuracy':(skillKey==='baseDodge'?'Dodge':'Health');
-          text = `tira Pool Check ${label} (${poolSize}d6): [${dice.join(',')}] → ${successes} successi (richiesto dal Master)` + (fatigueLevel>0 ? ` (−${fatigueLevel} dadi per Affaticamento)` : '');
+          // Richiesta utente ("estendi il reroll anche alle Richieste del Master"): stesso
+          // marcatore ::REROLL:: di /tira e del bottone Pool Check del Digimon — vedi logHTML.
+          const rerollPayload = `${session.username}|pool|${encodeURIComponent(label)}|${poolSize}`;
+          text = `tira Pool Check ${label} (${poolSize}d6): [${dice.join(',')}] → ${successes} successi (richiesto dal Master)` + (fatigueLevel>0 ? ` (−${fatigueLevel} dadi per Affaticamento)` : '') + `::REROLL::${rerollPayload}`;
           rollMeta = { dice, successes };
         } else {
           const def = SKILL_DEFS.find(d=>d.key===skillKey);
@@ -990,7 +1018,12 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
               aspectNote += ` ${restPenalty>0?'+':''}${restPenalty} Torment/Affaticamento`;
             }
             const verdict = evaluateVsTN(total, tn, dice);
-            text = `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict?` vs TN ${tn} → ${verdict.label}`:'') + ' (richiesto dal Master)';
+            // Stesso marcatore ::REROLL:: del ramo Pool qui sopra — payload = username|skill|
+            // etichetta|attrVal|skillVal|stuntDice(0, nessuno Stunt su un tiro richiesto dal
+            // Master)|flatExtra(bonus non-dado già sommati: Aspect/Torment/Affaticamento)|tn.
+            const flatExtra = total - baseTotal;
+            const rerollPayload = `${session.username}|skill|${encodeURIComponent(def.label)}|${attrVal}|${skillVal}|0|${flatExtra}|${tn!=null?tn:''}`;
+            text = `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict?` vs TN ${tn} → ${verdict.label}`:'') + ' (richiesto dal Master)' + `::REROLL::${rerollPayload}`;
             rollMeta = { dice, total, verdict: verdict?verdict.label:null };
           }
         }
@@ -1014,9 +1047,80 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
             const group = (cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId) || null;
             await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { ...entry, meta: { ...(entry.meta||{}), location: subgroupLocationKey(group) } });
           } else {
-            await pushLog(code, entry);
+            // BUGFIX: stesso identico motivo del commento qui sopra — mancava anche sul ramo
+            // Generale, non solo su Privata/Sottogruppo.
+            await pushLog(code, { ...entry, meta: { ...(entry.meta||{}), location: memberLocationKey(me) } });
           }
           if(onChanged) onChanged();
+        }
+      }
+      // Richiesta utente ("estendi il bottone di reroll con Ispirazione anche a /tira, alle
+      // Richieste del Master e al Pool Check del Digimon"): gestisce il click su "🔄 Ispirazione:
+      // Ritira (1 IP)" mostrato da logHTML sopra sui messaggi con marcatore ::REROLL::. Stessa
+      // identica logica (regola 2.05a) del bottone di openSkillRollPanel (js/tamer-card.js) —
+      // qui però il tiro originale non è più "in memoria" in una closure, quindi il vecchio
+      // risultato per il confronto keep-new-vs-old viene ripescato da sourceLog tramite l'id del
+      // messaggio originale (data-reroll-id), con meta.total/meta.successes/meta.verdict.
+      if(rerollBtn && me){
+        const payload = rerollBtn.getAttribute('data-reroll-payload') || '';
+        const parts = payload.split('|');
+        const kind = parts[1];
+        const ipNow = Number(me.tamer.inspirationPoints||0);
+        if(ipNow < 1){
+          window.alert('Non hai più punti Ispirazione disponibili.');
+        } else {
+          const origId = rerollBtn.getAttribute('data-reroll-id');
+          const origEntry = sourceLog.find(l=>String(l.id)===String(origId));
+          const oldMeta = (origEntry && origEntry.meta) || {};
+          const oldDice = Array.isArray(oldMeta.dice) ? oldMeta.dice : null;
+          me.tamer.inspirationPoints = Math.max(0, ipNow - 1);
+          let rerollLogText = null;
+          let rollMeta = null;
+          if(kind==='pool'){
+            const label = decodeURIComponent(parts[2]||'');
+            const poolSize = Number(parts[3])||0;
+            const { dice: dice2, successes: successes2 } = rollPool(poolSize);
+            const oldSuccesses = oldMeta.successes!=null ? oldMeta.successes : null;
+            const keepNew = window.confirm(`Ri-tiro con Ispirazione: nuovo risultato ${successes2} successi (dadi ${dice2.join(',')}) contro il vecchio ${oldSuccesses!=null?oldSuccesses+' successi':'?'}${oldDice?' (dadi '+oldDice.join(',')+')':''}.\n\nOK = tieni il NUOVO risultato. Annulla = tieni il VECCHIO.`);
+            const finalDice = keepNew ? dice2 : (oldDice||dice2);
+            const finalSuccesses = keepNew ? successes2 : (oldSuccesses!=null ? oldSuccesses : successes2);
+            rerollLogText = `Ispirazione (-1 IP): ri-tira Pool Check ${label} (${poolSize}d6) → [${dice2.join(',')}] → ${successes2} successi — tenuto: ${keepNew?'il NUOVO':'il VECCHIO'} risultato (${finalSuccesses} successi)`;
+            rollMeta = { dice: finalDice, successes: finalSuccesses };
+          } else if(kind==='skill'){
+            const label = decodeURIComponent(parts[2]||'');
+            const attrVal = Number(parts[3])||0;
+            const skillVal = Number(parts[4])||0;
+            const stuntDice = Number(parts[5])||0;
+            const flatExtra = Number(parts[6])||0;
+            const tnVal = (parts[7]!==undefined && parts[7]!=='') ? Number(parts[7]) : null;
+            const { dice: dice2, total: baseTotal2 } = rollSkillCheck(attrVal, skillVal, stuntDice);
+            const total2 = baseTotal2 + flatExtra;
+            const verdict2 = evaluateVsTN(total2, tnVal, dice2);
+            const oldTotal = oldMeta.total!=null ? oldMeta.total : null;
+            const oldVerdictLabel = oldMeta.verdict || null;
+            const keepNew = window.confirm(`Ri-tiro con Ispirazione: nuovo risultato ${total2}${verdict2?' ('+verdict2.label+')':''} (dadi ${dice2.join(',')}) contro il vecchio ${oldTotal!=null?oldTotal:'?'}${oldVerdictLabel?' ('+oldVerdictLabel+')':''}${oldDice?' (dadi '+oldDice.join(',')+')':''}.\n\nOK = tieni il NUOVO risultato. Annulla = tieni il VECCHIO.`);
+            const finalDice = keepNew ? dice2 : (oldDice||dice2);
+            const finalTotal = keepNew ? total2 : (oldTotal!=null?oldTotal:total2);
+            const finalVerdictLabel = keepNew ? (verdict2?verdict2.label:null) : oldVerdictLabel;
+            rerollLogText = `Ispirazione (-1 IP): ri-tira ${label} → 3d6[${dice2.join(',')}] + ${attrVal} + ${skillVal}${flatExtra?` +${flatExtra} (bonus già applicati)`:''} = ${total2}` + (verdict2 ? ` vs TN ${tnVal} → ${verdict2.label}` : '') + ` — tenuto: ${keepNew?'il NUOVO':'il VECCHIO'} risultato (${finalTotal})`;
+            rollMeta = { dice: finalDice, total: finalTotal, verdict: finalVerdictLabel };
+          }
+          if(rerollLogText){
+            await saveMember(session.code, me);
+            const entry = { who: displayName(me), role:'roll', text: rerollLogText, meta: rollMeta };
+            // Stesso identico instradamento di canale (Generale/Privata/Sottogruppo) già usato
+            // sopra per la risposta a fulfillBtn — vedi i commenti lì per il bug già corretto su
+            // meta.location mancante.
+            if(playerChatMode==='private'){
+              await pushPrivateLog(code, session.username, { ...entry, meta: { ...(entry.meta||{}), location: memberLocationKey(me) } });
+            } else if(playerChatMode==='subgroup' && playerActiveSubgroupId){
+              const group = (cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId) || null;
+              await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { ...entry, meta: { ...(entry.meta||{}), location: subgroupLocationKey(group) } });
+            } else {
+              await pushLog(code, { ...entry, meta: { ...(entry.meta||{}), location: memberLocationKey(me) } });
+            }
+            if(onChanged) onChanged();
+          }
         }
       }
       if(fulfillTormentBtn && me){
@@ -1072,7 +1176,9 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
             const group = (cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId) || null;
             await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { ...entry, meta: { ...(entry.meta||{}), location: subgroupLocationKey(group) } });
           } else {
-            await pushLog(code, entry);
+            // BUGFIX: stesso identico motivo del data-fulfill-target qui sopra — mancava anche sul
+            // ramo Generale.
+            await pushLog(code, { ...entry, meta: { ...(entry.meta||{}), location: memberLocationKey(me) } });
           }
           if(onChanged) onChanged();
         }
@@ -1124,7 +1230,10 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
             const group = (cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId) || null;
             await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { ...entry, meta: { location: subgroupLocationKey(group) } });
           } else {
-            await pushLog(code, entry);
+            // BUGFIX: stesso motivo del branch spostamento poco più sotto — senza `location`
+            // esplicita, pushLog tagga di default con la posizione CONDIVISA del gruppo invece di
+            // quella EFFETTIVA di chi consuma le razioni.
+            await pushLog(code, { ...entry, meta: { location: memberLocationKey(me) } });
           }
           if(onChanged) onChanged();
         }
@@ -1154,9 +1263,21 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
           } else {
             const destName = luogoId ? luogoNameAnywhere(sectorId, subsectionId, luogoId) : (subsectionId ? subsectionNameById(sectorId, subsectionId) : sectorNameById(sectorId));
             const entry = { who: displayName(me), role:'player', text: `🚶 ${displayName(me)} si sposta a "${destName||''}".` };
-            if(playerChatMode==='private') await pushPrivateLog(code, session.username, entry);
-            else if(playerChatMode==='subgroup' && playerActiveSubgroupId) await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, entry);
-            else await pushLog(code, entry);
+            // BUGFIX (segnalato da Rocco: dopo essersi spostati a "Drill Tunnel" su Generale, "non
+            // si apre nessuna chat"/il log resta fermo): a questo punto me.tamer.currentSectorId/
+            // Subsection/Luogo sono GIA' stati aggiornati alla nuova posizione (poche righe sopra),
+            // quindi memberLocationKey(me) calcola correttamente la destinazione appena raggiunta.
+            // Senza tag esplicita, pushLog/pushPrivateLog taggavano invece questo stesso messaggio
+            // di conferma con currentLocationKey() — la posizione CONDIVISA del gruppo, cioè quella
+            // VECCHIA da cui il giocatore si sta separando — che il filtro "luogo attuale" della sua
+            // Chat (ora giustamente puntato sulla nuova posizione, vedi renderChatArea) non trovava
+            // mai: la chat sembrava vuota/ferma esattamente come descritto.
+            if(playerChatMode==='private') await pushPrivateLog(code, session.username, { ...entry, meta: { location: memberLocationKey(me) } });
+            else if(playerChatMode==='subgroup' && playerActiveSubgroupId){
+              const group = (cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId) || null;
+              await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { ...entry, meta: { location: subgroupLocationKey(group) } });
+            }
+            else await pushLog(code, { ...entry, meta: { location: memberLocationKey(me) } });
             if(onChanged) onChanged();
           }
         }
@@ -1204,7 +1325,11 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
               await saveMember(code, member);
             }
             const destName = luogoId ? luogoNameAnywhere(sectorId, subsectionId, luogoId) : (subsectionId ? subsectionNameById(sectorId, subsectionId) : sectorNameById(sectorId));
-            await pushPrivateLog(code, thread, { who:'Sistema', role:'gm', text: `📍 Il sottogruppo si sposta a "${destName||''}" (${votes.length}/${totalMembers} hanno accettato).` });
+            // BUGFIX: stesso motivo del branch [data-move-accept-sector] qui sopra — a questo punto
+            // i membri del sottogruppo hanno già la nuova posizione salvata, quindi subgroupLocationKey
+            // la calcola correttamente invece di lasciare che pushPrivateLog usi di default la
+            // posizione CONDIVISA (vecchia) del gruppo.
+            await pushPrivateLog(code, thread, { who:'Sistema', role:'gm', text: `📍 Il sottogruppo si sposta a "${destName||''}" (${votes.length}/${totalMembers} hanno accettato).`, meta: { location: subgroupLocationKey(group) } });
           }
           if(onChanged) onChanged();
         }

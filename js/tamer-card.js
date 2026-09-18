@@ -29,9 +29,15 @@
 // index.html lo passa esplicitamente ad ogni chiamata esterna (refreshLiveParts). renderInventoryCard
 // e renderBugReportCard non toccano mai refreshLiveParts, quindi la loro firma resta invariata.
 
-  function rollTormentCheck(boxes){
+  // Richiesta utente ("estendi il reroll con Ispirazione anche al Torment Check"): 2° parametro
+  // opzionale `bonus` -- regolamento 2.05a "Inspiration Points on Torment Checks": spendere IP su
+  // un Torment Check (reroll compreso) dà SEMPRE anche +1 al totale per ogni punto speso. Il bonus
+  // si somma SOLO al totale usato per il TN (diff/outcome), MAI ai dadi grezzi controllati per il
+  // Successo/Fallimento Critico "naturale" (dice.every(d=>d===6)/===1) -- quei due controlli
+  // restano quindi identici a prima quando bonus=0 (ogni chiamata esistente).
+  function rollTormentCheck(boxes, bonus){
     const dice = [rollD6(), rollD6(), rollD6()];
-    const total = dice.reduce((a,b)=>a+b,0);
+    const total = dice.reduce((a,b)=>a+b,0) + Number(bonus||0);
     const tn = 8 + Number(boxes||0);
     const diff = total - tn;
     let outcome;
@@ -546,49 +552,110 @@
           const idx = Number(btn.getAttribute('data-torment-check'));
           const tor = me.tamer.torments[idx];
           if(!tor || tor.usedThisRest) return;
-          const result = rollTormentCheck(tor.boxes);
-          let outcomeText;
-          if(result.outcome==='crit-success'){
-            tor.boxes = Math.max(0, tor.boxes-1);
-            me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1;
-            tor.usedThisRest = true;
-            outcomeText = 'Successo Critico! Cancella 1 Casella Torment e guadagna 1 IP.';
-          } else if(result.outcome==='success'){
-            me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1;
-            tor.usedThisRest = true;
-            outcomeText = 'Successo! Guadagna 1 IP.';
-          } else if(result.outcome==='deep-crit-fail'){
-            tor.boxes = Math.min(10, tor.boxes+1);
-            tor.usedThisRest = true;
-            // BUGFIX (regola, richiesto da Rocco "Riusciamo a sistemarlo da regola?"): non è un -5
-            // automatico -- RAW (2.05b) dà al giocatore una SCELTA tra -5 (sempre disponibile)
-            // oppure, solo se il Tamer è in quel momento partecipante di un Combattimento attivo,
-            // -3 e "non può più usare Azioni Tamer fino alla fine del Combattimento". Il blocco vero
-            // e proprio è in trySpendAction (index.html) via participant.tamerActionsLocked -- si
-            // azzera da solo a fine Combattimento perché endCombatNow ripulisce l'intero array
-            // participants. Stessa identica logica duplicata in js/chat-log-engine.js
-            // (fulfillTormentBtn), per lo stesso Torment Check evaso da una richiesta del Master.
-            const combatant = (cachedCombat && cachedCombat.active && Array.isArray(cachedCombat.participants))
-              ? cachedCombat.participants.find(p=>p.isPC && p.username===session.username) : null;
-            if(combatant && window.confirm('Fallimento Critico Profondo! Scegli la penalità del Torment (regola 2.05b):\n\nOK = -3 fino al Rest, ma non potrai più usare Azioni Tamer fino alla fine del Combattimento.\nAnnulla = -5 fino al Rest (nessun altro effetto).')){
-              me.tamer.tormentPenalty = -3;
-              combatant.tamerActionsLocked = true;
-              await apiPost('/api/state', { resource:'combat', code: session.code, data: cachedCombat });
-              outcomeText = 'Fallimento Critico Profondo! +1 Casella Torment, penalità -3 fino al Rest — non può più usare Azioni Tamer fino alla fine del Combattimento.';
+          // Richiesta utente ("estendi il reroll con Ispirazione anche al Torment Check"): a
+          // differenza degli altri reroll (marcatore ::REROLL:: nel messaggio di chat, pensato per
+          // essere cliccato anche a distanza di tempo/da un'altra sessione -- vedi
+          // chat-log-engine.js), qui seguiamo lo stesso schema locale di openSkillRollPanel più
+          // sopra: tutto dentro un'unica chiusura, offerto SUBITO dopo il tiro, con la possibilità
+          // di ri-tirare più volte in catena finché resta IP (stesso "renderResult" ricorsivo).
+          // Regolamento 2.05a "Inspiration Points on Torment Checks": spendere IP su un Torment
+          // Check (reroll compreso) dà SEMPRE anche +1 al totale per ogni punto speso -- qui 1 IP
+          // per click = +1 bonus sul nuovo tiro (vedi rollTormentCheck(boxes, bonus) sopra).
+          const preBoxes = tor.boxes;
+          const preTormentPenalty = me.tamer.tormentPenalty;
+          const preIP = Number(me.tamer.inspirationPoints||0);
+          // BUGFIX (regola, richiesto da Rocco "Riusciamo a sistemarlo da regola?"): non è un -5
+          // automatico -- RAW (2.05b) dà al giocatore una SCELTA tra -5 (sempre disponibile)
+          // oppure, solo se il Tamer è in quel momento partecipante di un Combattimento attivo,
+          // -3 e "non può più usare Azioni Tamer fino alla fine del Combattimento". Il blocco vero
+          // e proprio è in trySpendAction (index.html) via participant.tamerActionsLocked -- si
+          // azzera da solo a fine Combattimento perché endCombatNow ripulisce l'intero array
+          // participants. Stessa identica logica duplicata in js/chat-log-engine.js
+          // (fulfillTormentBtn), per lo stesso Torment Check evaso da una richiesta del Master.
+          const combatant = (cachedCombat && cachedCombat.active && Array.isArray(cachedCombat.participants))
+            ? cachedCombat.participants.find(p=>p.isPC && p.username===session.username) : null;
+          const preTamerActionsLocked = combatant ? !!combatant.tamerActionsLocked : false;
+
+          // Riparte SEMPRE da questo "stato pulito" pre-tiro e applica l'esito di `result` con la
+          // base IP indicata (ipBaseline) -- usata sia per il tiro originale sia per ogni ri-tiro
+          // in catena, così scegliere il vecchio o il nuovo risultato non somma mai due volte
+          // Caselle/Penalità/IP. La scelta Combattimento -3/-5 (Fallimento Critico Profondo) viene
+          // fatta UNA SOLA VOLTA per ogni risultato tirato (cache su result._deepCritMinor) e poi
+          // riusata identica se quello stesso risultato viene ri-applicato più avanti nella catena
+          // (es. l'utente sceglie "tieni il vecchio" dopo un ri-tiro): senza questa cache,
+          // ri-applicare lo stesso esito avrebbe ri-mostrato il popup e potuto dare una risposta
+          // diversa dalla prima volta.
+          const applyOutcome = async (result, ipBaseline)=>{
+            tor.boxes = preBoxes;
+            me.tamer.tormentPenalty = preTormentPenalty;
+            me.tamer.inspirationPoints = ipBaseline;
+            tor.usedThisRest = false;
+            if(combatant) combatant.tamerActionsLocked = preTamerActionsLocked;
+            let outcomeText;
+            if(result.outcome==='crit-success'){
+              tor.boxes = Math.max(0, preBoxes-1);
+              me.tamer.inspirationPoints = ipBaseline + 1;
+              tor.usedThisRest = true;
+              outcomeText = 'Successo Critico! Cancella 1 Casella Torment e guadagna 1 IP.';
+            } else if(result.outcome==='success'){
+              me.tamer.inspirationPoints = ipBaseline + 1;
+              tor.usedThisRest = true;
+              outcomeText = 'Successo! Guadagna 1 IP.';
+            } else if(result.outcome==='deep-crit-fail'){
+              tor.boxes = Math.min(10, preBoxes+1);
+              tor.usedThisRest = true;
+              if(result._deepCritMinor===undefined){
+                result._deepCritMinor = !!(combatant && window.confirm('Fallimento Critico Profondo! Scegli la penalità del Torment (regola 2.05b):\n\nOK = -3 fino al Rest, ma non potrai più usare Azioni Tamer fino alla fine del Combattimento.\nAnnulla = -5 fino al Rest (nessun altro effetto).'));
+              }
+              if(result._deepCritMinor){
+                me.tamer.tormentPenalty = -3;
+                combatant.tamerActionsLocked = true;
+                outcomeText = 'Fallimento Critico Profondo! +1 Casella Torment, penalità -3 fino al Rest — non può più usare Azioni Tamer fino alla fine del Combattimento.';
+              } else {
+                me.tamer.tormentPenalty = -5;
+                outcomeText = 'Fallimento Critico Profondo! +1 Casella Torment, penalità -5 fino al Rest.';
+              }
+            } else if(result.outcome==='crit-fail'){
+              me.tamer.tormentPenalty = -2;
+              tor.usedThisRest = true;
+              outcomeText = 'Fallimento Critico! Penalità -2 fino al Rest.';
             } else {
-              me.tamer.tormentPenalty = -5;
-              outcomeText = 'Fallimento Critico Profondo! +1 Casella Torment, penalità -5 fino al Rest.';
+              outcomeText = 'Fallimento. Nessun effetto, si può ritentare più tardi.';
             }
-          } else if(result.outcome==='crit-fail'){
-            me.tamer.tormentPenalty = -2;
-            tor.usedThisRest = true;
-            outcomeText = 'Fallimento Critico! Penalità -2 fino al Rest.';
-          } else {
-            outcomeText = 'Fallimento. Nessun effetto, si può ritentare più tardi.';
-          }
-          await saveMember(session.code, me);
+            if(combatant && combatant.tamerActionsLocked !== preTamerActionsLocked){
+              await apiPost('/api/state', { resource:'combat', code: session.code, data: cachedCombat });
+            }
+            return outcomeText;
+          };
+
           const resEl = document.getElementById('torment-result-'+idx);
-          if(resEl) resEl.innerHTML = `${diceRowHTML(result.dice)} <b>${result.total}</b> vs TN ${result.tn} — ${outcomeText}`;
+          const renderResult = (curResult, curOutcomeText, ipBaselineForCur)=>{
+            const ipNow = Number(me.tamer.inspirationPoints||0);
+            if(resEl) resEl.innerHTML = `${diceRowHTML(curResult.dice)} <b>${curResult.total}</b> vs TN ${curResult.tn} — ${curOutcomeText}` +
+              (ipNow>=1 ? `<div style="margin-top:6px;"><button class="btn ghost small" id="torment-reroll-${idx}">🔄 Ispirazione: Ritira Torment Check (1 IP, hai ${ipNow})</button></div>` : '');
+            const rerollBtn = resEl ? document.getElementById('torment-reroll-'+idx) : null;
+            if(rerollBtn){
+              rerollBtn.onclick = async ()=>{
+                const result2 = rollTormentCheck(preBoxes, 1);
+                const keepNew = window.confirm(`Ri-tiro con Ispirazione (+1 bonus incluso, regola 2.05a): nuovo risultato ${result2.total} (dadi ${result2.dice.join(',')}) contro il vecchio ${curResult.total} (dadi ${curResult.dice.join(',')}).\n\nOK = tieni il NUOVO risultato. Annulla = tieni il VECCHIO.`);
+                const finalResult = keepNew ? result2 : curResult;
+                const newIpBaseline = ipBaselineForCur - 1;
+                const finalOutcomeText = await applyOutcome(finalResult, newIpBaseline);
+                await saveMember(session.code, me);
+                // BUGFIX (privacy): stesso motivo del tiro originale qui sotto -- niente nome vero
+                // del Torment fuori dal payload ::TORMENTRESULT::.
+                const rerollLogText = `Ispirazione (-1 IP): ri-tira Torment Check → 3d6[${result2.dice.join(',')}] +1 (regola 2.05a) = ${result2.total} vs TN ${result2.tn} — tenuto: ${keepNew?'il NUOVO':'il VECCHIO'} risultato (${finalResult.total}) → ${finalOutcomeText}::TORMENTRESULT::${session.username}|${tor.name}`;
+                await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: rerollLogText, meta:{dice: finalResult.dice} });
+                if(tor.usedThisRest){ btn.disabled = true; btn.textContent = 'Già tentato (Rest)'; }
+                renderResult(finalResult, finalOutcomeText, newIpBaseline);
+                if(onChanged) onChanged();
+              };
+            }
+          };
+
+          const result = rollTormentCheck(preBoxes);
+          const outcomeText = await applyOutcome(result, preIP);
+          await saveMember(session.code, me);
           // BUGFIX (privacy, segnalato da Rocco): come per la richiesta (vedi index.html) e per il
           // Torment Check evaso da una richiesta del Master (js/chat-log-engine.js), il messaggio
           // in chat non nomina più il Torment — solo l'esito generico. Il nome vero viaggia nel
@@ -598,6 +665,7 @@
           // pushPlayerNarration invece del pushLog diretto che taggava con la posizione del gruppo).
           await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: `Ha completato un Torment Check: 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText}::TORMENTRESULT::${session.username}|${tor.name}`, meta:{dice: result.dice} });
           if(tor.usedThisRest){ btn.disabled = true; btn.textContent = 'Già tentato (Rest)'; }
+          renderResult(result, outcomeText, preIP);
           if(onChanged) onChanged();
         };
       });
@@ -973,9 +1041,15 @@
       const fatigueLevel = Number(me.digimon.fatigueLevel||0);
       const poolSize = Math.max(0, Number(me.digimon[statKey]||0) - fatigueLevel);
       const { dice, successes } = rollPool(poolSize);
+      // Richiesta utente ("estendi il reroll con Ispirazione anche a /tira"): stesso marcatore
+      // tecnico ::REROLL:: usato per il bottone 🎲 delle Skill (openSkillRollPanel) e per la
+      // Richiesta del Master (::REQ::, vedi chat-log-engine.js) — payload = username|pool|
+      // etichetta|poolSize, letto da logHTML/attachLogModeration per disegnare il bottone
+      // "🔄 Ritira con 1 IP" SOLO per chi ha tirato (session.username), e rifare lì il tiro.
+      const rerollPayload = `${session.username}|pool|${encodeURIComponent(query.toUpperCase())}|${poolSize}`;
       return {
         dice, isPool:true, resultLabel: `${successes} successi`, verdict:null,
-        text: `tira Pool Check ${query.toUpperCase()} (${poolSize}d6): [${dice.join(',')}] → ${successes} successi` + (fatigueLevel>0 ? ` (−${fatigueLevel} dadi per Affaticamento)` : '')
+        text: `tira Pool Check ${query.toUpperCase()} (${poolSize}d6): [${dice.join(',')}] → ${successes} successi` + (fatigueLevel>0 ? ` (−${fatigueLevel} dadi per Affaticamento)` : '') + `::REROLL::${rerollPayload}`
       };
     }
 
@@ -1009,9 +1083,14 @@
         aspectNote += ` ${restPenalty>0?'+':''}${restPenalty} Torment/Affaticamento`;
       }
       const verdict = evaluateVsTN(total, tn, dice);
+      // Stesso marcatore ::REROLL:: del ramo Pool qui sopra — payload = username|skill|etichetta|
+      // attrVal|skillVal|stuntDice(sempre 0 qui, /tira non ha lo Stunt del pannello completo)|
+      // flatExtra(bonus non-dado già sommati: Aspect/Torment/Affaticamento)|tn.
+      const flatExtra = total - baseTotal;
+      const rerollPayload = `${session.username}|skill|${encodeURIComponent(def.label)}|${attrVal}|${skillVal}|0|${flatExtra}|${tn!=null?tn:''}`;
       return {
         dice, isPool:false, resultLabel: String(total), verdict,
-        text: `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict ? ` vs TN ${tn} → ${verdict.label}` : '')
+        text: `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict ? ` vs TN ${tn} → ${verdict.label}` : '') + `::REROLL::${rerollPayload}`
       };
     }
     return { text: `⚠ comando non riconosciuto: "${rest}". Usa /tira <NomeSkill|Accuracy|Dodge|Health> [TN] [major|minor]`, dice:null };
