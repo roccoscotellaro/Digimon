@@ -1168,6 +1168,19 @@ let editingScene = false;
     { key:'skill_digimon', label:'Skill Check (Digimon)', cost:2, pool:'digimon', desc:'Il Digimon tenta una Prova di Abilità a sua scelta (costa 2 Azioni Digimon).' },
     { key:'stance', label:'Cambio Stance', cost:1, pool:'digimon', desc:'Il Digimon cambia Stance di combattimento (Neutrale/Offensiva/Difensiva). Una volta a turno.' },
     { key:'clash', label:'Clash', cost:1, pool:'digimon', desc:'Avvia un Clash (contrasto diretto) contro un bersaglio. Una volta a turno contro lo stesso bersaglio.' },
+    // FEATURE (Rocco 2026-09-21: "fra le azioni dovrebbe esserci quella di digievolversi durante il
+    // turno" -- risposta utente: "Nuova voce nel pannello, separata dal resto"): 'evolve'/
+    // 'force_evolve' esistono qui SOLO per dare a trySpendAction una def (cost/pool) da cui scalare
+    // le Azioni vere -- NON compaiono nel menu a tendina generico Azioni (vedi il filtro key!=='evolve'
+    // && key!=='force_evolve' su DIGIMON_ACTION_DEFS più sotto). L'unico modo di usarle è il box
+    // dedicato "🧬 Evoluzione in Combattimento" nella riga del partecipante in Gestione Combattimento
+    // (vedi evolveBoxHTML/data-evolve-combat/data-force-evolve-combat in renderCombatManager), che
+    // esegue la stessa identica logica di Evolvi/Forza Evoluzione della Scheda Digimon (evolutionCost,
+    // applyStageChange, Willpower Check TN 18+costo per Forza -- regole 8.05a/8.05c) ma qui la Azione
+    // viene DAVVERO scalata dal pool invece del solo promemoria testuale ("Ricorda di segnare 1
+    // Azione spesa") che la Scheda Digimon si limita a scrivere in chat.
+    { key:'evolve', label:'Evolvi (Azione)', cost:1, pool:'digimon', desc:'Il Digimon evolve a uno Stage già raggiunto/nel Default Range, spendendo gli Evolution Points necessari (regola 8.05a).' },
+    { key:'force_evolve', label:'Forza Evoluzione (2 Azioni)', cost:2, pool:'digimon', desc:'Il Tamer tenta di forzare l\'Evoluzione con un Check di Willpower, TN 18 + Evolution Points normalmente richiesti (regola 8.05c). Le 2 Azioni si spendono comunque, anche in caso di fallimento.' },
     { key:'bolster_tamer', label:'Bolster (Tamer, +2)', cost:1, pool:'tamer', desc:'Trasforma 1 Azione con Pool Check in 2 Azioni: +2 dadi al Pool Check (anche per potenziare Direct/Aid/Guard).' },
     { key:'bolster_digimon', label:'Bolster (Digimon, +SV)', cost:1, pool:'digimon', desc:'Come sopra, ma per il Digimon: il bonus è pari al suo SV più alto nel Default Range invece di +2.' },
     { key:'aid', label:'Aid', cost:1, pool:'digimon', desc:'Il Digimon tenta di aiutare un alleato entro il proprio Reach: su questo tavolo si tira un vero Pool Check (Nd6 = Stage) e, se riesce almeno 1 successo, l\'alleato ottiene il bonus prima del suo prossimo turno (variante rispetto al bonus garantito da regolamento). Una volta a turno.' },
@@ -1866,7 +1879,10 @@ let editingScene = false;
   // (Avvicina/Allontana/Imposta zona, lato Master; pannello Attacco/Movimento self-service, lato
   // giocatore) -- resta invece 'difficult_move' ("quello difficile"), perché quegli strumenti spendono
   // sempre e solo 1 Azione 'move' semplice e non coprono il costo/caso del Movimento Difficile.
-  const DIGIMON_ACTION_DEFS = ACTION_DEFS.filter(a=>a.pool==='digimon' && a.key!=='move');
+  // 'evolve'/'force_evolve' esclusi apposta (richiesta utente: "nuova voce nel pannello, separata
+  // dal resto") -- vivono solo nel box dedicato evolveBoxHTML, mai in questo menu a tendina. Vedi
+  // commento su ACTION_DEFS più sopra.
+  const DIGIMON_ACTION_DEFS = ACTION_DEFS.filter(a=>a.pool==='digimon' && a.key!=='move' && a.key!=='evolve' && a.key!=='force_evolve');
   // 'attack_tamer' esce dal menu Tamer -- richiesta utente: "non mettere ... né i suoi attacchi,
   // lascia solo le restanti azioni". Come le altre voci Tamer già puramente di bookkeeping (Skill
   // Check, Reinforce, Reposition, Hold Action...), un Attacco del Tamer può comunque essere tracciato
@@ -5489,6 +5505,30 @@ let editingScene = false;
           const pDefeatPending = p.isPC ? !!(pcMemberForDefeat && pcMemberForDefeat.digimon.defeatPending) : (!!p.defeated && p.defeatPending !== false);
           const pCanRegress = p.isPC && pDefeatPending && stageIndex(pcMemberForDefeat.digimon.stage) > stageIndex(pcMemberForDefeat.digimon.defaultStage);
           const pDefaultStage = pcMemberForDefeat ? pcMemberForDefeat.digimon.defaultStage : null;
+          // FEATURE (Rocco 2026-09-21, vedi commento su ACTION_DEFS più sopra): box dedicato per
+          // digievolvere DURANTE il turno, che scala davvero 1/2 Azioni dal pool del Digimon tramite
+          // trySpendAction('evolve'/'force_evolve') invece del solo promemoria testuale della Scheda
+          // Digimon. Solo per i PC -- i Nemici non hanno Scheda/Evolution Points/stageStats da cui
+          // evolvere. Il target di default è lo Stage successivo a quello attuale (come su evo-target
+          // nella Scheda Digimon, js/digimon-card.js).
+          const pcDigimonForEvolve = pcMemberForDefeat ? pcMemberForDefeat.digimon : null;
+          const evolveBoxHTML = !pcDigimonForEvolve ? '' : (()=>{
+            const nextIdx = Math.min(5, stageIndex(pcDigimonForEvolve.stage)+1);
+            const defaultEvoTarget = STAGES[nextIdx] || pcDigimonForEvolve.stage;
+            return `
+            <div style="margin:6px 0;padding:8px;border:1px solid rgba(255,196,0,0.35);border-radius:6px;background:rgba(255,196,0,0.05);">
+              <div class="muted" style="font-size:11px;margin-bottom:6px;">🧬 Evoluzione in Combattimento (regola 8.05a/8.05c) — Stage attuale: <b>${escapeHTML(pcDigimonForEvolve.stage)}</b>, Evolution Points: <b>${pcDigimonForEvolve.evolutionPoints||0}</b></div>
+              <div class="row" style="margin-bottom:6px;">
+                <select id="evo-combat-target-${p.id}" style="flex:2;">${STAGES.map(s=>{
+                  const built = (pcDigimonForEvolve.stageStats && pcDigimonForEvolve.stageStats[s]) || s===pcDigimonForEvolve.stage;
+                  return `<option value="${s}" ${s===defaultEvoTarget?'selected':''}>${s}${built?'':' (da costruire)'}</option>`;
+                }).join('')}</select>
+                <button class="btn small" data-evolve-combat="${p.id}" style="flex:1;" title="Evolve verso uno Stage già raggiunto/nel Default Range (1 Azione + Evolution Points se richiesti).">🧬 Evolvi (1 Az.)</button>
+                <button class="btn ghost small" data-force-evolve-combat="${p.id}" style="flex:1;" title="Forza l'Evoluzione con un Check di Willpower, TN 18 + Evolution Points (2 Azioni, spese comunque anche in caso di fallimento).">⚡ Forza (2 Az.)</button>
+              </div>
+              <div class="muted" id="evo-combat-status-${p.id}"></div>
+            </div>`;
+          })();
           // Richiesta utente: numerino accanto al nome (vicino alle Ferite) per distinguere Digimon
           // con lo stesso nome — vedi duplicateNameSuffix. Il Master vede sempre i nomi reali.
           const dupSuffix = duplicateNameSuffix(combat, p, true);
@@ -5531,6 +5571,7 @@ let editingScene = false;
           <div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line);${isCurrentTurn?'background:rgba(53,232,201,0.06);border-radius:6px;padding:8px;':''}">
             ${header}
             ${defeatResolutionHTML}
+            ${evolveBoxHTML}
             <!-- Richiesta utente: "manca un modo per danneggiare manualmente i digimon nemici" --
                  funziona su QUALSIASI partecipante (non solo Nemici: utile anche per correggere le
                  Ferite di un Alleato/PC per un Effetto/Trappola/terreno non coperto da un'Azione
@@ -6676,6 +6717,110 @@ let editingScene = false;
         member.digimon.defeatPending = false;
         await patchMember(code, member.username, { approved: false, defeatPending: false });
         await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `🥚 Il Master risolve la Sconfitta di ${narratorName(p)}: torna Digitama (richiuso nell'Uovo -- riapprovalo dalla Scheda Digimon quando si schiude di nuovo).` });
+        await persistAndRefresh();
+      };
+    });
+    // FEATURE (Rocco 2026-09-21, vedi evolveBoxHTML/ACTION_DEFS più sopra): "Evolvi" del box
+    // dedicato -- stessa identica logica di validazione/applicazione del bottone "Evolvi" sulla
+    // Scheda Digimon (js/digimon-card.js, evoBtn.onclick: stesso ordine di controlli, stesso
+    // evolutionCost/applyStageChange), con UNA differenza voluta: qui trySpendAction scala DAVVERO
+    // 1 Azione dal pool del Digimon prima di applicare il cambio di Stage (e solo se i controlli
+    // precedenti -- Stage valido, Stage già costruito, Evolution Points sufficienti -- sono già
+    // passati, cosi' un tentativo respinto non spreca mai un'Azione).
+    cardEl.querySelectorAll('[data-evolve-combat]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-evolve-combat');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p || !p.isPC) return;
+        const member = cachedRoster.find(m=>m.username===p.username);
+        if(!member) return;
+        const d = member.digimon;
+        const targetSel = document.getElementById('evo-combat-target-'+id);
+        const statusEl = document.getElementById('evo-combat-status-'+id);
+        const target = targetSel ? targetSel.value : null;
+        if(!target || target===d.stage){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `${d.name||'Il Digimon'} è già a Stage ${target||d.stage} — scegli uno Stage superiore dal menu per evolvere davvero.`; }
+          return;
+        }
+        if(!(d.stageStats && d.stageStats[target]) && target!==d.stage){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `Lo Stage ${target} non è mai stato costruito -- vai su "Scheda Digimon" per assegnare i punti (è come creare un Digimon nuovo, regola 3.19) prima di potervi evolvere normalmente.`; }
+          return;
+        }
+        const cost = evolutionCost(d, target);
+        if(cost > Number(d.evolutionPoints||0)){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `Servono ${cost} Evolution Points (ne ha ${d.evolutionPoints||0}).`; }
+          return;
+        }
+        const spend = trySpendAction(p, 'evolve');
+        if(!spend.ok){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = spend.msg; }
+          return;
+        }
+        d.evolutionPoints = Number(d.evolutionPoints||0) - cost;
+        const oldName = d.name || 'Il Digimon';
+        applyStageChange(d, d.stage, target);
+        // Regola 8.05: un Digimon che evolve recupera tutte le Wound Box.
+        d.currentWounds = d.maxWounds;
+        await saveMember(code, member);
+        await syncCombatParticipantName(member);
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `🧬 ${narratorName(p)}: ${oldName} digivolve in ${d.name||target}! (1 Azione${cost>0?` + ${cost} Evolution Points`:''} spesi) — Stat aggiornate.` });
+        if(statusEl){ statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Evoluzione applicata, Stat aggiornate.'; }
+        await persistAndRefresh();
+      };
+    });
+    // "Forza Evoluzione" del box dedicato -- stessa identica logica di forceBtn.onclick sulla
+    // Scheda Digimon (Willpower Check, TN 18+costo, esiti Successo Critico/Successo/Fallimento
+    // identici a regola 8.05c), con la stessa differenza voluta di sopra: qui le 2 Azioni si
+    // scalano DAVVERO dal pool -- ma, a differenza di "Evolvi", si spendono comunque anche se il
+    // Check fallisce (il tentativo in sé costa 2 Azioni, riuscito o no, esattamente come da regola).
+    cardEl.querySelectorAll('[data-force-evolve-combat]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-force-evolve-combat');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p || !p.isPC) return;
+        const member = cachedRoster.find(m=>m.username===p.username);
+        if(!member) return;
+        const d = member.digimon;
+        const targetSel = document.getElementById('evo-combat-target-'+id);
+        const statusEl = document.getElementById('evo-combat-status-'+id);
+        const target = targetSel ? targetSel.value : null;
+        if(!target || target===d.stage){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `${d.name||'Il Digimon'} è già a Stage ${target||d.stage} — scegli uno Stage superiore dal menu per forzare l'evoluzione.`; }
+          return;
+        }
+        const cost = evolutionCost(d, target);
+        const tn = 18 + cost;
+        if(!window.confirm(`Forzare l'Evoluzione di ${d.name||'il Digimon'} a ${target}? Costa 2 Azioni (spese comunque, anche in caso di fallimento). Verrà tirato subito un Check di Willpower (TN ${tn}) e il risultato mandato in chat. Un fallimento può avere conseguenze pericolose a discrezione del Master.`)) return;
+        const spend = trySpendAction(p, 'force_evolve');
+        if(!spend.ok){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = spend.msg; }
+          return;
+        }
+        const willVal = member.tamer.willpower;
+        const { dice, total } = rollSkillCheck(willVal, 0);
+        const verdict = evaluateVsTN(total, tn, dice);
+        let outcomeText;
+        const oldName = d.name || 'Il Digimon';
+        if(verdict.cls==='crit-success'){
+          const defaultBuilt = !!(d.stageStats && d.stageStats[d.defaultStage] && d.stageStats[d.defaultStage].name);
+          applyStageChange(d, d.stage, d.defaultStage);
+          d.currentWounds = d.maxWounds;
+          const defaultLabel = defaultBuilt ? d.name : d.defaultStage;
+          outcomeText = `✨ Successo Critico! ${oldName} è scosso da un'ondata di energia incontrollabile e digivolve, tornando subito al Default Stage (${defaultLabel}) — Stat aggiornate.`;
+        } else if(verdict.cls==='success'){
+          const targetWasBuilt = !!(d.stageStats && d.stageStats[target] && d.stageStats[target].name);
+          applyStageChange(d, d.stage, target);
+          d.currentWounds = d.maxWounds;
+          d.forcedEvoRoundsLeft = 3;
+          const targetLabel = targetWasBuilt ? d.name : `${target} (nome ancora da assegnare)`;
+          outcomeText = `✨ Successo! ${oldName} è avvolto da un bagliore instabile e digivolve in ${targetLabel} per 3 round (Stat aggiornate), poi tornerà sotto il Default Stage.`;
+        } else {
+          outcomeText = `${verdict.label}. Nessuna evoluzione forzata — possibili conseguenze pericolose a discrezione del Master.`;
+        }
+        await saveMember(code, member);
+        await syncCombatParticipantName(member);
+        await pushCombatNarration(combat, { who:'Sistema', role:'roll', text: `⚡ Forza Evoluzione di ${narratorName(p)} (TN ${tn}, 2 Azioni spese): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText}`, meta:{ dice } });
+        if(statusEl){ statusEl.style.color='var(--text-mute)'; statusEl.textContent = outcomeText; }
         await persistAndRefresh();
       };
     });
