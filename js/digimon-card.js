@@ -334,6 +334,38 @@
     div.onclick = ()=>{ if(div.parentNode) div.remove(); };
     setTimeout(()=>{ if(div.parentNode) div.remove(); }, 3200);
   }
+  // FEATURE (Rocco 2026-09-21: "quando un digimon viene sconfitto esce fuori combattimento e ok,
+  // ma se il fight finisce dovrebbe aggiornarsi questa cosa"): prima di questa modifica, la
+  // Sconfitta di un Digimon PC (member.digimon.defeated/defeatPending, vedi applyDefeatIfNeeded in
+  // index.html) si poteva risolvere SOLO dai due bottoni Regredisci/Richiudi nell'Uovo dentro
+  // "Gestione Combattimento" (defeatResolutionHTML) e il flag defeated si poteva togliere SOLO col
+  // bottone ↩️ Rientra, sempre lì -- entrambi dentro combat.participants. "Termina Combattimento"
+  // (endCombatNow) azzera però l'intero combattimento senza mai toccare questi due flag sulla
+  // Scheda: se il Master chiude il fight prima di aver risolto una Sconfitta, quel Digimon restava
+  // marcato Sconfitto per sempre, senza più nessun punto dell'interfaccia da cui sistemarlo.
+  // Richiesta utente esplicita: NESSUNA automazione forzata a "Termina Combattimento" ("se il
+  // master non clicca nulla non succede nulla") -- si aggiunge invece lo stesso box di
+  // risoluzione (+ il bottone per togliere il flag Sconfitto) anche qui nella Scheda Digimon lato
+  // Master, cosi' resta disponibile e cliccabile quando vuole lui, che il combattimento sia ancora
+  // aperto o gia' chiuso. Specchio quasi esatto di defeatResolutionHTML in index.html, ma opera
+  // direttamente su d (=me.digimon) invece che su un participant di un combattimento attivo.
+  function defeatResolutionCardHTML(d, containerId){
+    if(!d || !d.defeated) return '';
+    const pending = !!d.defeatPending;
+    const canRegress = pending && stageIndex(d.stage) > stageIndex(d.defaultStage);
+    return `
+      <div style="margin:10px 0;padding:8px;border:1px solid rgba(255,93,93,0.4);border-radius:6px;background:rgba(255,93,93,0.06);">
+        <div class="muted" style="font-size:11px;margin-bottom:6px;">🏳️ Sconfitto${pending ? ` — risolvi la Sconfitta (regola 9.12a: ${canRegress?`consigliato regredire a ${escapeHTML(d.defaultStage)}`:'già al Default Stage minimo, consigliato Digitama'}):` : ' — la Sconfitta è già stata risolta, ma il Digimon resta considerato fuori combattimento finché non lo segni come rientrato:'}</div>
+        ${pending ? `
+        <div class="row" style="margin-bottom:6px;">
+          ${canRegress ? `<button class="btn ghost small" id="btn-defeat-regress-${containerId}" style="flex:1;">🏳️ Regredisci a ${escapeHTML(d.defaultStage)} (consigliato)</button>` : ''}
+          <button class="btn ghost small" id="btn-defeat-egg-${containerId}" style="flex:1;">🥚 Richiudi nell'Uovo${canRegress?'':' (consigliato)'}</button>
+        </div>
+        ` : ''}
+        <button class="btn ghost small" id="btn-defeat-reenter-${containerId}" style="width:100%;" title="Toglie il flag Sconfitto -- usalo per far rientrare il Digimon a proprio rischio durante un combattimento ancora aperto, o per sistemare una Sconfitta rimasta in sospeso dopo che il combattimento è già finito.">↩️ Non più Sconfitto</button>
+      </div>
+    `;
+  }
   function applyStageChange(d, oldStage, newStage){
     if(oldStage === newStage) return;
     snapshotCurrentStatsToStage(d, oldStage);
@@ -729,6 +761,7 @@
         <div class="flex-between"><div class="section-title" style="margin:0;border:none;padding:0;">Scheda Digimon</div>
         <span><a href="digimon.html" target="_blank" class="btn ghost small" style="margin-right:4px;text-decoration:none;">✏️ Scheda Completa</a>${isMasterCtx && !d.approved ? `<button class="btn small" id="btn-approve-digimon-${containerId}" style="margin-right:4px;color:var(--cyan);border-color:var(--cyan-dim);">✅ Approva</button>` : ''}<button class="btn small" id="btn-edit-digimon-${containerId}">Modifica</button>${isMasterCtx ? `<button class="btn ghost small" id="btn-reset-digimon-${containerId}" style="margin-left:4px;color:var(--danger);border-color:var(--danger);">🗑️ Azzera</button>` : ''}</span></div>
         ${!d.approved ? `<div class="muted" style="margin:4px 0 0;color:var(--amber);">🥚 In attesa di approvazione — il giocatore vede solo l'Uovo finché non premi Approva.</div>` : ''}
+        ${isMasterCtx ? defeatResolutionCardHTML(d, containerId) : ''}
         <div class="sheet-head" style="margin-top:12px;">
           ${digimonPortraitHTML(d)}
           <div class="info"><div class="nm">${escapeHTML(d.name||'(senza nome)')}</div><div class="tg">${escapeHTML(d.stage)}${d.attribute ? ` · ${attributeIconHTML(d.attribute, 15)} ${escapeHTML(d.attribute)}` : ''}</div></div>
@@ -894,6 +927,50 @@
           me.digimon = defaultDigimon();
           await saveMember(session.code, me);
           await pushLog(session.code, { who:'Master', role:'gm', text: `Il Digimon di ${displayName(me)} è stato azzerato dal Master.` });
+          renderDigimonCard(me, containerId, onChanged, renderTamerCardFn);
+          if(onChanged) onChanged();
+        };
+      }
+      // FEATURE (Rocco 2026-09-21, vedi defeatResolutionCardHTML più sopra): specchio dei tre
+      // handler data-defeat-regress/data-defeat-egg/data-part-reenter di index.html, ma operando
+      // direttamente su me.digimon invece che su un participant di un combattimento attivo -- cosi'
+      // restano disponibili anche a combattimento gia' terminato. syncCombatParticipantName viene
+      // comunque richiamata dopo un Regredisci, nel caso questo venga usato mentre un combattimento
+      // e' ancora aperto (stage cambiato -> nome/immagine potenzialmente cambiati).
+      const defeatRegressBtn = document.getElementById('btn-defeat-regress-'+containerId);
+      if(defeatRegressBtn){
+        defeatRegressBtn.onclick = async ()=>{
+          const fromStage = me.digimon.stage;
+          applyStageChange(me.digimon, me.digimon.stage, me.digimon.defaultStage);
+          me.digimon.currentWounds = 1;
+          me.digimon.defeatPending = false;
+          await saveMember(session.code, me);
+          await syncCombatParticipantName(me);
+          await pushLog(session.code, { who:'Master', role:'gm', text: `🏳️ Il Master risolve la Sconfitta di ${displayName(me)}: regredisce da ${fromStage} a ${me.digimon.defaultStage} con 1 Ferita.` });
+          renderDigimonCard(me, containerId, onChanged, renderTamerCardFn);
+          if(onChanged) onChanged();
+        };
+      }
+      const defeatEggBtn = document.getElementById('btn-defeat-egg-'+containerId);
+      if(defeatEggBtn){
+        defeatEggBtn.onclick = async ()=>{
+          if(!window.confirm(`Richiudere nell'Uovo il Digimon di ${displayName(me)}? Il giocatore lo vedrà come Uovo finché non lo riapprovi dalla Scheda Digimon -- Stat/Qualities/Attacchi restano quelli attuali, nulla viene azzerato.`)) return;
+          me.digimon.approved = false;
+          me.digimon.defeatPending = false;
+          await saveMember(session.code, me);
+          await pushLog(session.code, { who:'Master', role:'gm', text: `🥚 Il Master risolve la Sconfitta di ${displayName(me)}: torna Digitama (richiuso nell'Uovo -- riapprovalo dalla Scheda Digimon quando si schiude di nuovo).` });
+          renderDigimonCard(me, containerId, onChanged, renderTamerCardFn);
+          if(onChanged) onChanged();
+        };
+      }
+      const defeatReenterBtn = document.getElementById('btn-defeat-reenter-'+containerId);
+      if(defeatReenterBtn){
+        defeatReenterBtn.onclick = async ()=>{
+          if(!window.confirm(`Segnare ${me.digimon.name||displayName(me)} come non più Sconfitto? Usalo per far rientrare il Digimon in un combattimento ancora in corso, a proprio rischio, o per sistemare una Sconfitta rimasta "in sospeso" dopo che un combattimento è già terminato.`)) return;
+          me.digimon.defeated = false;
+          me.digimon.defeatPending = false;
+          await saveMember(session.code, me);
+          await pushLog(session.code, { who:'Master', role:'gm', text: `↩️ ${displayName(me)} non è più considerato Sconfitto.` });
           renderDigimonCard(me, containerId, onChanged, renderTamerCardFn);
           if(onChanged) onChanged();
         };
