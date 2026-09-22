@@ -1104,14 +1104,57 @@ let editingScene = false;
   // riga scritta su "logs"/"private_logs". Fire-and-forget: se le Web Push non sono configurate o il
   // giocatore non le ha attivate, la fetch torna semplicemente {ok:false} e non succede nulla — resta
   // comunque il banner privato #combat-turn-chat-banner per chi ha la pagina aperta.
-  async function notifyTurnPush(code, username, title, body){
+  // RICHIESTA UTENTE (2026-09-21): "Centro Notifiche Combattimento" -- un punto UNICO da cui
+  // partono tutte le Web Push "in fight", con un log visibile a schermo di ciò che è stato
+  // effettivamente inviato (e se il tentativo è andato a buon fine) invece che funzioni sparse
+  // e silenziose. fireCombatNotification è la funzione centrale: usata da notifyTurnPush (turno),
+  // da applyDefeatIfNeeded (Digimon sconfitto, qualsiasi lato) e dal bottone "Richiedi un Tiro"
+  // (tiro richiesto in chat dal Master) -- vedi renderCombatNotifCenter più in basso nel file per
+  // il pannello che mostra questo log e permette un invio di prova.
+  let combatNotifLog = [];
+  async function fireCombatNotification(code, usernames, title, body, opts){
+    const targets = (Array.isArray(usernames) ? usernames : [usernames]).filter(Boolean);
+    const entry = { time: Date.now(), title, body, usernames: targets, kind: (opts&&opts.kind)||'generic', ok:false };
+    if(!targets.length){
+      entry.error = 'Nessun destinatario.';
+      combatNotifLog.unshift(entry);
+      if(combatNotifLog.length>40) combatNotifLog.length = 40;
+      refreshCombatNotifCenter();
+      return entry;
+    }
     try{
-      await fetch('/api/log?resource=turn-ping', {
+      const payload = targets.length===1
+        ? { code, username: targets[0], title, body }
+        : { code, usernames: targets, title, body };
+      const res = await fetch('/api/log?resource=turn-ping', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, username, title, body })
+        body: JSON.stringify(payload)
       });
+      entry.ok = !!(res && res.ok);
+      try{ entry.result = await res.json(); }catch(e){}
+    }catch(e){
+      entry.ok = false;
+      entry.error = String((e && e.message) || e);
+    }
+    combatNotifLog.unshift(entry);
+    if(combatNotifLog.length>40) combatNotifLog.length = 40;
+    refreshCombatNotifCenter();
+    return entry;
+  }
+  // Ri-disegna il pannello "Centro Notifiche" (se presente in pagina) dopo ogni invio, senza
+  // dover ripassare code/players a fireCombatNotification -- li ricordiamo dall'ultimo render
+  // di renderCombatNotifCenter (vedi sotto), esattamente come già fa refreshCombatTurnNowCard
+  // per la scheda del turno corrente.
+  let __lastNotifCenterArgs = null;
+  function refreshCombatNotifCenter(){
+    try{
+      if(!document.getElementById('combat-notif-center-card')) return;
+      if(__lastNotifCenterArgs) renderCombatNotifCenter(__lastNotifCenterArgs.code, __lastNotifCenterArgs.players);
     }catch(e){}
+  }
+  async function notifyTurnPush(code, username, title, body){
+    return fireCombatNotification(code, [username], title, body, { kind:'turn' });
   }
   // true se il composer di chat che il GIOCATORE sta guardando in questo momento (chatMode +
   // eventuale sottogruppo attivo) è proprio quello bloccato da un combattimento in corso — usata
@@ -1926,9 +1969,36 @@ let editingScene = false;
     const acts = p.actions===undefined?2:p.actions;
     const tamerActs = p.tamerActions===undefined?2:p.tamerActions;
     const myTurn = isMyCombatTurn(combat, username);
+    // FEATURE (Rocco 2026-09-21: "deve poterlo cliccare il giocatore per far digievolvere in
+    // combattimento il proprio digimon durante il turno sprecando azioni" -- il box "Evoluzione in
+    // Combattimento" (trySpendAction reale su 'evolve'/'force_evolve', vedi ACTION_DEFS più sopra)
+    // prima esisteva SOLO lato Master in renderCombatManager/evolveBoxHTML: il giocatore poteva
+    // ancora evolvere solo dalla Scheda Digimon, che non scala mai un'Azione vera dal Combat Manager.
+    // Stesso box/stessa logica, qui però sul PROPRIO Digimon (member trovato via cachedRoster invece
+    // che da un id di riga) e disabilitato fuori dal proprio turno come il resto di questo pannello.
+    const member = cachedRoster.find(m=>m.username===username);
+    const d = member ? member.digimon : null;
+    const selfEvolveBoxHTML = !d ? '' : (()=>{
+      const nextIdx = Math.min(5, stageIndex(d.stage)+1);
+      const defaultEvoTarget = STAGES[nextIdx] || d.stage;
+      return `
+      <div style="margin:8px 0;padding:8px;border:1px solid rgba(255,196,0,0.35);border-radius:6px;background:rgba(255,196,0,0.05);">
+        <div class="muted" style="font-size:11px;margin-bottom:6px;">🧬 Evoluzione in Combattimento (regola 8.05a/8.05c) — Stage attuale: <b>${escapeHTML(d.stage)}</b>, Evolution Points: <b>${d.evolutionPoints||0}</b></div>
+        <div class="row" style="margin-bottom:6px;">
+          <select id="evo-self-target" style="flex:2;" ${myTurn?'':'disabled'}>${STAGES.map(s=>{
+            const built = (d.stageStats && d.stageStats[s]) || s===d.stage;
+            return `<option value="${s}" ${s===defaultEvoTarget?'selected':''}>${s}${built?'':' (da costruire)'}</option>`;
+          }).join('')}</select>
+          <button class="btn small" id="btn-self-evolve" style="flex:1;" ${myTurn?'':'disabled'} title="Evolve verso uno Stage già raggiunto/nel Default Range (1 Azione + Evolution Points se richiesti).">🧬 Evolvi (1 Az.)</button>
+          <button class="btn ghost small" id="btn-self-force-evolve" style="flex:1;" ${myTurn?'':'disabled'} title="Forza l'Evoluzione con un Check di Willpower, TN 18 + Evolution Points (2 Azioni, spese comunque anche in caso di fallimento).">⚡ Forza (2 Az.)</button>
+        </div>
+        <div class="muted" id="self-evolve-status">${myTurn?'':'Disponibile solo durante il tuo turno.'}</div>
+      </div>`;
+    })();
     return `
       <div class="divider"></div>
       <div class="muted" style="margin-bottom:6px;">Le tue Azioni — Digimon: <span class="mono" style="color:var(--cyan);">${acts}/2</span> · Tamer: <span class="mono" style="color:var(--amber);">${tamerActs}/2</span></div>
+      ${selfEvolveBoxHTML}
       <div class="muted" style="font-size:11px;margin-bottom:2px;color:var(--cyan);">Azione Digimon</div>
       <div class="row">
         <select id="self-daction-select" style="flex:2;" ${myTurn?'':'disabled'}>${SELF_DIGIMON_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az.)</option>`).join('')}</select>
@@ -2026,6 +2096,125 @@ let editingScene = false;
     if(dBtn) dBtn.onclick = ()=> spendSelfAction('self-daction-select');
     const tBtn = document.getElementById('btn-self-taction-use');
     if(tBtn) tBtn.onclick = ()=> spendSelfAction('self-taction-select');
+
+    // FEATURE (Rocco 2026-09-21, vedi selfEvolveBoxHTML in combatSelfActionHTML più sopra): stessa
+    // identica logica di validazione/applicazione dei bottoni Evolvi/Forza della Scheda Digimon
+    // (js/digimon-card.js) e del box gemello lato Master (evolveBoxHTML in renderCombatManager), ma
+    // qui il giocatore la usa sul proprio Digimon durante il proprio turno, con le stesse guardie
+    // anti-doppio-tap/turno-altrui di spendSelfAction qui sopra. trySpendAction scala DAVVERO 1/2
+    // Azioni dal pool Digimon (regola 8.05a/8.05c) invece del solo promemoria testuale della Scheda.
+    const evolveBtn = document.getElementById('btn-self-evolve');
+    if(evolveBtn){
+      evolveBtn.onclick = async ()=>{
+        if(!cachedCombat || !cachedCombat.active) return;
+        const p = cachedCombat.participants.find(x=>x.username===username);
+        if(!p) return;
+        const statusEl = document.getElementById('self-evolve-status');
+        if(combatActionPending){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Azione precedente ancora in salvataggio, attendi un istante e riprova.'; }
+          return;
+        }
+        if(!isMyCombatTurn(cachedCombat, username)){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Non è il tuo turno.'; }
+          return;
+        }
+        const member = cachedRoster.find(m=>m.username===username);
+        if(!member) return;
+        const d = member.digimon;
+        const targetSel = document.getElementById('evo-self-target');
+        const target = targetSel ? targetSel.value : null;
+        if(!target || target===d.stage){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `${d.name||'Il tuo Digimon'} è già a Stage ${target||d.stage} — scegli uno Stage superiore dal menu per evolvere davvero.`; }
+          return;
+        }
+        if(!(d.stageStats && d.stageStats[target]) && target!==d.stage){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `Lo Stage ${target} non è mai stato costruito -- vai su "Scheda Digimon" per assegnare i punti (è come creare un Digimon nuovo, regola 3.19) prima di potervi evolvere normalmente.`; }
+          return;
+        }
+        const cost = evolutionCost(d, target);
+        if(cost > Number(d.evolutionPoints||0)){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `Servono ${cost} Evolution Points (ne hai ${d.evolutionPoints||0}).`; }
+          return;
+        }
+        const spend = trySpendAction(p, 'evolve');
+        if(!spend.ok){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = spend.msg; }
+          return;
+        }
+        d.evolutionPoints = Number(d.evolutionPoints||0) - cost;
+        const oldName = d.name || 'Il Digimon';
+        applyStageChange(d, d.stage, target);
+        // Regola 8.05: un Digimon che evolve recupera tutte le Wound Box.
+        d.currentWounds = d.maxWounds;
+        await saveMember(code, member);
+        await saveCombat(code, cachedCombat);
+        await syncCombatParticipantName(member);
+        await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'player', text: `🧬 ${narratorName(p)}: ${oldName} digivolve in ${d.name||target}! (1 Azione${cost>0?` + ${cost} Evolution Points`:''} spesi) — Stat aggiornate.` });
+        if(statusEl){ statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Evoluzione applicata, Stat aggiornate.'; }
+        refreshLiveParts();
+      };
+    }
+    const forceEvolveBtn = document.getElementById('btn-self-force-evolve');
+    if(forceEvolveBtn){
+      forceEvolveBtn.onclick = async ()=>{
+        if(!cachedCombat || !cachedCombat.active) return;
+        const p = cachedCombat.participants.find(x=>x.username===username);
+        if(!p) return;
+        const statusEl = document.getElementById('self-evolve-status');
+        if(combatActionPending){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Azione precedente ancora in salvataggio, attendi un istante e riprova.'; }
+          return;
+        }
+        if(!isMyCombatTurn(cachedCombat, username)){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Non è il tuo turno.'; }
+          return;
+        }
+        const member = cachedRoster.find(m=>m.username===username);
+        if(!member) return;
+        const d = member.digimon;
+        const targetSel = document.getElementById('evo-self-target');
+        const target = targetSel ? targetSel.value : null;
+        if(!target || target===d.stage){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `${d.name||'Il tuo Digimon'} è già a Stage ${target||d.stage} — scegli uno Stage superiore dal menu per forzare l'evoluzione.`; }
+          return;
+        }
+        const cost = evolutionCost(d, target);
+        const tn = 18 + cost;
+        if(!window.confirm(`Forzare l'Evoluzione di ${d.name||'il tuo Digimon'} a ${target}? Costa 2 Azioni (spese comunque, anche in caso di fallimento). Verrà tirato subito un Check di Willpower (TN ${tn}) e il risultato mandato in chat. Un fallimento può avere conseguenze pericolose a discrezione del Master.`)) return;
+        const spend = trySpendAction(p, 'force_evolve');
+        if(!spend.ok){
+          if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = spend.msg; }
+          return;
+        }
+        const willVal = member.tamer.willpower;
+        const { dice, total } = rollSkillCheck(willVal, 0);
+        const verdict = evaluateVsTN(total, tn, dice);
+        let outcomeText;
+        const oldName = d.name || 'Il Digimon';
+        if(verdict.cls==='crit-success'){
+          const defaultBuilt = !!(d.stageStats && d.stageStats[d.defaultStage] && d.stageStats[d.defaultStage].name);
+          applyStageChange(d, d.stage, d.defaultStage);
+          d.currentWounds = d.maxWounds;
+          const defaultLabel = defaultBuilt ? d.name : d.defaultStage;
+          outcomeText = `✨ Successo Critico! ${oldName} è scosso da un'ondata di energia incontrollabile e digivolve, tornando subito al Default Stage (${defaultLabel}) — Stat aggiornate.`;
+        } else if(verdict.cls==='success'){
+          const targetWasBuilt = !!(d.stageStats && d.stageStats[target] && d.stageStats[target].name);
+          applyStageChange(d, d.stage, target);
+          d.currentWounds = d.maxWounds;
+          d.forcedEvoRoundsLeft = 3;
+          const targetLabel = targetWasBuilt ? d.name : `${target} (nome ancora da assegnare)`;
+          outcomeText = `✨ Successo! ${oldName} è avvolto da un bagliore instabile e digivolve in ${targetLabel} per 3 round (Stat aggiornate), poi tornerà sotto il Default Stage.`;
+        } else {
+          outcomeText = `${verdict.label}. Nessuna evoluzione forzata — possibili conseguenze pericolose a discrezione del Master.`;
+        }
+        await saveMember(code, member);
+        await saveCombat(code, cachedCombat);
+        await syncCombatParticipantName(member);
+        await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'roll', text: `⚡ Forza Evoluzione di ${narratorName(p)} (TN ${tn}, 2 Azioni spese): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText}`, meta:{ dice } });
+        if(statusEl){ statusEl.style.color='var(--text-mute)'; statusEl.textContent = outcomeText; }
+        refreshLiveParts();
+      };
+    }
   }
 
   // ---------- pannello Attacco/Movimento self-service del giocatore (solo nel proprio turno) ----------
@@ -4332,6 +4521,7 @@ let editingScene = false;
           </div>
           <div class="hud-frame card" id="combat-turn-now-card">${combatCurrentTurnCardHTML(cachedCombat)}</div>
           <div class="hud-frame card" id="combat-mgr-card"></div>
+          <div class="hud-frame card" id="combat-notif-center-card"></div>
           <div class="hud-frame card" id="encounter-balance-card"></div>
           </div>
 
@@ -4752,6 +4942,9 @@ let editingScene = false;
         const namesLabel = targetUsernames.map(u=>{ const p = players.find(x=>x.username===u); return p ? displayName(p) : u; }).join(', ');
         const payload = `${targetUsernames.join(',')}|${skillKey}|${tn||''}|${attrKey}`;
         const entry = { who:'Master', role:'request', text: `Richiesta a ${namesLabel}: tira ${label}${attrPart}${tnPart}::REQ::${payload}` };
+        // RICHIESTA UTENTE (2026-09-21): un tiro richiesto dal Master deve innescare anche una Web
+        // Push VERA ai destinatari (non solo il messaggio in chat) -- vedi fireCombatNotification.
+        fireCombatNotification(code, targetUsernames, '🎲 Il Master ti chiede un tiro!', `Tira ${label}${attrPart}${tnPart}.`, { kind:'roll-request' });
         if(sendGeneral) await pushLog(code, entry);
         if(sendPrivate){
           // BUGFIX: qui sotto mancava il tag di location (vedi memberLocationKey/pushPrivateLog
@@ -5055,6 +5248,7 @@ let editingScene = false;
       member.digimon.defeatPending = true;
       await patchMember(code, member.username, { defeated: true, defeatPending: true });
       const canRegress = curIdx>defIdx;
+      notifyAnyDigimonDefeated(code, member.digimon.name||participant.name);
       return { name: member.digimon.name||participant.name, digitama:!canRegress, canRegress, toStage: member.digimon.defaultStage };
     } else {
       if(participant.defeated || (participant.currentWounds||0)>0) return null;
@@ -5064,8 +5258,20 @@ let editingScene = false;
       // (vedi defeatResolutionHTML/data-defeat-enemy-regress/data-defeat-enemy-egg più sotto),
       // esattamente come già succedeva solo per i PC.
       participant.defeatPending = true;
+      notifyAnyDigimonDefeated(code, participant.name);
       return { name: participant.name, digitama:false, enemy:true };
     }
+  }
+  // RICHIESTA UTENTE (2026-09-21): "se viene sconfitto un qualsiasi digimon" deve innescare una
+  // Web Push -- a TUTTI i partecipanti PC del combattimento in corso (non solo al proprietario del
+  // Digimon sconfitto), sia che si tratti di un alleato che di un nemico. Fire-and-forget, non
+  // blocca la risoluzione della sconfitta se il push fallisce.
+  function notifyAnyDigimonDefeated(code, defeatedName){
+    try{
+      const pcUsernames = [...new Set((cachedCombat && cachedCombat.participants || [])
+        .filter(p=>p.isPC && p.username).map(p=>p.username))];
+      if(pcUsernames.length) fireCombatNotification(code, pcUsernames, '💥 Un Digimon è stato sconfitto!', `${defeatedName} è stato sconfitto in combattimento.`, { kind:'defeat' });
+    }catch(e){}
   }
 
   // Frase pronta per un messaggio di sistema STANDALONE in chat (include il nome del Digimon).
@@ -5466,6 +5672,7 @@ let editingScene = false;
         refreshCombatTurnNowCard();
         bindZoneLineArrows(code, players);
       };
+      renderCombatNotifCenter(code, players);
       return;
     }
 
@@ -7191,6 +7398,56 @@ let editingScene = false;
         const sel = document.getElementById('combat-jump-turn-select');
         if(!sel || !sel.value) return;
         await jumpToCombatTurn(code, players, sel.value);
+      };
+    }
+    renderCombatNotifCenter(code, players);
+  }
+
+  // RICHIESTA UTENTE (2026-09-21): "Centro Notifiche Combattimento" -- una sezione dedicata,
+  // separata dalla Gestione Combattimento, che mostra lo stato dei trigger automatici di Web Push
+  // "in fight" (è il tuo turno / tiro richiesto / Digimon sconfitto) e un log di ciò che è
+  // effettivamente partito, con un bottone di invio di prova per ciascun giocatore -- così non
+  // serve più "indovinare" se le notifiche funzionano, si vede subito l'esito in questo pannello.
+  function renderCombatNotifCenter(code, players){
+    const cardEl = document.getElementById('combat-notif-center-card');
+    if(!cardEl) return;
+    __lastNotifCenterArgs = { code, players };
+    const kindIcon = { turn:'⚔️', 'roll-request':'🎲', defeat:'💥', test:'🧪', generic:'🔔' };
+    const logHTML = combatNotifLog.length ? combatNotifLog.slice(0,15).map(e=>{
+      const t = new Date(e.time).toLocaleTimeString('it-IT', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+      const who = e.usernames.map(u=>{ const p = players.find(x=>x.username===u); return p ? displayName(p) : u; }).join(', ');
+      const statusMark = e.ok ? '<span style="color:#4caf50;">✅ inviata</span>' : `<span class="err">❌ ${escapeHTML(e.error || 'fallita/non configurata')}</span>`;
+      return `<div style="border-bottom:1px solid rgba(255,255,255,0.08);padding:4px 0;font-size:11px;">
+        <div>${kindIcon[e.kind]||'🔔'} <b>${escapeHTML(e.title)}</b> → ${escapeHTML(who)||'—'}</div>
+        <div class="muted">${t} — ${statusMark}</div>
+      </div>`;
+    }).join('') : '<div class="muted" style="font-size:11px;">Nessuna notifica inviata ancora in questa sessione del browser.</div>';
+    cardEl.innerHTML = `
+      <div class="section-title">Centro Notifiche Combattimento</div>
+      <div class="muted" style="font-size:11px;margin-bottom:8px;">
+        Trigger automatici attivi: <b>è il tuo turno</b>, <b>tiro richiesto dal Master in chat</b>, <b>un Digimon (alleato o nemico) viene sconfitto</b> — inviate come Web Push vera a chi le ha attivate.
+      </div>
+      <div class="field"><label>Invia una notifica di prova a</label>
+        <select id="notif-test-target">
+          <option value="__all__">Tutti i giocatori</option>
+          ${players.map(p=>`<option value="${escapeAttr(p.username)}">${escapeHTML(displayName(p))}</option>`).join('')}
+        </select>
+      </div>
+      <button class="btn ghost" id="btn-notif-test" style="width:100%;margin-bottom:8px;">🧪 Invia notifica di prova</button>
+      <div id="notif-test-status" style="font-size:11px;margin-bottom:6px;"></div>
+      <div style="max-height:220px;overflow-y:auto;">${logHTML}</div>
+    `;
+    const testBtn = document.getElementById('btn-notif-test');
+    if(testBtn){
+      testBtn.onclick = async ()=>{
+        const sel = document.getElementById('notif-test-target');
+        const val = sel ? sel.value : '__all__';
+        const targets = val==='__all__' ? players.map(p=>p.username) : [val];
+        const statusEl = document.getElementById('notif-test-status');
+        if(statusEl) statusEl.textContent = 'Invio in corso…';
+        const result = await fireCombatNotification(code, targets, '🧪 Notifica di prova', 'Se leggi questo, le Web Push in combattimento funzionano.', { kind:'test' });
+        const freshStatus = document.getElementById('notif-test-status');
+        if(freshStatus) freshStatus.textContent = result.ok ? '✅ Inviata (vedi log qui sotto).' : `❌ Non inviata: ${result.error||'controlla che il giocatore abbia attivato le notifiche.'}`;
       };
     }
   }

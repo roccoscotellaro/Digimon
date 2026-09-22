@@ -22,6 +22,11 @@
 //     usata per i messaggi privati, ma senza toccare "logs"/"private_logs". Se il giocatore non ha
 //     Web Push attive (nessuna riga in push_subscriptions), non fa nulla: resta il solo banner
 //     visibile in pagina, gestito lato client.
+//     AGGIORNAMENTO (2026-09-21, "Centro Notifiche Combattimento"): accetta anche `usernames`
+//     (array) al posto di `username` singolo — usato per i nuovi trigger automatici che devono
+//     raggiungere PIÙ giocatori in un colpo solo (tiro richiesto dal Master a più persone, un
+//     Digimon qualsiasi sconfitto -> avviso a TUTTI i PC in combattimento). `username` singolo
+//     resta supportato per compatibilità con le chiamate esistenti (avviso di turno).
 //
 // `username` nel body di POST identifica CHI sta scrivendo (a differenza di `who`, che e' il nome
 // mostrato in UI — puo' essere il characterName). Serve solo per sapere chi ESCLUDERE quando si
@@ -103,6 +108,15 @@ async function subsForMasters(campaignCode) {
 // "turn-ping" (avviso di turno mirato a un solo giocatore, senza scrivere in nessun log).
 async function subsForUsername(campaignCode, username) {
   const { data } = await supabase.from('push_subscriptions').select('*').eq('campaign_code', campaignCode).eq('username', username);
+  return data || [];
+}
+
+// Come subsForUsername ma per PIÙ username in un colpo solo (Centro Notifiche Combattimento:
+// tiro richiesto a più giocatori, Digimon sconfitto -> avviso a tutti i PC in combattimento).
+async function subsForUsernames(campaignCode, usernames) {
+  const list = Array.from(new Set((usernames || []).filter(Boolean)));
+  if (!list.length) return [];
+  const { data } = await supabase.from('push_subscriptions').select('*').eq('campaign_code', campaignCode).in('username', list);
   return data || [];
 }
 
@@ -279,21 +293,29 @@ module.exports = async (req, res) => {
       return res.status(405).json({ error: 'method not allowed' });
     }
 
-    // ===== Avviso di turno mirato a UN solo giocatore (nessuna scrittura in nessun log) =====
-    // Vedi commento in cima al file. Richiede solo VAPID configurate + quel giocatore già
-    // sottoscritto alle Web Push: altrimenti sendPushToSubscriptions non fa nulla, silenziosamente
+    // ===== Avviso mirato a uno o più giocatori (nessuna scrittura in nessun log) =====
+    // Vedi commento in cima al file. Richiede solo VAPID configurate + il/i giocatore/i già
+    // sottoscritti alle Web Push: altrimenti sendPushToSubscriptions non fa nulla, silenziosamente
     // (stesso comportamento "safe no-op" degli altri invii push di questo file).
     if (req.query && req.query.resource === 'turn-ping') {
       if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
         return res.status(405).json({ error: 'method not allowed' });
       }
-      const { code, username, title, body } = req.body || {};
+      const { code, username, usernames, title, body } = req.body || {};
       const campaignCode = cleanCode(code);
-      if (!campaignCode || !username || !title) {
-        return res.status(400).json({ error: 'missing code, username or title' });
+      // Compatibilità: `username` singolo (chiamata storica, avviso di turno) oppure `usernames`
+      // (array, nuovo — Centro Notifiche Combattimento: tiro richiesto a più giocatori, Digimon
+      // sconfitto -> avviso a tutti i PC in combattimento). Se entrambi mancano, errore come prima.
+      const targets = Array.isArray(usernames) && usernames.length
+        ? usernames.filter(Boolean)
+        : (username ? [username] : []);
+      if (!campaignCode || !targets.length || !title) {
+        return res.status(400).json({ error: 'missing code, username(s) or title' });
       }
-      const recipientSubs = await subsForUsername(campaignCode, username);
+      const recipientSubs = targets.length === 1
+        ? await subsForUsername(campaignCode, targets[0])
+        : await subsForUsernames(campaignCode, targets);
       await sendPushToSubscriptions(recipientSubs, {
         title: String(title).slice(0, 60),
         body: String(body || '').slice(0, 140),
