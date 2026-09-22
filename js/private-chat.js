@@ -140,9 +140,9 @@
     cachedMasterPrivateLog = log;
     // "Parla come" + "Colore scritta in chat" — stessa funzionalità già presente sulla Chat
     // Generale (vedi #speak-as/#speak-color e btn-gm-post), replicata qui con id prefissati
-    // "private-" per non collidere con quella. Le opzioni (Master / Digimon di un giocatore /
-    // Incontro in scena / Nemico personalizzato) e la logica di risoluzione who/role/avatar/color
-    // sono intenzionalmente identiche, per coerenza tra le due chat.
+    // "private-" per non collidere con quella. Le opzioni (Master / Tamer o Digimon di un
+    // giocatore / Incontro in scena / Nemico personalizzato) e la logica di risoluzione
+    // who/role/avatar/color sono intenzionalmente identiche, per coerenza tra le due chat.
     // Vedi memberLocationKey: la chiave "attuale" per la Chat Privata è quella effettiva del
     // giocatore del thread aperto, non quella del gruppo intero (currentLocationKey).
     const privKey = memberLocationKey(players.find(p=>p.username===masterPrivateThread));
@@ -231,7 +231,11 @@
     function applyPrivSpeakAsMode(mode){
       privEnemyFields.style.display = mode==='enemy' ? 'flex' : 'none';
       privNpcFields.style.display = mode==='npc' ? 'flex' : 'none';
-      if(mode.startsWith('digimon:')){
+      if(mode.startsWith('tamer:')){
+        const username = mode.slice('tamer:'.length);
+        const member = cachedRoster.find(m=>m.username===username);
+        if(privColorInput) privColorInput.value = (member && tamerChatColor(member)) || '#5aa8ff';
+      } else if(mode.startsWith('digimon:')){
         const username = mode.slice('digimon:'.length);
         const member = cachedRoster.find(m=>m.username===username);
         if(privColorInput) privColorInput.value = (member && member.digimon.chatColor) || '#c896ff';
@@ -263,7 +267,16 @@
       if(!text || !masterPrivateThread) return;
       const mode = privSpeakAsSel ? privSpeakAsSel.value : 'master';
       let who = 'Master', role = 'gm', avatar = null, color = null;
-      if(mode.startsWith('digimon:')){
+      if(mode.startsWith('tamer:')){
+        // "Parla come un giocatore" (richiesta utente): stesso meccanismo del "Parla come" già
+        // esistente per gli NPC/Digimon — vedi index.html/btn-gm-post per la spiegazione completa.
+        const username = mode.slice('tamer:'.length);
+        const member = cachedRoster.find(m=>m.username===username);
+        who = member ? displayName(member) : username;
+        role = 'player';
+        avatar = (member && member.tamer) ? (member.tamer.imageThumbUrl || member.tamer.imageUrl) : null;
+        color = member ? tamerChatColor(member) : null;
+      } else if(mode.startsWith('digimon:')){
         const username = mode.slice('digimon:'.length);
         const member = cachedRoster.find(m=>m.username===username);
         who = (member && member.digimon.name) ? member.digimon.name : username;
@@ -309,11 +322,16 @@
       const privDigimojiChk = document.getElementById('private-digimoji-toggle');
       if(privDigimojiChk && privDigimojiChk.checked) meta.digimoji = true;
       if(pendingPrivateReplyTo) meta.replyTo = pendingPrivateReplyTo;
+      // "Sposta il messaggio citato qui" (richiesta utente) — vedi maybeApplyReplyMove in
+      // js/chat-log-engine.js. Catturati PRIMA di azzerare pendingPrivateReplyTo più sotto.
+      const privReplyMoveWanted = !!(pendingPrivateReplyTo && document.getElementById('private-reply-preview-move') && document.getElementById('private-reply-preview-move').checked);
+      const privReplyMoveTarget = pendingPrivateReplyTo;
       // Stessa correzione della Chat Privata/Sottogruppi: tagga con la posizione effettiva del
       // giocatore destinatario, non quella del gruppo intero (vedi memberLocationKey sopra).
       meta.location = memberLocationKey(cachedRoster.find(m=>m.username===masterPrivateThread));
       if(role==='npc') rememberNpc(code, { name: who, color: chosenColor, avatar });
-      await pushPrivateLog(code, masterPrivateThread, { who, role, text, meta });
+      const privPushRes = await pushPrivateLog(code, masterPrivateThread, { who, role, text, meta });
+      await maybeApplyReplyMove(code, masterPrivateThread, privReplyMoveTarget, privReplyMoveWanted, privPushRes);
       ta.value='';
       pendingPrivateImageUrl = null;
       pendingPrivateReplyTo = null;

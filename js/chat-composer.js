@@ -371,9 +371,20 @@
     modal.onclick = (ev)=>{ if(ev.target===modal) closeIt(); };
     const pick = (value, label)=>{ onPick(value, label); closeIt(); };
     const fixedEl = document.getElementById('speak-as-picker-fixed');
+    // Richiesta utente ("parlare come un giocatore"): riga "tamer:<username>" — stesso meccanismo
+    // già usato per "digimon:<username>", ma per il TAMER del giocatore (nome/ritratto dalla
+    // Scheda Tamer, vedi displayName/tamerAvatarHTML in js/util.js e js/ui-helpers.js) invece che
+    // per il suo Digimon. Affiancata alla riga "digimon:" già esistente per lo stesso giocatore,
+    // cosi' il Master sceglie in un colpo solo se parlare come il Tamer o come il suo Digimon.
     fixedEl.innerHTML = `
       <div class="roster-item" data-pick="master" data-pick-label="🎙️ Master (narrazione)" style="cursor:pointer;padding:6px 8px;">🎙️ Master (narrazione)</div>
-      ${rosterPool.map(p=>{ const label = (p.digimon&&p.digimon.name) || (displayName(p)+' — Digimon'); return `<div class="roster-item" data-pick="digimon:${escapeAttr(p.username)}" data-pick-label="${escapeAttr(label)}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 8px;">${(p.digimon&&p.digimon.imageUrl)?`<img src="${escapeAttr(p.digimon.imageUrl)}" style="width:22px;height:22px;object-fit:cover;border-radius:4px;" />`:''}<span>${escapeHTML(label)}</span></div>`; }).join('')}
+      ${rosterPool.map(p=>{
+        const tamerLabel = displayName(p);
+        const tamerAvatar = (p.tamer && (p.tamer.imageThumbUrl || p.tamer.imageUrl)) || '';
+        const digiLabel = (p.digimon&&p.digimon.name) || (displayName(p)+' — Digimon');
+        return `<div class="roster-item" data-pick="tamer:${escapeAttr(p.username)}" data-pick-label="${escapeAttr(tamerLabel)}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 8px;">${tamerAvatar?`<img src="${escapeAttr(tamerAvatar)}" style="width:22px;height:22px;object-fit:cover;border-radius:4px;" />`:''}<span>${escapeHTML(tamerLabel)}</span></div>`
+          + `<div class="roster-item" data-pick="digimon:${escapeAttr(p.username)}" data-pick-label="${escapeAttr(digiLabel)}" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 8px;">${(p.digimon&&p.digimon.imageUrl)?`<img src="${escapeAttr(p.digimon.imageUrl)}" style="width:22px;height:22px;object-fit:cover;border-radius:4px;" />`:''}<span>${escapeHTML(digiLabel)}</span></div>`;
+      }).join('')}
       ${((cachedScene&&cachedScene.encounters)||[]).map((e,i)=>{ const label = encName(e)||'Digimon'; return `<div class="roster-item" data-pick="encounter:${i}" data-pick-label="${escapeAttr(label)}" style="cursor:pointer;padding:6px 8px;">⚔️ ${escapeHTML(label)} (in scena)</div>`; }).join('')}
     `;
     const bindPickables = (root)=>{

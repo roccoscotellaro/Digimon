@@ -34,6 +34,21 @@
 // il proprio composer. Il bottone "↩" che avvia la risposta è su ogni messaggio (vedi logHTML),
 // gestito da un 7° parametro opzionale `onReply` di attachLogModeration.
 //
+// "Riordinare un messaggio nella cronologia" (richiesta utente, aggiunta 2026-09-22, insieme a
+// "parlare come un giocatore" — vedi tamer: più sotto): il banner di risposta disegnato da
+// renderReplyBanner ora offre anche un checkbox "📌 Sposta il messaggio citato qui" — se spuntato
+// al momento dell'invio della risposta, il messaggio ORIGINALE (quello a cui si sta rispondendo)
+// viene ripristinato subito DOPO la nuova risposta nell'ORDINE CON CUI COMPARE nel Registro (utile
+// per un risultato di tiro arrivato in ritardo, o comunque "fuori posto" rispetto al resto della
+// conversazione). Non cambia MAI l'orario mostrato sul messaggio né lo sposta in un altro canale
+// (Generale/Privata/Sottogruppo): resta esattamente dov'era salvato, cambia solo la sua posizione
+// visuale in QUESTO stesso registro. Implementato con un solo campo nuovo in meta (meta.
+// reorderAfterId = id di un'altra entry dello stesso log, fuso via editLogEntry/PUT come già
+// avviene per meta.moveVotes/moveResolved — vedi log.js) più applyManualReorder, richiamata da
+// logHTML PRIMA del rendering per riposizionare le entry marcate, senza toccare l'id/l'orario
+// reale di nessuna riga sul server. maybeApplyReplyMove (poco più sotto) è l'helper condiviso dai 4
+// composer per applicare lo spostamento subito dopo l'invio riuscito della risposta.
+//
 // Inviti di spostamento "Vuoi andare a...?" (::MOVEREQ::) — MODALITÀ (aggiunte dopo la richiesta
 // di Rocco su Foggia/Koromon Village): il payload storico era `sectorId|luogoId|mode`, dove `mode`
 // manca (undefined → trattato come 'each') su tutti i messaggi vecchi, quindi restano identici a
@@ -290,10 +305,13 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
 
   // whoUpdate (opzionale) = { who, role, meta } per riassegnare anche il "mittente" di un
   // messaggio già inviato (vedi openEditLogModal), non solo correggerne il testo — o per fondere
-  // altre chiavi in meta (es. moveVotes/moveResolved, vedi attachLogModeration/[data-move-vote-id]
-  // più sotto). log.js FONDE meta con quello già presente sulla riga, non lo sovrascrive: passare
-  // solo le chiavi che si vogliono aggiungere/cambiare è sufficiente, non serve portarsi dietro
-  // tutto l'oggetto meta esistente (anche se non fa danno farlo).
+  // altre chiavi in meta (es. moveVotes/moveResolved, reorderAfterId — vedi attachLogModeration/
+  // [data-move-vote-id] e maybeApplyReplyMove più sotto). log.js FONDE meta con quello già
+  // presente sulla riga, non lo sovrascrive: passare solo le chiavi che si vogliono aggiungere/
+  // cambiare è sufficiente, non serve portarsi dietro tutto l'oggetto meta esistente (anche se non
+  // fa danno farlo). `text` può essere lasciato undefined per aggiornare SOLO who/role/meta senza
+  // toccare il testo del messaggio (JSON.stringify scarta le chiavi undefined, quindi il PUT lato
+  // server non riceve affatto `text` e non lo patcha — vedi api/log.js).
   async function editLogEntry(code, id, text, thread, whoUpdate){
     const body = thread ? { code, thread, id, text } : { code, id, text };
     if(whoUpdate){ Object.assign(body, whoUpdate); }
@@ -486,7 +504,8 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
   // originale del messaggio da modificare, dato che il log privato non passa da cachedLog.
 
   function resolveLogAvatar(l){
-    // Se l'entry ha già un avatar esplicito in meta, lo usiamo (NPC/enemy/digimon parlati dal Master)
+    // Se l'entry ha già un avatar esplicito in meta, lo usiamo (NPC/enemy/digimon/tamer parlati
+    // dal Master, vedi "tamer:" in js/chat-composer.js)
     if(l.meta && l.meta.avatar) return l.meta.avatar;
     // Player: cerca nel roster la miniatura del Tamer
     if(l.role==='player' || l.role==='roll'){
@@ -513,10 +532,14 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
   }
 
   // "Rispondi a un messaggio specifico" (vedi nota di testa del file): costruisce lo snippet
-  // {who, text} salvato in meta.replyTo al momento dell'invio, a partire dal messaggio originale
-  // su cui è stato premuto "↩". Rimuove gli eventuali marcatori tecnici (::TECH::/::REQ::/
-  // ::MOVEREQ::/::EVOUNLOCK::, vedi logHTML) tenendo solo la parte visibile del messaggio, e
-  // tronca a 140 caratteri per non far crescere troppo il banner/la citazione in chat.
+  // {who, text, id} salvato in meta.replyTo al momento dell'invio, a partire dal messaggio
+  // originale su cui è stato premuto "↩". Rimuove gli eventuali marcatori tecnici (::TECH::/
+  // ::REQ::/::MOVEREQ::/::EVOUNLOCK::, vedi logHTML) tenendo solo la parte visibile del messaggio,
+  // e tronca a 140 caratteri per non far crescere troppo il banner/la citazione in chat. `id`
+  // (aggiunto insieme al "riordino in cronologia" — vedi nota di testa del file) è l'id del
+  // messaggio originale: serve a maybeApplyReplyMove per sapere QUALE messaggio riposizionare se
+  // l'utente spunta "📌 Sposta il messaggio citato qui" nel banner qui sotto — resta comunque
+  // innocuo per il solo scopo di citazione, dove viene semplicemente ignorato.
   function replySnippetFromEntry(entry){
     if(!entry) return null;
     let text = entry.text || '';
@@ -525,27 +548,80 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
     text = text.trim();
     if(text.length > 140) text = text.slice(0, 140).trim() + '…';
     if(!text) text = (entry.meta && entry.meta.image) ? '📷 immagine' : '(messaggio)';
-    return { who: entry.who, text };
+    return { who: entry.who, text, id: entry.id };
   }
 
   // Disegna (o rimuove, se entry è null) il banner "↩ Rispondi a..." sopra il composer indicato
   // da containerId — un <div> vuoto già presente nel markup delle 4 chat (vedi index.html,
   // js/private-chat.js, js/subgroups.js). onCancel viene collegato al bottone "✕" del banner.
+  // Il checkbox "📌 Sposta il messaggio citato qui" (id = `${containerId}-move`, richiesta utente
+  // "riordinare un messaggio nella cronologia") viene letto direttamente dai 4 composer al momento
+  // dell'invio (document.getElementById(containerId+'-move').checked) — non serve un parametro
+  // apposito qui, dato che il DOM resta comunque il modo più semplice per leggere uno stato che
+  // può cambiare mentre l'utente scrive la risposta.
   function renderReplyBanner(containerId, entry, onCancel){
     const el = document.getElementById(containerId);
     if(!el) return;
     if(!entry){ el.innerHTML = ''; return; }
     el.innerHTML = `
-      <div class="reply-banner" style="display:flex;align-items:center;gap:6px;background:var(--panel-2);border-left:3px solid var(--cyan);border-radius:4px;padding:4px 8px;margin-top:8px;font-size:11px;">
-        <span class="muted" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">↩ Rispondi a <b>${escapeHTML(entry.who)}</b>: ${escapeHTML(entry.text)}</span>
-        <button type="button" class="btn ghost small" id="${containerId}-cancel" style="padding:1px 6px;">✕</button>
+      <div class="reply-banner" style="display:flex;flex-direction:column;gap:4px;background:var(--panel-2);border-left:3px solid var(--cyan);border-radius:4px;padding:4px 8px;margin-top:8px;font-size:11px;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="muted" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">↩ Rispondi a <b>${escapeHTML(entry.who)}</b>: ${escapeHTML(entry.text)}</span>
+          <button type="button" class="btn ghost small" id="${containerId}-cancel" style="padding:1px 6px;">✕</button>
+        </div>
+        ${entry.id!=null ? `<label style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-mute);cursor:pointer;">
+          <input type="checkbox" id="${containerId}-move" /> 📌 Sposta il messaggio citato qui (subito prima della tua risposta)
+        </label>` : ''}
       </div>
     `;
     const cancelBtn = document.getElementById(`${containerId}-cancel`);
     if(cancelBtn) cancelBtn.onclick = onCancel;
   }
 
+  // "Riordinare un messaggio nella cronologia" (vedi nota di testa del file): richiamata dai 4
+  // composer SUBITO DOPO l'invio riuscito della risposta, quando il checkbox del banner era
+  // spuntato. `replyTo` è lo snippet {who,text,id} di pendingXReplyTo catturato dal chiamante
+  // PRIMA di azzerarlo (necessario perché il chiamante lo azzera sempre appena finito l'invio);
+  // `pushResult` è il valore di ritorno di pushLog/pushPrivateLog per il messaggio di risposta appena
+  // creato (contiene .entry.id). Se manca uno qualsiasi dei pezzi — risposta non inviata,
+  // checkbox non spuntato, o messaggio citato troppo vecchio per avere un id salvato in
+  // meta.replyTo (messaggi mandati prima di questa modifica) — non fa nulla, quindi è sicuro
+  // chiamarla sempre in coda a ogni invio con una risposta in corso, spuntata o no.
+  async function maybeApplyReplyMove(code, thread, replyTo, wantsMove, pushResult){
+    if(!wantsMove || !replyTo || replyTo.id==null) return;
+    const newId = pushResult && pushResult.entry && pushResult.entry.id;
+    if(newId==null) return;
+    await editLogEntry(code, replyTo.id, undefined, thread, { meta: { reorderAfterId: newId } });
+  }
+
+  // Applica il riordino manuale (meta.reorderAfterId, vedi nota di testa del file) all'array che
+  // sta per essere renderizzato da logHTML: ogni entry marcata viene tolta dalla sua posizione
+  // cronologica naturale e reinserita subito DOPO l'entry-bersaglio (stesso id), PRIMA del
+  // rendering — un puro riordino lato client, l'id/l'orario reale di ogni riga sul server non
+  // cambia mai (che resta quindi affidabile per qualunque altro uso, es. l'ordinamento nel DB).
+  // Se il bersaglio non è (più) presente in QUESTO array — es. filtro "Storico per Settore"
+  // diverso, o messaggio bersaglio cancellato — l'entry marcata resta comunque visibile, solo in
+  // coda invece che accanto al bersaglio: nessun messaggio sparisce mai per un riordino "orfano".
+  function applyManualReorder(log){
+    if(!log || log.length < 2) return log;
+    const anchored = log.filter(l=> l.meta && l.meta.reorderAfterId!=null);
+    if(!anchored.length) return log;
+    const anchoredIds = new Set(anchored.map(l=>String(l.id)));
+    const result = [];
+    const placed = new Set();
+    log.forEach(l=>{
+      if(anchoredIds.has(String(l.id))) return; // reinserita più sotto, non nella sua posizione naturale
+      result.push(l);
+      anchored.forEach(a=>{
+        if(String(a.meta.reorderAfterId)===String(l.id)){ result.push(a); placed.add(String(a.id)); }
+      });
+    });
+    anchored.forEach(a=>{ if(!placed.has(String(a.id))) result.push(a); }); // bersaglio non trovato qui: resta in coda, non perso
+    return result;
+  }
+
   function logHTML(log, canModerate){
+    log = applyManualReorder(log);
     if(!log || log.length===0) return '<div class="muted">Il registro è vuoto. Le azioni appariranno qui.</div>';
     return log.map(l=>{
       let displayText = l.text;
@@ -816,7 +892,11 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
     attachSpeakAsButton('edit-log-modal-speak-as', 'edit-log-modal-speak-as-btn', code, null, (mode)=>{
       enemyFields.style.display = mode==='enemy' ? 'flex' : 'none';
       npcFields.style.display = mode==='npc' ? 'flex' : 'none';
-      if(mode.startsWith('npc-saved:')){
+      if(mode.startsWith('tamer:')){
+        const username = mode.slice('tamer:'.length);
+        const member = cachedRoster.find(m=>m.username===username);
+        colorInput.value = (member && tamerChatColor(member)) || '#5aa8ff';
+      } else if(mode.startsWith('npc-saved:')){
         const name = mode.slice('npc-saved:'.length);
         const saved = loadSavedNpcs(code).find(n=>n.name===name);
         colorInput.value = (saved && saved.color) || '#ffd76a';
@@ -835,7 +915,15 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       if(changeWhoChk.checked){
         const mode = speakSel.value;
         let who = 'Master', role = 'gm', avatar = null;
-        if(mode.startsWith('digimon:')){
+        if(mode.startsWith('tamer:')){
+          // "Parla come un giocatore" (richiesta utente): stesso meccanismo del "Parla come" già
+          // esistente per gli NPC/Digimon — vedi index.html/btn-gm-post per la spiegazione completa.
+          const username = mode.slice('tamer:'.length);
+          const member = cachedRoster.find(m=>m.username===username);
+          who = member ? displayName(member) : username;
+          role = 'player';
+          avatar = (member && member.tamer) ? (member.tamer.imageThumbUrl || member.tamer.imageUrl) : null;
+        } else if(mode.startsWith('digimon:')){
           const username = mode.slice('digimon:'.length);
           const member = cachedRoster.find(m=>m.username===username);
           who = (member && member.digimon.name) ? member.digimon.name : username;

@@ -189,7 +189,11 @@
       const applySubSpeakAsMode = (mode)=>{
         subEnemyFields.style.display = mode==='enemy' ? 'flex' : 'none';
         subNpcFields.style.display = mode==='npc' ? 'flex' : 'none';
-        if(mode.startsWith('digimon:')){
+        if(mode.startsWith('tamer:')){
+          const username = mode.slice('tamer:'.length);
+          const member = cachedRoster.find(m=>m.username===username);
+          if(subColorInput) subColorInput.value = (member && tamerChatColor(member)) || '#5aa8ff';
+        } else if(mode.startsWith('digimon:')){
           const username = mode.slice('digimon:'.length);
           const member = cachedRoster.find(m=>m.username===username);
           if(subColorInput) subColorInput.value = (member && member.digimon.chatColor) || '#c896ff';
@@ -224,7 +228,16 @@
       if(!text) return;
       const mode = subSpeakAsSel ? subSpeakAsSel.value : 'master';
       let who = 'Master', role = 'gm', avatar = null, color = null;
-      if(mode.startsWith('digimon:')){
+      if(mode.startsWith('tamer:')){
+        // "Parla come un giocatore" (richiesta utente): stesso meccanismo del "Parla come" già
+        // esistente per gli NPC/Digimon — vedi index.html/btn-gm-post per la spiegazione completa.
+        const username = mode.slice('tamer:'.length);
+        const member = cachedRoster.find(m=>m.username===username);
+        who = member ? displayName(member) : username;
+        role = 'player';
+        avatar = (member && member.tamer) ? (member.tamer.imageThumbUrl || member.tamer.imageUrl) : null;
+        color = member ? tamerChatColor(member) : null;
+      } else if(mode.startsWith('digimon:')){
         const username = mode.slice('digimon:'.length);
         const member = cachedRoster.find(m=>m.username===username);
         who = (member && member.digimon.name) ? member.digimon.name : username;
@@ -269,11 +282,17 @@
       if(pendingSubgroupImageUrl) meta.image = pendingSubgroupImageUrl;
       if(subDigimojiChkPre && subDigimojiChkPre.checked) meta.digimoji = true;
       if(pendingSubgroupReplyTo) meta.replyTo = pendingSubgroupReplyTo;
+      // "Sposta il messaggio citato qui" (richiesta utente) — vedi maybeApplyReplyMove in
+      // js/chat-log-engine.js. Catturati PRIMA di azzerare pendingSubgroupReplyTo più sotto.
+      const subReplyMoveWanted = !!(pendingSubgroupReplyTo && document.getElementById('subgroup-reply-preview-move') && document.getElementById('subgroup-reply-preview-move').checked);
+      const subReplyMoveTarget = pendingSubgroupReplyTo;
+      const subThreadName = 'subgroup:'+activeGroup.id;
       // Tagga con la posizione EFFETTIVA del sottogruppo (vedi subgroupLocationKey), non quella
       // del gruppo intero — così un sottogruppo separato viene "riconosciuto" nel Settore giusto.
       meta.location = subgroupLocationKey(activeGroup);
       if(role==='npc') rememberNpc(code, { name: who, color: chosenColor, avatar });
-      await pushPrivateLog(code, 'subgroup:'+activeGroup.id, { who, role, text, meta });
+      const subPushRes = await pushPrivateLog(code, subThreadName, { who, role, text, meta });
+      await maybeApplyReplyMove(code, subThreadName, subReplyMoveTarget, subReplyMoveWanted, subPushRes);
       ta.value='';
       pendingSubgroupImageUrl = null;
       pendingSubgroupReplyTo = null;

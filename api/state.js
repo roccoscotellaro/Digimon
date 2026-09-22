@@ -5,9 +5,24 @@
 //   ?resource=combat        -> ex /api/combat        (tabella combat_state)
 //   ?resource=progression   -> ex /api/progression   (tabella progression)
 //   ?resource=scene         -> ex /api/scene         (tabella scenes)
+//   ?resource=gameclock     -> Orologio di gioco     (tabella game_clock)
+//   ?resource=automsg       -> Messaggi Automatici di Combattimento (tabella auto_message_settings)
+//     Aggiunta 2026-09-22 ("posso decidere quali messaggi automatici mandare in chat e con che
+//     testo?"): stessa identica forma di combat/gameclock (una riga JSONB per campagna), usata da
+//     AUTO_MSG_DEFS/autoMsgText in index.html per sapere, per ogni messaggio automatico di
+//     Sistema in combattimento (turno passato, digievoluzione, sconfitta, bonus manuali, ecc.),
+//     se è abilitato e con quale testo (custom o default) va mandato. Nessuna riga = tutti i
+//     messaggi abilitati con il testo di default (comportamento identico a prima di questa
+//     feature). Migrazione SQL da eseguire UNA VOLTA sul SQL Editor di Supabase:
 //
-// Le risposte hanno la stessa forma di prima ({combat}, {progression}, {scene}),
-// quindi lato client cambia solo l'URL.
+//   create table if not exists auto_message_settings (
+//     campaign_code text primary key,
+//     data jsonb not null default '{}'::jsonb,
+//     updated_at timestamptz not null default now()
+//   );
+//
+// Le risposte hanno la stessa forma di prima ({combat}, {progression}, {scene}, {gameclock},
+// {automsg}), quindi lato client cambia solo l'URL.
 // Serve a restare sotto il limite di 12 Serverless Functions del piano Vercel Hobby.
 const { supabase, cleanCode } = require('../lib/db');
 
@@ -15,7 +30,8 @@ const TABLES = {
   combat: 'combat_state',
   progression: 'progression',
   scene: 'scenes',
-  gameclock: 'game_clock'
+  gameclock: 'game_clock',
+  automsg: 'auto_message_settings'
 };
 
 // Il client manda i flag in camelCase (campaignLevel, blastEvolutionEnabled, ...) ma li rilegge
@@ -96,7 +112,7 @@ module.exports = async (req, res) => {
     const resource = query.resource || body.resource;
 
     if (!resource || !TABLES[resource]) {
-      return res.status(400).json({ error: 'resource mancante o non valida (usa combat, progression, scene o gameclock)' });
+      return res.status(400).json({ error: 'resource mancante o non valida (usa combat, progression, scene, gameclock o automsg)' });
     }
     const table = TABLES[resource];
 
@@ -117,6 +133,9 @@ module.exports = async (req, res) => {
       if (resource === 'gameclock') {
         return res.status(200).json({ gameclock: data ? data.data : null });
       }
+      if (resource === 'automsg') {
+        return res.status(200).json({ automsg: data ? data.data : null });
+      }
       if (resource === 'progression') {
         return res.status(200).json({ progression: data || { milestone: 0, xp: 0, inspiration: 0 } });
       }
@@ -131,7 +150,7 @@ module.exports = async (req, res) => {
       await supabase.from('campaigns').upsert({ code: campaignCode }, { onConflict: 'code' });
 
       let row;
-      if (resource === 'combat' || resource === 'gameclock') {
+      if (resource === 'combat' || resource === 'gameclock' || resource === 'automsg') {
         row = {
           campaign_code: campaignCode,
           data: body.data || {},

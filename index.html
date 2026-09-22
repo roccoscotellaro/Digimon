@@ -1049,6 +1049,171 @@ let editingScene = false;
   // { location: 'general' | 'sub:<id sottogruppo>', message } — location null/assente = nessun
   // blocco, comportamento identico a prima (pushCombatNarration si comporta come pushLog).
   const DEFAULT_COMBAT_LOCK_MESSAGE = "⚔️ È iniziato un combattimento! Questa chat resta bloccata per i giocatori finché il Master non lo conclude — segui qui gli eventi e le narrazioni dello scontro.";
+
+  // RICHIESTA UTENTE (2026-09-22): "il sistema manda in automatico dei messaggi in chat, posso
+  // decidere quali mandare e con che messaggio?" -- registro centrale di TUTTI i messaggi che il
+  // Sistema scrive da solo in chat come conseguenza di un'azione (narrazione di Sistema generata
+  // dal codice, non scritta a mano dal Master) durante il combattimento. Ogni voce ha una chiave
+  // stabile (usata anche per salvare le preferenze, vedi cachedAutoMsgSettings più sotto), una
+  // categoria ed etichetta per il pannello Master "Messaggi Automatici" (renderAutoMsgPanel, tab
+  // Strumenti), un template di default con segnaposto {{token}} e l'elenco di quei token (per il
+  // pannello). Il defaultTemplate riproduce ESATTAMENTE la frase che il codice generava PRIMA di
+  // questa feature: senza personalizzazioni (nessuna riga salvata per quella chiave) il
+  // comportamento resta identico a prima, messaggio per messaggio.
+  // dynamic:true = 'effetti attivi' (Torment/Regen/ecc. a inizio turno): il testo lo genera un
+  // sotto-sistema che produce righe diverse ogni volta (una per ogni Effetto attivo del
+  // partecipante) -- qui il Master può solo attivare/disattivare l'INTERO gruppo, non
+  // personalizzare un singolo template (non esiste un'unica frase sensata da editare).
+  const AUTO_MSG_DEFS = [
+    { key:'turn_auto_pass', category:'Turni e Round', label:'Turno passato automaticamente (5 min di inattività)', defaultTemplate:'⏱ Turno di {{name}} passato automaticamente: Azioni esaurite da oltre 5 minuti senza altre azioni.', vars:[{token:'name',desc:'nome del partecipante'}] },
+    { key:'forced_evo_end', category:'Turni e Round', label:'Fine Forza Evoluzione (rientro sotto il Default Stage)', defaultTemplate:'{{name}} torna a {{stage}} (fine Evoluzione Forzata) — Stat aggiornate.', vars:[{token:'name'},{token:'stage'}] },
+    { key:'reinforce_expired', category:'Turni e Round', label:'Scadenza PF Temporanei da Reinforce', defaultTemplate:'{{name}} perde {{amount}} Wound Box Temporanee da Reinforce (turno scaduto).', vars:[{token:'name'},{token:'amount'}] },
+    { key:'effect_tick', category:'Turni e Round', label:'Effetti attivi a inizio turno (Torment, Regen, ecc.)', defaultTemplate:null, dynamic:true, vars:[] },
+    { key:'combat_lock', category:'Setup Combattimento', label:'Blocco chat all\'inizio del combattimento', defaultTemplate:'🔒 {{message}}', vars:[{token:'message',desc:'il messaggio scelto dal Master all\'avvio del combattimento'}] },
+    { key:'combat_unlock', category:'Setup Combattimento', label:'Sblocco chat alla fine del combattimento', defaultTemplate:'🔓 Il combattimento è terminato — questa chat è di nuovo libera.', vars:[] },
+    { key:'new_scene', category:'Setup Combattimento', label:'Apertura di una Nuova Scena', defaultTemplate:'🆕 Il Master apre una Nuova Scena.', vars:[] },
+    { key:'defeat_notice', category:'Sconfitta', label:'Annuncio "è stato sconfitto" durante un attacco', defaultTemplate:'🏳️ {{name}} è stato sconfitto.', vars:[{token:'name'}] },
+    { key:'defeat_resolve_regress', category:'Sconfitta', label:'Risoluzione Sconfitta PC — Regredisci di Stage', defaultTemplate:'🏳️ Il Master risolve la Sconfitta di {{name}}: regredisce da {{fromStage}} a {{toStage}} con 1 Ferita.', vars:[{token:'name'},{token:'fromStage'},{token:'toStage'}] },
+    { key:'defeat_resolve_egg', category:'Sconfitta', label:'Risoluzione Sconfitta PC — Richiudi nell\'Uovo', defaultTemplate:'🥚 Il Master risolve la Sconfitta di {{name}}: torna Digitama (richiuso nell\'Uovo -- riapprovalo dalla Scheda Digimon quando si schiude di nuovo).', vars:[{token:'name'}] },
+    { key:'defeat_resolve_enemy_regress', category:'Sconfitta', label:'Risoluzione Sconfitta Nemico — Regredisci di Stage', defaultTemplate:'🏳️ Il Master risolve la Sconfitta di {{name}}: regredisce{{fromPart}} a {{toStage}} con 1 Ferita.', vars:[{token:'name'},{token:'fromPart',desc:'" da X" o vuoto se lo Stage precedente non era noto'},{token:'toStage'}] },
+    { key:'defeat_resolve_enemy_egg', category:'Sconfitta', label:'Risoluzione Sconfitta Nemico — Richiudi nell\'Uovo', defaultTemplate:'🥚 Il Master risolve la Sconfitta di {{name}}: torna Digitama (rimosso dal Combattimento).', vars:[{token:'name'}] },
+    { key:'evolve_combat', category:'Digievoluzione', label:'Evolvi (box dedicato durante il turno)', defaultTemplate:'🧬 {{name}}: {{oldName}} digivolve in {{newName}}! (1 Azione{{costText}} spesi) — Stat aggiornate.', vars:[{token:'name'},{token:'oldName'},{token:'newName'},{token:'costText',desc:'" + N Evolution Points" o vuoto'}] },
+    { key:'force_evolve_combat', category:'Digievoluzione', label:'Forza Evoluzione (box dedicato durante il turno)', defaultTemplate:'⚡ Forza Evoluzione di {{name}} (TN {{tn}}, 2 Azioni spese): 3d6[{{dice}}] + Willpower {{willVal}} = {{total}} → {{outcomeText}}', vars:[{token:'name'},{token:'tn'},{token:'dice'},{token:'willVal'},{token:'total'},{token:'outcomeText'}] },
+    { key:'reenter_risk', category:'Editing Manuale (Master)', label:'Rientro in combattimento a rischio', defaultTemplate:'↩️ {{name}} rientra in combattimento a proprio rischio.', vars:[{token:'name'}] },
+    { key:'resync_name', category:'Editing Manuale (Master)', label:'Risincronizzazione nome/immagine con la Scheda', defaultTemplate:'🔄 {{oldName}} → {{newName}} (nome/immagine risincronizzati con la Scheda).', vars:[{token:'oldName'},{token:'newName'}] },
+    { key:'action_refund', category:'Editing Manuale (Master)', label:'Restituzione 1 Azione (Digimon)', defaultTemplate:'{{name}} riottiene 1 Azione (es. Reload/Battle Cry/Horde Duelist riuscito) — ora {{current}}/2.', vars:[{token:'name'},{token:'current'}] },
+    { key:'action_refund_tamer', category:'Editing Manuale (Master)', label:'Restituzione 1 Azione (Tamer)', defaultTemplate:'{{name}} riottiene 1 Azione (Tamer) — ora {{current}}/2.', vars:[{token:'name'},{token:'current'}] },
+    { key:'attack_refund', category:'Editing Manuale (Master)', label:'Restituzione uso Attacco (es. Reload)', defaultTemplate:'{{name}} riottiene l\'uso del proprio Attacco questo round (es. Reload riuscito).', vars:[{token:'name'}] },
+    { key:'manual_wound', category:'Editing Manuale (Master)', label:'Ferite/Cura manuali', defaultTemplate:'{{name}} {{verb}} {{amount}} {{unit}} (manuale) — ora {{current}}/{{max}}.', vars:[{token:'name'},{token:'verb',desc:'"subisce" o "recupera"'},{token:'amount'},{token:'unit',desc:'"Ferita" o "Ferite"'},{token:'current'},{token:'max'}] },
+    { key:'temp_wounds_add', category:'Editing Manuale (Master)', label:'PF Temporanei aggiunti manualmente', defaultTemplate:'{{name}} ottiene +{{amount}} PF Temporanei (manuale) — ora {{newVal}}.', vars:[{token:'name'},{token:'amount'},{token:'newVal'}] },
+    { key:'temp_wounds_remove', category:'Editing Manuale (Master)', label:'PF Temporanei rimossi manualmente', defaultTemplate:'{{name}} perde {{amount}} PF Temporanei (manuale) — ora {{newVal}}.', vars:[{token:'name'},{token:'amount'},{token:'newVal'}] },
+    { key:'manual_bonus_set', category:'Editing Manuale (Master)', label:'Bonus manuale impostato in coda', defaultTemplate:'{{name}}: bonus manuale +{{amount}} ({{statLabel}}) impostato in coda sul prossimo Pool Check.', vars:[{token:'name'},{token:'amount'},{token:'statLabel'}] },
+    { key:'manual_bonus_clear', category:'Editing Manuale (Master)', label:'Bonus in coda rimosso', defaultTemplate:'{{name}}: bonus in coda rimosso (manuale).', vars:[{token:'name'}] }
+  ];
+  // Preferenze caricate una volta per sessione (renderMaster/renderPlayer) e poi tenute aggiornate
+  // dal polling a bassa frequenza (vedi dexCycle in refreshLiveParts): {} finché non arriva la
+  // prima risposta = tutti i messaggi abilitati col testo di default, esattamente il comportamento
+  // di prima di questa feature -- quindi nessun flash/differenza percepibile prima del primo load.
+  let cachedAutoMsgSettings = {};
+  async function getAutoMsgSettings(code){
+    const d = await apiGet('/api/state?resource=automsg&code=' + encodeURIComponent(code));
+    return (d && d.automsg) || {};
+  }
+  async function saveAutoMsgSettings(code, settings){
+    return apiPost('/api/state', { resource:'automsg', code, data: settings });
+  }
+  function autoMsgEnabled(key){
+    const s = cachedAutoMsgSettings && cachedAutoMsgSettings[key];
+    return !(s && s.enabled===false);
+  }
+  // Rende il testo finale di un messaggio automatico applicando le eventuali personalizzazioni del
+  // Master (o il default se non personalizzato), sostituendo i segnaposto {{token}} coi valori
+  // passati in vars. Ritorna null se quel messaggio è stato disattivato dal Master (il chiamante
+  // deve allora saltare del tutto il pushCombatNarration/pushLog) o se la chiave non esiste/è
+  // dinamica (vedi AUTO_MSG_DEFS.dynamic, gestita a parte al punto di chiamata).
+  function autoMsgText(key, vars){
+    if(!autoMsgEnabled(key)) return null;
+    const def = AUTO_MSG_DEFS.find(d=>d.key===key);
+    if(!def || def.dynamic) return null;
+    const s = (cachedAutoMsgSettings && cachedAutoMsgSettings[key]) || {};
+    const tmpl = (s.template!=null && String(s.template).trim()!=='') ? s.template : def.defaultTemplate;
+    return String(tmpl).replace(/\{\{(\w+)\}\}/g, (m,k)=> (vars && vars[k]!==undefined && vars[k]!==null) ? String(vars[k]) : '');
+  }
+  // Pannello Master "Messaggi Automatici" (tab Strumenti, #auto-msg-card): un checkbox
+  // attiva/disattiva + una textarea di personalizzazione per ciascuna voce di AUTO_MSG_DEFS,
+  // raggruppate per categoria. Un solo bottone "Salva" scrive TUTTE le modifiche in un colpo
+  // solo (resource=automsg su /api/state) -- non c'è autosave per riga, così il Master può
+  // provare varie formulazioni prima di confermare. Una riga viene omessa dal payload salvato se
+  // è abilitata col testo di default (comportamento identico al "niente salvato" iniziale),
+  // tenendo l'oggetto salvato piccolo e leggibile.
+  function renderAutoMsgPanel(code){
+    const cardEl = document.getElementById('auto-msg-card');
+    if(!cardEl) return;
+    const categories = [];
+    AUTO_MSG_DEFS.forEach(def=>{
+      let cat = categories.find(c=>c.name===def.category);
+      if(!cat){ cat = { name: def.category, items: [] }; categories.push(cat); }
+      cat.items.push(def);
+    });
+    const rowHTML = (def)=>{
+      const s = (cachedAutoMsgSettings && cachedAutoMsgSettings[def.key]) || {};
+      const enabled = s.enabled!==false;
+      if(def.dynamic){
+        return `<div class="automsg-row" style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.08);">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" class="automsg-enabled" data-key="${def.key}" ${enabled?'checked':''} />
+            <span style="font-size:12.5px;">${escapeHTML(def.label)}</span>
+          </label>
+          <div class="muted" style="font-size:10px;margin-top:2px;margin-left:26px;">Testo generato dinamicamente in base agli Effetti attivi del partecipante: solo attivabile/disattivabile, non personalizzabile.</div>
+        </div>`;
+      }
+      const currentTemplate = (s.template!=null && String(s.template).trim()!=='') ? s.template : def.defaultTemplate;
+      const isCustom = s.template!=null && String(s.template).trim()!=='' && s.template!==def.defaultTemplate;
+      const tokensHTML = def.vars && def.vars.length ? `<div class="muted" style="font-size:10px;margin-top:2px;">Segnaposto: ${def.vars.map(v=>`<code>{{${v.token}}}</code>${v.desc?` (${escapeHTML(v.desc)})`:''}`).join(', ')}</div>` : '';
+      return `<div class="automsg-row" style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.08);">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:4px;">
+          <input type="checkbox" class="automsg-enabled" data-key="${def.key}" ${enabled?'checked':''} />
+          <span style="font-size:12.5px;">${escapeHTML(def.label)}</span>
+          ${isCustom?'<span class="muted" style="font-size:10px;">(personalizzato)</span>':''}
+        </label>
+        <textarea class="automsg-template" data-key="${def.key}" rows="2" style="width:100%;font-size:11.5px;" ${enabled?'':'disabled'}>${escapeHTML(currentTemplate)}</textarea>
+        ${tokensHTML}
+        <button class="btn ghost automsg-reset" data-key="${def.key}" style="font-size:10px;padding:3px 8px;margin-top:3px;">↺ Ripristina default</button>
+      </div>`;
+    };
+    const bodyHTML = categories.map(cat=>`
+      <div style="margin-top:10px;">
+        <div class="muted" style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:2px;">${escapeHTML(cat.name)}</div>
+        ${cat.items.map(rowHTML).join('')}
+      </div>
+    `).join('');
+    cardEl.innerHTML = `
+      <div class="section-title">Messaggi Automatici</div>
+      <div class="muted" style="font-size:11px;margin-bottom:6px;">Tutti i messaggi che il Sistema scrive da solo in chat come conseguenza di un'azione (non scritti a mano dal Master). Disattiva quelli che non vuoi vedere, o personalizza il testo coi segnaposto indicati -- lascia vuoto/uguale al default per usare quello di sempre.</div>
+      <div id="auto-msg-rows">${bodyHTML}</div>
+      <button class="btn solid" id="btn-automsg-save" style="width:100%;margin-top:10px;">💾 Salva Messaggi Automatici</button>
+      <div class="muted" id="automsg-save-status" style="margin-top:6px;font-size:11px;"></div>
+    `;
+    cardEl.querySelectorAll('.automsg-enabled').forEach(cb=>{
+      cb.onchange = ()=>{
+        const key = cb.getAttribute('data-key');
+        const ta = cardEl.querySelector(`.automsg-template[data-key="${key}"]`);
+        if(ta) ta.disabled = !cb.checked;
+      };
+    });
+    cardEl.querySelectorAll('.automsg-reset').forEach(btn=>{
+      btn.onclick = ()=>{
+        const key = btn.getAttribute('data-key');
+        const def = AUTO_MSG_DEFS.find(d=>d.key===key);
+        const ta = cardEl.querySelector(`.automsg-template[data-key="${key}"]`);
+        if(ta && def) ta.value = def.defaultTemplate;
+      };
+    });
+    const saveBtn = document.getElementById('btn-automsg-save');
+    if(saveBtn){
+      saveBtn.onclick = async ()=>{
+        const statusEl = document.getElementById('automsg-save-status');
+        if(statusEl) statusEl.textContent = 'Salvataggio...';
+        const newSettings = {};
+        AUTO_MSG_DEFS.forEach(def=>{
+          const cb = cardEl.querySelector(`.automsg-enabled[data-key="${def.key}"]`);
+          const enabled = cb ? cb.checked : true;
+          let template = null;
+          if(!def.dynamic){
+            const ta = cardEl.querySelector(`.automsg-template[data-key="${def.key}"]`);
+            const val = ta ? ta.value : '';
+            template = (val!=null && val.trim()!=='' && val!==def.defaultTemplate) ? val : null;
+          }
+          if(!enabled || template){
+            newSettings[def.key] = { enabled, template };
+          }
+        });
+        cachedAutoMsgSettings = newSettings;
+        const ok = await saveAutoMsgSettings(code, newSettings);
+        if(statusEl) statusEl.textContent = ok ? '✅ Salvato.' : `Errore: ${lastApiError||''}`;
+      };
+    }
+  }
   function combatChatLockLabel(location){
     if(!location || location==='general') return 'Chat Generale';
     if(location.startsWith('sub:')){
@@ -1580,8 +1745,10 @@ let editingScene = false;
     const startTamerActsNow = starting.tamerActions===undefined?2:starting.tamerActions;
     if(startActsNow<=0 && startTamerActsNow<=0) starting.actionsExhaustedAt = new Date().toISOString();
     const tickLogs = await tickEffectsForParticipant(code, combat, starting);
-    for(const line of tickLogs){
-      await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: line });
+    if(autoMsgEnabled('effect_tick')){
+      for(const line of tickLogs){
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: line });
+      }
     }
     // Reinforce (9.06b): i PF Temporanei concessi durano "fino al prossimo turno del Tamer" -- qui
     // è dove quel turno successivo inizia davvero, quindi è qui che quanto ne resta (non ancora
@@ -1589,7 +1756,7 @@ let editingScene = false;
     // della quota data da Reinforce, cosi da non intaccare PF Temporanei da altre fonti (Shield/
     // Effetti, permanenti finché non consumati) che coesistessero nello stesso pool tempWounds --
     // se un danno ha già eroso parte del pool condiviso, scade al massimo quanto ne resta davvero.
-    let reinforceExpiredNote = null;
+    let reinforceExpiredInfo = null;
     if(starting.isPC){
       const memberForReinforce = cachedRoster.find(m=>m.username===starting.username);
       if(memberForReinforce){
@@ -1598,7 +1765,7 @@ let editingScene = false;
           const expiring = Math.min(reinforceLeft, Number(memberForReinforce.digimon.tempWounds||0));
           memberForReinforce.digimon.tempWounds = Math.max(0, Number(memberForReinforce.digimon.tempWounds||0) - expiring);
           memberForReinforce.digimon.reinforceTempWounds = 0;
-          if(expiring>0) reinforceExpiredNote = `${memberForReinforce.digimon.name||displayName(memberForReinforce)} perde ${expiring} Wound Box Temporanee da Reinforce (turno scaduto).`;
+          if(expiring>0) reinforceExpiredInfo = { name: memberForReinforce.digimon.name||displayName(memberForReinforce), amount: expiring };
         }
       }
     } else {
@@ -1607,11 +1774,12 @@ let editingScene = false;
         const expiring = Math.min(reinforceLeft, Number(starting.tempWounds||0));
         starting.tempWounds = Math.max(0, Number(starting.tempWounds||0) - expiring);
         starting.reinforceTempWounds = 0;
-        if(expiring>0) reinforceExpiredNote = `${starting.name} perde ${expiring} Wound Box Temporanee da Reinforce (turno scaduto).`;
+        if(expiring>0) reinforceExpiredInfo = { name: starting.name, amount: expiring };
       }
     }
-    if(reinforceExpiredNote){
-      await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: reinforceExpiredNote });
+    if(reinforceExpiredInfo){
+      const text = autoMsgText('reinforce_expired', reinforceExpiredInfo);
+      if(text) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text });
     }
     if(starting.isPC){
       const member = cachedRoster.find(m=>m.username===starting.username);
@@ -1622,7 +1790,8 @@ let editingScene = false;
             const revertIdx = Math.max(0, stageIndex(member.digimon.defaultStage)-1);
             const revertStage = STAGES[revertIdx];
             applyStageChange(member.digimon, member.digimon.stage, revertStage);
-            await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${member.digimon.name||displayName(member)} torna a ${member.digimon.stage} (fine Evoluzione Forzata) — Stat aggiornate.` });
+            const fEvoEndText = autoMsgText('forced_evo_end', { name: member.digimon.name||displayName(member), stage: member.digimon.stage });
+            if(fEvoEndText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: fEvoEndText });
           }
         }
         await saveMember(code, member);
@@ -1748,7 +1917,8 @@ let editingScene = false;
     // Sblocco simmetrico all'avviso di inizio (vedi btn-combat-start): la chat scelta dal Master
     // torna libera per i giocatori, con un messaggio che lo conferma nello stesso posto.
     if(prevLock && prevLock.location){
-      await pushCombatNarration({ chatLock: prevLock }, { who:'Sistema', role:'gm', text: '🔓 Il combattimento è terminato — questa chat è di nuovo libera.' });
+      const unlockText = autoMsgText('combat_unlock', {});
+      if(unlockText) await pushCombatNarration({ chatLock: prevLock }, { who:'Sistema', role:'gm', text: unlockText });
     }
     __combatMusicSynced = false;
     stopCombatMusic();
@@ -2149,7 +2319,8 @@ let editingScene = false;
         await saveMember(code, member);
         await saveCombat(code, cachedCombat);
         await syncCombatParticipantName(member);
-        await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'player', text: `🧬 ${narratorName(p)}: ${oldName} digivolve in ${d.name||target}! (1 Azione${cost>0?` + ${cost} Evolution Points`:''} spesi) — Stat aggiornate.` });
+        const selfEvoText = autoMsgText('evolve_combat', { name: narratorName(p), oldName, newName: d.name||target, costText: cost>0?` + ${cost} Evolution Points`:'' });
+        if(selfEvoText) await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'player', text: selfEvoText });
         if(statusEl){ statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Evoluzione applicata, Stat aggiornate.'; }
         refreshLiveParts();
       };
@@ -2210,7 +2381,8 @@ let editingScene = false;
         await saveMember(code, member);
         await saveCombat(code, cachedCombat);
         await syncCombatParticipantName(member);
-        await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'roll', text: `⚡ Forza Evoluzione di ${narratorName(p)} (TN ${tn}, 2 Azioni spese): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText}`, meta:{ dice } });
+        const selfForceEvoText = autoMsgText('force_evolve_combat', { name: narratorName(p), tn, dice: dice.join(','), willVal, total, outcomeText });
+        if(selfForceEvoText) await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'roll', text: selfForceEvoText, meta:{ dice } });
         if(statusEl){ statusEl.style.color='var(--text-mute)'; statusEl.textContent = outcomeText; }
         refreshLiveParts();
       };
@@ -2451,7 +2623,7 @@ let editingScene = false;
         if(defeatInfo){
           const defeatDispName = target.nameHidden ? hiddenParticipantLabel(target) : defeatInfo.name;
           const noticeText = defeatNoticeText(defeatInfo, defeatDispName);
-          await pushCombatNarration(cachedCombat, { who:'Sistema', role:'gm', text: noticeText });
+          if(noticeText) await pushCombatNarration(cachedCombat, { who:'Sistema', role:'gm', text: noticeText });
         }
         refreshLiveParts();
         const narrTimeout = new Promise(resolve=>setTimeout(()=>resolve(null), AI_NARRATION_TIMEOUT_MS));
@@ -3700,6 +3872,12 @@ let editingScene = false;
     }
     if(dexCycle) cachedDex = await getDex(session.code);
     if(dexCycle) cachedNpcs = await getNpcs(session.code);
+    // I Messaggi Automatici (vedi AUTO_MSG_DEFS/autoMsgText) cambiano solo quando il Master li
+    // modifica dal pannello dedicato -- non serve rileggerli ad ogni poll (~15s), stessa cadenza
+    // "quasi in tempo reale" di Digidex/NPC qui sopra (~10 minuti) è più che sufficiente. Il
+    // Master vede le proprie modifiche subito (renderAutoMsgPanel aggiorna cachedAutoMsgSettings
+    // in locale appena il salvataggio va a buon fine, senza aspettare questo poll).
+    if(dexCycle) cachedAutoMsgSettings = await getAutoMsgSettings(session.code);
     // Vedi combatActionPending (definita presso saveCombat): non ri-fetchare/sovrascrivere il
     // combattimento mentre un salvataggio locale è in corso, altrimenti questo poll può clobberare
     // una mutazione non ancora confermata dal server con una copia ancora vecchia (bug "torna
@@ -3735,7 +3913,8 @@ let editingScene = false;
         const elapsedMs = Date.now() - new Date(curTurnP.actionsExhaustedAt).getTime();
         if(elapsedMs >= 5*60*1000){
           const stuckName = combatDisplayName(curTurnP, false);
-          await pushCombatNarration(cachedCombat, { who:'Sistema', role:'gm', text: `⏱ Turno di ${stuckName} passato automaticamente: Azioni esaurite da oltre 5 minuti senza altre azioni.` });
+          const stuckText = autoMsgText('turn_auto_pass', { name: stuckName });
+          if(stuckText) await pushCombatNarration(cachedCombat, { who:'Sistema', role:'gm', text: stuckText });
           await advanceCombatTurn(session.code, (cachedRoster||[]).filter(m=>m.role==='player'));
         }
       }
@@ -4103,6 +4282,7 @@ let editingScene = false;
     cachedCombat = await getCombat(code);
     cachedProgression = await getProgression(code);
     cachedGameClock = await getGameClock(code);
+    cachedAutoMsgSettings = await getAutoMsgSettings(code);
 
     root.innerHTML = `
       ${topbar('Vista Giocatore')}
@@ -4233,18 +4413,24 @@ let editingScene = false;
         if(actionHintEl) actionHintEl.innerHTML = '<span style="color:var(--danger);">🔒 Il Master ha bloccato la Chat Generale per te.</span>';
         return;
       }
+      // "Sposta il messaggio citato qui" (richiesta utente): catturati PRIMA di azzerare
+      // pendingReplyTo più sotto — vedi renderReplyBanner/maybeApplyReplyMove in
+      // js/chat-log-engine.js. Validi per tutti i rami sotto (Sottogruppo/Privata/Generale),
+      // che condividono lo stesso banner #action-reply-preview.
+      const replyMoveWanted = !!(pendingReplyTo && document.getElementById('action-reply-preview-move') && document.getElementById('action-reply-preview-move').checked);
+      const replyMoveTarget = pendingReplyTo;
       if(playerChatMode==='subgroup' && playerActiveSubgroupId){
         const subMeta = {};
         if(pendingActionImageUrl) subMeta.image = pendingActionImageUrl;
         subMeta.location = subgroupLocationKey((cachedSubgroups||[]).find(g=>g.id===playerActiveSubgroupId));
         if(pendingReplyTo) subMeta.replyTo = pendingReplyTo;
+        const subThread = 'subgroup:'+playerActiveSubgroupId;
         // Dado generico GDR (es. "2d6", "/roll 1d20+3")
         const diceResult = parseGenericDiceRoll(raw);
-        if(diceResult){
-          await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { who: displayName(me), role:'roll', text: diceResult.text, meta: subMeta });
-        } else {
-          await pushPrivateLog(code, 'subgroup:'+playerActiveSubgroupId, { who: displayName(me), role:'player', text: raw, meta: subMeta });
-        }
+        const subPushRes = diceResult
+          ? await pushPrivateLog(code, subThread, { who: displayName(me), role:'roll', text: diceResult.text, meta: subMeta })
+          : await pushPrivateLog(code, subThread, { who: displayName(me), role:'player', text: raw, meta: subMeta });
+        await maybeApplyReplyMove(code, subThread, replyMoveTarget, replyMoveWanted, subPushRes);
         advanceGameClock('sub:'+playerActiveSubgroupId, 5); // +5min per messaggio sottogruppo
         await consumeTalentIfPending(code, me);
         ta.value='';
@@ -4263,11 +4449,10 @@ let editingScene = false;
         if(pendingReplyTo) privTextMeta.replyTo = pendingReplyTo;
         // Dado generico GDR (es. "2d6", "/roll 1d20+3")
         const diceResult = parseGenericDiceRoll(raw);
-        if(diceResult){
-          await pushPrivateLog(code, session.username, { who: displayName(me), role:'roll', text: diceResult.text, meta: privTextMeta });
-        } else {
-          await pushPrivateLog(code, session.username, { who: displayName(me), role:'player', text: raw, meta: privTextMeta });
-        }
+        const privPushRes = diceResult
+          ? await pushPrivateLog(code, session.username, { who: displayName(me), role:'roll', text: diceResult.text, meta: privTextMeta })
+          : await pushPrivateLog(code, session.username, { who: displayName(me), role:'player', text: raw, meta: privTextMeta });
+        await maybeApplyReplyMove(code, session.username, replyMoveTarget, replyMoveWanted, privPushRes);
         advanceGameClock('private:'+session.username, 5); // +5min per messaggio privato
         await consumeTalentIfPending(code, me);
         ta.value='';
@@ -4281,6 +4466,7 @@ let editingScene = false;
       }
       // Dado generico GDR (es. "2d6", "/roll 1d20+3") — ha priorità sulle skill shortcut
       // perché la notazione dado non entra mai in conflitto con i nomi delle Skill.
+      let generalPushRes = null; // vedi maybeApplyReplyMove più sotto ("Sposta il messaggio citato qui")
       const genericDice = parseGenericDiceRoll(raw);
       if(genericDice){
         // BUGFIX (Rocco, spostamento a Drill Tunnel su Generale — vedi memberLocationKey più
@@ -4291,7 +4477,7 @@ let editingScene = false;
         const rollMeta = { location: memberLocationKey(me) };
         if(pendingActionImageUrl) rollMeta.image = pendingActionImageUrl;
         if(pendingReplyTo) rollMeta.replyTo = pendingReplyTo;
-        await pushLog(code, { who: displayName(me), role:'roll', text: genericDice.text, meta: rollMeta });
+        generalPushRes = await pushLog(code, { who: displayName(me), role:'roll', text: genericDice.text, meta: rollMeta });
       } else {
       const rollResult = await tryParseRollShortcut(raw, me);
       const resEl = document.getElementById('action-roll-result');
@@ -4318,16 +4504,17 @@ let editingScene = false;
         }
         if(pendingActionImageUrl) rollMeta.image = pendingActionImageUrl;
         if(pendingReplyTo) rollMeta.replyTo = pendingReplyTo;
-        await pushLog(code, { who: displayName(me), role:'roll', text: rollResult.text, meta: rollMeta });
+        generalPushRes = await pushLog(code, { who: displayName(me), role:'roll', text: rollResult.text, meta: rollMeta });
       } else {
         // BUGFIX: stesso motivo dei due rami sopra — il testo libero in Generale è il caso più
         // frequente in assoluto, quindi quello con il maggior impatto sul bug segnalato.
         const textMeta = { location: memberLocationKey(me) };
         if(pendingActionImageUrl) textMeta.image = pendingActionImageUrl;
         if(pendingReplyTo) textMeta.replyTo = pendingReplyTo;
-        await pushLog(code, { who: displayName(me), role:'player', text: raw, meta: textMeta });
+        generalPushRes = await pushLog(code, { who: displayName(me), role:'player', text: raw, meta: textMeta });
       }
       } // fine else genericDice
+      await maybeApplyReplyMove(code, undefined, replyMoveTarget, replyMoveWanted, generalPushRes);
       advanceGameClock('general', 5); // +5min per messaggio generale
       await consumeTalentIfPending(code, me);
       ta.value='';
@@ -4391,6 +4578,7 @@ let editingScene = false;
     const players = cachedRoster.filter(m=>m.role==='player');
     cachedProgression = await getProgression(code);
     cachedGameClock = await getGameClock(code);
+    cachedAutoMsgSettings = await getAutoMsgSettings(code);
 
     root.innerHTML = `
       ${topbar('Vista Master')}
@@ -4615,6 +4803,7 @@ let editingScene = false;
           </div>
           <div class="hud-frame card" id="notice-mgr-card"></div>
           <div class="hud-frame card" id="bugreports-card"></div>
+          <div class="hud-frame card" id="auto-msg-card"></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;">
             <div class="hud-frame card" id="progression-card"></div>
             <div style="display:flex;flex-direction:column;gap:14px;">
@@ -4669,6 +4858,7 @@ let editingScene = false;
     bindMasterChatMode(code, players, refreshLiveParts, maybeNotifyNew);
     renderNoticeManager(code, players);
     renderBugReportsMaster(code);
+    renderAutoMsgPanel(code);
     renderProgressionMaster(code, refreshLiveParts);
     renderScanLogMaster(code);
     renderEncounterBalance();
@@ -4728,7 +4918,8 @@ let editingScene = false;
       };
       const ok = await saveScene(code, newScene);
       cachedScene = newScene;
-      await pushLog(code, { who:'Sistema', role:'gm', text: '🆕 Il Master apre una Nuova Scena.' });
+      const newSceneText = autoMsgText('new_scene', {});
+      if(newSceneText) await pushLog(code, { who:'Sistema', role:'gm', text: newSceneText });
       const statusEl = document.getElementById('scene-status');
       statusEl.style.color = ok ? 'var(--text-mute)' : 'var(--danger)';
       statusEl.textContent = ok ? 'Nuova Scena aperta, con chat pulita.' : ('Errore: ' + (lastApiError||''));
@@ -4741,7 +4932,11 @@ let editingScene = false;
     function applySpeakAsMode(mode){
       enemyFields.style.display = mode==='enemy' ? 'flex' : 'none';
       npcFields.style.display = mode==='npc' ? 'flex' : 'none';
-      if(mode.startsWith('digimon:')){
+      if(mode.startsWith('tamer:')){
+        const username = mode.slice('tamer:'.length);
+        const member = cachedRoster.find(m=>m.username===username);
+        if(colorInput) colorInput.value = (member && tamerChatColor(member)) || '#5aa8ff';
+      } else if(mode.startsWith('digimon:')){
         const username = mode.slice('digimon:'.length);
         const member = cachedRoster.find(m=>m.username===username);
         if(colorInput) colorInput.value = (member && member.digimon.chatColor) || '#c896ff';
@@ -4778,7 +4973,20 @@ let editingScene = false;
       if(!text) return;
       const mode = speakAsSel ? speakAsSel.value : 'master';
       let who = 'Master', role = 'gm', avatar = null, color = null;
-      if(mode.startsWith('digimon:')){
+      if(mode.startsWith('tamer:')){
+        // "Parla come un giocatore" (richiesta utente): stesso meccanismo del "Parla come" già
+        // esistente per gli NPC/Digimon, ma qui il Master parla a nome del TAMER di un giocatore
+        // invece che del suo Digimon — who/avatar/color presi dalla Scheda Tamer (displayName/
+        // imageThumbUrl-imageUrl/tamerChatColor, js/util.js), role:'player' così il messaggio si
+        // comporta in tutto e per tutto come uno scritto davvero da quel giocatore (stesso stile
+        // CSS .log-entry.player, stesso riconoscimento di resolveLogAvatar/applyDefaultChatColor).
+        const username = mode.slice('tamer:'.length);
+        const member = cachedRoster.find(m=>m.username===username);
+        who = member ? displayName(member) : username;
+        role = 'player';
+        avatar = (member && member.tamer) ? (member.tamer.imageThumbUrl || member.tamer.imageUrl) : null;
+        color = member ? tamerChatColor(member) : null;
+      } else if(mode.startsWith('digimon:')){
         const username = mode.slice('digimon:'.length);
         const member = cachedRoster.find(m=>m.username===username);
         who = (member && member.digimon.name) ? member.digimon.name : username;
@@ -4832,16 +5040,22 @@ let editingScene = false;
       if(gmDigimojiChk && gmDigimojiChk.checked) meta.digimoji = true;
       if(pendingGmImageUrl) meta.image = pendingGmImageUrl;
       if(pendingGmReplyTo) meta.replyTo = pendingGmReplyTo;
+      // "Sposta il messaggio citato qui" (richiesta utente) — vedi maybeApplyReplyMove in
+      // js/chat-log-engine.js. Catturati PRIMA di azzerare pendingGmReplyTo più sotto.
+      const gmReplyMoveWanted = !!(pendingGmReplyTo && document.getElementById('gm-reply-preview-move') && document.getElementById('gm-reply-preview-move').checked);
+      const gmReplyMoveTarget = pendingGmReplyTo;
       // Dado generico GDR (es. "2d6", "/roll 1d20+3") — il Master può tirare dadi come chiunque
       const genericDice = parseGenericDiceRoll(text);
+      let gmPushRes;
       if(genericDice){
-        await pushLog(code, { who, role:'roll', text: genericDice.text, meta: Object.keys(meta).length ? meta : null });
+        gmPushRes = await pushLog(code, { who, role:'roll', text: genericDice.text, meta: Object.keys(meta).length ? meta : null });
       } else {
         if(role==='npc'){
           rememberNpc(code, { name: who, color: chosenColor, avatar });
         }
-        await pushLog(code, { who, role, text, meta: Object.keys(meta).length ? meta : null });
+        gmPushRes = await pushLog(code, { who, role, text, meta: Object.keys(meta).length ? meta : null });
       }
+      await maybeApplyReplyMove(code, undefined, gmReplyMoveTarget, gmReplyMoveWanted, gmPushRes);
       advanceGameClock('general', 5);
       ta.value='';
       pendingGmImageUrl = null;
@@ -5279,7 +5493,7 @@ let editingScene = false;
   // unicamente: è stato sconfitto." -- niente più citazioni di regolamento o rimandi al pannello,
   // la scelta Regredisci/Uovo resta comunque disponibile al Master in "Gestione Combattimento".
   function defeatNoticeText(defeatInfo, dispName){
-    return `🏳️ ${dispName} è stato sconfitto.`;
+    return autoMsgText('defeat_notice', { name: dispName });
   }
   // Stessa informazione ma come clausola da APPENDERE in coda a una riga di log già esistente
   // (nessun nome ripetuto: il bersaglio è già nominato subito prima in quella riga).
@@ -5656,7 +5870,8 @@ let editingScene = false;
         }
         await saveCombat(code, cachedCombat);
         if(cachedCombat.chatLock){
-          await pushCombatNarration(cachedCombat, { who:'Sistema', role:'gm', text: '🔒 ' + cachedCombat.chatLock.message });
+          const lockText = autoMsgText('combat_lock', { message: cachedCombat.chatLock.message });
+          if(lockText) await pushCombatNarration(cachedCombat, { who:'Sistema', role:'gm', text: lockText });
         }
         __combatMusicSynced = true;
         startCombatMusic(cachedScene);
@@ -6316,7 +6531,7 @@ let editingScene = false;
         if(defeatInfo){
           const defeatDispName = target.nameHidden ? hiddenParticipantLabel(target) : defeatInfo.name;
           const noticeText = defeatNoticeText(defeatInfo, defeatDispName);
-          await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: noticeText });
+          if(noticeText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: noticeText });
         }
         await persistAndRefresh();
         // persistAndRefresh ricostruisce l'intera card (quindi anche #combat-attack-result vuoto):
@@ -6614,7 +6829,8 @@ let editingScene = false;
         } else {
           p.defeated = false;
         }
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `↩️ ${p.name} rientra in combattimento a proprio rischio.` });
+        const reenterText = autoMsgText('reenter_risk', { name: p.name });
+        if(reenterText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: reenterText });
         await persistAndRefresh();
       };
     });
@@ -6635,7 +6851,8 @@ let editingScene = false;
         if(oldName===member.digimon.name && p.imageUrl===(member.digimon.imageUrl||p.imageUrl)){ window.alert('Nome e immagine sono già allineati con la Scheda.'); return; }
         p.name = member.digimon.name;
         if(member.digimon.imageUrl) p.imageUrl = member.digimon.imageUrl;
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `🔄 ${oldName} → ${p.name} (nome/immagine risincronizzati con la Scheda).` });
+        const resyncText = autoMsgText('resync_name', { oldName, newName: p.name });
+        if(resyncText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: resyncText });
         await persistAndRefresh();
       };
     });
@@ -6779,7 +6996,8 @@ let editingScene = false;
         const before = p.actions===undefined?2:p.actions;
         p.actions = Math.min(max, before+1);
         p.actionsExhaustedAt = null;
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${narratorName(p)} riottiene 1 Azione (es. Reload/Battle Cry/Horde Duelist riuscito) — ora ${p.actions}/2.` });
+        const refundText = autoMsgText('action_refund', { name: narratorName(p), current: p.actions });
+        if(refundText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: refundText });
         await persistAndRefresh();
       };
     });
@@ -6795,7 +7013,8 @@ let editingScene = false;
         const before = p.tamerActions===undefined?2:p.tamerActions;
         p.tamerActions = Math.min(2, before+1);
         p.actionsExhaustedAt = null;
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${narratorName(p)} riottiene 1 Azione (Tamer) — ora ${p.tamerActions}/2.` });
+        const refundTamerText = autoMsgText('action_refund_tamer', { name: narratorName(p), current: p.tamerActions });
+        if(refundTamerText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: refundTamerText });
         await persistAndRefresh();
       };
     });
@@ -6822,12 +7041,16 @@ let editingScene = false;
           }
           await applyDamageToParticipant(code, combat, p, sign*amount);
           const w = getParticipantWounds(p);
-          let note = `${narratorName(p)} ${sign>0?'subisce':'recupera'} ${amount} Ferit${amount===1?'a':'e'} (manuale) — ora ${w.current}/${w.max}.`;
+          let note = autoMsgText('manual_wound', { name: narratorName(p), verb: sign>0?'subisce':'recupera', amount, unit: amount===1?'Ferita':'Ferite', current: w.current, max: w.max });
           if(sign>0){
+            // applyDefeatIfNeeded ha effetti reali (marca Sconfitto, innesca notifyAnyDigimonDefeated)
+            // indipendentemente dal fatto che QUESTO messaggio (ferita/cura manuale) sia
+            // abilitato o meno -- va quindi sempre eseguito, anche se poi non c'è nulla da mandare
+            // in chat per questo specifico messaggio.
             const defeatInfo = await applyDefeatIfNeeded(code, p);
-            note += defeatInlineNote(defeatInfo);
+            if(note!=null) note += defeatInlineNote(defeatInfo);
           }
-          await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: note, meta:{avatar: resolveParticipantImage(p)} });
+          if(note!=null) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: note, meta:{avatar: resolveParticipantImage(p)} });
           await persistAndRefresh();
         };
       });
@@ -6848,7 +7071,8 @@ let editingScene = false;
         const amount = Math.max(0, Math.floor(Number(amtInput && amtInput.value) || 0));
         if(amount<=0) return;
         const newVal = await setParticipantTempWounds(code, combat, p, getParticipantTempWounds(p) + amount);
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${narratorName(p)} ottiene +${amount} PF Temporanei (manuale) — ora ${newVal}.` });
+        const tempAddText = autoMsgText('temp_wounds_add', { name: narratorName(p), amount, newVal });
+        if(tempAddText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: tempAddText });
         await persistAndRefresh();
       };
     });
@@ -6861,7 +7085,8 @@ let editingScene = false;
         const amount = Math.max(0, Math.floor(Number(amtInput && amtInput.value) || 0));
         if(amount<=0) return;
         const newVal = await setParticipantTempWounds(code, combat, p, Math.max(0, getParticipantTempWounds(p) - amount));
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${narratorName(p)} perde ${amount} PF Temporanei (manuale) — ora ${newVal}.` });
+        const tempRemoveText = autoMsgText('temp_wounds_remove', { name: narratorName(p), amount, newVal });
+        if(tempRemoveText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: tempRemoveText });
         await persistAndRefresh();
       };
     });
@@ -6877,7 +7102,8 @@ let editingScene = false;
         const stat = statSel ? statSel.value : 'either';
         p.pendingRollBonus = { amount, source:'manuale (Master)', stat };
         const statLabel = stat==='either'?'Accuracy/Dodge':stat==='accuracy'?'solo Accuracy':'solo Dodge';
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${narratorName(p)}: bonus manuale +${amount} (${statLabel}) impostato in coda sul prossimo Pool Check.` });
+        const bonusSetText = autoMsgText('manual_bonus_set', { name: narratorName(p), amount, statLabel });
+        if(bonusSetText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: bonusSetText });
         await persistAndRefresh();
       };
     });
@@ -6887,7 +7113,8 @@ let editingScene = false;
         const p = combat.participants.find(x=>x.id===id);
         if(!p) return;
         p.pendingRollBonus = null;
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${narratorName(p)}: bonus in coda rimosso (manuale).` });
+        const bonusClearText = autoMsgText('manual_bonus_clear', { name: narratorName(p) });
+        if(bonusClearText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: bonusClearText });
         await persistAndRefresh();
       };
     });
@@ -6908,7 +7135,8 @@ let editingScene = false;
         member.digimon.currentWounds = 1;
         member.digimon.defeatPending = false;
         await saveMember(code, member);
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `🏳️ Il Master risolve la Sconfitta di ${narratorName(p)}: regredisce da ${fromStage} a ${member.digimon.defaultStage} con 1 Ferita.` });
+        const regressText = autoMsgText('defeat_resolve_regress', { name: narratorName(p), fromStage, toStage: member.digimon.defaultStage });
+        if(regressText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: regressText });
         await persistAndRefresh();
       };
     });
@@ -6923,7 +7151,8 @@ let editingScene = false;
         member.digimon.approved = false;
         member.digimon.defeatPending = false;
         await patchMember(code, member.username, { approved: false, defeatPending: false });
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `🥚 Il Master risolve la Sconfitta di ${narratorName(p)}: torna Digitama (richiuso nell'Uovo -- riapprovalo dalla Scheda Digimon quando si schiude di nuovo).` });
+        const eggText = autoMsgText('defeat_resolve_egg', { name: narratorName(p) });
+        if(eggText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: eggText });
         await persistAndRefresh();
       };
     });
@@ -6970,7 +7199,8 @@ let editingScene = false;
         d.currentWounds = d.maxWounds;
         await saveMember(code, member);
         await syncCombatParticipantName(member);
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `🧬 ${narratorName(p)}: ${oldName} digivolve in ${d.name||target}! (1 Azione${cost>0?` + ${cost} Evolution Points`:''} spesi) — Stat aggiornate.` });
+        const evoText = autoMsgText('evolve_combat', { name: narratorName(p), oldName, newName: d.name||target, costText: cost>0?` + ${cost} Evolution Points`:'' });
+        if(evoText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: evoText });
         if(statusEl){ statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Evoluzione applicata, Stat aggiornate.'; }
         await persistAndRefresh();
       };
@@ -7026,7 +7256,8 @@ let editingScene = false;
         }
         await saveMember(code, member);
         await syncCombatParticipantName(member);
-        await pushCombatNarration(combat, { who:'Sistema', role:'roll', text: `⚡ Forza Evoluzione di ${narratorName(p)} (TN ${tn}, 2 Azioni spese): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText}`, meta:{ dice } });
+        const forceEvoText = autoMsgText('force_evolve_combat', { name: narratorName(p), tn, dice: dice.join(','), willVal, total, outcomeText });
+        if(forceEvoText) await pushCombatNarration(combat, { who:'Sistema', role:'roll', text: forceEvoText, meta:{ dice } });
         if(statusEl){ statusEl.style.color='var(--text-mute)'; statusEl.textContent = outcomeText; }
         await persistAndRefresh();
       };
@@ -7048,7 +7279,8 @@ let editingScene = false;
         p.stage = matched;
         p.currentWounds = 1;
         p.defeatPending = false;
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `🏳️ Il Master risolve la Sconfitta di ${narratorName(p)}: regredisce${fromStage?` da ${fromStage}`:''} a ${matched} con 1 Ferita.` });
+        const enemyRegressText = autoMsgText('defeat_resolve_enemy_regress', { name: narratorName(p), fromPart: fromStage?` da ${fromStage}`:'', toStage: matched });
+        if(enemyRegressText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: enemyRegressText });
         await persistAndRefresh();
       };
     });
@@ -7059,7 +7291,8 @@ let editingScene = false;
         if(!p || p.isPC) return;
         if(!window.confirm(`Richiudere nell'Uovo ${p.name}? Il Nemico verrà rimosso dal Combattimento.`)) return;
         combat.participants = combat.participants.filter(x=>x.id!==id);
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `🥚 Il Master risolve la Sconfitta di ${p.name}: torna Digitama (rimosso dal Combattimento).` });
+        const enemyEggText = autoMsgText('defeat_resolve_enemy_egg', { name: p.name });
+        if(enemyEggText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: enemyEggText });
         await persistAndRefresh();
       };
     });
@@ -7069,7 +7302,8 @@ let editingScene = false;
         const p = combat.participants.find(x=>x.id===id);
         if(!p) return;
         p.attackedThisRound = false;
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: `${narratorName(p)} riottiene l'uso del proprio Attacco questo round (es. Reload riuscito).` });
+        const atkRefundText = autoMsgText('attack_refund', { name: narratorName(p) });
+        if(atkRefundText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: atkRefundText });
         await persistAndRefresh();
       };
     });
