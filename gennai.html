@@ -206,6 +206,20 @@
 
   .gennai-reply-sent{ background:var(--panel-2); border:1px solid var(--line); border-radius:6px; padding:10px 12px; margin-top:8px; font-size:13px; }
   .gennai-absent{ position:relative; z-index:2; font-size:12px; text-align:center; }
+
+  /* ===== Registro completo di Gennai (battute + risposte, con avatar giocatore) ===== */
+  .gennai-log-list{ display:flex; flex-direction:column; gap:10px; max-height:420px; overflow-y:auto; padding-right:4px; }
+  .gennai-log-entry{ background:var(--panel-2); border:1px solid var(--line); border-radius:6px; padding:8px 10px; }
+  .gennai-log-entry-gennai{ border-color:var(--cyan-dim); }
+  .gennai-log-head{ display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+  .gennai-log-avatar{ width:22px; height:22px; border-radius:50%; object-fit:cover; flex-shrink:0; border:1px solid var(--line); }
+  .gennai-log-avatar-placeholder{ display:flex; align-items:center; justify-content:center; background:var(--panel); font-size:12px; }
+  .gennai-log-avatar-gennai{ display:flex; align-items:center; justify-content:center; background:var(--panel); font-size:12px; border-color:var(--cyan-dim); }
+  .gennai-log-name{ font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--cyan); flex:1; }
+  .gennai-log-time{ font-size:10px; white-space:nowrap; }
+  .gennai-log-actions{ display:flex; gap:2px; }
+  .gennai-log-actions .btn{ padding:2px 6px; font-size:10px; }
+  .gennai-log-text{ white-space:pre-wrap; font-size:13px; line-height:1.4; }
 </style>
 </head>
 <body>
@@ -220,6 +234,7 @@
   let gennaiState = null;
   let pollTimer = null;
   let lastApiError = null;
+  let editingHistoryId = null; // id della entry del Registro attualmente in modifica (solo Master), o null
 
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function escapeAttr(s){ return escapeHTML(s); }
@@ -259,10 +274,24 @@
   // già stata aperta ai giocatori. Di default false: chi ha il link a gennai.html può fare login,
   // ma finché il Master non la sblocca vede solo un messaggio di attesa (vedi render()). Il
   // Master vede sempre tutto, indipendentemente da `unlocked`, per poter preparare la pagina.
-  const GENNAI_DEFAULT = { imageUrl:'', text:'', id:null, ts:null, locked:false, reply:null, visible:true, unlocked:false };
+  // `history` (Aggiunta 2026-09-23, "c'è un modo per cancellare/modificare i messaggi e vedere
+  // il log completo?"): a differenza di text/reply (che tengono solo la battuta ATTUALE di
+  // Gennai e l'unica risposta ATTUALE del gruppo), `history` è un array che si allunga nel tempo
+  // con OGNI battuta di Gennai e OGNI risposta inviata, mai sovrascritto — è il registro completo
+  // mostrato in fondo alla pagina. Ogni entry: { id, type:'gennai'|'reply', text, ts, username?,
+  // displayName?, avatarUrl? } (username/displayName/avatarUrl solo per type:'reply'). Il Master
+  // può modificare il testo o cancellare una entry (✎/✕), senza toccare la battuta/risposta
+  // "live" mostrata sul palcoscenico a meno che l'entry cancellata/modificata non sia proprio
+  // quella corrente (vedi bindHistoryLog).
+  const GENNAI_DEFAULT = { imageUrl:'', text:'', id:null, ts:null, locked:false, reply:null, visible:true, unlocked:false, history:[] };
   async function getGennai(code){
     const d = await apiGet('/api/state?resource=gennai&code=' + encodeURIComponent(code));
-    return Object.assign({}, GENNAI_DEFAULT, d ? (d.gennai||{}) : {});
+    const g = Object.assign({}, GENNAI_DEFAULT, d ? (d.gennai||{}) : {});
+    if(!Array.isArray(g.history)) g.history = [];
+    return g;
+  }
+  function myAvatarUrl(member){
+    return (member && member.tamer) ? (member.tamer.imageThumbUrl || member.tamer.imageUrl || '') : '';
   }
   async function saveGennai(code, data){
     const d = await apiPost('/api/state', { resource:'gennai', code, data });
@@ -436,11 +465,13 @@
           </div>
         </div>
         ${master ? masterPanelHTML() : playerPanelHTML()}
+        ${historyLogHTML()}
       </div>
     `;
     if(showGennai) renderBubbleArea();
     bindTopbar();
     if(master) bindMasterPanel(); else bindPlayerPanel();
+    bindHistoryLog();
   }
 
   function renderBubbleArea(){
@@ -451,6 +482,101 @@
     } else {
       el.innerHTML = `<div class="gennai-bubble-empty muted">Gennai non si è ancora manifestato.</div>`;
     }
+  }
+
+  // ---------- REGISTRO COMPLETO (battute di Gennai + risposte, con avatar del giocatore) ----------
+  function historyLogHTML(){
+    const master = isMaster();
+    const hist = (gennaiState.history||[]).slice().reverse(); // più recenti in cima
+    return `
+      <div class="hud-frame card">
+        <div class="section-title">📜 Registro di Gennai</div>
+        ${hist.length ? `<div class="gennai-log-list">${hist.map(e=>historyEntryHTML(e, master)).join('')}</div>` : `<div class="muted">Ancora nessuno scambio registrato.</div>`}
+      </div>
+    `;
+  }
+
+  function historyEntryHTML(entry, master){
+    const editing = editingHistoryId === entry.id;
+    const timeStr = new Date(entry.ts).toLocaleString('it-IT');
+    const actionsHTML = master ? `
+      <span class="gennai-log-actions">
+        <button class="btn ghost small" data-history-edit="${escapeAttr(entry.id)}" title="Modifica">✎</button>
+        <button class="btn ghost small" data-history-del="${escapeAttr(entry.id)}" title="Elimina">✕</button>
+      </span>
+    ` : '';
+    const headHTML = entry.type==='reply'
+      ? `${entry.avatarUrl ? `<img class="gennai-log-avatar" src="${escapeAttr(entry.avatarUrl)}" onerror="this.style.display='none'" />` : `<span class="gennai-log-avatar gennai-log-avatar-placeholder">👤</span>`}
+         <span class="gennai-log-name">${escapeHTML(entry.displayName||entry.username||'Giocatore')}</span>`
+      : `<span class="gennai-log-avatar gennai-log-avatar-gennai">🔮</span><span class="gennai-log-name">Gennai</span>`;
+    return `
+      <div class="gennai-log-entry ${entry.type==='gennai'?'gennai-log-entry-gennai':''}" data-history-id="${escapeAttr(entry.id)}">
+        <div class="gennai-log-head">
+          ${headHTML}
+          <span class="gennai-log-time muted">${escapeHTML(timeStr)}</span>
+          ${actionsHTML}
+        </div>
+        ${editing ? `
+          <div class="field" style="margin:6px 0 4px;"><textarea id="history-edit-text" rows="2">${escapeHTML(entry.text)}</textarea></div>
+          <div class="row" style="gap:6px;">
+            <button class="btn small" data-history-save="${escapeAttr(entry.id)}" style="flex:1;">💾 Salva</button>
+            <button class="btn ghost small" data-history-cancel="${escapeAttr(entry.id)}" style="flex:1;">Annulla</button>
+          </div>
+        ` : `<div class="gennai-log-text">${escapeHTML(entry.text)}</div>`}
+      </div>
+    `;
+  }
+
+  function bindHistoryLog(){
+    document.querySelectorAll('[data-history-edit]').forEach(btn=>{
+      btn.onclick = ()=>{ editingHistoryId = btn.getAttribute('data-history-edit'); render(); };
+    });
+    document.querySelectorAll('[data-history-cancel]').forEach(btn=>{
+      btn.onclick = ()=>{ editingHistoryId = null; render(); };
+    });
+    document.querySelectorAll('[data-history-save]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-history-save');
+        const ta = document.getElementById('history-edit-text');
+        const newText = ta ? ta.value.trim() : '';
+        if(!newText) return;
+        btn.disabled = true;
+        const entry = (gennaiState.history||[]).find(e=>e.id===id);
+        if(!entry){ btn.disabled = false; return; }
+        const prevText = entry.text;
+        entry.text = newText;
+        // Se la entry modificata è anche la battuta/risposta "live" sul palcoscenico, aggiorna
+        // subito anche quella, così Master e giocatori vedono il testo corretto senza aspettare.
+        if(gennaiState.id===id) gennaiState.text = newText;
+        if(gennaiState.reply && gennaiState.reply.id===id) gennaiState.reply.text = newText;
+        const ok = await saveGennai(session.code, gennaiState);
+        if(!ok){ entry.text = prevText; btn.disabled = false; return; }
+        editingHistoryId = null;
+        render();
+      };
+    });
+    document.querySelectorAll('[data-history-del]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-history-del');
+        if(!window.confirm('Eliminare questo messaggio dal registro?')) return;
+        btn.disabled = true;
+        const prevHistory = gennaiState.history;
+        const prevText = gennaiState.text, prevGId = gennaiState.id, prevGTs = gennaiState.ts;
+        const prevLocked = gennaiState.locked, prevReply = gennaiState.reply;
+        gennaiState.history = (gennaiState.history||[]).filter(e=>e.id!==id);
+        // Se si cancella la battuta o la risposta attualmente "live", ritirala anche dal
+        // palcoscenico invece di lasciare un messaggio fantasma non più nel registro.
+        if(gennaiState.id===id){ gennaiState.text=''; gennaiState.id=null; gennaiState.ts=null; gennaiState.locked=false; gennaiState.reply=null; }
+        else if(gennaiState.reply && gennaiState.reply.id===id){ gennaiState.reply=null; gennaiState.locked=false; }
+        const ok = await saveGennai(session.code, gennaiState);
+        if(!ok){
+          gennaiState.history = prevHistory; gennaiState.text = prevText; gennaiState.id = prevGId;
+          gennaiState.ts = prevGTs; gennaiState.locked = prevLocked; gennaiState.reply = prevReply;
+          btn.disabled = false; return;
+        }
+        render();
+      };
+    });
   }
 
   function bindTopbar(){
@@ -554,14 +680,17 @@
       const statusEl = document.getElementById('gennai-speak-status');
       if(!text){ statusEl.textContent = 'Scrivi una battuta per Gennai prima di inviarla.'; return; }
       speakBtn.disabled = true;
+      const newId = 'g' + Date.now() + Math.random().toString(36).slice(2,6);
+      const newTs = Date.now();
       const next = {
         imageUrl: gennaiState.imageUrl || '',
         text,
-        id: 'g' + Date.now() + Math.random().toString(36).slice(2,6),
-        ts: Date.now(),
+        id: newId,
+        ts: newTs,
         locked: false,
         reply: null,
-        visible: true
+        visible: true,
+        history: (gennaiState.history||[]).concat([{ id:newId, type:'gennai', text, ts:newTs }])
       };
       const ok = await saveGennai(session.code, next);
       speakBtn.disabled = false;
@@ -637,8 +766,16 @@
         return;
       }
       const me = myMember();
+      const replyId = 'r' + Date.now() + Math.random().toString(36).slice(2,6);
+      const replyTs = Date.now();
+      const replyDisplayName = me ? displayName(me) : session.username;
+      const replyAvatarUrl = myAvatarUrl(me);
       fresh.locked = true;
-      fresh.reply = { text, username: session.username, displayName: me ? displayName(me) : session.username, ts: Date.now() };
+      fresh.reply = { id: replyId, text, username: session.username, displayName: replyDisplayName, ts: replyTs };
+      fresh.history = (fresh.history||[]).concat([{
+        id: replyId, type:'reply', text, ts:replyTs,
+        username: session.username, displayName: replyDisplayName, avatarUrl: replyAvatarUrl
+      }]);
       const ok = await saveGennai(session.code, fresh);
       if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore di invio, riprova.'; replyBtn.disabled = false; return; }
       gennaiState = fresh;
