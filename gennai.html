@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gennai — Digimon: Digital Adventures 2E</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
+
+<!--
+  js/gennai.html — nuova pagina standalone (richiesta Rocco 2026-09-23: "vorrei costruire una
+  nuova pagina formata da uno sfondo animato, un personaggio centrale (gennai) e quando parla
+  [...] si apre una nuvoletta che resta aperta finché non mandano un nuovo messaggio. Possono
+  mandare un solo messaggio in generale e l'opzione si sblocca quando gennai riparla").
+
+  Scelte confermate via domanda di chiarimento a Rocco:
+  - Pagina standalone (gennai.html), collegata dal Tavolo (index.html) e dalla Mappa (map.html),
+    stesso schema di map.html/dex.html/player.html/digimon.html: login con lo stesso
+    localStorage 'digivice_session_v1' (nessun nuovo login se già loggato altrove), stesso tema
+    CSS, stessi helper apiGet/apiPost duplicati localmente (pagina autonoma, non un modulo).
+  - "Un solo messaggio in totale per il gruppo": UN SOLO slot di risposta condiviso da tutti i
+    giocatori per ogni battuta di Gennai (non un turno a testa) — vedi gennaiState.locked/reply
+    più sotto. Il primo giocatore che invia "consuma" lo slot per tutti, finché il Master non fa
+    riparlare Gennai (che resetta locked/reply).
+  - La risposta del giocatore NON tocca il Registro di Chat Generale: resta isolata qui, uno
+    scambio a parte "cerimoniale" con Gennai.
+  - Il ritratto di Gennai non lo disegniamo noi (personaggio Digimon protetto da copyright):
+    l'URL immagine è un campo che il Master imposta direttamente su questa pagina (persistito
+    su gennaiState.imageUrl, stesso pattern upload di map.html/imageUploadRowHTML) — "la carico
+    io dopo". Senza immagine impostata, un placeholder generico (nessun personaggio specifico).
+
+  Backend: nuova risorsa 'gennai' accorpata nell'endpoint esistente /api/state (vedi state.js) —
+  stessa forma di combat/gameclock/automsg (una riga JSONB per campagna, tabella gennai_state),
+  NON una nuova Serverless Function (limite di 12 sul piano Vercel Hobby, vedi commenti in
+  state.js). Il payload di gennaiState è:
+    {
+      imageUrl: string,                 // URL del ritratto, impostato dal Master
+      text: string,                     // battuta attuale di Gennai (vuoto = non ha mai parlato)
+      id: string,                       // id univoco di QUESTA battuta (cambia ogni volta che il
+                                         // Master fa parlare Gennai di nuovo)
+      ts: number,                       // quando questa battuta è stata dettata
+      locked: boolean,                  // true = lo slot di risposta per QUESTA battuta è già
+                                         // stato usato da un giocatore
+      reply: {text, username, displayName, ts} | null   // l'unica risposta inviata (visibile a
+                                         // tutti), null se nessuno ha ancora risposto
+    }
+  Il Master che fa parlare Gennai di nuovo sovrascrive SEMPRE id/text/ts e azzera locked/reply —
+  è questo che "sblocca" la possibilità di rispondere per tutto il gruppo.
+-->
+
+<style>
+  :root{
+    --bg: #080b10;
+    --panel: #0e141b;
+    --panel-2: #121a22;
+    --line: #1c2a30;
+    --cyan: #35e8c9;
+    --cyan-dim: #1f6e63;
+    --amber: #ff8a3d;
+    --text: #dcece8;
+    --text-mute: #6d8385;
+    --danger: #ff5d5d;
+    --radius: 2px;
+    font-family: 'Manrope', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body,#root-app{margin:0;padding:0;background:var(--bg);color:var(--text);}
+  .mono{font-family:'Share Tech Mono', monospace; letter-spacing: 0.04em;}
+  .app{min-height:100vh;background:
+      radial-gradient(circle at 15% 10%, rgba(53,232,201,0.06), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(255,138,61,0.05), transparent 45%),
+      var(--bg);
+      padding:20px; position:relative; overflow-x:hidden;}
+  .hud-frame{border:1px solid var(--line); background:var(--panel); border-radius:var(--radius); position:relative;}
+  .hud-frame::before{content:"";position:absolute;top:-1px;left:-1px;width:14px;height:14px;border-top:2px solid var(--cyan);border-left:2px solid var(--cyan);}
+  .hud-frame::after{content:"";position:absolute;bottom:-1px;right:-1px;width:14px;height:14px;border-bottom:2px solid var(--cyan);border-right:2px solid var(--cyan);}
+  .topbar{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand-dot{width:9px;height:9px;background:var(--cyan);box-shadow:0 0 8px var(--cyan);border-radius:50%;animation:pulse 2s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
+  .brand-title{font-family:'Share Tech Mono',monospace;font-size:15px;text-transform:uppercase;color:var(--cyan);letter-spacing:0.05em;}
+  .brand-sub{font-size:11px;color:var(--text-mute);}
+
+  .btn{font-family:'Share Tech Mono',monospace;background:transparent;border:1px solid var(--cyan-dim);color:var(--cyan);
+    padding:8px 14px;cursor:pointer;text-transform:uppercase;font-size:12px;letter-spacing:0.05em;border-radius:var(--radius);transition:.15s;}
+  .btn:hover{background:rgba(53,232,201,0.1);border-color:var(--cyan);}
+  .btn.solid{background:var(--cyan);color:#04211c;border-color:var(--cyan);font-weight:700;}
+  .btn.solid:hover{background:#4ffbe0;}
+  .btn.ghost{border-color:var(--line);color:var(--text-mute);}
+  .btn.small{padding:5px 10px;font-size:10px;}
+  .btn:disabled{opacity:0.4;cursor:not-allowed;}
+  .btn:disabled:hover{background:transparent;border-color:var(--line);}
+
+  input[type=text], select{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    padding:8px 10px; font-family:'Manrope',sans-serif; font-size:13px; border-radius:var(--radius); width:100%;
+  }
+  textarea{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    padding:8px 10px; font-family:'Manrope',sans-serif; font-size:13px; border-radius:var(--radius); width:100%; resize:vertical;
+  }
+  input:focus, select:focus, textarea:focus{outline:none;border-color:var(--cyan-dim);}
+  label{font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;display:block;margin-bottom:4px;}
+  .field{margin-bottom:12px;}
+  .row{display:flex;gap:12px;}
+  .row > *{flex:1;}
+  .section-title{font-size:12px;text-transform:uppercase;color:var(--cyan);letter-spacing:0.08em;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);}
+  .card{padding:16px;margin-bottom:16px;max-width:760px;margin-left:auto;margin-right:auto;}
+  .muted{color:var(--text-mute);font-size:12px;}
+  .sub{color:var(--text-mute);font-size:12px;}
+  .tag{display:inline-block;border:1px solid var(--line);color:var(--text-mute);font-size:10px;padding:1px 6px;border-radius:10px;margin-left:4px;}
+  .err{color:var(--danger);font-size:12px;min-height:14px;}
+  .checkbox-row{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-mute);margin:8px 0;}
+  .checkbox-row input{width:auto;}
+
+  .login-wrap{max-width:420px;margin:60px auto;padding:32px;}
+  .login-wrap h1{font-family:'Share Tech Mono',monospace;color:var(--cyan);font-size:24px;letter-spacing:0.03em;text-align:center;text-shadow:0 0 16px rgba(53,232,201,0.5);margin-bottom:4px;}
+  .role-pick{display:flex;gap:8px;}
+  .role-pick .btn.active{background:var(--cyan);color:#04211c;border-color:var(--cyan);}
+
+  /* ===== Palcoscenico di Gennai: sfondo animato + ritratto + nuvoletta ===== */
+  .gennai-stage{
+    position:relative; min-height:380px; border:1px solid var(--line); border-radius:6px;
+    overflow:hidden; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:36px 16px 28px;
+    background:
+      radial-gradient(circle at 50% 28%, rgba(53,232,201,0.14), transparent 55%),
+      linear-gradient(180deg, #04070a 0%, #0a141a 55%, #04070a 100%);
+  }
+  .gennai-stage-grid{
+    position:absolute; inset:-60%; pointer-events:none;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(53,232,201,0.05) 0 1px, transparent 1px 42px),
+      repeating-linear-gradient(90deg, rgba(53,232,201,0.05) 0 1px, transparent 1px 42px);
+    animation: gennaiGridDrift 22s linear infinite;
+  }
+  @keyframes gennaiGridDrift{ from{ transform:translate(0,0); } to{ transform:translate(42px,42px); } }
+  .gennai-particle{
+    position:absolute; bottom:-10px; width:3px; height:3px; border-radius:50%;
+    background:var(--cyan); box-shadow:0 0 6px var(--cyan); opacity:0;
+    animation-name: gennaiParticleRise; animation-timing-function: linear; animation-iteration-count: infinite;
+  }
+  @keyframes gennaiParticleRise{
+    0%{ transform:translateY(0) scale(0.6); opacity:0; }
+    10%{ opacity:0.8; }
+    90%{ opacity:0.5; }
+    100%{ transform:translateY(-420px) scale(1); opacity:0; }
+  }
+  .gennai-portrait-wrap{ position:relative; width:190px; height:190px; z-index:2; }
+  .gennai-portrait-glow{
+    position:absolute; inset:-22px; border-radius:50%;
+    background:radial-gradient(circle, rgba(53,232,201,0.35), transparent 70%);
+    filter:blur(6px); animation: gennaiPulse 3.2s ease-in-out infinite;
+  }
+  @keyframes gennaiPulse{ 0%,100%{opacity:0.45; transform:scale(0.94);} 50%{opacity:0.95; transform:scale(1.05);} }
+  .gennai-portrait{
+    position:relative; width:100%; height:100%; border-radius:50%; overflow:hidden;
+    border:2px solid var(--cyan-dim); background:#05070a;
+    display:flex; align-items:center; justify-content:center; box-shadow:0 0 24px rgba(53,232,201,0.2);
+  }
+  .gennai-portrait img{ width:100%; height:100%; object-fit:cover; }
+  .gennai-portrait .placeholder{ font-size:52px; opacity:0.3; }
+  .gennai-bubble{
+    position:relative; z-index:2; max-width:480px; width:100%; margin:20px auto 0;
+    background:var(--panel); border:1px solid var(--cyan-dim); border-radius:10px;
+    padding:14px 18px; box-shadow:0 0 22px rgba(53,232,201,0.15);
+    animation: gennaiBubbleIn 0.4s ease;
+  }
+  .gennai-bubble::before{
+    content:''; position:absolute; top:-9px; left:50%; transform:translateX(-50%);
+    border-left:9px solid transparent; border-right:9px solid transparent; border-bottom:9px solid var(--cyan-dim);
+  }
+  @keyframes gennaiBubbleIn{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
+  .gennai-bubble-text{ white-space:pre-wrap; line-height:1.5; }
+  .gennai-bubble-empty{ position:relative; z-index:2; margin-top:18px; text-align:center; }
+
+  .gennai-reply-sent{ background:var(--panel-2); border:1px solid var(--line); border-radius:6px; padding:10px 12px; margin-top:8px; font-size:13px; }
+</style>
+</head>
+<body>
+<div id="root-app" class="app"><div class="hud-frame card"><div class="muted">Caricamento…</div></div></div>
+
+<script>
+(function(){
+  const SESSION_KEY = 'digivice_session_v1';
+  const root = document.getElementById('root-app');
+  let session = null;
+  let cachedRoster = [];
+  let gennaiState = null;
+  let pollTimer = null;
+  let lastApiError = null;
+
+  function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function escapeAttr(s){ return escapeHTML(s); }
+  function sanitizeKeyPart(s){ return String(s||'').trim().toUpperCase().replace(/[^A-Z0-9_-]/g,''); }
+
+  function saveSession(s){ try{ localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }catch(e){} }
+  function loadSession(){ try{ const v = localStorage.getItem(SESSION_KEY); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
+
+  async function readJson(r){
+    let raw = '';
+    try{ raw = await r.text(); }catch(e){ raw = ''; }
+    try{ return JSON.parse(raw); }
+    catch(e){ return { error: 'Il server ha risposto con un errore non-JSON (HTTP ' + r.status + '): ' + String(raw).replace(/<[^>]*>/g,' ').trim().slice(0,160) }; }
+  }
+  async function apiGet(path){
+    try{
+      const r = await fetch(path);
+      const data = await readJson(r);
+      if(!r.ok){ lastApiError = (data && data.error) || ('Errore di rete (' + r.status + ')'); return null; }
+      lastApiError = null;
+      return data;
+    }catch(e){ lastApiError = 'Impossibile contattare il server.'; return null; }
+  }
+  async function apiPost(path, body){
+    try{
+      const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const data = await readJson(r);
+      if(!r.ok){ lastApiError = (data && data.error) || ('Errore di salvataggio (' + r.status + ')'); return null; }
+      lastApiError = null;
+      return data;
+    }catch(e){ lastApiError = 'Impossibile contattare il server.'; return null; }
+  }
+
+  const GENNAI_DEFAULT = { imageUrl:'', text:'', id:null, ts:null, locked:false, reply:null };
+  async function getGennai(code){
+    const d = await apiGet('/api/state?resource=gennai&code=' + encodeURIComponent(code));
+    return Object.assign({}, GENNAI_DEFAULT, d ? (d.gennai||{}) : {});
+  }
+  async function saveGennai(code, data){
+    const d = await apiPost('/api/state', { resource:'gennai', code, data });
+    return !!(d && d.ok);
+  }
+
+  async function getRoster(code){
+    const d = await apiGet('/api/roster?code=' + encodeURIComponent(code));
+    return d ? (d.members||[]) : [];
+  }
+  function displayName(member){
+    return (member && member.tamer && member.tamer.characterName) ? member.tamer.characterName : (member ? member.username : '');
+  }
+  function myMember(){ return (cachedRoster||[]).find(m=>m.username===session.username) || null; }
+
+  // ---------- IMAGE UPLOAD (hosted via Supabase Storage — stesso pattern di map.html) ----------
+  function imageUploadRowHTML(textInputId){
+    return `<input type="file" accept="image/*" id="upload-file-${textInputId}" style="display:none;" />
+      <button type="button" class="btn ghost small" id="upload-btn-${textInputId}" style="white-space:nowrap;">📤 Carica</button>`;
+  }
+  function bindImageUpload(textInputId, statusElId, onDone){
+    const fileInput = document.getElementById('upload-file-'+textInputId);
+    const btn = document.getElementById('upload-btn-'+textInputId);
+    if(!fileInput || !btn) return;
+    btn.onclick = ()=> fileInput.click();
+    fileInput.onchange = async ()=>{
+      const file = fileInput.files[0];
+      if(!file) return;
+      const statusEl = statusElId ? document.getElementById(statusElId) : null;
+      if(statusEl) statusEl.textContent = 'Caricamento in corso...';
+      btn.disabled = true;
+      try{
+        const dataUrl = await new Promise((resolve, reject)=>{
+          const reader = new FileReader();
+          reader.onload = ()=> resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const res = await apiPost('/api/upload', { code: session.code, dataUrl });
+        if(res && res.ok && res.url){
+          const textInput = document.getElementById(textInputId);
+          if(textInput){ textInput.value = res.url; }
+          if(statusEl) statusEl.textContent = '';
+          if(onDone) onDone(res.url);
+        } else {
+          if(statusEl) statusEl.textContent = '⚠ Caricamento fallito: ' + (lastApiError || 'errore sconosciuto');
+        }
+      }catch(e){
+        if(statusEl) statusEl.textContent = '⚠ Errore durante il caricamento: ' + e.message;
+      }
+      btn.disabled = false;
+      fileInput.value = '';
+    };
+  }
+
+  function isFieldFocused(){
+    const el = document.activeElement;
+    return !!(el && (el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.tagName==='SELECT'));
+  }
+
+  function isMaster(){ return !!(session && session.role==='master'); }
+
+  function topbarHTML(){
+    return `
+      <div class="topbar hud-frame">
+        <div class="brand">
+          <div class="brand-dot"></div>
+          <div>
+            <div class="brand-title">DIGIVICE OS // GENNAI</div>
+            <div class="brand-sub">Codice campagna: ${escapeHTML(session.code)} ${session.role==='master'?' · Master':''}</div>
+          </div>
+        </div>
+        <div>
+          <a href="index.html" class="btn ghost small" style="text-decoration:none;">↩ Torna al Tavolo</a>
+          <a href="dex.html" class="btn ghost small" style="text-decoration:none;">📖 Digidex</a>
+          <a href="map.html" class="btn ghost small" style="text-decoration:none;">🗺️ Mappa</a>
+          <a href="player.html" class="btn ghost small" style="text-decoration:none;">👤 Giocatore</a>
+          <a href="digimon.html" class="btn ghost small" style="text-decoration:none;">👾 Digimon</a>
+          <button class="btn ghost small" id="btn-manual-refresh">🔄 Aggiorna</button>
+          <button class="btn ghost small" id="btn-logout">Esci</button>
+        </div>
+      </div>
+      ${lastApiError ? `<div class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(lastApiError)} — la modifica potrebbe non essersi salvata, riprova.</div>` : ''}
+  `;
+  }
+
+  // ---------- LOGIN ----------
+  function renderLogin(){
+    root.innerHTML = `
+      <div class="login-wrap hud-frame">
+        <h1 class="mono">GENNAI // ACCESSO</h1>
+        <div class="sub" style="text-align:center;margin-bottom:14px;">Inserisci lo stesso codice campagna usato nel Tavolo principale.</div>
+        <div class="field"><label>Codice Campagna</label><input type="text" id="in-code" placeholder="es. FRONTIER01" /></div>
+        <div class="field"><label>Nome Utente</label><input type="text" id="in-user" placeholder="il tuo nome al tavolo" /></div>
+        <div class="field">
+          <label>Ruolo</label>
+          <div class="role-pick">
+            <button class="btn active" id="role-player" data-role="player">Giocatore</button>
+            <button class="btn" id="role-master" data-role="master">Master</button>
+          </div>
+        </div>
+        <button class="btn solid" id="btn-enter" style="width:100%;padding:12px;">Entra</button>
+        <div class="err" id="login-err"></div>
+      </div>
+    `;
+    let role = 'player';
+    document.getElementById('role-player').onclick = ()=>{ role='player'; document.getElementById('role-player').classList.add('active'); document.getElementById('role-master').classList.remove('active'); };
+    document.getElementById('role-master').onclick = ()=>{ role='master'; document.getElementById('role-master').classList.add('active'); document.getElementById('role-player').classList.remove('active'); };
+    document.getElementById('btn-enter').onclick = ()=>{
+      const code = sanitizeKeyPart(document.getElementById('in-code').value);
+      const username = document.getElementById('in-user').value.trim();
+      const errEl = document.getElementById('login-err');
+      if(!code || !username){ errEl.textContent = 'Inserisci sia il codice campagna che il nome utente.'; return; }
+      session = { code, username, role };
+      saveSession(session);
+      boot();
+    };
+  }
+
+  // ---------- PARTICELLE DI SFONDO (generate una volta, puramente decorative) ----------
+  function particlesHTML(){
+    let out = '';
+    for(let i=0;i<22;i++){
+      const left = Math.round(Math.random()*100);
+      const duration = (10 + Math.random()*10).toFixed(1);
+      const delay = (Math.random()*12).toFixed(1);
+      out += `<span class="gennai-particle" style="left:${left}%;animation-duration:${duration}s;animation-delay:${delay}s;"></span>`;
+    }
+    return out;
+  }
+
+  // ---------- RENDER PRINCIPALE ----------
+  function render(){
+    if(!gennaiState){ return; }
+    const master = isMaster();
+    root.innerHTML = `
+      <div style="max-width:760px;margin:0 auto;">
+        ${topbarHTML()}
+        <div class="hud-frame card">
+          <div class="section-title">🔮 Gennai</div>
+          <div class="gennai-stage">
+            <div class="gennai-stage-grid"></div>
+            ${particlesHTML()}
+            <div class="gennai-portrait-wrap">
+              <div class="gennai-portrait-glow"></div>
+              <div class="gennai-portrait">
+                ${gennaiState.imageUrl ? `<img src="${escapeAttr(gennaiState.imageUrl)}" onerror="this.style.display='none'" />` : `<span class="placeholder">🖥️</span>`}
+              </div>
+            </div>
+            <div id="gennai-bubble-area"></div>
+          </div>
+        </div>
+        ${master ? masterPanelHTML() : playerPanelHTML()}
+      </div>
+    `;
+    renderBubbleArea();
+    bindTopbar();
+    if(master) bindMasterPanel(); else bindPlayerPanel();
+  }
+
+  function renderBubbleArea(){
+    const el = document.getElementById('gennai-bubble-area');
+    if(!el) return;
+    if(gennaiState.text){
+      el.innerHTML = `<div class="gennai-bubble"><div class="gennai-bubble-text">${escapeHTML(gennaiState.text)}</div></div>`;
+    } else {
+      el.innerHTML = `<div class="gennai-bubble-empty muted">Gennai non si è ancora manifestato.</div>`;
+    }
+  }
+
+  function bindTopbar(){
+    const logoutBtn = document.getElementById('btn-logout');
+    if(logoutBtn) logoutBtn.onclick = ()=>{ if(pollTimer) clearInterval(pollTimer); renderLogin(); };
+    const refreshBtn = document.getElementById('btn-manual-refresh');
+    if(refreshBtn) refreshBtn.onclick = refresh;
+  }
+
+  // ---------- PANNELLO MASTER: immagine + dettatura battuta + stato risposta ----------
+  function masterPanelHTML(){
+    return `
+      <div class="hud-frame card">
+        <div class="section-title">🛠️ Ritratto di Gennai (solo Master)</div>
+        <div class="field"><label>URL Immagine</label>
+          <div class="row" style="align-items:flex-start;">
+            <input type="text" id="gennai-image-url" value="${escapeAttr(gennaiState.imageUrl||'')}" placeholder="URL immagine (oppure carica un file)" style="flex:2;" />
+            <div style="flex:1;display:flex;align-items:center;">${imageUploadRowHTML('gennai-image-url')}</div>
+          </div>
+          <div class="err" id="gennai-image-status"></div>
+        </div>
+        <button class="btn small" id="btn-save-image">💾 Salva Immagine</button>
+      </div>
+      <div class="hud-frame card">
+        <div class="section-title">📣 Fai parlare Gennai</div>
+        <div class="muted" style="margin-bottom:8px;">Scrivendo una nuova battuta, la nuvoletta si aggiorna per tutti e lo slot di risposta dei giocatori si sblocca di nuovo.</div>
+        <div class="field"><textarea id="gennai-new-text" rows="3" placeholder="Cosa dice Gennai ora..."></textarea></div>
+        <button class="btn solid" id="btn-gennai-speak">📣 Fai parlare Gennai</button>
+        <div class="err" id="gennai-speak-status"></div>
+        ${gennaiState.text ? `<div class="muted" style="margin-top:14px;">Stato risposta dei giocatori a questa battuta:</div>${gennaiReplyStatusHTML()}` : ''}
+      </div>
+    `;
+  }
+
+  function gennaiReplyStatusHTML(){
+    if(gennaiState.reply){
+      return `<div class="gennai-reply-sent"><b>${escapeHTML(gennaiState.reply.displayName||gennaiState.reply.username)}</b> ha risposto: <span class="sub">${escapeHTML(gennaiState.reply.text)}</span></div>`;
+    }
+    return `<div class="muted" style="margin-top:4px;">Nessuno ha ancora risposto — lo slot è aperto.</div>`;
+  }
+
+  function bindMasterPanel(){
+    bindImageUpload('gennai-image-url', 'gennai-image-status');
+    const saveImgBtn = document.getElementById('btn-save-image');
+    if(saveImgBtn) saveImgBtn.onclick = async ()=>{
+      const url = document.getElementById('gennai-image-url').value.trim();
+      saveImgBtn.disabled = true;
+      gennaiState.imageUrl = url;
+      const ok = await saveGennai(session.code, gennaiState);
+      saveImgBtn.disabled = false;
+      const statusEl = document.getElementById('gennai-image-status');
+      if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore di salvataggio, riprova.'; return; }
+      render();
+    };
+    const speakBtn = document.getElementById('btn-gennai-speak');
+    if(speakBtn) speakBtn.onclick = async ()=>{
+      const ta = document.getElementById('gennai-new-text');
+      const text = ta.value.trim();
+      const statusEl = document.getElementById('gennai-speak-status');
+      if(!text){ statusEl.textContent = 'Scrivi una battuta per Gennai prima di inviarla.'; return; }
+      speakBtn.disabled = true;
+      const next = {
+        imageUrl: gennaiState.imageUrl || '',
+        text,
+        id: 'g' + Date.now() + Math.random().toString(36).slice(2,6),
+        ts: Date.now(),
+        locked: false,
+        reply: null
+      };
+      const ok = await saveGennai(session.code, next);
+      speakBtn.disabled = false;
+      if(!ok){ statusEl.textContent = '⚠ Errore di salvataggio, riprova.'; return; }
+      gennaiState = next;
+      render();
+    };
+  }
+
+  // ---------- PANNELLO GIOCATORE: risposta (un solo slot condiviso dal gruppo) ----------
+  function playerPanelHTML(){
+    if(!gennaiState.text){
+      return '';
+    }
+    if(gennaiState.locked){
+      const reply = gennaiState.reply;
+      return `
+        <div class="hud-frame card">
+          <div class="section-title">💬 Risposta a Gennai</div>
+          ${reply ? `<div class="gennai-reply-sent"><b>${escapeHTML(reply.displayName||reply.username)}</b> ha risposto: <span class="sub">${escapeHTML(reply.text)}</span></div>` : ''}
+          <div class="muted" style="margin-top:8px;">Il gruppo ha già usato la sua unica risposta a questa battuta. L'opzione si sblocca quando Gennai riparla.</div>
+        </div>
+      `;
+    }
+    return `
+      <div class="hud-frame card">
+        <div class="section-title">💬 Rispondi a Gennai</div>
+        <div class="muted" style="margin-bottom:8px;">Il gruppo ha a disposizione UNA sola risposta per questa battuta — appena qualcuno la invia, si blocca per tutti finché Gennai non riparla.</div>
+        <div class="field"><textarea id="gennai-reply-text" rows="3" placeholder="Cosa rispondete a Gennai..."></textarea></div>
+        <button class="btn solid" id="btn-gennai-reply">Invia la risposta del gruppo</button>
+        <div class="err" id="gennai-reply-status"></div>
+      </div>
+    `;
+  }
+
+  function bindPlayerPanel(){
+    const replyBtn = document.getElementById('btn-gennai-reply');
+    if(!replyBtn) return;
+    replyBtn.onclick = async ()=>{
+      const ta = document.getElementById('gennai-reply-text');
+      const text = ta.value.trim();
+      const statusEl = document.getElementById('gennai-reply-status');
+      if(!text){ statusEl.textContent = 'Scrivi una risposta prima di inviarla.'; return; }
+      replyBtn.disabled = true;
+      // Rilegge lo stato fresco subito prima di inviare, per ridurre il rischio che due
+      // giocatori rispondano quasi in contemporanea, o che Gennai sia già tornato a parlare
+      // (nuovo id) mentre si stava scrivendo — in quel caso la risposta non parte più.
+      const fresh = await getGennai(session.code);
+      if(fresh.id !== gennaiState.id || fresh.locked){
+        gennaiState = fresh;
+        replyBtn.disabled = false;
+        render();
+        return;
+      }
+      const me = myMember();
+      fresh.locked = true;
+      fresh.reply = { text, username: session.username, displayName: me ? displayName(me) : session.username, ts: Date.now() };
+      const ok = await saveGennai(session.code, fresh);
+      if(!ok){ if(statusEl) statusEl.textContent = '⚠ Errore di invio, riprova.'; replyBtn.disabled = false; return; }
+      gennaiState = fresh;
+      render();
+    };
+  }
+
+  // ---------- POLLING ----------
+  async function refresh(){
+    if(!session) return;
+    if(isFieldFocused()) return; // non interrompere chi sta scrivendo (Master o giocatore)
+    gennaiState = await getGennai(session.code);
+    render();
+  }
+  function startPolling(){
+    if(pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(refresh, 6000);
+  }
+
+  async function boot(){
+    session = loadSession();
+    if(!session || !session.code || !session.username){
+      renderLogin();
+      return;
+    }
+    gennaiState = await getGennai(session.code);
+    cachedRoster = await getRoster(session.code);
+    render();
+    startPolling();
+  }
+
+  boot();
+})();
+</script>
+
+<!-- ===== Widget Audio Persistente: musica di sottofondo (fissa) + suoni click ===== -->
+<audio id="dvos-bg-music" loop preload="none" style="display:none;"></audio>
+<div id="dvos-audio-widget" style="position:fixed;bottom:10px;right:10px;z-index:9999;background:var(--panel,#0f1115);border:1px solid var(--line,#2a2f3a);border-radius:8px;padding:6px 10px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text,#cfd6e4);box-shadow:0 2px 10px rgba(0,0,0,0.5);">
+  <button id="dvos-music-toggle" title="Musica di sottofondo: on/off" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;">🔊</button>
+  <input type="range" id="dvos-music-volume" min="0" max="100" value="50" style="width:64px;" title="Volume musica" />
+  <button id="dvos-click-toggle" title="Suoni click: on/off" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;">🖱️</button>
+</div>
+<script>
+(function(){
+  const FIXED_BG_MUSIC_URL = 'https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787069260083_hho28k.mpeg';
+  const musicEl = document.getElementById('dvos-bg-music');
+  if(musicEl && FIXED_BG_MUSIC_URL){
+    fetch(FIXED_BG_MUSIC_URL).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.blob(); })
+      .then(blob=>{
+        musicEl.src = URL.createObjectURL(blob);
+        if(!prefs.musicMuted && window.__dvosUnlocked) musicEl.play().catch(()=>{});
+      })
+      .catch(e=>{ console.warn('Musica di sottofondo: impossibile caricarla (' + e.message + ')'); });
+  }
+  const PREFS_KEY = 'dvos_audio_prefs_v1';
+  function loadPrefs(){
+    try{ return Object.assign({musicVolume:0.5, musicMuted:false, clickMuted:false}, JSON.parse(localStorage.getItem(PREFS_KEY)||'{}')); }
+    catch(e){ return {musicVolume:0.5, musicMuted:false, clickMuted:false}; }
+  }
+  function savePrefs(p){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(p)); }catch(e){} }
+  const prefs = loadPrefs();
+
+  const musicToggleBtn = document.getElementById('dvos-music-toggle');
+  const musicVolumeInp = document.getElementById('dvos-music-volume');
+  const clickToggleBtn = document.getElementById('dvos-click-toggle');
+
+  function applyMusicVolume(){
+    if(!musicEl) return;
+    musicEl.volume = prefs.musicMuted ? 0 : prefs.musicVolume;
+    if(prefs.musicMuted && !musicEl.paused) musicEl.pause();
+  }
+  function refreshUI(){
+    if(musicToggleBtn) musicToggleBtn.textContent = prefs.musicMuted ? '🔇' : '🔊';
+    if(musicVolumeInp) musicVolumeInp.value = Math.round(prefs.musicVolume*100);
+    if(clickToggleBtn) clickToggleBtn.style.opacity = prefs.clickMuted ? '0.4' : '1';
+    applyMusicVolume();
+  }
+  refreshUI();
+
+  if(musicToggleBtn) musicToggleBtn.onclick = ()=>{
+    prefs.musicMuted = !prefs.musicMuted;
+    savePrefs(prefs);
+    refreshUI();
+    if(!prefs.musicMuted && musicEl && musicEl.paused && musicEl.src) musicEl.play().catch(()=>{});
+  };
+  if(musicVolumeInp) musicVolumeInp.oninput = ()=>{
+    prefs.musicVolume = Number(musicVolumeInp.value)/100;
+    if(prefs.musicVolume>0) prefs.musicMuted = false;
+    savePrefs(prefs);
+    refreshUI();
+  };
+  if(clickToggleBtn) clickToggleBtn.onclick = ()=>{
+    prefs.clickMuted = !prefs.clickMuted;
+    savePrefs(prefs);
+    refreshUI();
+  };
+
+  let unlocked = false;
+  function unlock(){
+    if(unlocked) return;
+    unlocked = true;
+    window.__dvosUnlocked = true;
+    if(!prefs.musicMuted && musicEl && musicEl.src) musicEl.play().catch(()=>{});
+    ['click','keydown','touchend'].forEach(ev=>document.removeEventListener(ev, unlock, true));
+  }
+  ['click','keydown','touchend'].forEach(ev=>document.addEventListener(ev, unlock, { capture:true }));
+
+  const CLICK_SFX_URL = "https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787070670792_1jktvp.mpeg";
+  function __playClickSfx(){
+    if(prefs.clickMuted) return;
+    try{
+      const a = new Audio(CLICK_SFX_URL);
+      a.volume = 0.5;
+      a.play().catch(()=>{});
+    }catch(e){}
+  }
+  document.addEventListener('click', function(e){
+    if(e.target.closest('input, textarea, select')) return;
+    __playClickSfx();
+  }, true);
+})();
+</script>
+<!-- ===== fine Widget Audio Persistente ===== -->
+
+</body>
+</html>

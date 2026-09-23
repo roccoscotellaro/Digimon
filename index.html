@@ -3483,6 +3483,7 @@ let editingScene = false;
         ${session ? `<a href="map.html" target="_blank" class="btn ghost small" style="text-decoration:none;">🗺️ Mappa</a>` : ''}
         ${session ? `<a href="player.html" target="_blank" class="btn ghost small" style="text-decoration:none;">👤 Giocatore</a>` : ''}
         ${session ? `<a href="digimon.html" target="_blank" class="btn ghost small" style="text-decoration:none;">👾 Digimon</a>` : ''}
+        ${session && session.role==='master' ? `<a href="gennai.html" target="_blank" class="btn ghost small" style="text-decoration:none;">🔮 Gennai</a>` : ''}
         ${session ? `<a href="DDA2E_Indice_Regole.html" target="_blank" class="btn ghost small" style="text-decoration:none;">📜 Regole</a>` : ''}
         ${session ? `<button class="btn ghost small" id="btn-open-missions">📋 Missioni</button>` : ''}
         ${session ? `<button class="btn ghost small" id="btn-logout">Esci</button>` : ''}

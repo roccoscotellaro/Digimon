@@ -21,8 +21,22 @@
 //     updated_at timestamptz not null default now()
 //   );
 //
+//   ?resource=gennai        -> Pagina Gennai (tabella gennai_state)
+//     Aggiunta 2026-09-23 ("una pagina con Gennai che parla ai giocatori, con una nuvoletta e un
+//     solo messaggio di risposta condiviso finché non riparla"), usata da gennai.html. Stessa
+//     identica forma di combat/gameclock/automsg (una riga JSONB per campagna). `data` contiene
+//     { imageUrl, text, id, ts, locked, reply:{text,username,displayName,ts}|null } — vedi i
+//     commenti in gennai.html per il dettaglio del formato. Migrazione SQL da eseguire UNA VOLTA
+//     sul SQL Editor di Supabase:
+//
+//   create table if not exists gennai_state (
+//     campaign_code text primary key,
+//     data jsonb not null default '{}'::jsonb,
+//     updated_at timestamptz not null default now()
+//   );
+//
 // Le risposte hanno la stessa forma di prima ({combat}, {progression}, {scene}, {gameclock},
-// {automsg}), quindi lato client cambia solo l'URL.
+// {automsg}, {gennai}), quindi lato client cambia solo l'URL.
 // Serve a restare sotto il limite di 12 Serverless Functions del piano Vercel Hobby.
 const { supabase, cleanCode } = require('../lib/db');
 
@@ -31,7 +45,8 @@ const TABLES = {
   progression: 'progression',
   scene: 'scenes',
   gameclock: 'game_clock',
-  automsg: 'auto_message_settings'
+  automsg: 'auto_message_settings',
+  gennai: 'gennai_state'
 };
 
 // Il client manda i flag in camelCase (campaignLevel, blastEvolutionEnabled, ...) ma li rilegge
@@ -112,7 +127,7 @@ module.exports = async (req, res) => {
     const resource = query.resource || body.resource;
 
     if (!resource || !TABLES[resource]) {
-      return res.status(400).json({ error: 'resource mancante o non valida (usa combat, progression, scene, gameclock o automsg)' });
+      return res.status(400).json({ error: 'resource mancante o non valida (usa combat, progression, scene, gameclock, automsg o gennai)' });
     }
     const table = TABLES[resource];
 
@@ -136,6 +151,9 @@ module.exports = async (req, res) => {
       if (resource === 'automsg') {
         return res.status(200).json({ automsg: data ? data.data : null });
       }
+      if (resource === 'gennai') {
+        return res.status(200).json({ gennai: data ? data.data : null });
+      }
       if (resource === 'progression') {
         return res.status(200).json({ progression: data || { milestone: 0, xp: 0, inspiration: 0 } });
       }
@@ -150,7 +168,7 @@ module.exports = async (req, res) => {
       await supabase.from('campaigns').upsert({ code: campaignCode }, { onConflict: 'code' });
 
       let row;
-      if (resource === 'combat' || resource === 'gameclock' || resource === 'automsg') {
+      if (resource === 'combat' || resource === 'gameclock' || resource === 'automsg' || resource === 'gennai') {
         row = {
           campaign_code: campaignCode,
           data: body.data || {},
