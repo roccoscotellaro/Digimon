@@ -846,7 +846,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       // replySnippetFromEntry sopra) — solo lettura, nessun link/jump-to per restare semplice.
       const replyQuoteHTML = (l.meta && l.meta.replyTo) ? `<div class="log-reply-quote" style="border-left:2px solid var(--cyan-dim);padding-left:6px;margin-bottom:4px;font-size:10.5px;opacity:0.82;">↩ <b>${escapeHTML(l.meta.replyTo.who)}</b>: ${escapeHTML(l.meta.replyTo.text)}</div>` : '';
       return `
-      <div class="log-entry ${l.role}">
+      <div class="log-entry ${l.role}" data-entry-id="${l.id}">
         <div class="flex-between">
           <div>${(()=>{ const __av = resolveLogAvatar(l); return __av ? `<img class="who-avatar" src="${escapeAttr(__av)}" data-avatar-expand="${escapeAttr(__av)}" style="cursor:zoom-in;" onerror="this.style.display='none'" />` : ''; })()}<span class="who mono" ${l.meta && l.meta.color ? `style="color:${escapeAttr(l.meta.color)};"` : ''}>${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span></div>
           <div><button class="btn ghost small" data-log-reply="${l.id}" style="padding:2px 6px;touch-action:manipulation;" title="Rispondi">↩</button>${canModerate ? `<button class="btn ghost small" data-log-move-up="${l.id}" style="padding:2px 6px;touch-action:manipulation;" title="Sposta su (prima nel Registro)">▲</button><button class="btn ghost small" data-log-move-down="${l.id}" style="padding:2px 6px;touch-action:manipulation;" title="Sposta giù (dopo nel Registro)">▼</button><button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;touch-action:manipulation;">✎</button><button class="btn ghost small" data-log-del="${l.id}" style="padding:2px 6px;touch-action:manipulation;">✕</button>` : ''}</div>
@@ -1087,32 +1087,54 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       // checkbox nel banner "Rispondi" (che sposta solo il messaggio CITATO, e solo al momento
       // di una risposta), questi due bottoni — visibili solo al Master (canModerate) — permettono
       // di riordinare QUALSIASI messaggio del Registro liberamente, un passo alla volta, in
-      // qualunque momento. Lavorano sull'ordine ATTUALMENTE VISUALIZZATO (cioè già passato da
-      // applyManualReorder, così partono sempre da dove l'occhio del Master lo vede e non dalla
-      // posizione cronologica "originale" se il messaggio era già stato spostato prima) e
-      // scambiano la entry cliccata con il suo vicino immediato marcando UNA SOLA delle due con
-      // meta.reorderBeforeId (vedi applyManualReorder/BUGFIX in testa al file): per "Sposta su"
-      // si marca la entry stessa (deve comparire prima del suo vicino precedente); per "Sposta
-      // giù" si marca invece il vicino successivo (deve comparire prima della entry, che così
-      // resta ferma ma il vicino le passa davanti). Click ripetuti incatenano più spostamenti,
-      // risolti a più passate da applyManualReorder.
+      // qualunque momento. Scambiano la entry cliccata con il suo vicino immediato marcando UNA
+      // SOLA delle due con meta.reorderBeforeId (vedi applyManualReorder/BUGFIX in testa al
+      // file): per "Sposta su" si marca la entry stessa (deve comparire prima del suo vicino
+      // precedente); per "Sposta giù" si marca invece il vicino successivo (deve comparire prima
+      // della entry, che così resta ferma ma il vicino le passa davanti). Click ripetuti
+      // incatenano più spostamenti, risolti a più passate da applyManualReorder.
+      //
+      // BUGFIX 2026-09-23 #1 (Rocco: "alcuni messaggi sembrano non spostarsi"): la primissima
+      // versione calcolava il vicino con applyManualReorder(sourceLog) — ma sourceLog è
+      // SEMPRE il log COMPLETO della campagna/thread (cachedLog/cachedMasterPrivateLog/
+      // cachedSubgroupLog/playerActiveChatLog), mentre quello effettivamente RENDERIZZATO a
+      // schermo da logHTML può essere un SOTTOINSIEME filtrato (filterByLocation, "Storico per
+      // Settore" — vedi i call site di logHTML in index.html/js/private-chat.js/js/subgroups.js).
+      // Con un filtro di posizione attivo, il "vicino" calcolato sul log completo poteva essere
+      // un messaggio NON visibile in quel momento: il riordino veniva comunque applicato (su un
+      // messaggio nascosto), ma i due messaggi VISIBILI a schermo restavano nello stesso ordine,
+      // quindi sembrava che il click non avesse alcun effetto. Il DOM già visualizzato è invece
+      // sempre corretto per definizione (qualunque filtro sia attivo), quindi ora il vicino si
+      // legge direttamente dai `.log-entry` renderizzati intorno al bottone cliccato (vedi
+      // data-entry-id aggiunto a ogni `.log-entry` più sopra), non più dall'array in memoria.
+      //
+      // BUGFIX 2026-09-23 #2 (stesso sintomo, causa diversa — scoperta rivedendo la funzione):
+      // alternando ▲/▼ sulla stessa coppia di messaggi (es. ▲ su Y per scambiarlo con X, poi ▲ di
+      // nuovo su X, ora spostato dopo Y) si potevano marcare A e B ENTRAMBI l'uno "prima" dell'
+      // altro (A.reorderBeforeId=B e B.reorderBeforeId=A insieme) — un ciclo che applyManualReorder
+      // non riesce mai a risolvere (nessuno dei due bersagli è mai raggiungibile, essendo a sua
+      // volta marcato), quindi finiscono ENTRAMBI spinti in fondo al Registro invece di scambiarsi:
+      // sembra che "non si spostino" quando in realtà sono stati catapultati altrove. Prima di
+      // marcare il nuovo bersaglio, controlliamo quindi se punta già indietro verso chi stiamo per
+      // spostare, e in quel caso lo sblocchiamo (reorderBeforeId:null, rimosso via merge — vedi
+      // editLogEntry) prima di procedere.
       if(moveUpBtn || moveDownBtn){
         const btn = moveUpBtn || moveDownBtn;
         const id = btn.getAttribute(moveUpBtn ? 'data-log-move-up' : 'data-log-move-down');
-        const displayed = applyManualReorder(sourceLog || []);
-        const idx = displayed.findIndex(l=>String(l.id)===String(id));
-        if(idx!==-1){
-          if(moveUpBtn && idx>0){
-            const entry = displayed[idx];
-            const prev = displayed[idx-1];
-            await editLogEntry(code, entry.id, undefined, thread, { meta: { reorderBeforeId: prev.id } });
-            if(onChanged) onChanged();
-          } else if(moveDownBtn && idx<displayed.length-1){
-            const entry = displayed[idx];
-            const next = displayed[idx+1];
-            await editLogEntry(code, next.id, undefined, thread, { meta: { reorderBeforeId: entry.id } });
-            if(onChanged) onChanged();
+        const entryDiv = btn.closest('.log-entry');
+        const neighborDiv = entryDiv ? (moveUpBtn ? entryDiv.previousElementSibling : entryDiv.nextElementSibling) : null;
+        const neighborId = neighborDiv ? neighborDiv.getAttribute('data-entry-id') : null;
+        if(neighborId!=null){
+          // "mover" = l'entry a cui stiamo per assegnare il NUOVO reorderBeforeId; "targetId" = il
+          // bersaglio davanti a cui deve comparire (vedi commento sopra i bottoni in logHTML).
+          const moverId = moveUpBtn ? id : neighborId;
+          const targetId = moveUpBtn ? neighborId : id;
+          const targetEntry = (sourceLog||[]).find(l=>String(l.id)===String(targetId));
+          if(targetEntry && targetEntry.meta && String(targetEntry.meta.reorderBeforeId)===String(moverId)){
+            await editLogEntry(code, targetId, undefined, thread, { meta: { reorderBeforeId: null } });
           }
+          await editLogEntry(code, moverId, undefined, thread, { meta: { reorderBeforeId: targetId } });
+          if(onChanged) onChanged();
         }
       }
       if(fulfillBtn && me){
