@@ -6,7 +6,7 @@
 <title>Gennai — Digimon: Digital Adventures 2E</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Manrope:wght@400;500;700;800&family=Press+Start+2P&display=swap" rel="stylesheet">
 
 <!--
   js/gennai.html — nuova pagina standalone (richiesta Rocco 2026-09-23: "vorrei costruire una
@@ -42,8 +42,24 @@
       ts: number,                       // quando questa battuta è stata dettata
       locked: boolean,                  // true = lo slot di risposta per QUESTA battuta è già
                                          // stato usato da un giocatore
-      reply: {text, username, displayName, ts} | null   // l'unica risposta inviata (visibile a
+      reply: {text, username, displayName, ts} | null,  // l'unica risposta inviata (visibile a
                                          // tutti), null se nessuno ha ancora risposto
+      visible: boolean,                 // false = il Master lo ha fatto "sparire" dalla scena
+                                         // (Aggiunta 2026-09-23, "un'opzione per far sparire
+                                         // Gennai"): niente ritratto né nuvoletta per i
+                                         // giocatori, solo il palcoscenico animato vuoto.
+                                         // Torna true in automatico appena il Master lo fa
+                                         // riparlare (vedi btn-gennai-speak), oppure puo' essere
+                                         // rimesso a true manualmente con "Fallo riapparire ora"
+                                         // senza cambiare la battuta attuale.
+      unlocked: boolean                 // false di default (Aggiunta 2026-09-23, "vorrei
+                                         // scegliere io quando farlo apparire"): gate separato da
+                                         // `visible`, a livello di PAGINA invece che di
+                                         // personaggio — finché il Master non lo mette a true
+                                         // (pulsante "🔓 Rendi disponibile"), un giocatore che
+                                         // apre gennai.html e fa login vede solo un messaggio di
+                                         // attesa, mai lo stage/le battute/il tasto di risposta.
+                                         // Il Master vede sempre tutto, qualunque sia il valore.
     }
   Il Master che fa parlare Gennai di nuovo sovrascrive SEMPRE id/text/ts e azzera locked/reply —
   è questo che "sblocca" la possibilità di rispondere per tutto il gruppo.
@@ -161,20 +177,35 @@
   .gennai-portrait img{ max-width:100%; max-height:100%; width:auto; height:auto; object-fit:contain; image-rendering:pixelated; filter:drop-shadow(0 6px 18px rgba(53,232,201,0.25)); }
   .gennai-portrait .placeholder{ font-size:64px; opacity:0.3; margin-bottom:20px; }
   .gennai-bubble{
-    position:relative; z-index:2; max-width:480px; width:100%; margin:20px auto 0;
-    background:var(--panel); border:1px solid var(--cyan-dim); border-radius:10px;
-    padding:14px 18px; box-shadow:0 0 22px rgba(53,232,201,0.15);
-    animation: gennaiBubbleIn 0.4s ease;
+    position:relative; z-index:2; max-width:480px; width:100%; margin:24px auto 0;
+    background:#ffffff; border:4px solid #1a1a1a; border-radius:0;
+    padding:18px 22px; box-shadow:6px 6px 0 #1a1a1a;
+    animation: gennaiBubbleIn 0.25s steps(3);
+    image-rendering:pixelated;
+    clip-path: polygon(
+      0 8px, 8px 8px, 8px 0,
+      calc(100% - 8px) 0, calc(100% - 8px) 8px, 100% 8px,
+      100% calc(100% - 8px), calc(100% - 8px) calc(100% - 8px), calc(100% - 8px) 100%,
+      8px 100%, 8px calc(100% - 8px), 0 calc(100% - 8px)
+    );
   }
+  /* Freccetta a scalini "pixel" (griglia 8px, triangolo 5-3-1 blocchi) invece del triangolo liscio */
   .gennai-bubble::before{
-    content:''; position:absolute; top:-9px; left:50%; transform:translateX(-50%);
-    border-left:9px solid transparent; border-right:9px solid transparent; border-bottom:9px solid var(--cyan-dim);
+    content:''; position:absolute; top:-24px; left:50%; margin-left:-4px;
+    width:8px; height:8px; background:#1a1a1a;
+    box-shadow:
+      -8px 8px 0 #1a1a1a, 0 8px 0 #1a1a1a, 8px 8px 0 #1a1a1a,
+      -16px 16px 0 #1a1a1a, -8px 16px 0 #1a1a1a, 0 16px 0 #1a1a1a, 8px 16px 0 #1a1a1a, 16px 16px 0 #1a1a1a;
   }
   @keyframes gennaiBubbleIn{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
-  .gennai-bubble-text{ white-space:pre-wrap; line-height:1.5; }
+  .gennai-bubble-text{
+    white-space:pre-wrap; line-height:1.9; color:#1a1a1a;
+    font-family:'Press Start 2P','Share Tech Mono',monospace; font-size:11px; letter-spacing:0.02em;
+  }
   .gennai-bubble-empty{ position:relative; z-index:2; margin-top:18px; text-align:center; }
 
   .gennai-reply-sent{ background:var(--panel-2); border:1px solid var(--line); border-radius:6px; padding:10px 12px; margin-top:8px; font-size:13px; }
+  .gennai-absent{ position:relative; z-index:2; font-size:12px; text-align:center; }
 </style>
 </head>
 <body>
@@ -222,7 +253,13 @@
     }catch(e){ lastApiError = 'Impossibile contattare il server.'; return null; }
   }
 
-  const GENNAI_DEFAULT = { imageUrl:'', text:'', id:null, ts:null, locked:false, reply:null };
+  // `unlocked` (Aggiunta 2026-09-23, "vorrei scegliere io quando farlo apparire"): gate separato
+  // da `visible` — `visible` controlla se GENNAI IN SCENA è presente o "sparito" (una volta che i
+  // giocatori possono già usare la pagina), mentre `unlocked` controlla se la PAGINA STESSA è
+  // già stata aperta ai giocatori. Di default false: chi ha il link a gennai.html può fare login,
+  // ma finché il Master non la sblocca vede solo un messaggio di attesa (vedi render()). Il
+  // Master vede sempre tutto, indipendentemente da `unlocked`, per poter preparare la pagina.
+  const GENNAI_DEFAULT = { imageUrl:'', text:'', id:null, ts:null, locked:false, reply:null, visible:true, unlocked:false };
   async function getGennai(code){
     const d = await apiGet('/api/state?resource=gennai&code=' + encodeURIComponent(code));
     return Object.assign({}, GENNAI_DEFAULT, d ? (d.gennai||{}) : {});
@@ -361,6 +398,22 @@
   function render(){
     if(!gennaiState){ return; }
     const master = isMaster();
+    // Un giocatore che apre il link prima che il Master abbia sbloccato la pagina vede solo un
+    // messaggio di attesa (il Master, invece, vede sempre tutto, per poter preparare la pagina).
+    if(!master && !gennaiState.unlocked){
+      root.innerHTML = `
+        <div style="max-width:760px;margin:0 auto;">
+          ${topbarHTML()}
+          <div class="hud-frame card" style="text-align:center;padding:48px 20px;">
+            <div style="font-size:32px;margin-bottom:12px;">🔒</div>
+            <div class="muted">Questa pagina non è ancora disponibile. Il Master la aprirà quando sarà il momento.</div>
+          </div>
+        </div>
+      `;
+      bindTopbar();
+      return;
+    }
+    const showGennai = gennaiState.visible !== false;
     root.innerHTML = `
       <div style="max-width:760px;margin:0 auto;">
         ${topbarHTML()}
@@ -369,19 +422,23 @@
           <div class="gennai-stage">
             <div class="gennai-stage-grid"></div>
             ${particlesHTML()}
-            <div class="gennai-portrait-wrap">
-              <div class="gennai-portrait-glow"></div>
-              <div class="gennai-portrait">
-                ${gennaiState.imageUrl ? `<img src="${escapeAttr(gennaiState.imageUrl)}" onerror="this.style.display='none'" />` : `<span class="placeholder">🖥️</span>`}
+            ${showGennai ? `
+              <div class="gennai-portrait-wrap">
+                <div class="gennai-portrait-glow"></div>
+                <div class="gennai-portrait">
+                  ${gennaiState.imageUrl ? `<img src="${escapeAttr(gennaiState.imageUrl)}" onerror="this.style.display='none'" />` : `<span class="placeholder">🖥️</span>`}
+                </div>
               </div>
-            </div>
-            <div id="gennai-bubble-area"></div>
+              <div id="gennai-bubble-area"></div>
+            ` : `
+              <div class="gennai-absent muted">${master ? '👻 Gennai è nascosto ai giocatori.' : ''}</div>
+            `}
           </div>
         </div>
         ${master ? masterPanelHTML() : playerPanelHTML()}
       </div>
     `;
-    renderBubbleArea();
+    if(showGennai) renderBubbleArea();
     bindTopbar();
     if(master) bindMasterPanel(); else bindPlayerPanel();
   }
@@ -406,6 +463,17 @@
   // ---------- PANNELLO MASTER: immagine + dettatura battuta + stato risposta ----------
   function masterPanelHTML(){
     return `
+      <div class="hud-frame card" style="border-color:${gennaiState.unlocked?'var(--cyan-dim)':'var(--amber)'};">
+        <div class="section-title">🔓 Accesso alla pagina</div>
+        ${gennaiState.unlocked ? `
+          <div class="muted" style="margin-bottom:8px;">✅ La pagina è disponibile: chi ha il link può già vederla ed entrare.</div>
+          <button class="btn ghost small" id="btn-gennai-lock">🔒 Rendi di nuovo non disponibile</button>
+        ` : `
+          <div class="muted" style="margin-bottom:8px;">🔒 La pagina NON è ancora disponibile: se un giocatore apre il link vede solo un messaggio di attesa. Preparala con calma (immagine, prima battuta) e sblocca quando sei pronto.</div>
+          <button class="btn solid small" id="btn-gennai-unlock">🔓 Rendi disponibile la pagina ai giocatori</button>
+        `}
+        <div class="err" id="gennai-unlock-status"></div>
+      </div>
       <div class="hud-frame card">
         <div class="section-title">🛠️ Ritratto di Gennai (solo Master)</div>
         <div class="field"><label>URL Immagine</label>
@@ -419,11 +487,22 @@
       </div>
       <div class="hud-frame card">
         <div class="section-title">📣 Fai parlare Gennai</div>
-        <div class="muted" style="margin-bottom:8px;">Scrivendo una nuova battuta, la nuvoletta si aggiorna per tutti e lo slot di risposta dei giocatori si sblocca di nuovo.</div>
+        <div class="muted" style="margin-bottom:8px;">Scrivendo una nuova battuta, la nuvoletta si aggiorna per tutti, Gennai ricompare se era nascosto, e lo slot di risposta dei giocatori si sblocca di nuovo.</div>
         <div class="field"><textarea id="gennai-new-text" rows="3" placeholder="Cosa dice Gennai ora..."></textarea></div>
         <button class="btn solid" id="btn-gennai-speak">📣 Fai parlare Gennai</button>
         <div class="err" id="gennai-speak-status"></div>
         ${gennaiState.text ? `<div class="muted" style="margin-top:14px;">Stato risposta dei giocatori a questa battuta:</div>${gennaiReplyStatusHTML()}` : ''}
+      </div>
+      <div class="hud-frame card">
+        <div class="section-title">👻 Presenza sulla scena</div>
+        ${gennaiState.visible!==false ? `
+          <div class="muted" style="margin-bottom:8px;">Gennai è visibile ai giocatori. Puoi farlo sparire dalla scena — tornerà visibile in automatico non appena lo farai riparlare.</div>
+          <button class="btn ghost small" id="btn-gennai-vanish">👻 Fai sparire Gennai</button>
+        ` : `
+          <div class="muted" style="margin-bottom:8px;">Gennai è nascosto: i giocatori vedono solo il palcoscenico vuoto. Tornerà da solo quando lo farai riparlare, oppure puoi riportarlo subito.</div>
+          <button class="btn small" id="btn-gennai-reveal">✨ Fallo riapparire ora</button>
+        `}
+        <div class="err" id="gennai-visibility-status"></div>
       </div>
     `;
   }
@@ -436,6 +515,26 @@
   }
 
   function bindMasterPanel(){
+    const unlockBtn = document.getElementById('btn-gennai-unlock');
+    if(unlockBtn) unlockBtn.onclick = async ()=>{
+      unlockBtn.disabled = true;
+      const prev = gennaiState.unlocked;
+      gennaiState.unlocked = true;
+      const ok = await saveGennai(session.code, gennaiState);
+      const statusEl = document.getElementById('gennai-unlock-status');
+      if(!ok){ gennaiState.unlocked = prev; unlockBtn.disabled = false; if(statusEl) statusEl.textContent = '⚠ Errore di salvataggio, riprova.'; return; }
+      render();
+    };
+    const lockBtn = document.getElementById('btn-gennai-lock');
+    if(lockBtn) lockBtn.onclick = async ()=>{
+      lockBtn.disabled = true;
+      const prev = gennaiState.unlocked;
+      gennaiState.unlocked = false;
+      const ok = await saveGennai(session.code, gennaiState);
+      const statusEl = document.getElementById('gennai-unlock-status');
+      if(!ok){ gennaiState.unlocked = prev; lockBtn.disabled = false; if(statusEl) statusEl.textContent = '⚠ Errore di salvataggio, riprova.'; return; }
+      render();
+    };
     bindImageUpload('gennai-image-url', 'gennai-image-status');
     const saveImgBtn = document.getElementById('btn-save-image');
     if(saveImgBtn) saveImgBtn.onclick = async ()=>{
@@ -461,7 +560,8 @@
         id: 'g' + Date.now() + Math.random().toString(36).slice(2,6),
         ts: Date.now(),
         locked: false,
-        reply: null
+        reply: null,
+        visible: true
       };
       const ok = await saveGennai(session.code, next);
       speakBtn.disabled = false;
@@ -469,11 +569,31 @@
       gennaiState = next;
       render();
     };
+    const vanishBtn = document.getElementById('btn-gennai-vanish');
+    if(vanishBtn) vanishBtn.onclick = async ()=>{
+      vanishBtn.disabled = true;
+      const prev = gennaiState.visible;
+      gennaiState.visible = false;
+      const ok = await saveGennai(session.code, gennaiState);
+      const statusEl = document.getElementById('gennai-visibility-status');
+      if(!ok){ gennaiState.visible = prev; vanishBtn.disabled = false; if(statusEl) statusEl.textContent = '⚠ Errore di salvataggio, riprova.'; return; }
+      render();
+    };
+    const revealBtn = document.getElementById('btn-gennai-reveal');
+    if(revealBtn) revealBtn.onclick = async ()=>{
+      revealBtn.disabled = true;
+      const prev = gennaiState.visible;
+      gennaiState.visible = true;
+      const ok = await saveGennai(session.code, gennaiState);
+      const statusEl = document.getElementById('gennai-visibility-status');
+      if(!ok){ gennaiState.visible = prev; revealBtn.disabled = false; if(statusEl) statusEl.textContent = '⚠ Errore di salvataggio, riprova.'; return; }
+      render();
+    };
   }
 
   // ---------- PANNELLO GIOCATORE: risposta (un solo slot condiviso dal gruppo) ----------
   function playerPanelHTML(){
-    if(!gennaiState.text){
+    if(!gennaiState.text || gennaiState.visible===false){
       return '';
     }
     if(gennaiState.locked){
