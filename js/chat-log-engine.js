@@ -35,19 +35,33 @@
 // gestito da un 7° parametro opzionale `onReply` di attachLogModeration.
 //
 // "Riordinare un messaggio nella cronologia" (richiesta utente, aggiunta 2026-09-22, insieme a
-// "parlare come un giocatore" — vedi tamer: più sotto): il banner di risposta disegnato da
-// renderReplyBanner ora offre anche un checkbox "📌 Sposta il messaggio citato qui" — se spuntato
-// al momento dell'invio della risposta, il messaggio ORIGINALE (quello a cui si sta rispondendo)
-// viene ripristinato subito DOPO la nuova risposta nell'ORDINE CON CUI COMPARE nel Registro (utile
-// per un risultato di tiro arrivato in ritardo, o comunque "fuori posto" rispetto al resto della
-// conversazione). Non cambia MAI l'orario mostrato sul messaggio né lo sposta in un altro canale
-// (Generale/Privata/Sottogruppo): resta esattamente dov'era salvato, cambia solo la sua posizione
-// visuale in QUESTO stesso registro. Implementato con un solo campo nuovo in meta (meta.
-// reorderAfterId = id di un'altra entry dello stesso log, fuso via editLogEntry/PUT come già
-// avviene per meta.moveVotes/moveResolved — vedi log.js) più applyManualReorder, richiamata da
-// logHTML PRIMA del rendering per riposizionare le entry marcate, senza toccare l'id/l'orario
-// reale di nessuna riga sul server. maybeApplyReplyMove (poco più sotto) è l'helper condiviso dai 4
-// composer per applicare lo spostamento subito dopo l'invio riuscito della risposta.
+// "parlare come un giocatore" — vedi tamer: più sotto; corretta il 2026-09-23 — vedi sotto): il
+// banner di risposta disegnato da renderReplyBanner offre anche un checkbox "📌 Sposta il
+// messaggio citato qui" — se spuntato al momento dell'invio della risposta, il messaggio
+// ORIGINALE (quello a cui si sta rispondendo) viene ripristinato subito PRIMA della nuova
+// risposta nell'ORDINE CON CUI COMPARE nel Registro (utile per un risultato di tiro arrivato in
+// ritardo, o comunque "fuori posto" rispetto al resto della conversazione). Non cambia MAI
+// l'orario mostrato sul messaggio né lo sposta in un altro canale (Generale/Privata/Sottogruppo):
+// resta esattamente dov'era salvato, cambia solo la sua posizione visuale in QUESTO stesso
+// registro. Implementato con un solo campo nuovo in meta (meta.reorderBeforeId = id di un'altra
+// entry dello stesso log DAVANTI a cui questa entry deve comparire, fuso via editLogEntry/PUT
+// come già avviene per meta.moveVotes/moveResolved — vedi log.js) più applyManualReorder,
+// richiamata da logHTML PRIMA del rendering per riposizionare le entry marcate, senza toccare
+// l'id/l'orario reale di nessuna riga sul server. maybeApplyReplyMove (poco più sotto) è l'helper
+// condiviso dai 4 composer per applicare lo spostamento subito dopo l'invio riuscito della
+// risposta.
+//
+// BUGFIX 2026-09-23 (Rocco: "il messaggio viene spostato sopra, ma deve essere spostato sotto
+// quello a cui si risponde"): la primissima versione usava un campo meta.reorderAfterId
+// ("comparire DOPO questo id") ma lo applicava al messaggio ORIGINALE puntando al NUOVO id della
+// risposta — il risultato era l'opposto di quanto descritto nel checkbox ("subito prima della
+// tua risposta"): il messaggio citato finiva sotto la risposta invece che sopra. Rinominato in
+// meta.reorderBeforeId ("comparire PRIMA di questo id") e applyManualReorder riscritta di
+// conseguenza (vedi sotto) — ora risolve anche catene di più spostamenti in sequenza (necessario
+// per i nuovi bottoni ▲/▼ "Sposta su/giù" riservati al Master, richiesti insieme a questo
+// bugfix per riordinare liberamente i messaggi nel Registro seguendo la cronologia degli orari,
+// non solo tramite "Rispondi" — vedi i bottoni [data-log-move-up]/[data-log-move-down] in
+// logHTML e la loro gestione in attachLogModeration).
 //
 // Inviti di spostamento "Vuoi andare a...?" (::MOVEREQ::) — MODALITÀ (aggiunte dopo la richiesta
 // di Rocco su Foggia/Koromon Village): il payload storico era `sectorId|luogoId|mode`, dove `mode`
@@ -305,8 +319,9 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
 
   // whoUpdate (opzionale) = { who, role, meta } per riassegnare anche il "mittente" di un
   // messaggio già inviato (vedi openEditLogModal), non solo correggerne il testo — o per fondere
-  // altre chiavi in meta (es. moveVotes/moveResolved, reorderAfterId — vedi attachLogModeration/
-  // [data-move-vote-id] e maybeApplyReplyMove più sotto). log.js FONDE meta con quello già
+  // altre chiavi in meta (es. moveVotes/moveResolved, reorderBeforeId — vedi attachLogModeration/
+  // [data-move-vote-id], [data-log-move-up]/[data-log-move-down] e maybeApplyReplyMove più sotto).
+  // log.js FONDE meta con quello già
   // presente sulla riga, non lo sovrascrive: passare solo le chiavi che si vogliono aggiungere/
   // cambiare è sufficiente, non serve portarsi dietro tutto l'oggetto meta esistente (anche se non
   // fa danno farlo). `text` può essere lasciato undefined per aggiornare SOLO who/role/meta senza
@@ -586,38 +601,51 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
   // creato (contiene .entry.id). Se manca uno qualsiasi dei pezzi — risposta non inviata,
   // checkbox non spuntato, o messaggio citato troppo vecchio per avere un id salvato in
   // meta.replyTo (messaggi mandati prima di questa modifica) — non fa nulla, quindi è sicuro
-  // chiamarla sempre in coda a ogni invio con una risposta in corso, spuntata o no.
+  // chiamarla sempre in coda a ogni invio con una risposta in corso, spuntata o no. Marca il
+  // messaggio ORIGINALE con reorderBeforeId = id della nuova risposta, cioè "comparire subito
+  // PRIMA di quella risposta" — vedi BUGFIX 2026-09-23 in testa al file.
   async function maybeApplyReplyMove(code, thread, replyTo, wantsMove, pushResult){
     if(!wantsMove || !replyTo || replyTo.id==null) return;
     const newId = pushResult && pushResult.entry && pushResult.entry.id;
     if(newId==null) return;
-    await editLogEntry(code, replyTo.id, undefined, thread, { meta: { reorderAfterId: newId } });
+    await editLogEntry(code, replyTo.id, undefined, thread, { meta: { reorderBeforeId: newId } });
   }
 
-  // Applica il riordino manuale (meta.reorderAfterId, vedi nota di testa del file) all'array che
+  // Applica il riordino manuale (meta.reorderBeforeId, vedi nota di testa del file) all'array che
   // sta per essere renderizzato da logHTML: ogni entry marcata viene tolta dalla sua posizione
-  // cronologica naturale e reinserita subito DOPO l'entry-bersaglio (stesso id), PRIMA del
+  // cronologica naturale e reinserita subito PRIMA dell'entry-bersaglio (stesso id), PRIMA del
   // rendering — un puro riordino lato client, l'id/l'orario reale di ogni riga sul server non
   // cambia mai (che resta quindi affidabile per qualunque altro uso, es. l'ordinamento nel DB).
-  // Se il bersaglio non è (più) presente in QUESTO array — es. filtro "Storico per Settore"
-  // diverso, o messaggio bersaglio cancellato — l'entry marcata resta comunque visibile, solo in
-  // coda invece che accanto al bersaglio: nessun messaggio sparisce mai per un riordino "orfano".
+  // Risolve anche CATENE di spostamenti (es. i bottoni ▲/▼ del Master, che possono marcare più
+  // messaggi in sequenza): il bersaglio di un'entry marcata può essere a sua volta un'altra entry
+  // marcata, quindi l'inserimento avviene a più passate finché nessuna marcatura pendente trova
+  // ancora nuovi bersagli da agganciare (un ciclo — bersaglio A prima di B prima di A — si ferma
+  // da solo quando una passata intera non fa più progressi). Se il bersaglio non è (più) presente
+  // in QUESTO array — es. filtro "Storico per Settore" diverso, messaggio bersaglio cancellato, o
+  // un ciclo — l'entry marcata resta comunque visibile, solo in coda invece che accanto al
+  // bersaglio: nessun messaggio sparisce mai per un riordino "orfano".
   function applyManualReorder(log){
     if(!log || log.length < 2) return log;
-    const anchored = log.filter(l=> l.meta && l.meta.reorderAfterId!=null);
+    const anchored = log.filter(l=> l.meta && l.meta.reorderBeforeId!=null);
     if(!anchored.length) return log;
     const anchoredIds = new Set(anchored.map(l=>String(l.id)));
-    const result = [];
-    const placed = new Set();
-    log.forEach(l=>{
-      if(anchoredIds.has(String(l.id))) return; // reinserita più sotto, non nella sua posizione naturale
-      result.push(l);
-      anchored.forEach(a=>{
-        if(String(a.meta.reorderAfterId)===String(l.id)){ result.push(a); placed.add(String(a.id)); }
-      });
-    });
-    anchored.forEach(a=>{ if(!placed.has(String(a.id))) result.push(a); }); // bersaglio non trovato qui: resta in coda, non perso
-    return result;
+    const order = log.filter(l=>!anchoredIds.has(String(l.id))); // posizione naturale, bersagli inclusi
+    let pending = anchored.slice();
+    let progress = true;
+    while(pending.length && progress){
+      progress = false;
+      const stillPending = [];
+      for(const a of pending){
+        const targetId = String(a.meta.reorderBeforeId);
+        const idx = order.findIndex(l=>String(l.id)===targetId);
+        if(idx===-1){ stillPending.push(a); continue; }
+        order.splice(idx, 0, a);
+        progress = true;
+      }
+      pending = stillPending;
+    }
+    pending.forEach(a=> order.push(a)); // bersaglio mai trovato (o ciclo): resta in coda, non perso
+    return order;
   }
 
   function logHTML(log, canModerate){
@@ -812,7 +840,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       <div class="log-entry ${l.role}">
         <div class="flex-between">
           <div>${(()=>{ const __av = resolveLogAvatar(l); return __av ? `<img class="who-avatar" src="${escapeAttr(__av)}" data-avatar-expand="${escapeAttr(__av)}" style="cursor:zoom-in;" onerror="this.style.display='none'" />` : ''; })()}<span class="who mono" ${l.meta && l.meta.color ? `style="color:${escapeAttr(l.meta.color)};"` : ''}>${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span></div>
-          <div><button class="btn ghost small" data-log-reply="${l.id}" style="padding:2px 6px;" title="Rispondi">↩</button>${canModerate ? `<button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;">✎</button><button class="btn ghost small" data-log-del="${l.id}" style="padding:2px 6px;">✕</button>` : ''}</div>
+          <div><button class="btn ghost small" data-log-reply="${l.id}" style="padding:2px 6px;" title="Rispondi">↩</button>${canModerate ? `<button class="btn ghost small" data-log-move-up="${l.id}" style="padding:2px 6px;" title="Sposta su (prima nel Registro)">▲</button><button class="btn ghost small" data-log-move-down="${l.id}" style="padding:2px 6px;" title="Sposta giù (dopo nel Registro)">▼</button><button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;">✎</button><button class="btn ghost small" data-log-del="${l.id}" style="padding:2px 6px;">✕</button>` : ''}</div>
         </div>
         ${replyQuoteHTML}
         <div class="txt${l.meta && l.meta.digimoji ? ' digimoji-text' : ''}" ${l.meta && l.meta.digimoji ? `title="${escapeAttr(displayText)}"` : ''}>${formatLogText(displayText)}</div>
@@ -992,6 +1020,8 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       const editBtn = e.target.closest('[data-log-edit]');
       const delBtn = e.target.closest('[data-log-del]');
       const replyBtn = e.target.closest('[data-log-reply]');
+      const moveUpBtn = e.target.closest('[data-log-move-up]');
+      const moveDownBtn = e.target.closest('[data-log-move-down]');
       const fulfillBtn = e.target.closest('[data-fulfill-target]');
       const fulfillTormentBtn = e.target.closest('[data-fulfill-torment]');
       const rationConfirmBtn = e.target.closest('[data-ration-confirm]');
@@ -1041,6 +1071,39 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         if(window.confirm('Eliminare questo messaggio dal registro?')){
           await deleteLogEntry(code, id, thread);
           if(onChanged) onChanged();
+        }
+      }
+      // "Sposta su/giù" (richiesta Rocco 2026-09-23, "sbloccami da master la possibilità di
+      // spostare i messaggi in chat seguendo la cronologia degli orari"): a differenza del
+      // checkbox nel banner "Rispondi" (che sposta solo il messaggio CITATO, e solo al momento
+      // di una risposta), questi due bottoni — visibili solo al Master (canModerate) — permettono
+      // di riordinare QUALSIASI messaggio del Registro liberamente, un passo alla volta, in
+      // qualunque momento. Lavorano sull'ordine ATTUALMENTE VISUALIZZATO (cioè già passato da
+      // applyManualReorder, così partono sempre da dove l'occhio del Master lo vede e non dalla
+      // posizione cronologica "originale" se il messaggio era già stato spostato prima) e
+      // scambiano la entry cliccata con il suo vicino immediato marcando UNA SOLA delle due con
+      // meta.reorderBeforeId (vedi applyManualReorder/BUGFIX in testa al file): per "Sposta su"
+      // si marca la entry stessa (deve comparire prima del suo vicino precedente); per "Sposta
+      // giù" si marca invece il vicino successivo (deve comparire prima della entry, che così
+      // resta ferma ma il vicino le passa davanti). Click ripetuti incatenano più spostamenti,
+      // risolti a più passate da applyManualReorder.
+      if(moveUpBtn || moveDownBtn){
+        const btn = moveUpBtn || moveDownBtn;
+        const id = btn.getAttribute(moveUpBtn ? 'data-log-move-up' : 'data-log-move-down');
+        const displayed = applyManualReorder(sourceLog || []);
+        const idx = displayed.findIndex(l=>String(l.id)===String(id));
+        if(idx!==-1){
+          if(moveUpBtn && idx>0){
+            const entry = displayed[idx];
+            const prev = displayed[idx-1];
+            await editLogEntry(code, entry.id, undefined, thread, { meta: { reorderBeforeId: prev.id } });
+            if(onChanged) onChanged();
+          } else if(moveDownBtn && idx<displayed.length-1){
+            const entry = displayed[idx];
+            const next = displayed[idx+1];
+            await editLogEntry(code, next.id, undefined, thread, { meta: { reorderBeforeId: entry.id } });
+            if(onChanged) onChanged();
+          }
         }
       }
       if(fulfillBtn && me){
