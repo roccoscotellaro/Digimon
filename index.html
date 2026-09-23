@@ -428,8 +428,17 @@
       font-size:14px;
     }
     .mobile-section[data-mobile-tab="chat"] .section-title{margin-bottom:4px !important;padding-bottom:4px !important;}
-    /* Input area compatta */
-    .mobile-section[data-mobile-tab="chat"] textarea{rows:1;font-size:15px;padding:10px;border-radius:8px;margin-top:6px;}
+    /* Input area compatta. font-size FISSO a 16px (non meno!): sotto i 16px molti browser/webview
+       mobile ingrandiscono automaticamente la pagina quando questa textarea prende il focus (es.
+       richiamando .focus() subito dopo aver premuto "↩ Rispondi", vedi taReply/gmTaReply.focus()
+       in index.html e le righe equivalenti in js/private-chat.js/js/subgroups.js) — BUGFIX
+       2026-09-23 (Rocco, da telefono: "proprio premendo su risposta ingrandisce in automatico la
+       schermata [e] non fa scorrere per poter inviare"): questa regola era già qui per lo stesso
+       identico motivo (vedi anche la regola generica textarea{font-size:16px} qualche riga sopra)
+       ma un valore più specifico a 15px, qui e nella regola .mobile-send-bar textarea poco più
+       sotto, la sovrascriveva silenziosamente riportando la textarea SOTTO la soglia di sicurezza
+       proprio nella chat, dove il "Rispondi" chiama focus() a ogni risposta. */
+    .mobile-section[data-mobile-tab="chat"] textarea{rows:1;font-size:16px;padding:10px;border-radius:8px;margin-top:6px;}
     .mobile-section[data-mobile-tab="chat"] .row{gap:6px;margin-top:6px !important;}
     /* Nascondi "Correggi italiano" su mobile per risparmiare spazio, accessibile dal menu */
     .mobile-section[data-mobile-tab="chat"] #btn-correct{display:none;}
@@ -577,7 +586,7 @@
 
     /* Chat send bar: textarea + bottone inline su mobile */
     .mobile-send-bar{display:flex;gap:6px;align-items:flex-end;margin-top:6px;}
-    .mobile-send-bar textarea{flex:1;min-height:38px;max-height:100px;resize:none;border-radius:8px;padding:10px;font-size:15px;margin:0 !important;}
+    .mobile-send-bar textarea{flex:1;min-height:38px;max-height:100px;resize:none;border-radius:8px;padding:10px;font-size:16px;margin:0 !important;}
     .mobile-send-bar .btn{height:38px;border-radius:8px;padding:0 16px;flex-shrink:0;}
     /* Hint su mobile: molto compatto */
     .mobile-section[data-mobile-tab="chat"] #action-hint{font-size:10px;margin-top:2px !important;line-height:1.3;}

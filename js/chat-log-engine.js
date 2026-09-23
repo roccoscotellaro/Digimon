@@ -578,14 +578,23 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
     const el = document.getElementById(containerId);
     if(!el) return;
     if(!entry){ el.innerHTML = ''; return; }
+    // BUGFIX 2026-09-23 (Rocco, da telefono: "quando clicco su risposta si zooma la schermata e
+    // non fa scorrere per poter inviare"): il checkbox "📌 Sposta" era troppo piccolo (font-size
+    // 10.5px, nessun padding) — su mobile un tocco che manca il quadratino minuscolo diventa
+    // spesso un doppio tocco ravvicinato, che i browser mobile interpretano come il gesto nativo
+    // "doppio tap per ingrandire" (zoom): la pagina si ingrandisce e la fixed bottom bar copre il
+    // composer, che quindi sembra "non scorrere più". Fix: riga/checkbox più grandi (min-height
+    // 32px, casella 18x18) e `touch-action:manipulation` su tutta l'etichetta e sul checkbox, che
+    // disabilita esplicitamente lo zoom-da-doppio-tap del browser su quell'elemento (nessun'altra
+    // modifica al comportamento di zoom del resto della pagina).
     el.innerHTML = `
       <div class="reply-banner" style="display:flex;flex-direction:column;gap:4px;background:var(--panel-2);border-left:3px solid var(--cyan);border-radius:4px;padding:4px 8px;margin-top:8px;font-size:11px;">
         <div style="display:flex;align-items:center;gap:6px;">
           <span class="muted" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">↩ Rispondi a <b>${escapeHTML(entry.who)}</b>: ${escapeHTML(entry.text)}</span>
-          <button type="button" class="btn ghost small" id="${containerId}-cancel" style="padding:1px 6px;">✕</button>
+          <button type="button" class="btn ghost small" id="${containerId}-cancel" style="padding:1px 6px;touch-action:manipulation;">✕</button>
         </div>
-        ${entry.id!=null ? `<label style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-mute);cursor:pointer;">
-          <input type="checkbox" id="${containerId}-move" /> 📌 Sposta il messaggio citato qui (subito prima della tua risposta)
+        ${entry.id!=null ? `<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-mute);cursor:pointer;touch-action:manipulation;min-height:32px;padding:2px 0;">
+          <input type="checkbox" id="${containerId}-move" style="width:18px;height:18px;flex-shrink:0;touch-action:manipulation;" /> 📌 Sposta il messaggio citato qui (subito prima della tua risposta)
         </label>` : ''}
       </div>
     `;
@@ -840,7 +849,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       <div class="log-entry ${l.role}">
         <div class="flex-between">
           <div>${(()=>{ const __av = resolveLogAvatar(l); return __av ? `<img class="who-avatar" src="${escapeAttr(__av)}" data-avatar-expand="${escapeAttr(__av)}" style="cursor:zoom-in;" onerror="this.style.display='none'" />` : ''; })()}<span class="who mono" ${l.meta && l.meta.color ? `style="color:${escapeAttr(l.meta.color)};"` : ''}>${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span></div>
-          <div><button class="btn ghost small" data-log-reply="${l.id}" style="padding:2px 6px;" title="Rispondi">↩</button>${canModerate ? `<button class="btn ghost small" data-log-move-up="${l.id}" style="padding:2px 6px;" title="Sposta su (prima nel Registro)">▲</button><button class="btn ghost small" data-log-move-down="${l.id}" style="padding:2px 6px;" title="Sposta giù (dopo nel Registro)">▼</button><button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;">✎</button><button class="btn ghost small" data-log-del="${l.id}" style="padding:2px 6px;">✕</button>` : ''}</div>
+          <div><button class="btn ghost small" data-log-reply="${l.id}" style="padding:2px 6px;touch-action:manipulation;" title="Rispondi">↩</button>${canModerate ? `<button class="btn ghost small" data-log-move-up="${l.id}" style="padding:2px 6px;touch-action:manipulation;" title="Sposta su (prima nel Registro)">▲</button><button class="btn ghost small" data-log-move-down="${l.id}" style="padding:2px 6px;touch-action:manipulation;" title="Sposta giù (dopo nel Registro)">▼</button><button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;touch-action:manipulation;">✎</button><button class="btn ghost small" data-log-del="${l.id}" style="padding:2px 6px;touch-action:manipulation;">✕</button>` : ''}</div>
         </div>
         ${replyQuoteHTML}
         <div class="txt${l.meta && l.meta.digimoji ? ' digimoji-text' : ''}" ${l.meta && l.meta.digimoji ? `title="${escapeAttr(displayText)}"` : ''}>${formatLogText(displayText)}</div>
