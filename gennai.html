@@ -121,8 +121,8 @@
 
   /* ===== Palcoscenico di Gennai: sfondo animato + ritratto + nuvoletta ===== */
   .gennai-stage{
-    position:relative; min-height:380px; border:1px solid var(--line); border-radius:6px;
-    overflow:hidden; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    position:relative; min-height:460px; border:1px solid var(--line); border-radius:6px;
+    overflow:hidden; display:flex; flex-direction:column; align-items:center; justify-content:flex-end;
     padding:36px 16px 28px;
     background:
       radial-gradient(circle at 50% 28%, rgba(53,232,201,0.14), transparent 55%),
@@ -147,20 +147,19 @@
     90%{ opacity:0.5; }
     100%{ transform:translateY(-420px) scale(1); opacity:0; }
   }
-  .gennai-portrait-wrap{ position:relative; width:190px; height:190px; z-index:2; }
+  .gennai-portrait-wrap{ position:relative; width:240px; height:360px; z-index:2; display:flex; align-items:flex-end; justify-content:center; }
   .gennai-portrait-glow{
-    position:absolute; inset:-22px; border-radius:50%;
-    background:radial-gradient(circle, rgba(53,232,201,0.35), transparent 70%);
-    filter:blur(6px); animation: gennaiPulse 3.2s ease-in-out infinite;
+    position:absolute; left:50%; bottom:6px; transform:translateX(-50%); width:150px; height:36px; z-index:0;
+    background:radial-gradient(ellipse, rgba(53,232,201,0.45), transparent 72%);
+    filter:blur(8px); animation: gennaiPulse 3.2s ease-in-out infinite;
   }
-  @keyframes gennaiPulse{ 0%,100%{opacity:0.45; transform:scale(0.94);} 50%{opacity:0.95; transform:scale(1.05);} }
+  @keyframes gennaiPulse{ 0%,100%{opacity:0.45; transform:translateX(-50%) scale(0.9);} 50%{opacity:0.95; transform:translateX(-50%) scale(1.08);} }
   .gennai-portrait{
-    position:relative; width:100%; height:100%; border-radius:50%; overflow:hidden;
-    border:2px solid var(--cyan-dim); background:#05070a;
-    display:flex; align-items:center; justify-content:center; box-shadow:0 0 24px rgba(53,232,201,0.2);
+    position:relative; width:100%; height:100%; z-index:1;
+    display:flex; align-items:flex-end; justify-content:center;
   }
-  .gennai-portrait img{ width:100%; height:100%; object-fit:cover; }
-  .gennai-portrait .placeholder{ font-size:52px; opacity:0.3; }
+  .gennai-portrait img{ max-width:100%; max-height:100%; width:auto; height:auto; object-fit:contain; image-rendering:pixelated; filter:drop-shadow(0 6px 18px rgba(53,232,201,0.25)); }
+  .gennai-portrait .placeholder{ font-size:64px; opacity:0.3; margin-bottom:20px; }
   .gennai-bubble{
     position:relative; z-index:2; max-width:480px; width:100%; margin:20px auto 0;
     background:var(--panel); border:1px solid var(--cyan-dim); border-radius:10px;
