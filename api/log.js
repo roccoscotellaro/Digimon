@@ -28,6 +28,10 @@
 //     Digimon qualsiasi sconfitto -> avviso a TUTTI i PC in combattimento). `username` singolo
 //     resta supportato per compatibilità con le chiamate esistenti (avviso di turno).
 //
+//   POST   /api/log?resource=loot-claim { code, thread?, id, username, qty? } -> un giocatore prende
+//     il bottino di un messaggio 'loot' (meta.loot) e se lo ritrova in Inventario — vedi
+//     handleLootClaim. Aggiunta 2026-09-25, stesso file per restare sotto le 12 Functions.
+//
 // `username` nel body di POST identifica CHI sta scrivendo (a differenza di `who`, che e' il nome
 // mostrato in UI — puo' essere il characterName). Serve solo per sapere chi ESCLUDERE quando si
 // spedisce la Web Push del nuovo messaggio (non ha senso notificare a se stessi il proprio messaggio):
@@ -261,6 +265,130 @@ async function filterLogForRequester(campaignCode, rows, requesterUsername) {
   return rows.filter(l => !(l.meta && l.meta.location) || visited.includes(normalizeLocationKey(l.meta.location)));
 }
 
+// Testo della Web Push a partire dal testo del messaggio: toglie i marcatori tecnici (::TECH::,
+// ::REQ::, ::RATIONREQ::, ::MOVEREQ::, ...) e tutto ciò che li segue — il loro payload
+// (username|id...) è pensato solo per il client che disegna i bottoni, non per essere letto in
+// una notifica sul telefono (prima arrivava es. "...consumi questo Rest?::RATIONREQ::mario|1790...").
+function pushBodyFromText(text) {
+  const raw = String(text || '');
+  const idx = raw.indexOf('::');
+  const shown = (idx >= 0 ? raw.slice(0, idx) : raw).trim();
+  return (shown || raw).slice(0, 140);
+}
+
+// ===== Loot in chat (resource=loot-claim) =====
+// Richiesta Rocco 2026-09-25: il Master pubblica in chat un messaggio di bottino (role 'loot',
+// dati in meta.loot = { v, name, qty, category, desc, mode, allowed, claims }) e chi ci clicca si
+// aggiunge l'oggetto all'Inventario. Modalità:
+//   'each'  -> stessa quantità (qty) a ciascun giocatore ammesso, una volta sola a testa;
+//   'pool'  -> qty è il TOTALE da spartire: ognuno prende quanto chiede finché ne resta, una
+//              volta sola a testa;
+//   'first' -> il primo che clicca prende tutto (qty), poi il bottino è esaurito.
+// "Evitare doppioni", su due livelli:
+//   1) mai due prese dallo stesso giocatore sullo stesso messaggio (claims[username]);
+//   2) nell'Inventario un oggetto con stesso nome (senza distinzione maiuscole/spazi) e stessa
+//      Categoria già presente viene SOMMATO (qty +=) invece di creare una seconda riga uguale.
+// Tutto avviene QUI, lato server, e non sul client: due giocatori che cliccano nello stesso
+// istante su un bottino 'first'/'pool' non devono poterlo prendere entrambi. La presa è una
+// compare-and-swap sul contatore meta.loot.v (UPDATE ... WHERE meta->loot->>v = <letto>): se
+// nel frattempo qualcun altro ha già scritto, l'UPDATE non tocca nessuna riga e si rilegge e
+// ricalcola (max 4 tentativi). L'Inventario viene poi aggiornato con SELECT + merge + UPDATE sul
+// solo campo tamer.inventory (stesso pattern di roster.js resource=patch), senza passare dal
+// client — così non dipende da una copia della Scheda magari vecchia di 15 secondi.
+function lootItemKey(name, category) {
+  return String(name || '').trim().toLowerCase().replace(/\s+/g, ' ') + '|' + (category || 'altro');
+}
+
+function mergeIntoInventory(inventory, item, qty) {
+  const inv = Array.isArray(inventory) ? inventory.map(it => Object.assign({}, it)) : [];
+  const key = lootItemKey(item.name, item.category);
+  const existing = inv.find(it => lootItemKey(it.name, it.category) === key);
+  if (existing) {
+    existing.qty = (Number(existing.qty) || 0) + qty;
+    if (!existing.desc && item.desc) existing.desc = item.desc;
+  } else {
+    inv.push({ name: item.name, qty, desc: item.desc || '', category: item.category || 'altro' });
+  }
+  return inv;
+}
+
+async function handleLootClaim(req, res) {
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ error: 'method not allowed' });
+  }
+  const { code, thread, id, username, qty } = req.body || {};
+  const campaignCode = cleanCode(code);
+  if (!campaignCode || !id || !username) return res.status(400).json({ error: 'missing code, id or username' });
+  const table = thread ? 'private_logs' : 'logs';
+
+  const { data: member, error: memberError } = await supabase.from('members').select('id, role, tamer').eq('campaign_code', campaignCode).eq('username', username).maybeSingle();
+  if (memberError) return res.status(500).json({ error: memberError.message });
+  if (!member) return res.status(404).json({ error: 'Giocatore non trovato nella campagna.' });
+  if (member.role === 'master') return res.status(403).json({ error: 'Il Master non può prendere il bottino.' });
+
+  let granted = 0;
+  let loot = null;
+  let claimed = false;
+  for (let attempt = 0; attempt < 4 && !claimed; attempt++) {
+    let q = supabase.from(table).select('id, role, meta').eq('campaign_code', campaignCode).eq('id', id);
+    if (thread) q = q.eq('thread_username', thread);
+    const { data: row, error: rowError } = await q.maybeSingle();
+    if (rowError) return res.status(500).json({ error: rowError.message });
+    if (!row || !row.meta || !row.meta.loot) return res.status(404).json({ error: 'Bottino non trovato (forse cancellato dal Master).' });
+    loot = row.meta.loot;
+    const claims = loot.claims || {};
+    const allowed = Array.isArray(loot.allowed) ? loot.allowed : [];
+    if (allowed.length && !allowed.includes(username)) return res.status(403).json({ error: 'Questo bottino non è destinato a te.' });
+    if (claims[username] != null) return res.status(409).json({ error: 'Hai già preso questo bottino.' });
+    const total = Math.max(1, Number(loot.qty) || 1);
+    const takenSoFar = Object.values(claims).reduce((a, b) => a + (Number(b) || 0), 0);
+    if (loot.mode === 'first') {
+      if (Object.keys(claims).length) return res.status(409).json({ error: 'Qualcuno ha già preso questo bottino.' });
+      granted = total;
+    } else if (loot.mode === 'pool') {
+      const remaining = total - takenSoFar;
+      if (remaining <= 0) return res.status(409).json({ error: 'Il bottino è esaurito.' });
+      granted = Math.max(1, Math.min(remaining, Math.floor(Number(qty) || 1)));
+    } else {
+      granted = total;
+    }
+    const v = Number(loot.v) || 0;
+    const newLoot = Object.assign({}, loot, { v: v + 1, claims: Object.assign({}, claims, { [username]: granted }) });
+    const newMeta = Object.assign({}, row.meta, { loot: newLoot });
+    let u = supabase.from(table).update({ meta: newMeta }).eq('campaign_code', campaignCode).eq('id', id).eq('meta->loot->>v', String(v));
+    if (thread) u = u.eq('thread_username', thread);
+    const { data: updated, error: updError } = await u.select('id');
+    if (updError) return res.status(500).json({ error: updError.message });
+    if (updated && updated.length) { claimed = true; loot = newLoot; }
+  }
+  if (!claimed) return res.status(409).json({ error: 'Troppi click nello stesso istante: riprova.' });
+
+  // Inventario: rilettura fresca (la Scheda può essere cambiata dopo la prima SELECT sopra).
+  const { data: fresh, error: freshError } = await supabase.from('members').select('tamer').eq('id', member.id).maybeSingle();
+  const tamer = (fresh && fresh.tamer) || member.tamer || {};
+  const item = { name: loot.name, category: loot.category || 'altro', desc: loot.desc || '' };
+  const newInventory = mergeIntoInventory(tamer.inventory, item, granted);
+  const { error: invError } = freshError ? { error: freshError } : await supabase.from('members').update({ tamer: Object.assign({}, tamer, { inventory: newInventory }) }).eq('id', member.id);
+  if (invError) {
+    // Presa registrata ma Inventario non aggiornato: la annulliamo (best effort, senza CAS — nel
+    // peggiore dei casi il bottino resta segnato come preso e il Master lo può riassegnare a mano).
+    let q = supabase.from(table).select('meta').eq('campaign_code', campaignCode).eq('id', id);
+    if (thread) q = q.eq('thread_username', thread);
+    const { data: row } = await q.maybeSingle();
+    if (row && row.meta && row.meta.loot) {
+      const claims = Object.assign({}, row.meta.loot.claims || {});
+      delete claims[username];
+      const meta = Object.assign({}, row.meta, { loot: Object.assign({}, row.meta.loot, { v: (Number(row.meta.loot.v) || 0) + 1, claims }) });
+      let u = supabase.from(table).update({ meta }).eq('campaign_code', campaignCode).eq('id', id);
+      if (thread) u = u.eq('thread_username', thread);
+      await u;
+    }
+    return res.status(500).json({ error: 'Inventario non aggiornato: ' + invError.message });
+  }
+  return res.status(200).json({ ok: true, granted, item, inventory: newInventory, loot });
+}
+
 module.exports = async (req, res) => {
   try {
     // ===== Sottoscrizioni Web Push (risorsa separata, stesso file per restare sotto il limite
@@ -297,6 +425,11 @@ module.exports = async (req, res) => {
     // Vedi commento in cima al file. Richiede solo VAPID configurate + il/i giocatore/i già
     // sottoscritti alle Web Push: altrimenti sendPushToSubscriptions non fa nulla, silenziosamente
     // (stesso comportamento "safe no-op" degli altri invii push di questo file).
+    // Loot in chat — vedi handleLootClaim più sopra.
+    if (req.query && req.query.resource === 'loot-claim') {
+      return await handleLootClaim(req, res);
+    }
+
     if (req.query && req.query.resource === 'turn-ping') {
       if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
@@ -399,7 +532,7 @@ module.exports = async (req, res) => {
             : await subsForUsername(campaignCode, thread);
         await sendPushToSubscriptions(recipientSubs, {
           title: isSubgroupThread ? `👥 ${String(who).slice(0, 60)} (gruppo)` : `✉️ ${String(who).slice(0, 60)} (privato)`,
-          body: String(text).slice(0, 140),
+          body: pushBodyFromText(text),
           url: '/index.html',
           tag: 'dvos-push'
         }).catch(() => {});
@@ -433,7 +566,7 @@ module.exports = async (req, res) => {
       const recipientSubs = await subsForCampaign(campaignCode, username);
       await sendPushToSubscriptions(recipientSubs, {
         title: `💬 ${String(who).slice(0, 60)}`,
-        body: String(text).slice(0, 140),
+        body: pushBodyFromText(text),
         url: '/index.html',
         tag: 'dvos-push'
       }).catch(() => {});

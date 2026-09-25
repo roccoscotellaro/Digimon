@@ -3869,7 +3869,20 @@ let editingScene = false;
   // cachedDex lato client, vedi addDexEntry/updateDexEntry), quindi non serve rileggerlo spesso:
   // ora si aggiorna ogni 40 cicli (~10 minuti) invece che ogni 4 (~1 minuto), un taglio di banda
   // di circa 10 volte su questa singola voce.
+  // BUGFIX 2026-09-25 (console: "Cannot read properties of null (reading 'code') at
+  // refreshLiveParts"): un giro di polling già partito può essere ancora in attesa di una risposta
+  // (getRoster/getScene...) quando si esce/rientra (logout() azzera session): alla ripresa la riga
+  // successiva legge session.code su null. L'involucro ignora SOLO l'errore di quel giro orfano
+  // (session sparita nel frattempo); ogni altro errore continua a comparire in console come prima.
   async function refreshLiveParts(tick){
+    try{
+      return await refreshLivePartsInner(tick);
+    }catch(err){
+      if(!session) return;
+      throw err;
+    }
+  }
+  async function refreshLivePartsInner(tick){
     if(!session) return;
     const slowCycle = (typeof tick!=='number') || (tick % 4 === 0); // sempre true al primo giro
     const dexCycle = (typeof tick!=='number') || (tick % 40 === 0); // ~10 minuti (era ogni 60s)
@@ -4175,7 +4188,12 @@ let editingScene = false;
       const isCombatLockChat = combatChatLockLocationMatches(playerChatMode, playerActiveSubgroupId, false);
       // Richiesta utente (Rocco): blocco manuale TOTALE della Chat Generale (generalChatLocked,
       // vedi js/tamer-card.js/log.js) — indipendente dal combattimento, non tocca Privata/Sottogruppo.
-      const generalManuallyLocked = playerChatMode!=='private' && playerChatMode!=='subgroup' && !!(me.tamer && me.tamer.generalChatLocked);
+      // BUGFIX 2026-09-25 (console dei giocatori: "ReferenceError: me is not defined at
+      // refreshLiveParts"): dentro refreshLiveParts non esiste nessuna variabile `me` (esiste solo
+      // in renderPlayer/renderChatArea) — la riga lanciava ad OGNI giro di polling per ogni
+      // giocatore, interrompendo il resto del refresh (blocco chat/hint/banner errori). Usa
+      // cachedMe, aggiornato più sopra dallo stesso giro di polling.
+      const generalManuallyLocked = playerChatMode!=='private' && playerChatMode!=='subgroup' && !!(cachedMe && cachedMe.tamer && cachedMe.tamer.generalChatLocked);
       const lockPublicChat = turnLockPublicChat || chatLocked || generalManuallyLocked;
       ['action-text','btn-send-action','btn-correct','action-img-btn'].forEach(id=>{
         const el = document.getElementById(id);
@@ -4811,6 +4829,45 @@ let editingScene = false;
             <button class="btn amber" id="btn-request-torment" style="width:100%;">Richiedi Torment Check</button>
             <div class="muted" id="torment-req-status" style="margin-top:6px;"></div>
           </div>
+          <!-- Loot in chat (richiesta Rocco 2026-09-25): il Master pubblica un bottino in UNA chat,
+               chi ci clicca se lo aggiunge all'Inventario. Logica di presa/anti-doppioni lato
+               server (api/log.js, resource=loot-claim), rendering in js/chat-log-engine.js
+               (lootCardHTML). Handler: btn-send-loot più sotto, in renderMaster. -->
+          <div class="hud-frame card" id="loot-card">
+            <div class="section-title">🎁 Loot in chat</div>
+            <div class="row">
+              <div class="field"><label>Oggetto</label><input type="text" id="loot-name" placeholder="es. Carne di Meat Farm" /></div>
+              <div class="field" style="max-width:80px;"><label>Q.tà</label><input type="number" id="loot-qty" value="1" min="1" /></div>
+            </div>
+            <div class="field"><label>Categoria</label>
+              <select id="loot-category">${(typeof INVENTORY_CATEGORIES!=='undefined' ? INVENTORY_CATEGORIES : [{value:'altro',label:'Altro'}]).map(c=>`<option value="${c.value}" ${c.value==='altro'?'selected':''}>${escapeHTML(c.label)}</option>`).join('')}</select>
+            </div>
+            <div class="field"><label>Descrizione (opz.)</label><input type="text" id="loot-desc" placeholder="cosa fa..." /></div>
+            <div class="field"><label>Come si divide</label>
+              <select id="loot-mode">
+                <option value="each">Stessa quantità a ciascuno (ognuno prende la Q.tà indicata)</option>
+                <option value="pool">Quantità totale da spartire (ognuno prende quanto vuole finché ce n'è)</option>
+                <option value="first">Tutto al primo che clicca</option>
+              </select>
+            </div>
+            <div class="muted" style="font-size:11px;margin-bottom:4px;">Chi può prenderlo:</div>
+            <div style="margin-bottom:8px;">
+              ${players.map(p=>`<div class="checkbox-row"><input type="checkbox" class="loot-player-chk" value="${escapeAttr(p.username)}" checked /><label>${escapeHTML(displayName(p))}</label></div>`).join('')}
+            </div>
+            <div class="field"><label>In quale chat</label>
+              <select id="loot-channel">
+                <option value="general">📣 Chat Generale</option>
+                <option value="subgroup">👥 Sottogruppo</option>
+                <option value="private">✉️ Chat Privata (una copia per ciascun giocatore spuntato)</option>
+              </select>
+            </div>
+            <div class="field" id="loot-subgroup-field" style="display:none;"><label>Quale sottogruppo</label>
+              <select id="loot-subgroup-select"><option value="">Caricamento...</option></select>
+            </div>
+            <div class="muted" style="font-size:10px;margin-bottom:6px;">Ognuno può prendere lo stesso bottino una volta sola; se ha già in Inventario un oggetto con lo stesso nome e Categoria, la quantità viene sommata invece di creare un doppione.</div>
+            <button class="btn amber" id="btn-send-loot" style="width:100%;">🎁 Pubblica bottino</button>
+            <div class="muted" id="loot-status" style="margin-top:6px;"></div>
+          </div>
           <div class="hud-frame card" id="notice-mgr-card"></div>
           <div class="hud-frame card" id="bugreports-card"></div>
           <div class="hud-frame card" id="auto-msg-card"></div>
@@ -5266,6 +5323,82 @@ let editingScene = false;
           await pushPrivateLog(code, 'subgroup:'+subgroupId, { ...entry, meta: { location: subgroupLocationKey(group) } });
         }
         if(statusEl) statusEl.textContent = '';
+        refreshLiveParts();
+      };
+    }
+
+    // ===== Loot in chat (vedi card #loot-card sopra) =====
+    // Un solo messaggio per canale (Generale/Sottogruppo) con meta.loot.allowed = giocatori
+    // ammessi; in Privata una copia INDIPENDENTE per ciascun giocatore spuntato — per questo in
+    // Privata con più destinatari sono ammesse solo le modalità a quantità per-testa ('each'):
+    // con 'pool'/'first' ogni copia avrebbe il proprio "mucchio" e lo stesso bottino finirebbe
+    // moltiplicato per il numero di giocatori.
+    const lootChannelSel = document.getElementById('loot-channel');
+    const lootSubField = document.getElementById('loot-subgroup-field');
+    if(lootChannelSel){
+      lootChannelSel.onchange = async ()=>{
+        const isSub = lootChannelSel.value==='subgroup';
+        lootSubField.style.display = isSub ? 'block' : 'none';
+        if(isSub){
+          const groups = await getSubgroups(code);
+          cachedSubgroups = groups;
+          const sel = document.getElementById('loot-subgroup-select');
+          if(sel) sel.innerHTML = groups.length ? groups.map(g=>`<option value="${escapeAttr(g.id)}">${escapeHTML(g.name)}</option>`).join('') : '<option value="">Nessun sottogruppo creato</option>';
+        }
+      };
+    }
+    const lootBtn = document.getElementById('btn-send-loot');
+    if(lootBtn){
+      lootBtn.onclick = async ()=>{
+        const statusEl = document.getElementById('loot-status');
+        const setStatus = (t)=>{ if(statusEl) statusEl.textContent = t; };
+        const name = document.getElementById('loot-name').value.trim();
+        const qty = Math.max(1, Math.floor(Number(document.getElementById('loot-qty').value)||1));
+        const category = document.getElementById('loot-category').value || 'altro';
+        const desc = document.getElementById('loot-desc').value.trim();
+        const mode = document.getElementById('loot-mode').value || 'each';
+        const channel = lootChannelSel ? lootChannelSel.value : 'general';
+        let allowed = Array.from(document.querySelectorAll('.loot-player-chk:checked')).map(el=>el.value);
+        if(!name){ setStatus('Scrivi il nome dell\'oggetto.'); return; }
+        if(!allowed.length){ setStatus('Spunta almeno un giocatore.'); return; }
+        let group = null;
+        if(channel==='subgroup'){
+          const subId = (document.getElementById('loot-subgroup-select')||{}).value || '';
+          group = (cachedSubgroups||[]).find(g=>g.id===subId) || null;
+          if(!group){ setStatus('Scegli un sottogruppo.'); return; }
+          allowed = allowed.filter(u=> (group.members||[]).includes(u));
+          if(!allowed.length){ setStatus('Nessuno dei giocatori spuntati fa parte di quel sottogruppo.'); return; }
+        }
+        if(channel==='private' && mode!=='each' && allowed.length>1){
+          setStatus('In Chat Privata con più giocatori usa "Stessa quantità a ciascuno" (ogni copia è un bottino a sé). Per spartire o "al primo" usa Generale o Sottogruppo.');
+          return;
+        }
+        const modeText = mode==='pool' ? ` (da spartire: ${qty} in tutto)` : (mode==='first' ? ' (al primo che lo prende)' : (qty>1 ? ' (a testa)' : ''));
+        const makeEntry = (allowedList)=>({
+          who:'Master', role:'loot',
+          text: `🎁 Bottino: ${name} ×${qty}${modeText}`,
+          meta: { loot: { v:0, name, qty, category, desc, mode, allowed: allowedList, claims: {} } }
+        });
+        lootBtn.disabled = true;
+        let ok = true;
+        if(channel==='general'){
+          ok = !!(await pushLog(code, makeEntry(allowed)));
+        } else if(channel==='subgroup'){
+          const e = makeEntry(allowed);
+          ok = !!(await pushPrivateLog(code, 'subgroup:'+group.id, { ...e, meta: { ...e.meta, location: subgroupLocationKey(group) } }));
+        } else {
+          for(const u of allowed){
+            const member = cachedRoster.find(m=>m.username===u);
+            const e = makeEntry([u]);
+            const r = await pushPrivateLog(code, u, { ...e, meta: { ...e.meta, location: memberLocationKey(member) } });
+            ok = ok && !!r;
+          }
+        }
+        lootBtn.disabled = false;
+        if(!ok){ setStatus('⚠ Errore: ' + (lastApiError||'invio non riuscito')); return; }
+        setStatus('Bottino pubblicato.');
+        document.getElementById('loot-name').value = '';
+        document.getElementById('loot-desc').value = '';
         refreshLiveParts();
       };
     }

@@ -338,19 +338,53 @@
         await saveMember(code, p);
       }
       await publishDowntimeMessage({ who:'Sistema', role:'gm', text: `😴 Il party fa un Rest: Ferite ed Evolution Points recuperati del tutto, penalità Torment rimosse, Torment Check di nuovo disponibili.` });
-      // Richiesta utente (Razioni): oltre al Rest ufficiale (8.04) sopra, invia a OGNI giocatore,
-      // nella sua Chat Privata, un prompt per consumare le razioni giornaliere (2, oggetti
-      // inventario categoria 'cibo' — vedi js/tamer-card.js/renderInventoryCard e il marcatore
-      // ::RATIONREQ:: gestito in js/chat-log-engine.js). Un restId univoco per Rest (timestamp)
-      // distingue Rest diversi sullo stesso giocatore, così un vecchio prompt già gestito non
-      // torna cliccabile e un prompt nuovo non viene scambiato per uno già risolto.
+      // Richiesta utente (Razioni): oltre al Rest ufficiale (8.04) sopra, invia ai giocatori un
+      // prompt per consumare le razioni giornaliere (2, oggetti inventario categoria 'cibo' — vedi
+      // js/tamer-card.js/renderInventoryCard e il marcatore ::RATIONREQ:: gestito in
+      // js/chat-log-engine.js). Un restId univoco per Rest (timestamp) distingue Rest diversi
+      // sullo stesso giocatore, così un vecchio prompt già gestito non torna cliccabile e un
+      // prompt nuovo non viene scambiato per uno già risolto.
+      //
+      // BUGFIX 2026-09-25 (Rocco: "ho mandato il messaggio in chat per il rest ma sembra non
+      // essere partita l'opzione per chiedere quanto cibo consumare"): prima il prompt andava
+      // SEMPRE e SOLO nella Chat Privata di ciascun giocatore, qualunque canale il Master avesse
+      // scelto per il Rest — chi leggeva la Generale (o il Sottogruppo) vedeva il messaggio
+      // "😴 Il party fa un Rest" ma nessuna scelta delle razioni, finita in un'altra chat. Ora il
+      // prompt segue gli STESSI canali del messaggio di Rest (stesse checkbox, lette qui al
+      // momento del click come fa publishDowntimeMessage): Generale/Sottogruppo = un solo
+      // messaggio con tutti gli username interessati nel payload (ognuno vede solo il PROPRIO
+      // select, vedi logHTML), Privata = una copia per ciascun giocatore come prima. Nessun
+      // rischio di doppio consumo se lo stesso giocatore riceve più copie (es. Generale +
+      // Privata): tamer.lastRationRestId blocca la seconda conferma per lo stesso restId.
       const rationRestId = Date.now();
-      for(const p of players){
-        await pushPrivateLog(code, p.username, {
-          who:'Sistema', role:'rationrequest',
-          text: `🍱 Momento delle razioni: quante ne consumi questo Rest (2 al giorno)?::RATIONREQ::${p.username}|${rationRestId}`,
-          meta: { location: memberLocationKey(p) }
-        });
+      const rationText = (usernames)=> `🍱 Momento delle razioni: quante ne consumi questo Rest (2 al giorno)?::RATIONREQ::${usernames.join(',')}|${rationRestId}`;
+      const rSendGeneral = document.getElementById('downtime-chan-general').checked;
+      const rSendPrivate = document.getElementById('downtime-chan-private').checked;
+      const rSubSel = document.getElementById('downtime-subgroup-select');
+      const rSubgroupId = (downtimeSubChk && downtimeSubChk.checked && rSubSel) ? rSubSel.value : '';
+      const rNoChannel = !rSendGeneral && !rSendPrivate && !rSubgroupId; // stesso fallback di publishDowntimeMessage: Generale
+      if(players.length && (rSendGeneral || rNoChannel)){
+        await pushLog(code, { who:'Sistema', role:'rationrequest', text: rationText(players.map(p=>p.username)) });
+      }
+      if(rSendPrivate){
+        for(const p of players){
+          await pushPrivateLog(code, p.username, {
+            who:'Sistema', role:'rationrequest',
+            text: rationText([p.username]),
+            meta: { location: memberLocationKey(p) }
+          });
+        }
+      }
+      if(rSubgroupId){
+        const group = (cachedSubgroups||[]).find(g=>g.id===rSubgroupId) || null;
+        const groupPlayers = players.filter(p=> group && Array.isArray(group.members) && group.members.includes(p.username));
+        if(groupPlayers.length){
+          await pushPrivateLog(code, 'subgroup:'+rSubgroupId, {
+            who:'Sistema', role:'rationrequest',
+            text: rationText(groupPlayers.map(p=>p.username)),
+            meta: { location: subgroupLocationKey(group) }
+          });
+        }
       }
       if(onChanged) onChanged();
     };

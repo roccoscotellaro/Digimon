@@ -150,6 +150,15 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
   }
 
   let animatedLogIds = new Set();
+  // Scelta "quante razioni" fatta dal giocatore nel <select> di un prompt ::RATIONREQ::, per id
+  // messaggio — sopravvive ai ridisegni periodici del Registro (vedi logHTML).
+  const rationQtyChoice = {};
+  if(typeof document!=='undefined'){
+    document.addEventListener('change', (e)=>{
+      const sel = e.target && e.target.closest ? e.target.closest('[data-ration-qty-for]') : null;
+      if(sel) rationQtyChoice[sel.getAttribute('data-ration-qty-for')] = Number(sel.value)||0;
+    });
+  }
   // Selettore "Storico per Settore" (vedi locationFilterSelectHTML/filterByLocation): null =
   // segue automaticamente la posizione attuale del gruppo; altrimenti una chiave location
   // esplicita scelta dalla persona, oppure "__all__" per tutto lo storico. Una variabile per
@@ -657,6 +666,60 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
     return order;
   }
 
+  // Card del bottino (vedi il blocco role 'loot' in logHTML). Pura funzione di rendering: legge
+  // solo l.meta.loot, cachedRoster (nomi da mostrare) e session (per decidere se mostrare il
+  // bottone "Prendi" a chi sta leggendo).
+  const LOOT_MODE_LABELS = {
+    each: 'stessa quantità a ciascuno',
+    pool: 'quantità totale da spartire',
+    first: 'tutto al primo che lo prende'
+  };
+  function escapeLootText(t){ return String(t||'oggetto').replace(/::/g, ':'); }
+  function lootCardHTML(l){
+    const lt = l.meta.loot;
+    const claims = lt.claims || {};
+    const allowed = Array.isArray(lt.allowed) ? lt.allowed : [];
+    const total = Math.max(1, Number(lt.qty)||1);
+    const taken = Object.values(claims).reduce((a,b)=>a+(Number(b)||0),0);
+    const remaining = Math.max(0, total - taken);
+    const nameOf = (u)=>{ const m = (cachedRoster||[]).find(x=>x.username===u); return m ? displayName(m) : u; };
+    const catLabel = (typeof inventoryCategoryLabel==='function' && lt.category && lt.category!=='altro') ? inventoryCategoryLabel(lt.category) : '';
+    const unit = lt.category==='cibo' ? ' pasti' : '';
+    const claimList = Object.keys(claims).map(u=>`${escapeHTML(nameOf(u))} ×${Number(claims[u])||0}`).join(', ');
+    let status;
+    if(lt.mode==='pool') status = `Rimasti ${remaining}/${total}${claimList ? ` — presi da: ${claimList}` : ''}`;
+    else if(lt.mode==='first') status = claimList ? `Preso da: ${claimList}` : 'Ancora da prendere';
+    else status = `×${total}${unit} a testa${claimList ? ` — presi da: ${claimList}` : ''}${allowed.length ? ` (${Object.keys(claims).length}/${allowed.length})` : ''}`;
+    const exhausted = lt.mode==='first' ? Object.keys(claims).length>0 : (lt.mode==='pool' ? remaining<=0 : (allowed.length>0 && Object.keys(claims).length>=allowed.length));
+    let action = '';
+    if(session && session.role==='player'){
+      const me = session.username;
+      const canTake = !allowed.length || allowed.includes(me);
+      if(claims[me]!=null){
+        action = `<div class="muted" style="margin-top:4px;font-size:11px;">✅ Hai preso ×${Number(claims[me])||0}${unit} — è nel tuo Inventario.</div>`;
+      } else if(!canTake){
+        action = '';
+      } else if(exhausted){
+        action = `<div class="muted" style="margin-top:4px;font-size:11px;">Bottino esaurito.</div>`;
+      } else {
+        let qtyPicker = '';
+        if(lt.mode==='pool' && remaining>1){
+          let opts = '';
+          for(let q=1; q<=remaining; q++) opts += `<option value="${q}" ${q===1?'selected':''}>${q}</option>`;
+          qtyPicker = `<select id="loot-qty-${escapeAttr(l.id)}" style="max-width:80px;display:inline-block;margin-right:4px;">${opts}</select>`;
+        }
+        const takeLabel = lt.mode==='pool' ? 'Prendi' : `Prendi ×${total}`;
+        action = `<div style="margin-top:6px;">${qtyPicker}<button class="btn amber small" data-loot-claim="${escapeAttr(l.id)}">🎁 ${takeLabel}</button></div>`;
+      }
+    }
+    return `<div style="margin-top:6px;padding:6px 8px;border:1px solid var(--line);border-left:3px solid var(--amber, #ffb020);border-radius:4px;background:var(--panel-2);">
+      <div><b>🎁 ${escapeHTML(lt.name||'Oggetto')}</b>${catLabel ? ` <span class="tag" style="margin-left:4px;">${escapeHTML(catLabel)}</span>` : ''}</div>
+      ${lt.desc ? `<div class="muted" style="font-size:11px;margin-top:2px;">${escapeHTML(lt.desc)}</div>` : ''}
+      <div class="muted" style="font-size:10.5px;margin-top:3px;">Modalità: ${escapeHTML(LOOT_MODE_LABELS[lt.mode]||LOOT_MODE_LABELS.each)} · ${status}</div>
+      ${action}
+    </div>`;
+  }
+
   function logHTML(log, canModerate){
     log = applyManualReorder(log);
     if(!log || log.length===0) return '<div class="muted">Il registro è vuoto. Le azioni appariranno qui.</div>';
@@ -733,9 +796,14 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         const [shown, payload] = l.text.split('::RATIONREQ::');
         displayText = shown;
         const parts = payload.split('|');
-        const rationTargetUser = parts[0] || '';
+        // BUGFIX 2026-09-25 (Rocco: "ho mandato il messaggio in chat per il rest ma non è partita
+        // l'opzione per il cibo"): il prompt ora va negli STESSI canali scelti dal Master per il
+        // Rest (Generale/Sottogruppo = UN solo messaggio per più giocatori), quindi il primo campo
+        // può contenere più username separati da virgola — stesso schema di ::REQ::. I messaggi
+        // vecchi (un solo username) restano validi: split(',') di un nome singolo dà [nome].
+        const rationTargets = (parts[0] || '').split(',').map(x=>x.trim()).filter(Boolean);
         const restId = parts[1] || '';
-        if(session && session.role==='player' && session.username===rationTargetUser){
+        if(session && session.role==='player' && rationTargets.includes(session.username)){
           const selfMember = (cachedRoster||[]).find(m=>m.username===session.username);
           const alreadyDone = !!(selfMember && selfMember.tamer && selfMember.tamer.lastRationRestId && selfMember.tamer.lastRationRestId===restId);
           if(alreadyDone){
@@ -745,13 +813,31 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
             const totalPasti = ciboItems.reduce((s,it)=>s+(Number(it.qty)||0),0);
             const maxSelectable = Math.min(2, totalPasti);
             let opts = '';
+            // BUGFIX 2026-09-25 (Rocco: "i giocatori non riescono a consumare le razioni"): la
+            // scelta fatta nel <select> andava persa al giro di polling successivo (il Registro
+            // viene ridisegnato da zero e il select tornava al valore di default) — ora viene
+            // ricordata in rationQtyChoice (vedi listener 'change' in fondo al file).
+            const remembered = rationQtyChoice[String(l.id)];
+            const selectedQty = (remembered!=null && remembered<=maxSelectable) ? remembered : maxSelectable;
             for(let q=0; q<=2; q++){
-              opts += `<option value="${q}" ${q>maxSelectable?'disabled':''} ${q===maxSelectable?'selected':''}>${q} razion${q===1?'e':'i'}</option>`;
+              opts += `<option value="${q}" ${q>maxSelectable?'disabled':''} ${q===selectedQty?'selected':''}>${q} razion${q===1?'e':'i'}</option>`;
             }
+            // Stesso bugfix: il conteggio considera SOLO gli oggetti con Categoria "Cibo" — chi ha
+            // cibo in Inventario inserito prima dell'arrivo delle Categorie (o lasciato su "Altro")
+            // vedeva "Pasti disponibili: 0" e solo l'opzione "0 razioni" selezionabile, senza modo
+            // di correggere (la Scheda permette solo Aggiungi/Rimuovi, non di cambiare Categoria).
+            // Se mancano pasti, qui si può marcare al volo un oggetto esistente come Cibo.
+            const otherItems = (selfMember && selfMember.tamer && Array.isArray(selfMember.tamer.inventory))
+              ? selfMember.tamer.inventory.map((it,idx)=>({it,idx})).filter(x=>x.it && x.it.category!=='cibo') : [];
+            const markFoodHTML = (totalPasti<2 && otherItems.length) ? `
+              <div class="muted" style="font-size:10px;margin-top:6px;">Hai del cibo in Inventario non segnato come "Cibo"? Segnalo qui:</div>
+              <select id="ration-markfood-${escapeAttr(l.id)}" style="max-width:190px;display:inline-block;">${otherItems.map(x=>`<option value="${x.idx}">${escapeHTML(x.it.name||'?')} ×${Number(x.it.qty)||1}</option>`).join('')}</select>
+              <button class="btn ghost small" style="margin-left:4px;" data-ration-markfood="${escapeAttr(l.id)}">🍙 È cibo</button>` : '';
             fulfillBtn = `<div style="margin-top:6px;">
-              <div class="muted" style="font-size:10px;margin-bottom:4px;">🍙 Pasti disponibili in Inventario: ${totalPasti}${totalPasti<2?' (meno di 2 — Affaticamento in arrivo se non ne trovi altri)':''}</div>
-              <select id="ration-qty-${escapeAttr(l.id)}" style="max-width:170px;display:inline-block;">${opts}</select>
+              <div class="muted" style="font-size:10px;margin-bottom:4px;">🍙 Pasti disponibili in Inventario (Categoria "Cibo"): ${totalPasti}${totalPasti<2?' (meno di 2 — Affaticamento in arrivo se non ne trovi altri)':''}</div>
+              <select id="ration-qty-${escapeAttr(l.id)}" data-ration-qty-for="${escapeAttr(l.id)}" style="max-width:170px;display:inline-block;">${opts}</select>
               <button class="btn amber small" style="margin-left:4px;" data-ration-confirm="${escapeAttr(l.id)}" data-ration-rest="${escapeAttr(restId)}">🍙 Conferma Razioni</button>
+              ${markFoodHTML}
             </div>`;
           }
         }
@@ -796,6 +882,16 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
             }
           }
         }
+      }
+      // Loot in chat (richiesta Rocco 2026-09-25): messaggio role 'loot' pubblicato dal Master con
+      // la card "🎁 Loot in chat" (index.html), dati in meta.loot = { v, name, qty, category, desc,
+      // mode, allowed, claims }. Lo stato (chi ha preso cosa, quanto ne resta) è visibile a tutti
+      // quelli che leggono il canale; il bottone "Prendi" compare solo al giocatore ammesso che non
+      // l'ha ancora preso e finché il bottino non è esaurito. La presa vera e propria (con i
+      // controlli anti-doppione e l'aggiunta all'Inventario) è fatta lato server, vedi
+      // handleLootClaim in api/log.js e il branch [data-loot-claim] in attachLogModeration.
+      if(l.role==='loot' && l.meta && l.meta.loot){
+        fulfillBtn = lootCardHTML(l);
       }
       // Sblocco Evoluzione da parte del Master (js/digimon-card.js, bottone 🔓/🔒): il messaggio
       // porta con sé lo username del giocatore sbloccato — solo LUI, leggendo questo messaggio,
@@ -1034,6 +1130,8 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       const fulfillBtn = e.target.closest('[data-fulfill-target]');
       const fulfillTormentBtn = e.target.closest('[data-fulfill-torment]');
       const rationConfirmBtn = e.target.closest('[data-ration-confirm]');
+      const lootClaimBtn = e.target.closest('[data-loot-claim]');
+      const rationMarkFoodBtn = e.target.closest('[data-ration-markfood]');
       const moveAcceptBtn = e.target.closest('[data-move-accept-sector]');
       const moveVoteBtn = e.target.closest('[data-move-vote-id]');
       const evoQuickBtn = e.target.closest('[data-evo-quick-username]');
@@ -1365,6 +1463,28 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
           if(onChanged) onChanged();
         }
       }
+      if(rationMarkFoodBtn && me && session && session.role==='player'){
+        // Vedi logHTML (::RATIONREQ::): segna come Categoria "Cibo" un oggetto già presente in
+        // Inventario, così conta come pasto. patchMember tocca SOLO tamer.inventory lato server.
+        const msgId = rationMarkFoodBtn.getAttribute('data-ration-markfood');
+        const sel = document.getElementById('ration-markfood-'+msgId);
+        const idx = sel ? Number(sel.value) : -1;
+        const inv = Array.isArray(me.tamer.inventory) ? me.tamer.inventory.map(it=>Object.assign({}, it)) : [];
+        if(inv[idx]){
+          rationMarkFoodBtn.disabled = true;
+          inv[idx].category = 'cibo';
+          const ok = await patchMember(code, session.username, null, { inventory: inv });
+          if(!ok){
+            rationMarkFoodBtn.disabled = false;
+            window.alert('⚠ Non salvato: ' + (lastApiError || 'errore di rete'));
+            return;
+          }
+          me.tamer.inventory = inv;
+          const rosterMe = (cachedRoster||[]).find(m=>m.username===session.username);
+          if(rosterMe && rosterMe!==me && rosterMe.tamer) rosterMe.tamer.inventory = inv.map(it=>Object.assign({}, it));
+          if(onChanged) onChanged();
+        }
+      }
       if(rationConfirmBtn && me){
         // Richiesta utente (Razioni/Affaticamento): conferma della scelta 0/1/2 fatta col
         // <select> mostrato da logHTML sopra (::RATIONREQ::). A differenza di fulfillTormentBtn/
@@ -1381,6 +1501,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         const chosenQty = qtySelect ? Math.max(0, Math.min(2, Number(qtySelect.value)||0)) : 0;
         if(me.tamer.lastRationRestId !== restId){
           rationConfirmBtn.disabled = true;
+          const rationSnapshot = { tamer: JSON.parse(JSON.stringify(me.tamer)), digimon: me.digimon ? JSON.parse(JSON.stringify(me.digimon)) : null };
           // Scala chosenQty "pasti" dagli oggetti category==='cibo' dell'Inventario, dal primo
           // in poi finché non ne rimangono da scalare — gli oggetti svuotati (qty<=0) vengono
           // rimossi dall'Inventario, stesso comportamento di un consumo normale.
@@ -1404,7 +1525,18 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
             if(me.digimon) me.digimon.fatigueLevel = Number(me.digimon.fatigueLevel||0) + 1;
             outcomeText = `😴 Solo ${chosenQty}/2 razioni consumate: +1 livello di Affaticamento (Tamer e Digimon).`;
           }
-          await saveMember(session.code, me);
+          // BUGFIX 2026-09-25: l'esito del salvataggio non era controllato — se falliva (rete,
+          // cold start Supabase) il bottone restava disabilitato, nessun messaggio, e al giro di
+          // polling successivo le razioni risultavano ancora da gestire senza spiegazione.
+          const saved = await saveMember(session.code, me);
+          if(!saved){
+            me.tamer = rationSnapshot.tamer;
+            if(me.digimon) me.digimon = rationSnapshot.digimon;
+            rationConfirmBtn.disabled = false;
+            window.alert('⚠ Razioni non salvate: ' + (lastApiError || 'errore di rete') + '. Riprova tra qualche secondo.');
+            return;
+          }
+          delete rationQtyChoice[String(msgId)];
           const entry = { who: displayName(me), role:'player', text: `🍙 ${displayName(me)} gestisce le razioni del Rest (${chosenQty}/2 consumate). ${outcomeText}` };
           if(playerChatMode==='private'){
             await pushPrivateLog(code, session.username, { ...entry, meta: { location: memberLocationKey(me) } });
@@ -1419,6 +1551,41 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
           }
           if(onChanged) onChanged();
         }
+      }
+      if(lootClaimBtn && me && session && session.role==='player'){
+        // Loot in chat (vedi lootCardHTML/handleLootClaim): la presa passa SEMPRE dal server, che
+        // controlla i doppioni (stesso giocatore due volte, bottino già esaurito, due click nello
+        // stesso istante) e aggiunge l'oggetto all'Inventario sommandolo a uno identico già
+        // presente. Qui si allinea solo la copia locale della Scheda (così un salvataggio
+        // successivo fatto con `me` non riscrive l'Inventario vecchio) e si narra la presa nello
+        // STESSO canale del messaggio di bottino (thread), non in quello aperto al momento.
+        const msgId = lootClaimBtn.getAttribute('data-loot-claim');
+        const qtySel = document.getElementById('loot-qty-'+msgId);
+        const reqQty = qtySel ? Math.max(1, Number(qtySel.value)||1) : 1;
+        lootClaimBtn.disabled = true;
+        const res = await apiPost('/api/log?resource=loot-claim', { code, thread: thread || undefined, id: msgId, username: session.username, qty: reqQty });
+        if(!res || !res.ok){
+          window.alert('⚠ ' + (lastApiError || 'Non è stato possibile prendere il bottino.'));
+          lootClaimBtn.disabled = false;
+          if(onChanged) onChanged();
+          return;
+        }
+        if(Array.isArray(res.inventory)){
+          me.tamer.inventory = res.inventory;
+          const rosterMe = (cachedRoster||[]).find(m=>m.username===session.username);
+          if(rosterMe && rosterMe!==me && rosterMe.tamer) rosterMe.tamer.inventory = res.inventory.map(it=>Object.assign({}, it));
+        }
+        const lootEntry = (sourceLog||[]).find(x=>String(x.id)===String(msgId));
+        if(lootEntry && lootEntry.meta && res.loot) lootEntry.meta.loot = res.loot;
+        const unit = res.item && res.item.category==='cibo' ? ' pasti' : '';
+        const narr = { who: displayName(me), role:'player', text: `🎁 ${displayName(me)} prende ${escapeLootText(res.item && res.item.name)} ×${res.granted}${unit} e lo mette nell'Inventario.` };
+        if(thread){
+          const group = String(thread).startsWith('subgroup:') ? ((cachedSubgroups||[]).find(g=>'subgroup:'+g.id===thread) || null) : null;
+          await pushPrivateLog(code, thread, { ...narr, meta: { location: group ? subgroupLocationKey(group) : memberLocationKey(me) } });
+        } else {
+          await pushLog(code, { ...narr, meta: { location: memberLocationKey(me) } });
+        }
+        if(onChanged) onChanged();
       }
       if(moveAcceptBtn && me){
         // Il Master ha esplicitamente proposto questa destinazione in chat: lo spostamento va a
