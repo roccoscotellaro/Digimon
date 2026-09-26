@@ -351,7 +351,20 @@
     }catch(e){ lastApiError = 'Errore di rete: ' + e.message; return null; }
   }
   async function getRoster(code){ const d = await apiGet('/api/roster?code=' + encodeURIComponent(code)); return d ? (d.members||[]).map(normalizeMember) : []; }
-  async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
+  // opts.replaceInventory: vedi api/roster.js ("Inventario: operazioni atomiche") — il salvataggio
+  // completo non tocca più l'Inventario di un membro esistente, salvo Azzera Scheda.
+  async function saveMember(code, member, opts){ const d = await apiPost('/api/roster', { code, member, replaceInventory: !!(opts && opts.replaceInventory) }); return !!(d && d.ok); }
+  // Stessa funzione di js/chat-log-engine.js (questa pagina non carica quel file): modifica atomica
+  // dell'Inventario lato server. invOpsPending sospende il polling mentre un'operazione è in volo,
+  // così un roster scaricato a metà non fa "sparire" l'oggetto appena aggiunto.
+  let invOpsPending = 0;
+  async function inventoryOp(code, username, op, payload){
+    invOpsPending++;
+    try{
+      const d = await apiPost('/api/roster', Object.assign({ resource:'inventory', code, username, op }, payload||{}));
+      return (d && d.ok) ? d : null;
+    } finally { invOpsPending--; }
+  }
   async function uploadImage(code, dataUrl){ return apiPost('/api/upload', { code, dataUrl }); }
   async function correggiItaliano(testo){ const d = await apiPost('/api/ai', { mode:'correzione', text: testo }); return d && d.corrected ? d.corrected : testo; }
   async function getProgression(code){
@@ -453,7 +466,10 @@
     // Origin Transfer Vercel senza un beneficio percepibile per il giocatore.
     pollTimer = setInterval(async ()=>{
       if(!session) return;
-      cachedRoster = await getRoster(session.code);
+      if(invOpsPending>0) return; // vedi inventoryOp
+      const freshRoster = await getRoster(session.code);
+      if(invOpsPending>0) return; // un'operazione è partita mentre il roster era in download: dati già vecchi
+      cachedRoster = freshRoster;
       checkNoticesForMe();
       if(isEditingFullForm) return;
       if(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
@@ -1176,7 +1192,7 @@
           if(!window.confirm(`Azzerare la Scheda Tamer di ${displayName(target)}? Attributi, Skill, Torments, Aspetti e Inventario torneranno a zero e potrà rifare la Creazione Guidata. L'azione non è reversibile.`)) return;
           if(!window.confirm(`Sei sicuro? Questa è l'ultima conferma prima di azzerare definitivamente la Scheda Tamer di ${displayName(target)}.`)) return;
           target.tamer = defaultTamer();
-          const ok = await saveMember(session.code, target);
+          const ok = await saveMember(session.code, target, { replaceInventory:true }); // svuota davvero l'Inventario (vedi api/roster.js)
           if(ok) cachedRoster = await getRoster(session.code);
           renderPage();
         };
@@ -1250,9 +1266,17 @@
     root.querySelectorAll('[data-inv-remove]').forEach(btn=>{
       btn.onclick = ()=>{
         collectFormValues(target);
-        target.tamer.inventory.splice(Number(btn.getAttribute('data-inv-remove')),1);
+        const idx = Number(btn.getAttribute('data-inv-remove'));
+        const before = target.tamer.inventory.map(it=>Object.assign({}, it));
+        const removed = before[idx];
+        if(!removed) return;
+        target.tamer.inventory.splice(idx,1);
         renderPage(); // vedi commento su p-inv-add: non aspettare il salvataggio prima di ridisegnare
-        saveMember(session.code, target).then(ok=>{ if(!ok) renderPage(); });
+        inventoryOp(session.code, target.username, 'remove', { index: idx, name: removed.name }).then(res=>{
+          target.tamer.inventory = res ? res.inventory : before;
+          if(!res) window.alert('⚠ Oggetto non rimosso: ' + (lastApiError||'errore di rete'));
+          renderPage();
+        });
       };
     });
     const invAdd = document.getElementById('p-inv-add');
@@ -1266,14 +1290,25 @@
       const categoryEl = document.getElementById('p-inv-category');
       const category = categoryEl ? categoryEl.value : 'altro';
       collectFormValues(target);
+      const before = target.tamer.inventory.map(it=>Object.assign({}, it));
       target.tamer.inventory.push({ name, qty, desc, category });
       // Aggiornamento ottimistico: ridisegna SUBITO con l'oggetto già in lista, senza aspettare
       // la risposta del server (che comunque salva l'intera riga member — tamer+digimon — quindi
       // può richiedere qualche centinaio di ms). Prima si aspettava saveMember() prima di ridisegnare,
       // e ogni "+ Aggiungi Oggetto" sembrava andare a rilento. Se il salvataggio fallisce, un secondo
       // render mostra il banner d'errore (lastApiError) senza far perdere l'oggetto già inserito.
+      //
+      // 2026-09-26 (Rocco: "a volte devo aggiungere un oggetto due volte perché venga registrato"):
+      // non si salva più l'INTERA Scheda (poteva essere sovrascritta subito dopo da un'altra pagina
+      // con una copia vecchia, o "sparire" a schermo col polling a metà salvataggio) — l'oggetto
+      // passa da inventoryOp, che modifica solo l'Inventario sul server; poi la lista mostrata
+      // viene riallineata a quella restituita dal server (oggetti uguali sommati, niente doppioni).
       renderPage();
-      saveMember(session.code, target).then(ok=>{ if(!ok) renderPage(); });
+      inventoryOp(session.code, target.username, 'add', { item: { name, qty, desc, category } }).then(res=>{
+        target.tamer.inventory = res ? res.inventory : before;
+        if(!res) window.alert('⚠ Oggetto non aggiunto: ' + (lastApiError||'errore di rete') + ' — riprova.');
+        renderPage();
+      });
     };
     root.querySelectorAll('[data-torment-remove]').forEach(btn=>{
       btn.onclick = async ()=>{

@@ -112,7 +112,23 @@
 // combattimento (~14 punti) che toccano solo 1-2 campi scalari; i pochi salvataggi che riscrivono
 // legittimamente l'intera scheda (Scheda Digimon stessa, creazione membro, applyStageChange)
 // restano su saveMember come prima.
-async function saveMember(code, member){ const d = await apiPost('/api/roster', { code, member }); return !!(d && d.ok); }
+// opts.replaceInventory (2026-09-26): il salvataggio completo NON tocca più l'Inventario di un
+// membro esistente (vedi api/roster.js, "Inventario: operazioni atomiche") — passare true SOLO
+// quando l'Inventario va davvero sostituito (Azzera Scheda Tamer).
+async function saveMember(code, member, opts){ const d = await apiPost('/api/roster', { code, member, replaceInventory: !!(opts && opts.replaceInventory) }); return !!(d && d.ok); }
+// Modifica atomica dell'Inventario lato server (op: 'add' {item} | 'remove' {index,name} |
+// 'setCategory' {index,name,category} | 'consumeFood' {qty}). Restituisce { inventory, consumed }
+// dal server, o null in caso di errore (lastApiError). Dopo il successo allinea anche la copia
+// in cachedRoster/cachedMe di quel giocatore, così la pagina non mostra l'Inventario vecchio fino
+// al prossimo giro di polling.
+async function inventoryOp(code, username, op, payload){
+  const d = await apiPost('/api/roster', Object.assign({ resource:'inventory', code, username, op }, payload||{}));
+  if(!d || !d.ok) return null;
+  const copy = ()=> (d.inventory||[]).map(it=>Object.assign({}, it));
+  (typeof cachedRoster!=='undefined' && cachedRoster ? cachedRoster : []).forEach(m=>{ if(m.username===username && m.tamer) m.tamer.inventory = copy(); });
+  if(typeof cachedMe!=='undefined' && cachedMe && cachedMe.username===username && cachedMe.tamer) cachedMe.tamer.inventory = copy();
+  return d;
+}
 async function patchMember(code, username, digimonPatch, tamerPatch){
   const body = { resource:'patch', code, username };
   if(digimonPatch) body.digimonPatch = digimonPatch;
@@ -1469,19 +1485,16 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         const msgId = rationMarkFoodBtn.getAttribute('data-ration-markfood');
         const sel = (rationMarkFoodBtn.parentElement && rationMarkFoodBtn.parentElement.querySelector('select[id^="ration-markfood-"]')) || document.getElementById('ration-markfood-'+msgId); // stesso motivo del select razioni (id duplicato col mini-log)
         const idx = sel ? Number(sel.value) : -1;
-        const inv = Array.isArray(me.tamer.inventory) ? me.tamer.inventory.map(it=>Object.assign({}, it)) : [];
-        if(inv[idx]){
+        const item = Array.isArray(me.tamer.inventory) ? me.tamer.inventory[idx] : null;
+        if(item){
           rationMarkFoodBtn.disabled = true;
-          inv[idx].category = 'cibo';
-          const ok = await patchMember(code, session.username, null, { inventory: inv });
-          if(!ok){
+          const res = await inventoryOp(code, session.username, 'setCategory', { index: idx, name: item.name, category: 'cibo' });
+          if(!res){
             rationMarkFoodBtn.disabled = false;
             window.alert('⚠ Non salvato: ' + (lastApiError || 'errore di rete'));
             return;
           }
-          me.tamer.inventory = inv;
-          const rosterMe = (cachedRoster||[]).find(m=>m.username===session.username);
-          if(rosterMe && rosterMe!==me && rosterMe.tamer) rosterMe.tamer.inventory = inv.map(it=>Object.assign({}, it));
+          me.tamer.inventory = res.inventory.map(it=>Object.assign({}, it));
           if(onChanged) onChanged();
         }
       }
@@ -1507,43 +1520,41 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         const chosenQty = qtySelect ? Math.max(0, Math.min(2, Number(qtySelect.value)||0)) : 0;
         if(me.tamer.lastRationRestId !== restId){
           rationConfirmBtn.disabled = true;
-          const rationSnapshot = { tamer: JSON.parse(JSON.stringify(me.tamer)), digimon: me.digimon ? JSON.parse(JSON.stringify(me.digimon)) : null };
-          // Scala chosenQty "pasti" dagli oggetti category==='cibo' dell'Inventario, dal primo
-          // in poi finché non ne rimangono da scalare — gli oggetti svuotati (qty<=0) vengono
-          // rimossi dall'Inventario, stesso comportamento di un consumo normale.
-          let remaining = chosenQty;
-          const inv = me.tamer.inventory || [];
-          inv.forEach(it=>{
-            if(remaining<=0 || it.category!=='cibo') return;
-            const take = Math.min(remaining, Number(it.qty)||0);
-            it.qty = Number(it.qty||0) - take;
-            remaining -= take;
-          });
-          me.tamer.inventory = inv.filter(it=> !(it.category==='cibo' && Number(it.qty)<=0));
-          me.tamer.lastRationRestId = restId;
-          let outcomeText;
-          if(chosenQty>=2){
-            me.tamer.fatigueLevel = 0;
-            if(me.digimon) me.digimon.fatigueLevel = 0;
-            outcomeText = '✅ 2/2 razioni consumate: Affaticamento azzerato (Tamer e Digimon).';
-          } else {
-            me.tamer.fatigueLevel = Number(me.tamer.fatigueLevel||0) + 1;
-            if(me.digimon) me.digimon.fatigueLevel = Number(me.digimon.fatigueLevel||0) + 1;
-            outcomeText = `😴 Solo ${chosenQty}/2 razioni consumate: +1 livello di Affaticamento (Tamer e Digimon).`;
-          }
-          // BUGFIX 2026-09-25: l'esito del salvataggio non era controllato — se falliva (rete,
-          // cold start Supabase) il bottone restava disabilitato, nessun messaggio, e al giro di
-          // polling successivo le razioni risultavano ancora da gestire senza spiegazione.
-          const saved = await saveMember(session.code, me);
-          if(!saved){
-            me.tamer = rationSnapshot.tamer;
-            if(me.digimon) me.digimon = rationSnapshot.digimon;
+          // 2026-09-26: il cibo si scala lato server (inventoryOp 'consumeFood', a partire
+          // dall'Inventario salvato, non da una copia locale magari vecchia) e Affaticamento/
+          // lastRationRestId si salvano con patchMember (solo quei campi) — prima un saveMember
+          // dell'intera Scheda poteva riscrivere l'Inventario/altro con dati vecchi.
+          const consumeRes = chosenQty>0 ? await inventoryOp(code, session.username, 'consumeFood', { qty: chosenQty }) : { inventory: me.tamer.inventory||[], consumed: 0 };
+          if(!consumeRes){
             rationConfirmBtn.disabled = false;
             window.alert('⚠ Razioni non salvate: ' + (lastApiError || 'errore di rete') + '. Riprova tra qualche secondo.');
             return;
           }
+          me.tamer.inventory = (consumeRes.inventory||[]).map(it=>Object.assign({}, it));
+          const eaten = Number(consumeRes.consumed!=null ? consumeRes.consumed : chosenQty);
+          let outcomeText;
+          let newFatigueT, newFatigueD;
+          if(eaten>=2){
+            newFatigueT = 0; newFatigueD = 0;
+            outcomeText = '✅ 2/2 razioni consumate: Affaticamento azzerato (Tamer e Digimon).';
+          } else {
+            newFatigueT = Number(me.tamer.fatigueLevel||0) + 1;
+            newFatigueD = Number((me.digimon && me.digimon.fatigueLevel)||0) + 1;
+            outcomeText = `😴 Solo ${eaten}/2 razioni consumate: +1 livello di Affaticamento (Tamer e Digimon).`;
+          }
+          const saved = await patchMember(code, session.username, me.digimon ? { fatigueLevel: newFatigueD } : null, { fatigueLevel: newFatigueT, lastRationRestId: restId });
+          if(!saved){
+            // Il bottone resta disabilitato apposta: un secondo click scalerebbe altro cibo.
+            window.alert('⚠ Il cibo è stato scalato ma l\'Affaticamento non è stato salvato: ' + (lastApiError || 'errore di rete') + '. Avvisa il Master (può sistemarlo dal Roster → Fame/Affaticamento).');
+            if(onChanged) onChanged();
+            return;
+          }
+          me.tamer.fatigueLevel = newFatigueT;
+          if(me.digimon) me.digimon.fatigueLevel = newFatigueD;
+          me.tamer.lastRationRestId = restId;
+          const chosenQtyForLog = eaten;
           delete rationQtyChoice[String(msgId)];
-          const entry = { who: displayName(me), role:'player', text: `🍙 ${displayName(me)} gestisce le razioni del Rest (${chosenQty}/2 consumate). ${outcomeText}` };
+          const entry = { who: displayName(me), role:'player', text: `🍙 ${displayName(me)} gestisce le razioni del Rest (${chosenQtyForLog}/2 consumate). ${outcomeText}` };
           if(playerChatMode==='private'){
             await pushPrivateLog(code, session.username, { ...entry, meta: { location: memberLocationKey(me) } });
           } else if(playerChatMode==='subgroup' && playerActiveSubgroupId){

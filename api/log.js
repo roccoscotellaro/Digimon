@@ -322,7 +322,9 @@ async function handleLootClaim(req, res) {
   if (!campaignCode || !id || !username) return res.status(400).json({ error: 'missing code, id or username' });
   const table = thread ? 'private_logs' : 'logs';
 
-  const { data: member, error: memberError } = await supabase.from('members').select('id, role, tamer').eq('campaign_code', campaignCode).eq('username', username).maybeSingle();
+  // BUGFIX 2026-09-26 ("column members.id does not exist"): la tabella members non ha una colonna
+  // id — la chiave è (campaign_code, username), come in roster.js. Tutte le query qui sotto usano quella.
+  const { data: member, error: memberError } = await supabase.from('members').select('role, tamer').eq('campaign_code', campaignCode).eq('username', username).maybeSingle();
   if (memberError) return res.status(500).json({ error: memberError.message });
   if (!member) return res.status(404).json({ error: 'Giocatore non trovato nella campagna.' });
   if (member.role === 'master') return res.status(403).json({ error: 'Il Master non può prendere il bottino.' });
@@ -365,11 +367,11 @@ async function handleLootClaim(req, res) {
   if (!claimed) return res.status(409).json({ error: 'Troppi click nello stesso istante: riprova.' });
 
   // Inventario: rilettura fresca (la Scheda può essere cambiata dopo la prima SELECT sopra).
-  const { data: fresh, error: freshError } = await supabase.from('members').select('tamer').eq('id', member.id).maybeSingle();
+  const { data: fresh, error: freshError } = await supabase.from('members').select('tamer').eq('campaign_code', campaignCode).eq('username', username).maybeSingle();
   const tamer = (fresh && fresh.tamer) || member.tamer || {};
   const item = { name: loot.name, category: loot.category || 'altro', desc: loot.desc || '' };
   const newInventory = mergeIntoInventory(tamer.inventory, item, granted);
-  const { error: invError } = freshError ? { error: freshError } : await supabase.from('members').update({ tamer: Object.assign({}, tamer, { inventory: newInventory }) }).eq('id', member.id);
+  const { error: invError } = freshError ? { error: freshError } : await supabase.from('members').update({ tamer: Object.assign({}, tamer, { inventory: newInventory }) }).eq('campaign_code', campaignCode).eq('username', username);
   if (invError) {
     // Presa registrata ma Inventario non aggiornato: la annulliamo (best effort, senza CAS — nel
     // peggiore dei casi il bottino resta segnato come preso e il Master lo può riassegnare a mano).

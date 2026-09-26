@@ -459,7 +459,7 @@
           if(!window.confirm(`Azzerare la Scheda Tamer di ${displayName(me)}? Attributi, Skill, Torments, Aspetti e Inventario torneranno a zero e potrà rifare la Creazione Guidata. L'azione non è reversibile.`)) return;
           if(!window.confirm(`Sei sicuro? Questa è l'ultima conferma prima di azzerare definitivamente la Scheda Tamer di ${displayName(me)}.`)) return;
           me.tamer = defaultTamer();
-          await saveMember(session.code, me);
+          await saveMember(session.code, me, { replaceInventory:true }); // unico caso in cui l'Inventario va davvero svuotato (vedi api/roster.js)
           await pushLog(session.code, { who:'Master', role:'gm', text: `La Scheda Tamer di ${displayName(me)} è stata azzerata dal Master.` });
           renderTamerCard(me, containerId, onChanged);
           if(onChanged) onChanged();
@@ -788,14 +788,28 @@
       </div>
       <div class="field"><label>Descrizione (opz.)</label><input type="text" id="inv-desc" placeholder="cosa fa..." /></div>
       <button class="btn solid" id="btn-inv-add" style="width:100%;">Aggiungi Oggetto</button>
+      <div class="muted" id="inv-op-status" style="margin-top:6px;color:var(--danger);"></div>
     `;
+    // 2026-09-26 (Rocco: "a volte devo aggiungere un oggetto due volte perché venga registrato"):
+    // aggiunta/rimozione non salvano più l'INTERA Scheda (saveMember), che poteva essere
+    // sovrascritta un attimo dopo da un'altra pagina con una copia vecchia — ora passano da
+    // inventoryOp (js/chat-log-engine.js → api/roster.js resource:'inventory'), che modifica solo
+    // l'Inventario partendo dalla versione salvata sul server. Ridisegno ottimistico immediato,
+    // poi riallineamento con la lista restituita dal server (o ripristino + avviso se fallisce).
+    const statusMsg = (t)=>{ const st = document.getElementById('inv-op-status'); if(st) st.textContent = t||''; };
+    const applyServer = (res, before)=>{
+      if(res){ me.tamer.inventory = res.inventory.map(it=>Object.assign({}, it)); renderInventoryCard(me, containerId); }
+      else { me.tamer.inventory = before; renderInventoryCard(me, containerId); statusMsg('⚠ Non salvato: ' + (lastApiError||'errore di rete') + ' — riprova.'); }
+    };
     cardEl.querySelectorAll('[data-remove-item]').forEach(btn=>{
       btn.onclick = ()=>{
         const idx = Number(btn.getAttribute('data-remove-item'));
+        const before = (me.tamer.inventory||[]).map(it=>Object.assign({}, it));
+        const removed = before[idx];
+        if(!removed) return;
         me.tamer.inventory.splice(idx,1);
-        // Ridisegna subito, salva in background (vedi p-inv-add in player.html per lo stesso fix).
         renderInventoryCard(me, containerId);
-        saveMember(session.code, me).then(ok=>{ if(!ok) renderInventoryCard(me, containerId); });
+        inventoryOp(session.code, me.username, 'remove', { index: idx, name: removed.name }).then(res=>applyServer(res, before));
       };
     });
     document.getElementById('btn-inv-add').onclick = ()=>{
@@ -805,9 +819,12 @@
       const desc = document.getElementById('inv-desc').value.trim();
       const catEl = document.getElementById('inv-category');
       const category = (catEl && catEl.value) || 'altro';
-      me.tamer.inventory.push({ name, qty, desc, category });
+      const before = (me.tamer.inventory||[]).map(it=>Object.assign({}, it));
+      me.tamer.inventory = before.map(it=>Object.assign({}, it)).concat([{ name, qty, desc, category }]);
       renderInventoryCard(me, containerId);
-      saveMember(session.code, me).then(ok=>{ if(!ok) renderInventoryCard(me, containerId); });
+      const addBtn = document.getElementById('btn-inv-add');
+      if(addBtn){ addBtn.disabled = true; addBtn.textContent = 'Salvataggio...'; }
+      inventoryOp(session.code, me.username, 'add', { item: { name, qty, desc, category } }).then(res=>applyServer(res, before));
     };
   }
 
