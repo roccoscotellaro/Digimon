@@ -1467,7 +1467,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         // Vedi logHTML (::RATIONREQ::): segna come Categoria "Cibo" un oggetto già presente in
         // Inventario, così conta come pasto. patchMember tocca SOLO tamer.inventory lato server.
         const msgId = rationMarkFoodBtn.getAttribute('data-ration-markfood');
-        const sel = document.getElementById('ration-markfood-'+msgId);
+        const sel = (rationMarkFoodBtn.parentElement && rationMarkFoodBtn.parentElement.querySelector('select[id^="ration-markfood-"]')) || document.getElementById('ration-markfood-'+msgId); // stesso motivo del select razioni (id duplicato col mini-log)
         const idx = sel ? Number(sel.value) : -1;
         const inv = Array.isArray(me.tamer.inventory) ? me.tamer.inventory.map(it=>Object.assign({}, it)) : [];
         if(inv[idx]){
@@ -1497,7 +1497,13 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         // un colpo solo).
         const msgId = rationConfirmBtn.getAttribute('data-ration-confirm');
         const restId = rationConfirmBtn.getAttribute('data-ration-rest');
-        const qtySelect = document.getElementById('ration-qty-'+msgId);
+        // BUGFIX 2026-09-25 (Rocco: "ha selezionato le razioni e cliccando gliene ha calcolate
+        // zero"): lo stesso messaggio può essere disegnato DUE volte nella pagina del giocatore —
+        // nel Registro e nel mini-log nascosto del tab Battaglia (ultimi 4 messaggi di Generale,
+        // index.html) — quindi con DUE <select id="ration-qty-N">. getElementById restituiva il
+        // primo nel DOM, cioè quello del mini-log (mai toccato, spesso fermo a "0 razioni"), non
+        // quello scelto dal giocatore. Ora si legge il select accanto al bottone cliccato.
+        const qtySelect = (rationConfirmBtn.parentElement && rationConfirmBtn.parentElement.querySelector('select[data-ration-qty-for]')) || document.getElementById('ration-qty-'+msgId);
         const chosenQty = qtySelect ? Math.max(0, Math.min(2, Number(qtySelect.value)||0)) : 0;
         if(me.tamer.lastRationRestId !== restId){
           rationConfirmBtn.disabled = true;
@@ -1560,7 +1566,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         // successivo fatto con `me` non riscrive l'Inventario vecchio) e si narra la presa nello
         // STESSO canale del messaggio di bottino (thread), non in quello aperto al momento.
         const msgId = lootClaimBtn.getAttribute('data-loot-claim');
-        const qtySel = document.getElementById('loot-qty-'+msgId);
+        const qtySel = (lootClaimBtn.parentElement && lootClaimBtn.parentElement.querySelector('select[id^="loot-qty-"]')) || document.getElementById('loot-qty-'+msgId); // id duplicato col mini-log di Battaglia, vedi razioni
         const reqQty = qtySel ? Math.max(1, Number(qtySel.value)||1) : 1;
         lootClaimBtn.disabled = true;
         const res = await apiPost('/api/log?resource=loot-claim', { code, thread: thread || undefined, id: msgId, username: session.username, qty: reqQty });
