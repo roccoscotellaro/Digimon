@@ -371,13 +371,14 @@
                 ${(cachedSubgroups||[]).map(g=>`<option value="subgroup:${escapeAttr(g.id)}">👥 Sottogruppo: ${escapeHTML(g.name)} (${(g.members||[]).length})</option>`).join('')}
               </select>
             </div>
-            <div class="field" id="invite-mode-field" style="display:none;margin-bottom:4px;"><label>🧭 Modalità spostamento (solo Sottogruppo)</label>
+            <div class="field" id="invite-mode-field" style="margin-bottom:4px;"><label>🧭 Modalità spostamento (Generale o Sottogruppo)</label>
               <select id="invite-mode-select">
                 <option value="each">Ognuno che clicca si sposta da solo (comportamento normale)</option>
-                <option value="all">Basta un "sì" per spostare subito tutto il sottogruppo</option>
-                <option value="majority">Si sposta tutto il sottogruppo quando la maggioranza dice "sì"</option>
-                <option value="unanimous">Si sposta tutto il sottogruppo solo quando TUTTI dicono "sì"</option>
+                <option value="all">Basta un "sì" per spostare subito tutto il gruppo</option>
+                <option value="majority">Si sposta tutto il gruppo quando la maggioranza dice "sì"</option>
+                <option value="unanimous">Si sposta tutto il gruppo solo quando TUTTI dicono "sì"</option>
               </select>
+              <div class="muted" style="font-size:10px;margin-top:2px;">In Chat Generale il "gruppo" sono i giocatori che in questo momento sono col gruppo (stessa posizione della Scena); in un Sottogruppo, i suoi membri.</div>
             </div>
             <button class="btn ghost small" data-sector-chat-invite="${selectedSector.id}" style="width:100%;">💬 Proponi qui il Settore</button>
             <div class="muted" style="margin-top:6px;font-size:11px;">Luoghi in questo Settore:</div>
@@ -522,9 +523,30 @@
     const inviteTargetSel = document.getElementById('invite-target-select');
     const inviteModeField = document.getElementById('invite-mode-field');
     if(inviteTargetSel && inviteModeField){
-      const syncInviteModeVisibility = ()=>{ inviteModeField.style.display = inviteTargetSel.value.startsWith('subgroup:') ? 'block' : 'none'; };
+      // 2026-09-27 (Rocco: "lo spostamento in Chat Generale come nei Sottogruppi con più o meno
+      // click non esiste"): la modalità ora vale anche per la Chat Generale — resta nascosta solo
+      // per un destinatario in Privata (un solo giocatore, non c'è niente da votare).
+      const isPrivateTarget = (v)=> !!v && !v.startsWith('subgroup:');
+      const syncInviteModeVisibility = ()=>{ inviteModeField.style.display = isPrivateTarget(inviteTargetSel.value) ? 'none' : 'block'; };
       inviteTargetSel.onchange = syncInviteModeVisibility;
       syncInviteModeVisibility();
+      // Sottogruppi creati DOPO l'apertura della mappa non comparivano mai nel menu (venivano
+      // caricati una volta sola): li ricarichiamo quando il Master apre il menu destinatario.
+      inviteTargetSel.onfocus = ()=>{
+        getSubgroups(code).then(groups=>{
+          const known = (cachedSubgroups||[]).map(g=>g.id+':'+(g.members||[]).length).join(',');
+          const fresh = (groups||[]).map(g=>g.id+':'+(g.members||[]).length).join(',');
+          cachedSubgroups = groups;
+          if(known!==fresh){
+            const keep = inviteTargetSel.value;
+            Array.from(inviteTargetSel.querySelectorAll('option[value^="subgroup:"]')).forEach(o=>o.remove());
+            groups.forEach(g=>{ const o = document.createElement('option'); o.value = 'subgroup:'+g.id; o.textContent = `👥 Sottogruppo: ${g.name} (${(g.members||[]).length})`; inviteTargetSel.appendChild(o); });
+            inviteTargetSel.value = keep;
+            if(inviteTargetSel.value!==keep) inviteTargetSel.value = '';
+            syncInviteModeVisibility();
+          }
+        }).catch(()=>{});
+      };
     }
     // Pannello unico "👥 Posizione dei giocatori": un solo modo per spostare un giocatore (in
     // qualunque Macroscena, senza toccare cachedScene.currentMacroSceneId/currentSectorId/
@@ -787,8 +809,8 @@
     };
     // "Proponi in chat": manda un messaggio con un pulsante "🚶 Sì, andiamo!" — in Generale (tutti),
     // in Privata a un solo giocatore, o in un Sottogruppo, a scelta nel menu "destinatario" qui
-    // sopra. Per Generale/Privata chi lo clicca si sposta SEMPRE da solo (mode 'each' forzato: non
-    // avrebbe senso far dipendere l'intera Chat Generale da un voto). Per un Sottogruppo, la
+    // sopra. In Privata chi lo clicca si sposta SEMPRE da solo (mode 'each' forzato). Per la Chat
+    // Generale (dal 2026-09-27, vedi sotto: vota chi è col gruppo) e per un Sottogruppo, la
     // "Modalità spostamento" scelta accanto al destinatario decide se ogni click sposta solo chi
     // clicca, o se serve un primo sì/una maggioranza per spostare tutto il sottogruppo insieme —
     // vedi js/chat-log-engine.js (logHTML/attachLogModeration) per la logica di voto vera e propria.
@@ -799,11 +821,26 @@
       const targetEl = document.getElementById('invite-target-select');
       const target = targetEl ? targetEl.value : '';
       const isSubgroup = target.startsWith('subgroup:');
+      const isGeneral = !target;
       const modeEl = document.getElementById('invite-mode-select');
-      const mode = (isSubgroup && modeEl) ? modeEl.value : 'each';
+      const mode = ((isSubgroup || isGeneral) && modeEl) ? modeEl.value : 'each';
       const text = `Vuoi andare a "${label}"?::MOVEREQ::${sectorId}|${subsectionId||''}|${luogoId||''}|${mode}`;
       if(target) await pushPrivateLog(code, target, { who:'Master', role:'moverequest', text });
-      else await pushLog(code, { who:'Master', role:'moverequest', text });
+      else {
+        // Chat Generale con voto (2026-09-27): il "gruppo" che vota = i giocatori che ORA sono
+        // nella posizione del gruppo (stessa chiave di posizione del messaggio, che pushLog tagga
+        // con currentLocationKey) — chi si è separato altrove non vota e non viene spostato. Se
+        // nessuno risulta lì (caso limite), vota tutto il party. Salvato in meta.moveGroup così
+        // conteggio e spostamento restano stabili anche se qualcuno si muove dopo l'invio.
+        const meta = {};
+        if(mode!=='each'){
+          const players = (cachedRoster||[]).filter(m=>m.role==='player');
+          const hereKey = normalizeLocationKey(currentLocationKey());
+          const here = players.filter(m=>normalizeLocationKey(memberLocationKey(m))===hereKey).map(m=>m.username);
+          meta.moveGroup = here.length ? here : players.map(m=>m.username);
+        }
+        await pushLog(code, { who:'Master', role:'moverequest', text, meta });
+      }
     }
     el.querySelectorAll('[data-sector-chat-invite]').forEach(btn=>{
       btn.onclick = async ()=>{

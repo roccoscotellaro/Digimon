@@ -736,6 +736,19 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
     </div>`;
   }
 
+  // Chi vota un invito di spostamento 'all'/'majority'/'unanimous' (vedi logHTML): membri del
+  // Sottogruppo se il messaggio è in un thread "subgroup:<id>", altrimenti meta.moveGroup
+  // (Chat Generale, salvato all'invio), altrimenti null (numero ignoto: messaggi vecchi).
+  function moveGroupMembersFor(l){
+    const th = l && l.thread_username ? String(l.thread_username) : '';
+    if(th.startsWith('subgroup:')){
+      const g = (cachedSubgroups||[]).find(x=>x.id===th.slice('subgroup:'.length));
+      return g ? (g.members||[]).slice() : null;
+    }
+    if(l && l.meta && Array.isArray(l.meta.moveGroup) && l.meta.moveGroup.length) return l.meta.moveGroup.slice();
+    return null;
+  }
+
   function logHTML(log, canModerate){
     log = applyManualReorder(log);
     if(!log || log.length===0) return '<div class="muted">Il registro è vuoto. Le azioni appariranno qui.</div>';
@@ -869,28 +882,33 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
             // Comportamento storico: chi clicca si sposta DA SOLO, subito.
             fulfillBtn = `<button class="btn small" style="margin-top:6px;background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);" data-move-accept-sector="${escapeAttr(moveSectorId)}" data-move-accept-subsection="${escapeAttr(moveSubsectionId)}" data-move-accept-luogo="${escapeAttr(moveLuogoId)}">🚶 Sì, andiamo!</button>`;
           } else {
-            // 'all'/'majority'/'unanimous': il contatore "N/Tot" (richiesto da Rocco) usa il
-            // numero REALE di membri del sottogruppo, letto da cachedSubgroups tramite
-            // thread_username (colonna restituita da GET /api/log, presente su ogni entry di
-            // private_logs) — così il denominatore resta corretto anche se il sottogruppo cambia
-            // membri dopo l'invio dell'invito.
-            const groupId = l.thread_username && String(l.thread_username).startsWith('subgroup:') ? String(l.thread_username).slice('subgroup:'.length) : null;
-            const group = groupId ? (cachedSubgroups||[]).find(g=>g.id===groupId) : null;
-            const totalMembers = group ? (group.members||[]).length : null;
+            // 'all'/'majority'/'unanimous' — 2026-09-27 (Rocco: "lo spostamento in Chat Generale come
+            // nei Sottogruppi con più o meno click non esiste"): ora funziona anche in Chat
+            // Generale. Il "gruppo" che vota è: in un Sottogruppo i suoi membri (letti da
+            // cachedSubgroups via thread_username, così il totale resta giusto anche se il
+            // sottogruppo cambia); in Generale i giocatori salvati dal Master in meta.moveGroup
+            // al momento dell'invio (chi era col gruppo in quel luogo, vedi sendMoveInvite in
+            // js/scene-encounters.js). Il bottone compare solo a chi fa parte del gruppo.
+            const groupMembers = moveGroupMembersFor(l);
+            const totalMembers = groupMembers ? groupMembers.length : null;
             const votes = Array.isArray(l.meta && l.meta.moveVotes) ? l.meta.moveVotes : [];
             const totalLabel = totalMembers!=null ? `${votes.length}/${totalMembers}` : `${votes.length}`;
+            const groupWord = (l.thread_username && String(l.thread_username).startsWith('subgroup:')) ? 'sottogruppo' : 'gruppo';
+            const inGroup = !groupMembers || groupMembers.includes(session.username);
             if(l.meta && l.meta.moveResolved){
               // Soglia già raggiunta in passato (da un altro membro): niente più da cliccare,
               // solo un esito per chi legge/rilegge il messaggio più tardi — il contatore resta
               // visibile con il conteggio finale, invece di sparire nel nulla.
-              fulfillBtn = `<div class="muted" style="margin-top:6px;font-size:11px;">✅ Il sottogruppo si è già spostato (${totalLabel} hanno accettato).</div>`;
+              fulfillBtn = `<div class="muted" style="margin-top:6px;font-size:11px;">✅ Il ${groupWord} si è già spostato (${totalLabel} hanno accettato).</div>`;
+            } else if(!inGroup){
+              fulfillBtn = `<div class="muted" style="margin-top:6px;font-size:11px;">Invito per il ${groupWord} che era lì: ${totalLabel} hanno detto sì.</div>`;
             } else {
               const already = votes.includes(session.username);
               const modeExplainer = moveMode==='all'
-                ? 'basta un solo "sì" per spostare subito tutto il sottogruppo'
+                ? `basta un solo "sì" per spostare subito tutto il ${groupWord}`
                 : (moveMode==='unanimous'
-                  ? 'devono dire "sì" TUTTI i membri del sottogruppo'
-                  : 'serve la maggioranza dei membri del sottogruppo');
+                  ? `devono dire "sì" TUTTI i membri del ${groupWord}`
+                  : `serve la maggioranza del ${groupWord}`);
               fulfillBtn = `<div style="margin-top:6px;">
                 <button class="btn small ${already?'ghost':''}" ${already?'disabled':''} style="${already?'':'background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);'}" data-move-vote-id="${escapeAttr(l.id)}" data-move-vote-sector="${escapeAttr(moveSectorId)}" data-move-vote-subsection="${escapeAttr(moveSubsectionId)}" data-move-vote-luogo="${escapeAttr(moveLuogoId)}" data-move-vote-mode="${escapeAttr(moveMode)}">${already?'✅ Hai accettato':'🚶 Sì, andiamo!'}</button>
                 <div class="muted" style="font-size:10px;margin-top:2px;">${totalLabel} hanno detto sì — ${modeExplainer}${already?', in attesa degli altri':''}.</div>
@@ -1663,39 +1681,38 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         const luogoId = moveVoteBtn.getAttribute('data-move-vote-luogo') || null;
         const mode = moveVoteBtn.getAttribute('data-move-vote-mode');
         const entry = sourceLog.find(l=>String(l.id)===String(msgId));
-        if(entry && sectorId && !(entry.meta && entry.meta.moveResolved)){
+        if(sectorId && !(entry && entry.meta && entry.meta.moveResolved)){
+          // 2026-09-27: il voto passa dal server (api/log.js resource=move-vote), che aggiunge il
+          // voto con un controllo anti-sovrascrittura (due giocatori che cliccano insieme non si
+          // cancellano più il voto a vicenda, come poteva succedere scrivendo meta.moveVotes dal
+          // client), calcola la soglia sul gruppo reale e, se raggiunta, sposta lui i membri
+          // (solo i campi di posizione della Scheda, niente salvataggio dell'intera Scheda).
           moveVoteBtn.disabled = true;
-          const prevVotes = Array.isArray(entry.meta && entry.meta.moveVotes) ? entry.meta.moveVotes : [];
-          const votes = prevVotes.includes(session.username) ? prevVotes : [...prevVotes, session.username];
-          // Il thread di un Sottogruppo è sempre "subgroup:<id>" (vedi js/subgroups.js) — questo
-          // branch esiste solo per messaggi mandati lì (il Master, in js/scene-encounters.js,
-          // mostra 'all'/'majority'/'unanimous' solo quando il destinatario dell'invito è un
-          // Sottogruppo).
-          const group = (thread && String(thread).startsWith('subgroup:'))
-            ? (cachedSubgroups||[]).find(g=>g.id===String(thread).slice('subgroup:'.length)) || null
-            : null;
-          const totalMembers = group ? group.members.length : votes.length;
-          const threshold = mode==='all' ? 1 : (mode==='unanimous' ? totalMembers : (Math.floor(totalMembers/2)+1));
-          const reached = !!group && votes.length >= threshold;
-          const newMeta = Object.assign({}, entry.meta||{}, { moveVotes: votes }, reached ? { moveResolved:true } : {});
-          const ok = await editLogEntry(code, msgId, entry.text, thread, { meta: newMeta });
-          if(!ok){ moveVoteBtn.disabled = false; return; }
-          entry.meta = newMeta;
-          if(reached){
-            for(const username of group.members){
-              const member = (cachedRoster||[]).find(m=>m.username===username);
-              if(!member || !member.tamer) continue;
-              member.tamer.currentSectorId = sectorId;
-              member.tamer.currentSubsectionId = subsectionId;
-              member.tamer.currentLuogoId = luogoId;
-              await saveMember(code, member);
-            }
+          const res = await apiPost('/api/log?resource=move-vote', { code, thread: thread || undefined, id: msgId, username: session.username });
+          if(!res || !res.ok){
+            moveVoteBtn.disabled = false;
+            window.alert('⚠ ' + (lastApiError || 'Voto non registrato, riprova.'));
+            if(onChanged) onChanged();
+            return;
+          }
+          if(entry){ entry.meta = Object.assign({}, entry.meta||{}, { moveVotes: res.votes }, res.resolved ? { moveResolved:true } : {}); }
+          if(res.resolved && res.justResolved){
+            (res.moved||[]).forEach(u=>{
+              const m = (cachedRoster||[]).find(x=>x.username===u);
+              if(m && m.tamer){ m.tamer.currentSectorId = sectorId; m.tamer.currentSubsectionId = subsectionId; m.tamer.currentLuogoId = luogoId; }
+            });
+            if(me && me.tamer && (res.moved||[]).includes(me.username)){ me.tamer.currentSectorId = sectorId; me.tamer.currentSubsectionId = subsectionId; me.tamer.currentLuogoId = luogoId; }
             const destName = luogoId ? luogoNameAnywhere(sectorId, subsectionId, luogoId) : (subsectionId ? subsectionNameById(sectorId, subsectionId) : sectorNameById(sectorId));
-            // BUGFIX: stesso motivo del branch [data-move-accept-sector] qui sopra — a questo punto
-            // i membri del sottogruppo hanno già la nuova posizione salvata, quindi subgroupLocationKey
-            // la calcola correttamente invece di lasciare che pushPrivateLog usi di default la
-            // posizione CONDIVISA (vecchia) del gruppo.
-            await pushPrivateLog(code, thread, { who:'Sistema', role:'gm', text: `📍 Il sottogruppo si sposta a "${destName||''}" (${votes.length}/${totalMembers} hanno accettato).`, meta: { location: subgroupLocationKey(group) } });
+            const isSub = thread && String(thread).startsWith('subgroup:');
+            const text = `📍 Il ${isSub?'sottogruppo':'gruppo'} si sposta a "${destName||''}" (${res.votes.length}/${res.total} hanno accettato).`;
+            // Tag di posizione = la NUOVA posizione (appena salvata sui membri), così il messaggio
+            // compare nella chat del luogo di arrivo — stesso motivo dei BUGFIX sugli spostamenti.
+            if(isSub){
+              const group = (cachedSubgroups||[]).find(g=>'subgroup:'+g.id===thread) || null;
+              await pushPrivateLog(code, thread, { who:'Sistema', role:'gm', text, meta: { location: subgroupLocationKey(group) } });
+            } else {
+              await pushLog(code, { who:'Sistema', role:'gm', text, meta: { location: memberLocationKey(me) } });
+            }
           }
           if(onChanged) onChanged();
         }

@@ -28,6 +28,8 @@
 //     Digimon qualsiasi sconfitto -> avviso a TUTTI i PC in combattimento). `username` singolo
 //     resta supportato per compatibilità con le chiamate esistenti (avviso di turno).
 //
+//   POST   /api/log?resource=move-vote { code, thread?, id, username } -> voto su un invito di
+//     spostamento di gruppo (all/majority/unanimous) — vedi handleMoveVote. Aggiunta 2026-09-27.
 //   POST   /api/log?resource=loot-claim { code, thread?, id, username, qty? } -> un giocatore prende
 //     il bottino di un messaggio 'loot' (meta.loot) e se lo ritrova in Inventario — vedi
 //     handleLootClaim. Aggiunta 2026-09-25, stesso file per restare sotto le 12 Functions.
@@ -391,6 +393,95 @@ async function handleLootClaim(req, res) {
   return res.status(200).json({ ok: true, granted, item, inventory: newInventory, loot });
 }
 
+// ===== Voto di spostamento (resource=move-vote) — 2026-09-27 =====
+// Inviti "Vuoi andare a...?" (::MOVEREQ::, vedi js/chat-log-engine.js) in modalità
+// 'all' (basta un sì) / 'majority' (maggioranza) / 'unanimous' (tutti). Prima il client scriveva
+// da solo meta.moveVotes con la SUA copia del messaggio: due voti ravvicinati si cancellavano a
+// vicenda, e in Chat Generale non esisteva proprio un "gruppo" su cui contare. Qui:
+//   - il gruppo è: membri del Sottogruppo (tabella subgroups) se il thread è "subgroup:<id>";
+//     altrimenti meta.moveGroup salvato dal Master all'invio (Chat Generale); in mancanza di
+//     entrambi, tutti i giocatori della campagna;
+//   - il voto si aggiunge con compare-and-swap su meta->>moveV (stesso schema del loot);
+//   - raggiunta la soglia, i membri del gruppo vengono spostati qui (solo i campi di posizione
+//     di tamer: currentSectorId/currentSubsectionId/currentLuogoId).
+function parseMovePayload(text) {
+  const raw = String(text || '');
+  const idx = raw.indexOf('::MOVEREQ::');
+  if (idx < 0) return null;
+  const parts = raw.slice(idx + '::MOVEREQ::'.length).split('|');
+  if (parts.length >= 4) return { sectorId: parts[0] || '', subsectionId: parts[1] || '', luogoId: parts[2] || '', mode: parts[3] || 'each' };
+  return { sectorId: parts[0] || '', subsectionId: '', luogoId: parts[1] || '', mode: parts[2] || 'each' };
+}
+
+async function handleMoveVote(req, res) {
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ error: 'method not allowed' });
+  }
+  const { code, thread, id, username } = req.body || {};
+  const campaignCode = cleanCode(code);
+  if (!campaignCode || !id || !username) return res.status(400).json({ error: 'missing code, id or username' });
+  const table = thread ? 'private_logs' : 'logs';
+
+  let result = null;
+  for (let attempt = 0; attempt < 5 && !result; attempt++) {
+    let q = supabase.from(table).select('id, role, text, meta').eq('campaign_code', campaignCode).eq('id', id);
+    if (thread) q = q.eq('thread_username', thread);
+    const { data: row, error: rowError } = await q.maybeSingle();
+    if (rowError) return res.status(500).json({ error: rowError.message });
+    if (!row || row.role !== 'moverequest') return res.status(404).json({ error: 'Invito non trovato (forse cancellato dal Master).' });
+    const move = parseMovePayload(row.text);
+    if (!move || !move.sectorId || move.mode === 'each') return res.status(400).json({ error: 'Questo invito non prevede un voto.' });
+    const meta = row.meta || {};
+
+    let group = null;
+    if (thread && String(thread).startsWith('subgroup:')) {
+      const { data: sg } = await supabase.from('subgroups').select('members').eq('code', campaignCode).eq('id', String(thread).slice('subgroup:'.length)).maybeSingle();
+      group = sg && Array.isArray(sg.members) ? sg.members : null;
+    } else if (Array.isArray(meta.moveGroup) && meta.moveGroup.length) {
+      group = meta.moveGroup;
+    }
+    if (!group) {
+      const { data: players } = await supabase.from('members').select('username').eq('campaign_code', campaignCode).eq('role', 'player');
+      group = (players || []).map(p => p.username);
+    }
+    if (!group.includes(username)) return res.status(403).json({ error: 'Questo invito è per un altro gruppo.' });
+    const votesBefore = Array.isArray(meta.moveVotes) ? meta.moveVotes : [];
+    const total = group.length;
+    if (meta.moveResolved) {
+      result = { votes: votesBefore, total, resolved: true, justResolved: false, moved: [] };
+      break;
+    }
+    const votes = votesBefore.includes(username) ? votesBefore : votesBefore.concat([username]);
+    const threshold = move.mode === 'all' ? 1 : (move.mode === 'unanimous' ? total : Math.floor(total / 2) + 1);
+    const reached = votes.length >= threshold;
+    const v = meta.moveV == null ? null : Number(meta.moveV);
+    const newMeta = Object.assign({}, meta, { moveVotes: votes, moveV: (v || 0) + 1 }, reached ? { moveResolved: true } : {});
+    let u = supabase.from(table).update({ meta: newMeta }).eq('campaign_code', campaignCode).eq('id', id);
+    if (thread) u = u.eq('thread_username', thread);
+    u = v == null ? u.is('meta->>moveV', null) : u.eq('meta->>moveV', String(v));
+    const { data: updated, error: updError } = await u.select('id');
+    if (updError) return res.status(500).json({ error: updError.message });
+    if (!updated || !updated.length) continue; // qualcun altro ha votato nel frattempo: rileggi
+    result = { votes, total, resolved: reached, justResolved: reached, moved: [] };
+    if (reached) {
+      for (const member of group) {
+        const { data: m } = await supabase.from('members').select('tamer').eq('campaign_code', campaignCode).eq('username', member).maybeSingle();
+        if (!m) continue;
+        const tamer = Object.assign({}, m.tamer || {}, {
+          currentSectorId: move.sectorId,
+          currentSubsectionId: move.subsectionId || null,
+          currentLuogoId: move.luogoId || null
+        });
+        const { error: mvError } = await supabase.from('members').update({ tamer }).eq('campaign_code', campaignCode).eq('username', member);
+        if (!mvError) result.moved.push(member);
+      }
+    }
+  }
+  if (!result) return res.status(409).json({ error: 'Troppi voti nello stesso istante: riprova.' });
+  return res.status(200).json(Object.assign({ ok: true }, result));
+}
+
 module.exports = async (req, res) => {
   try {
     // ===== Sottoscrizioni Web Push (risorsa separata, stesso file per restare sotto il limite
@@ -427,6 +518,11 @@ module.exports = async (req, res) => {
     // Vedi commento in cima al file. Richiede solo VAPID configurate + il/i giocatore/i già
     // sottoscritti alle Web Push: altrimenti sendPushToSubscriptions non fa nulla, silenziosamente
     // (stesso comportamento "safe no-op" degli altri invii push di questo file).
+    // Voto di spostamento — vedi handleMoveVote più sopra.
+    if (req.query && req.query.resource === 'move-vote') {
+      return await handleMoveVote(req, res);
+    }
+
     // Loot in chat — vedi handleLootClaim più sopra.
     if (req.query && req.query.resource === 'loot-claim') {
       return await handleLootClaim(req, res);
