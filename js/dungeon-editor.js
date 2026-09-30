@@ -18,6 +18,16 @@
 //   - Contenuti su singole caselle: Trappola, Tesoro, Incontro, Porta chiusa (con chiave), Nota,
 //     Scale/Teletrasporto, Punto di ristoro, Leva — ognuno con un'icona a scelta (emoji dal menu
 //     o un'immagine caricata).
+// SALVATAGGIO (terza richiesta, "ne avevo completato uno ma non me lo ha salvato"): prima si
+// salvava SOLO premendo 💾 — chiudendo/ricaricando la pagina, o se il salvataggio veniva bloccato
+// da un controllo (es. nessun pavimento), il lavoro andava perso senza che fosse evidente. Ora:
+//   - salvataggio AUTOMATICO sul server ~2,5 s dopo l'ultima modifica (se il dungeon ha almeno una
+//     casella calpestabile), con lo stato sempre visibile accanto al bottone 💾;
+//   - copia di sicurezza nel browser (localStorage) a ogni modifica: se la pagina si chiude prima
+//     del salvataggio, alla riapertura dell'editor compare "Ripristina bozza";
+//   - avviso del browser se si prova a lasciare la pagina con modifiche non ancora salvate;
+//   - i campi del contenuto di una casella si applicano subito (il bottone "Applica" non è più
+//     indispensabile).
 // Cambiare le dimensioni di un dungeon già esplorato azzera l'esplorazione (lo fa il server,
 // perché le posizioni salvate non corrisponderebbero più alle caselle).
 
@@ -66,6 +76,8 @@
   let dirty = false;
   let painting = false;
   let msg = '';
+  let autoTimer = null, saving = false, changeSeq = 0, saveState = '';
+  const DRAFT_KEY = () => 'dvos_dungeon_draft_' + (session ? session.code : '');
 
   const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const uid = p => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
@@ -305,15 +317,29 @@
       <div class="row" style="gap:6px;margin-top:10px;align-items:center;flex-wrap:wrap;">
         <button class="btn amber" id="dge-save">💾 Salva dungeon</button>
         <button class="btn ghost small" id="dge-del">🗑️ Elimina</button>
-        <span class="muted" style="font-size:11px;">${dirty?'● modifiche non salvate':''}</span>
+        <span id="dge-save-status" style="font-size:11px;">${saveStatusHTML()}</span>
       </div>`;
   }
+
+  function restoreBannerHTML(){
+    const b = readBackup();
+    if(!b || !b.dg || (dg && dg.id===b.dg.id && !dirty && JSON.stringify(stripRun(dg))===JSON.stringify(stripRun(b.dg)))) return '';
+    const onServer = (data.dungeons||[]).find(x=>x.id===b.dg.id);
+    if(onServer && JSON.stringify(stripRun(onServer))===JSON.stringify(stripRun(b.dg))) { clearBackup(); return ''; }
+    if(dg && dg.id===b.dg.id && dirty) return '';
+    const when = new Date(b.at);
+    return `<div class="hud-frame" style="padding:8px 10px;margin:6px 0;border-left:3px solid #ff8a3d;font-size:12px;">
+      ♻️ C'è una bozza non salvata di <b>${esc(b.dg.name||'dungeon')}</b> (${String(when.getDate()).padStart(2,'0')}/${String(when.getMonth()+1).padStart(2,'0')} ${String(when.getHours()).padStart(2,'0')}:${String(when.getMinutes()).padStart(2,'0')}).
+      <button class="btn small" id="dge-restore">Ripristina e salva</button> <button class="btn ghost small" id="dge-restore-drop">Scarta</button></div>`;
+  }
+  function stripRun(x){ const c = clone(x); delete c.run; delete c._new; return c; }
 
   function render(){
     if(!root) return;
     root.innerHTML = `<style>.dge-num{background:var(--panel-2,#121a22);color:var(--text,#ddd);border:1px solid var(--line,#1c2a30);border-radius:3px;padding:4px;}</style><div class="hud-frame card" style="margin-top:12px;">
       <div class="section-title">🏰 Editor Dungeon</div>
       <div class="muted" style="font-size:11px;margin-bottom:6px;">Disegna qui il dungeon; per farci entrare il gruppo usa il pannello 🏰 Dungeon nella Scena del Tavolo.</div>
+      ${restoreBannerHTML()}
       ${listHTML()}
       ${editorHTML()}
       <div class="err" id="dge-msg" style="margin-top:6px;">${esc(msg)}</div>
@@ -321,7 +347,62 @@
     bind();
   }
   function setMsg(t){ msg = t||''; const el = document.getElementById('dge-msg'); if(el) el.textContent = msg; }
-  function markDirty(){ dirty = true; }
+  function saveStatusHTML(){
+    if(saveState) return saveState;
+    return dirty ? '<span class="muted">● modifiche in attesa di salvataggio…</span>' : '<span class="muted">✔ tutto salvato</span>';
+  }
+  function showSaveStatus(html){ saveState = html || ''; const el = document.getElementById('dge-save-status'); if(el) el.innerHTML = saveStatusHTML(); }
+  function markDirty(){
+    dirty = true; changeSeq++; saveState = '';
+    backupLocal();
+    const el = document.getElementById('dge-save-status'); if(el) el.innerHTML = saveStatusHTML();
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(()=>{ doSave(true); }, 2500);
+  }
+  function backupLocal(){
+    try{ if(dg) localStorage.setItem(DRAFT_KEY(), JSON.stringify({ at: Date.now(), dg })); }catch(e){}
+  }
+  function clearBackup(){ try{ localStorage.removeItem(DRAFT_KEY()); }catch(e){} }
+  function readBackup(){ try{ const v = localStorage.getItem(DRAFT_KEY()); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
+
+  // Salvataggio (manuale col bottone 💾, oppure automatico dopo ogni modifica).
+  async function doSave(auto){
+    if(!dg) return false;
+    if(saving){ clearTimeout(autoTimer); autoTimer = setTimeout(()=>doSave(auto), 1200); return false; }
+    if(auto && !dirty) return true;
+    syncTextFields();
+    if(!dg.grid.some(t=>t!=='.')){
+      showSaveStatus('<span style="color:#ff8a3d;">⚠ Non ancora salvato: disegna almeno una stanza o una casella di pavimento.</span>');
+      if(!auto) setMsg('Disegna almeno una stanza o una casella di pavimento, poi salva.');
+      return false;
+    }
+    saving = true;
+    const seq = changeSeq;
+    showSaveStatus('<span class="muted">💾 Salvataggio…</span>');
+    const def = clone(dg); delete def._new;
+    const d = await post({ resource:'dungeon', code: session.code, username: session.username, op:'saveDef', def });
+    saving = false;
+    if(!d){
+      showSaveStatus(`<span style="color:#ff5d5d;">⚠ NON salvato: ${esc(lastError || 'errore di rete')}. Riprovo tra poco (la bozza resta nel browser).</span>`);
+      clearTimeout(autoTimer); autoTimer = setTimeout(()=>doSave(true), 8000);
+      if(!auto) window.alert('Salvataggio non riuscito: ' + (lastError || 'errore di rete'));
+      return false;
+    }
+    data = d.dungeon;
+    dg._new = false;
+    if(changeSeq===seq){ dirty = false; clearBackup(); }
+    const t = new Date(); const hh = String(t.getHours()).padStart(2,'0'), mm = String(t.getMinutes()).padStart(2,'0');
+    const noEntrance = !dg.grid.includes('e') ? ' <span class="muted">(manca un ⛩️ Ingresso: la pedina partirà dalla prima casella libera)</span>' : '';
+    showSaveStatus(`<span style="color:#35e8c9;">✔ Salvato alle ${hh}:${mm}</span>${noEntrance}`);
+    // Aggiorna l'elenco dei dungeon (nome/dimensioni) senza ridisegnare l'editor (niente perdita del focus).
+    const pickSel = document.getElementById('dge-pick');
+    if(pickSel && !pickSel.querySelector(`option[value="${CSS.escape(dg.id)}"]`)){
+      const o = document.createElement('option'); o.value = dg.id; pickSel.appendChild(o); pickSel.value = dg.id;
+    }
+    const opt = pickSel && pickSel.querySelector(`option[value="${CSS.escape(dg.id)}"]`);
+    if(opt) opt.textContent = `🏰 ${dg.name} (${dg.cols}×${dg.rows})${data.activeId===dg.id?' · gruppo dentro':''}`;
+    return true;
+  }
 
   function paint(i){
     if(i==null || isNaN(i)) return;
@@ -410,6 +491,20 @@
       const row = Number(v('dge-f-trow')), col = Number(v('dge-f-tcol'));
       draft.targetIndex = (other && row>=1 && col>=1 && row<=other.rows && col<=other.cols) ? (row-1)*other.cols + (col-1) : null;
     }
+    commitDraft();
+  }
+  // Applica subito la bozza alla casella (se è valida), così nulla si perde dimenticando "Applica".
+  function commitDraft(){
+    if(!draft || selCell==null || !dg) return;
+    const cur = dg.features[selCell];
+    if(!draft.type){ if(cur){ delete dg.features[selCell]; markDirty(); } return; }
+    if(draft.type==='loot' && !draft.name) return;
+    if(draft.type==='lever' && !(draft.targets||[]).length) return;
+    if(JSON.stringify(cur||null)===JSON.stringify(draft)) return;
+    dg.features[selCell] = clone(draft);
+    markDirty();
+    const el = root.querySelector(`[data-dge-cell="${selCell}"]`);
+    if(el) el.innerHTML = cellIcon(selCell);
   }
 
   function selectCell(i){
@@ -420,20 +515,31 @@
   }
 
   function bind(){
+    const rst = document.getElementById('dge-restore');
+    if(rst) rst.onclick = async ()=>{
+      const b = readBackup(); if(!b || !b.dg) return;
+      dg = clone(b.dg); delete dg.run; selCell = null; draft = null; pick = null; selRoom = null; tool = 'select';
+      render();
+      dirty = true; await doSave(false); render();
+    };
+    const rstDrop = document.getElementById('dge-restore-drop');
+    if(rstDrop) rstDrop.onclick = ()=>{ if(window.confirm('Scartare definitivamente la bozza non salvata?')){ clearBackup(); render(); } };
     const pickSel = document.getElementById('dge-pick');
-    if(pickSel) pickSel.onchange = ()=>{
-      if(dirty && !window.confirm('Ci sono modifiche non salvate: scartarle?')){ pickSel.value = dg ? dg.id : ''; return; }
+    if(pickSel) pickSel.onchange = async ()=>{
+      const target = pickSel.value;
+      if(dirty){ clearTimeout(autoTimer); const okSave = await doSave(false); if(!okSave && !window.confirm('Il dungeon aperto non si è potuto salvare: passare comunque all\'altro? (la bozza resta nel browser)')){ pickSel.value = dg ? dg.id : ''; return; } }
+      pickSel.value = target;
       const src = (data.dungeons||[]).find(d=>d.id===pickSel.value);
       dg = src ? clone(src) : null; if(dg) delete dg.run;
       dirty = false; selCell = null; draft = null; pick = null; selRoom = null; msg = '';
       render();
     };
     const nw = document.getElementById('dge-new');
-    if(nw) nw.onclick = ()=>{
-      if(dirty && !window.confirm('Ci sono modifiche non salvate: scartarle?')) return;
+    if(nw) nw.onclick = async ()=>{
+      if(dirty){ clearTimeout(autoTimer); const okSave = await doSave(false); if(!okSave && !window.confirm('Il dungeon aperto non si è potuto salvare: crearne uno nuovo comunque? (la bozza resta nel browser)')) return; }
       const cols = Math.max(3, Math.min(40, Number(document.getElementById('dge-new-cols').value)||15));
       const rows = Math.max(3, Math.min(40, Number(document.getElementById('dge-new-rows').value)||15));
-      dg = blank(rows, cols); dirty = true; selCell = null; draft = null; pick = null; selRoom = null; tool = 'rect';
+      dg = blank(rows, cols); dirty = false; saveState = ''; selCell = null; draft = null; pick = null; selRoom = null; tool = 'rect';
       msg = 'Nuovo dungeon: trascina un rettangolo sulla griglia per creare la prima stanza, poi collega le stanze con ⬜ Pavimento e 🚪 Porte.';
       render();
     };
@@ -473,7 +579,7 @@
         if(pick && draft){
           if(pick==='teleport'){ draft.targetIndex = i; pick = null; }
           else if(pick==='lever'){ draft.targets = draft.targets || []; if(!draft.targets.includes(i)) draft.targets.push(i); }
-          render(); return;
+          commitDraft(); render(); return;
         }
         if(tool==='select'){ selectCell(i); render(); return; }
         if(tool==='rect'){ rectStart = rectEnd = i; painting = true; render(); return; }
@@ -501,23 +607,24 @@
       const t = ft.value;
       draft = (dg.features[selCell] && dg.features[selCell].type===t) ? clone(dg.features[selCell]) : { type:t, text: draft ? draft.text : '' };
       pick = null;
+      commitDraft();
       render();
     };
-    root.querySelectorAll('[data-dge-icon]').forEach(b=> b.onclick = ()=>{ syncDraft(); draft.icon = b.getAttribute('data-dge-icon'); render(); });
+    root.querySelectorAll('[data-dge-icon]').forEach(b=> b.onclick = ()=>{ syncDraft(); draft.icon = b.getAttribute('data-dge-icon'); commitDraft(); render(); });
     const tdg = document.getElementById('dge-f-tdg');
     if(tdg) tdg.onchange = ()=>{ syncDraft(); draft.targetDungeon = tdg.value; draft.targetIndex = null; render(); };
     const ptp = document.getElementById('dge-pick-tp');
     if(ptp) ptp.onclick = ()=>{ syncDraft(); pick = 'teleport'; render(); };
     const plv = document.getElementById('dge-pick-lever');
     if(plv) plv.onclick = ()=>{ syncDraft(); pick = 'lever'; render(); };
-    root.querySelectorAll('[data-dge-lever-del]').forEach(a=> a.onclick = (e)=>{ e.preventDefault(); syncDraft(); const t = +a.getAttribute('data-dge-lever-del'); draft.targets = (draft.targets||[]).filter(x=>x!==t); render(); });
+    root.querySelectorAll('[data-dge-lever-del]').forEach(a=> a.onclick = (e)=>{ e.preventDefault(); syncDraft(); const t = +a.getAttribute('data-dge-lever-del'); draft.targets = (draft.targets||[]).filter(x=>x!==t); commitDraft(); render(); });
     const fa = document.getElementById('dge-f-apply');
     if(fa) fa.onclick = ()=>{
       syncDraft();
-      if(!draft || !draft.type){ delete dg.features[selCell]; markDirty(); msg = 'Contenuto tolto (ricordati di salvare).'; render(); return; }
+      if(!draft || !draft.type){ delete dg.features[selCell]; markDirty(); msg = 'Contenuto tolto.'; render(); return; }
       if(draft.type==='loot' && !draft.name){ setMsg('Scrivi il nome dell\'oggetto.'); return; }
       if(draft.type==='lever' && !(draft.targets||[]).length){ setMsg('Scegli almeno una casella che la leva deve aprire.'); return; }
-      dg.features[selCell] = clone(draft); pick = null; markDirty(); msg = 'Contenuto applicato (ricordati di salvare).';
+      dg.features[selCell] = clone(draft); pick = null; markDirty(); msg = 'Contenuto applicato.';
       render();
     };
 
@@ -548,36 +655,26 @@
       if(!url) return;
       const k = inp.getAttribute('data-dge-upload');
       if(k==='cover') dg.image = url;
-      else if(k==='icon'){ if(draft) draft.icon = url; }
+      else if(k==='icon'){ if(draft){ draft.icon = url; commitDraft(); } }
       else dg.rooms[+k.split(':')[1]].image = url;
-      markDirty(); msg = k==='icon' ? 'Icona caricata: premi ✔ Applica alla casella e poi salva.' : 'Immagine caricata (ricordati di salvare).'; render();
+      markDirty(); msg = k==='icon' ? 'Icona caricata.' : 'Immagine caricata.'; render();
     });
 
     const save = document.getElementById('dge-save');
     if(save) save.onclick = async ()=>{
-      syncTextFields();
-      if(!dg.grid.some(t=>t!=='.')){ setMsg('Disegna almeno una casella di pavimento.'); return; }
-      if(!dg.grid.includes('e')) { if(!window.confirm('Non c\'è nessun ⛩️ Ingresso: la pedina partirà dalla prima casella calpestabile. Salvare comunque?')) return; }
-      if(draft && selCell!=null && JSON.stringify(draft)!==JSON.stringify(dg.features[selCell]||{type:''}) && draft.type){
-        if(window.confirm('Il contenuto della casella selezionata non è stato applicato. Applicarlo prima di salvare?')) dg.features[selCell] = clone(draft);
-      }
+      clearTimeout(autoTimer);
       save.disabled = true;
-      const def = clone(dg); delete def._new;
-      const d = await post({ resource:'dungeon', code: session.code, username: session.username, op:'saveDef', def });
+      dirty = true; // il bottone salva sempre, anche se non risultano modifiche
+      await doSave(false);
       save.disabled = false;
-      if(!d){ setMsg('⚠ ' + (lastError || 'Salvataggio non riuscito.')); return; }
-      data = d.dungeon; dirty = false;
-      const fresh = (data.dungeons||[]).find(x=>x.id===d.id);
-      dg = fresh ? clone(fresh) : dg; if(dg) delete dg.run;
-      if(selCell!=null) draft = dg.features[selCell] ? clone(dg.features[selCell]) : { type:'' };
-      msg = '✅ Dungeon salvato.'; render();
     };
     const del = document.getElementById('dge-del');
     if(del) del.onclick = async ()=>{
-      if(dg._new){ dg = null; dirty = false; render(); return; }
+      if(dg._new){ clearTimeout(autoTimer); dg = null; dirty = false; clearBackup(); render(); return; }
       if(!window.confirm(`Eliminare definitivamente "${dg.name}"?`)) return;
       const d = await post({ resource:'dungeon', code: session.code, username: session.username, op:'deleteDef', id: dg.id });
       if(!d){ setMsg('⚠ ' + (lastError || 'Eliminazione non riuscita.')); return; }
+      clearTimeout(autoTimer); clearBackup();
       data = d.dungeon; dg = null; dirty = false; msg = 'Dungeon eliminato.'; render();
     };
   }
@@ -585,6 +682,10 @@
   window.DungeonEditor = {
     async mount(el, sess){
       root = el; session = sess;
+      if(!window.__dgeUnloadGuard){
+        window.__dgeUnloadGuard = true;
+        window.addEventListener('beforeunload', (e)=>{ if(dirty || saving){ backupLocal(); e.preventDefault(); e.returnValue = ''; } });
+      }
       root.innerHTML = '<div class="muted">Caricamento dungeon…</div>';
       await load();
       render();
