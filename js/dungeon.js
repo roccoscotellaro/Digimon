@@ -15,6 +15,9 @@
 //     Incontro -> avviso in chat (il Master avvia il combattimento dal Combat Manager come sempre);
 //     Porta chiusa -> si apre se un giocatore ha in Inventario l'oggetto chiave, o se la sblocca il
 //     Master.
+// Seconda richiesta (stesso giorno): terreno difficile (2 Punti), porte segrete (🔍 Cerca: una
+// volta per ricarica, nella stanza o attorno alla pedina), scale/teletrasporti, punti di ristoro,
+// leve, icone personalizzabili per ogni contenuto e immagine della stanza stesa sulla mappa.
 // Chi muove riceve dal server gli eventi appena scattati (una volta sola, grazie al
 // compare-and-swap lato server) ed è il suo client a pubblicarli in chat con pushLog — stesso
 // schema del voto di spostamento (justResolved) già in uso.
@@ -50,6 +53,9 @@
       .dg-door{background:#5a3d1e;}
       .dg-ent{background:#1f5a3a;}
       .dg-exit{background:#5a1f4e;}
+      .dg-hard{background:repeating-linear-gradient(135deg,#4a3d2b 0 3px,#382e22 3px 6px);}
+      .dg-secret{background:#4d2d6b;}
+      .dg-ico img{width:85%;height:85%;object-fit:contain;display:block;margin:auto;}
       .dg-hidden{opacity:0.45;}
       .dg-reach{outline:2px solid var(--cyan);outline-offset:-2px;cursor:pointer;animation:dgpulse 1.4s infinite;}
       .dg-click{cursor:pointer;}
@@ -94,7 +100,7 @@
 
   // ---------- rendering ----------
   function refillLabel(p){
-    if(!p || p.points >= p.maxPoints || !p.lastRefillAt) return '';
+    if(!p || !p.lastRefillAt || (p.points >= p.maxPoints && !p.searchUsed)) return '';
     const left = new Date(p.lastRefillAt).getTime() + REFILL_MS - Date.now();
     if(left <= 0) return ' · ricarica al prossimo aggiornamento';
     const h = Math.floor(left/3600000), m = Math.floor((left%3600000)/60000);
@@ -118,7 +124,10 @@
     if(c<dg.cols-1) out.push(idx+1);
     return out;
   }
-  const WALK = { f:1, d:1, e:1, x:1 };
+  const WALK = { f:1, d:1, e:1, x:1, h:1, s:1 };
+  const DEFAULT_ICON = { trap:'⚠️', loot:'🎁', encounter:'⚔️', lock:'🔒', note:'📜', teleport:'🪜', rest:'⛺', lever:'🕹️' };
+  function stepCost(dg, i){ return dg.grid[i]==='h' ? 2 : 1; }
+  function icoHTML(ic){ return /^(https?:|data:|\/)/i.test(String(ic||'')) ? `<img src="${escapeAttr(ic)}" onerror="this.remove()" />` : escapeHTML(ic); }
 
   function cellClass(dg, i){
     const t = dg.grid[i];
@@ -127,6 +136,8 @@
     if(t==='d') return 'dg-door';
     if(t==='e') return 'dg-ent';
     if(t==='x') return 'dg-exit';
+    if(t==='h') return 'dg-hard';
+    if(t==='s') return 'dg-secret';
     return dg.roomOf[i] ? 'dg-room' : 'dg-floor';
   }
 
@@ -138,17 +149,19 @@
     let ico = '';
     if(dg.grid[i]==='e') ico = '⛩️';
     if(dg.grid[i]==='x') ico = '🚪';
+    if(dg.grid[i]==='s' && isMaster() && !(run.found||[]).includes(i)) return `<span class="dg-ico dg-hidden">🕳️</span>`;
     if(f){
-      if(f.type==='lock') ico = (f.unlocked || unlocked) ? '🔓' : '🔒';
-      else if(f.type==='loot') ico = (f.taken || fired) ? '' : '🎁';
-      else if(f.type==='trap') ico = '⚠️';
-      else if(f.type==='encounter') ico = '⚔️';
-      else if(f.type==='note') ico = '📜';
-      // Il Master vede anche i contenuti non ancora scattati, un po' sbiaditi.
-      if(isMaster() && !fired && f.type!=='lock' && !(f.type==='loot')) return `<span class="dg-ico dg-hidden">${ico}</span>`;
-      if(isMaster() && f.type==='loot' && fired) ico = '';
+      const own = f.icon || DEFAULT_ICON[f.type] || '';
+      if(f.type==='lock') ico = (f.unlocked || unlocked) ? '🔓' : own;
+      else if(f.type==='loot') ico = (f.taken || fired) ? '' : own;
+      else if(f.type==='rest') ico = (f.once && (f.fired || fired)) ? '' : own;
+      else if(f.type==='lever') ico = own;
+      else ico = own;
+      // Il Master vede anche i contenuti non ancora scattati (trappole, incontri, note), sbiaditi.
+      if(isMaster() && !fired && ['trap','encounter','note'].includes(f.type)) return `<span class="dg-ico dg-hidden">${icoHTML(ico)}</span>`;
+      if(f.type==='lever' && (f.fired || fired)) return `<span class="dg-ico dg-hidden">${icoHTML(ico)}</span>`;
     }
-    return ico ? `<span class="dg-ico">${ico}</span>` : '';
+    return ico ? `<span class="dg-ico">${icoHTML(ico)}</span>` : '';
   }
 
   function gridHTML(dg){
@@ -156,14 +169,25 @@
     const size = Math.max(10, Math.min(30, Math.floor(avail/dg.cols) - 1));
     const pos = dg.run ? dg.run.pos : null;
     const reach = new Set();
-    if(pos!=null && amLeader()) neighbors4(dg, pos).forEach(i=>{ if(WALK[dg.grid[i]]) reach.add(i); });
+    const pts = Number(state.party && state.party.points)||0;
+    if(pos!=null && amLeader()) neighbors4(dg, pos).forEach(i=>{ if(WALK[dg.grid[i]] && pts>=stepCost(dg, i)) reach.add(i); });
+    // Immagine della stanza stesa sulle sue caselle (room.showOnMap), calcolata sul riquadro della stanza.
+    const step = size+1, bbox = {};
+    (dg.rooms||[]).forEach(rm=>{ if(rm.image && rm.showOnMap!==false) bbox[rm.id] = { r0:1e9, c0:1e9, r1:-1, c1:-1 }; });
+    dg.roomOf.forEach((rid,i)=>{ const b = rid && bbox[rid]; if(!b) return; const rr = Math.floor(i/dg.cols), cc = i%dg.cols; b.r0=Math.min(b.r0,rr); b.c0=Math.min(b.c0,cc); b.r1=Math.max(b.r1,rr); b.c1=Math.max(b.c1,cc); });
     let html = `<div class="dg-grid" style="grid-template-columns:repeat(${dg.cols},${size}px);grid-auto-rows:${size}px;font-size:${Math.max(8, Math.floor(size*0.6))}px;">`;
     for(let i=0;i<dg.grid.length;i++){
       const cls = cellClass(dg, i);
       const r = reach.has(i);
       const masterClick = isMaster() && masterMode!=='look' && WALK[dg.grid[i]];
       const room = dg.roomOf[i] ? (dg.rooms||[]).find(x=>x.id===dg.roomOf[i]) : null;
-      html += `<div class="dg-cell ${cls} ${r?'dg-reach':''} ${masterClick?'dg-click':''}" ${(r||masterClick)?`data-dg-cell="${i}"`:''} title="${room?escapeAttr(room.name):''}">`
+      let bgStyle = '';
+      const b = room && bbox[room.id];
+      if(b && dg.grid[i]!=='?' && dg.grid[i]!=='.'){
+        const rr = Math.floor(i/dg.cols), cc = i%dg.cols;
+        bgStyle = `background-image:url('${String(room.image).replace(/'/g,'%27')}');background-size:${(b.c1-b.c0+1)*step}px ${(b.r1-b.r0+1)*step}px;background-position:${-(cc-b.c0)*step}px ${-(rr-b.r0)*step}px;`;
+      }
+      html += `<div class="dg-cell ${cls} ${r?'dg-reach':''} ${masterClick?'dg-click':''}" style="${bgStyle}" ${(r||masterClick)?`data-dg-cell="${i}"`:''} title="${room?escapeAttr(room.name):''}${dg.grid[i]==='h'?' (terreno difficile: 2 Punti)':''}">`
         + featureIcon(dg, i)
         + (i===pos ? `<div class="dg-token">${leaderAvatar()}</div>` : '')
         + `</div>`;
@@ -214,14 +238,16 @@
   function padHTML(dg){
     if(!amLeader() || dg.run.pos==null) return '';
     const pos = dg.run.pos, r = Math.floor(pos/dg.cols), c = pos%dg.cols;
-    const can = (idx, ok)=> ok && WALK[dg.grid[idx]] ? `data-dg-cell="${idx}"` : 'disabled';
+    const pts = Number(state.party.points)||0;
+    const can = (idx, ok)=> ok && WALK[dg.grid[idx]] && pts>=stepCost(dg, idx) ? `data-dg-cell="${idx}"` : 'disabled';
     const up = can(pos-dg.cols, r>0), down = can(pos+dg.cols, r<dg.rows-1), left = can(pos-1, c>0), right = can(pos+1, c<dg.cols-1);
-    const noPts = (Number(state.party.points)||0) < 1;
+    const used = !!state.party.searchUsed;
     return `<div class="dg-pad">
-      <span></span><button class="btn small" ${noPts?'disabled':up}>⬆️</button><span></span>
-      <button class="btn small" ${noPts?'disabled':left}>⬅️</button><span style="display:flex;align-items:center;justify-content:center;font-size:10px;" class="muted">👑</span><button class="btn small" ${noPts?'disabled':right}>➡️</button>
-      <span></span><button class="btn small" ${noPts?'disabled':down}>⬇️</button><span></span>
-    </div>`;
+      <span></span><button class="btn small" ${up}>⬆️</button><span></span>
+      <button class="btn small" ${left}>⬅️</button><span style="display:flex;align-items:center;justify-content:center;font-size:10px;" class="muted">👑</span><button class="btn small" ${right}>➡️</button>
+      <span></span><button class="btn small" ${down}>⬇️</button><span></span>
+    </div>
+    <div style="text-align:center;margin-bottom:4px;"><button class="btn ghost small" id="dg-search-btn" ${used?'disabled':''} title="Una volta per ricarica: cerca passaggi segreti nella stanza in cui siete (o attorno a voi, se siete in corridoio). Non costa Punti.">🔍 ${used?'Ricerca già usata (torna alla ricarica)':'Cerca passaggi segreti'}</button></div>`;
   }
 
   function masterHTML(){
@@ -246,7 +272,7 @@
         <span class="muted">Clic sulla mappa:</span>
         <button class="btn ${masterMode==='look'?'':'ghost'} small" data-dg-mode="look">👁️ Guarda</button>
         <button class="btn ${masterMode==='teleport'?'':'ghost'} small" data-dg-mode="teleport">✋ Sposta pedina (gratis)</button>
-        <button class="btn ${masterMode==='unlock'?'':'ghost'} small" data-dg-mode="unlock">🔓 Sblocca</button>
+        <button class="btn ${masterMode==='unlock'?'':'ghost'} small" data-dg-mode="unlock" title="Apre una porta chiusa o rivela una porta segreta">🔓 Sblocca / rivela</button>
         <button class="btn ghost small" id="dg-reset-btn">🧹 Azzera esplorazione</button>
       </div>` : ''}`;
   }
@@ -270,7 +296,7 @@
         ${partyHTML()}
         ${gridHTML(dg)}
         ${padHTML(dg)}
-        <div class="dg-legend">⛩️ ingresso · 🚪 uscita · 🔒 chiuso · 🎁 tesoro · ⚠️ trappola · ⚔️ incontro · 📜 nota${isMaster()?' — sbiaditi = non ancora scattati (li vedi solo tu)':''}</div>
+        <div class="dg-legend">⛩️ ingresso · 🚪 uscita · 🔒 chiuso · 🎁 tesoro · 🪜 scale · ⛺ ristoro · 🕹️ leva · ▦ terreno difficile (2 ⚡)${isMaster()?' — sbiaditi = non ancora scattati (li vedi solo tu)':''}</div>
         ${roomCardHTML(dg)}
       ` : ''}
       <div class="dg-status" id="dg-status">${escapeHTML(statusMsg)}</div>
@@ -296,6 +322,10 @@
         await pushLog(ctx.code, { who:'Sistema', role:'gm', text: `🔓 ${nameOf(ev.by)} apre il passaggio con «${ev.key}».${ev.text ? '\n' + ev.text : ''}` });
         continue;
       }
+      if(ev.type==='difficult') continue;
+      if(ev.type==='teleport'){ await pushLog(ctx.code, { who:'Sistema', role:'gm', text: `🪜 ${ev.text || 'Il gruppo prende un passaggio…'}${ev.toDungeon ? `\n🏰 Siete in: ${ev.toDungeon}` : ''}` }); continue; }
+      if(ev.type==='rest'){ await pushLog(ctx.code, { who:'Sistema', role:'gm', text: `⛺ ${ev.text || 'Il gruppo riprende fiato.'}\n⚡ Punti Dungeon ricaricati.` }); continue; }
+      if(ev.type==='lever'){ await pushLog(ctx.code, { who:'Sistema', role:'gm', text: `🕹️ ${ev.text || 'Un meccanismo scatta da qualche parte nel dungeon…'}` }); continue; }
       if(ev.type==='exit'){ await pushLog(ctx.code, { who:'Sistema', role:'gm', text: '🚪 Il gruppo ha trovato un\'uscita dal dungeon.' }); continue; }
       if(ev.type==='note'){ if(ev.text) await pushLog(ctx.code, { who:'Sistema', role:'gm', text: `📜 ${ev.text}` }); continue; }
       if(ev.type==='encounter'){
@@ -349,9 +379,12 @@
           return;
         }
         if(master && masterMode==='unlock'){
-          const d = await op({ op:'unlock', index: idx });
+          const dgA = activeDungeon();
+          const secret = dgA && dgA.grid[idx]==='s';
+          const d = await op({ op: secret ? 'reveal' : 'unlock', index: idx });
           if(!d){ setStatus(lastApiError); return; }
-          setStatus('Casella sbloccata.'); render();
+          setStatus(secret ? 'Porta segreta rivelata.' : 'Casella sbloccata.'); render();
+          if(secret) await pushLog(ctx.code, { who:'Sistema', role:'gm', text: '🕳️ Un passaggio segreto si rivela!' });
           return;
         }
         await doMove(idx);
@@ -365,6 +398,17 @@
       statusMsg = d.leaderChanged ? '' : 'Voto registrato.';
       render();
       if(d.leaderChanged) await pushLog(ctx.code, { who:'Sistema', role:'gm', text: `👑 ${nameOf(d.leaderChanged)} è il nuovo Capofila del gruppo.` });
+    };
+    const searchBtn = document.getElementById('dg-search-btn');
+    if(searchBtn) searchBtn.onclick = async ()=>{
+      if(busy) return;
+      const d = await op({ op:'search' });
+      if(!d){ setStatus(lastApiError); render(); return; }
+      render();
+      if(ctx.advanceClock) await ctx.advanceClock(1);
+      const where = d.where ? `la stanza «${d.where}»` : 'i dintorni';
+      await pushLog(ctx.code, { who:'Sistema', role:'gm', text: d.found ? `🔍 ${nameOf(ctx.username)} perlustra ${where}… e trova ${d.found===1?'un passaggio segreto':d.found+' passaggi segreti'}!` : `🔍 ${nameOf(ctx.username)} perlustra ${where}, ma non trova nulla.` });
+      if(ctx.onChanged) ctx.onChanged();
     };
     if(!master) return;
     const act = document.getElementById('dg-active-btn');
