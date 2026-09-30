@@ -136,7 +136,11 @@
 </head>
 <body>
 <div id="root-app" class="app"><div class="hud-frame card"><div class="muted">Caricamento…</div></div></div>
+<!-- Editor Dungeon (solo Master): fuori da #root-app, così i ridisegni della mappa non lo
+     cancellano mentre si disegna. Vedi js/dungeon-editor.js e il bottone "🏰 Dungeon" qui sotto. -->
+<div id="dungeon-editor-host" class="app" style="display:none;padding-top:0;min-height:0;"><div style="max-width:760px;margin:0 auto;" id="dungeon-editor-root"></div></div>
 
+<script src="js/dungeon-editor.js"></script>
 <script>
 (function(){
   const SESSION_KEY = 'digivice_session_v1';
@@ -167,6 +171,8 @@
   let playerViewMacroId = null;
   // Quale giocatore ha aperto il modulo "Sposta" nel pannello unico Master "👥 Posizione dei giocatori".
   let moveOpenUsername = null;
+  // Editor Dungeon a caselle (richiesta Rocco 2026-09-30) aperto/chiuso — vedi js/dungeon-editor.js.
+  let dungeonEditorOpen = false;
 
   function escapeHTML(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -562,6 +568,7 @@
               </select>
             </div>
           ` : ''}
+          ${isMaster() ? `<div style="margin-bottom:8px;"><button class="btn ${dungeonEditorOpen?'':'ghost'} small" id="btn-dungeon-editor">🏰 Dungeon${dungeonEditorOpen?' (aperto sotto la mappa)':''}</button></div>` : ''}
           ${isMaster() ? masterMacroBarHTML(activeMacro) : ''}
           <div id="map-body"></div>
         </div>
@@ -588,6 +595,18 @@
       };
     }
     bindMasterMacroBar(activeMacro);
+    const dgBtn = document.getElementById('btn-dungeon-editor');
+    if(dgBtn) dgBtn.onclick = async ()=>{
+      const host = document.getElementById('dungeon-editor-host');
+      if(dungeonEditorOpen && window.DungeonEditor && window.DungeonEditor.hasUnsavedChanges() && !window.confirm('Il dungeon ha modifiche non salvate: chiudere l\'editor e perderle?')) return;
+      dungeonEditorOpen = !dungeonEditorOpen;
+      if(host) host.style.display = dungeonEditorOpen ? '' : 'none';
+      renderMap();
+      if(dungeonEditorOpen && window.DungeonEditor){
+        await window.DungeonEditor.mount(document.getElementById('dungeon-editor-root'), session);
+        if(host) host.scrollIntoView({ behavior:'smooth', block:'start' });
+      }
+    };
     const logoutBtn = document.getElementById('btn-logout');
     if(logoutBtn) logoutBtn.onclick = ()=>{ if(pollTimer) clearInterval(pollTimer); renderLogin(); };
     const refreshBtn = document.getElementById('btn-manual-refresh');

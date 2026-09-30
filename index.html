@@ -683,6 +683,7 @@
 <script src="js/tamer-card.js"></script>
 <script src="js/progression.js"></script>
 <script src="js/scene-encounters.js"></script>
+<script src="js/dungeon.js"></script>
 <script src="js/dex-admin.js"></script>
 <script src="js/ui-nav.js"></script>
 <script>
@@ -3968,6 +3969,7 @@ let editingScene = false;
       refreshSceneDaytimeBadge();
     }
     bindSceneAudio(cachedScene);
+    if(window.DungeonView) window.DungeonView.refresh();
     if(missionsModalOpen){
       // BUGFIX (segnalato da Rocco: "si aggiorna ogni tot secondi e non mi fa scrivere"): questa
       // riga sovrascriveva SEMPRE #missions-list con l'HTML fresco dal server ogni 15s (ciclo di
@@ -4297,6 +4299,25 @@ let editingScene = false;
   // window.__dvosRefreshDexPanel rimosso: js/scene-encounters.js ora chiama dexListHTML/
   // bindDexEditButtons direttamente) spostati in js/dex-admin.js
 
+  // ---------- DUNGEON (richiesta Rocco 2026-09-30) ----------
+  // Vista di gioco del Dungeon a caselle sotto la Scena (Master e Giocatori) — tutta la logica è in
+  // js/dungeon.js; qui passiamo solo le funzioni che vivono in questa IIFE: Orologio di Gioco
+  // (ogni passo = 1 minuto sul canale Generale) e Web Push mirate (trappola al Capofila, incontro
+  // al Master). Si aggiorna insieme al resto a ogni giro di refreshLiveParts.
+  function mountDungeonView(code){
+    const el = document.getElementById('dungeon-live');
+    if(!el || !window.DungeonView) return;
+    window.DungeonView.mount(el, {
+      code,
+      username: session.username,
+      role: session.role,
+      advanceClock: (minutes)=> advanceGameClock('general', minutes),
+      notifyPlayers: (usernames, title, body)=> fireCombatNotification(code, usernames, title, body, { kind:'generic' }),
+      notifyMasters: (title, body)=> fireCombatNotification(code, (cachedRoster||[]).filter(m=>m.role==='master').map(m=>m.username), title, body, { kind:'generic' }),
+      onChanged: ()=> refreshLiveParts()
+    });
+  }
+
   // ---------- PLAYER VIEW (shell built once, live parts patched by poll) ----------
   async function renderPlayer(){
     const code = session.code;
@@ -4321,6 +4342,7 @@ let editingScene = false;
             <div class="section-title">Scena Attuale</div>
             <div class="muted mono" style="margin-bottom:8px;">Milestone ${cachedProgression?cachedProgression.milestone:0} · IP ${Number(me.tamer.inspirationPoints||0)}</div>
             <div id="scene-live">${sceneHTML(cachedScene, me)}</div>
+            <div id="dungeon-live"></div>
             ${sceneAudioWidgetHTML()}
           </div>
           </div>
@@ -4586,6 +4608,7 @@ let editingScene = false;
     });
     updateChatModeButtons();
     initMobileNav();
+    mountDungeonView(code);
 
     startPolling();
   }
@@ -4620,6 +4643,7 @@ let editingScene = false;
               ${gameClockMasterPanelHTML()}
             </div>
             <div id="scene-live">${sceneHTML(cachedScene)}</div>
+            <div id="dungeon-live"></div>
             <div class="field" style="margin-top:10px;"><label>Titolo Scena</label><input type="text" id="scene-title" value="${escapeAttr(cachedScene.title)}" placeholder="es. Foresta di File" /></div>
             <div class="field"><label>URL Immagine di Sfondo</label><input type="text" id="scene-bg" value="${escapeAttr(cachedScene.background)}" placeholder="https://..." /></div>
             <div class="field"><label>URL Musica (mp3 diretto)</label><input type="text" id="scene-music" value="${escapeAttr(cachedScene.music)}" placeholder="https://.../traccia.mp3" /></div>
@@ -5402,6 +5426,7 @@ let editingScene = false;
         refreshLiveParts();
       };
     }
+    mountDungeonView(code);
 
     startPolling();
   }

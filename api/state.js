@@ -38,7 +38,14 @@
 // Le risposte hanno la stessa forma di prima ({combat}, {progression}, {scene}, {gameclock},
 // {automsg}, {gennai}), quindi lato client cambia solo l'URL.
 // Serve a restare sotto il limite di 12 Serverless Functions del piano Vercel Hobby.
+//
+//   ?resource=dungeon       -> Dungeon a caselle (tabella dungeon_state) — aggiunta 2026-09-30.
+//     A differenza delle altre resource NON è un semplice upsert dell'intera riga: GET filtra la
+//     mappa per i giocatori (nebbia) e POST accetta operazioni atomiche { op, username, ... }
+//     (saveDef, deleteDef, setActive, resetRun, refill, setLeader, vote, unlock, move). Tutta la
+//     logica e la migrazione SQL sono in lib/dungeon.js.
 const { supabase, cleanCode } = require('../lib/db');
+const { handleDungeon } = require('../lib/dungeon');
 
 const TABLES = {
   combat: 'combat_state',
@@ -126,8 +133,10 @@ module.exports = async (req, res) => {
     // usare indifferentemente /api/state?resource=scene o { resource:'scene', ... }.
     const resource = query.resource || body.resource;
 
+    if (resource === 'dungeon') return handleDungeon(req, res, supabase, cleanCode);
+
     if (!resource || !TABLES[resource]) {
-      return res.status(400).json({ error: 'resource mancante o non valida (usa combat, progression, scene, gameclock, automsg o gennai)' });
+      return res.status(400).json({ error: 'resource mancante o non valida (usa combat, progression, scene, gameclock, automsg, gennai o dungeon)' });
     }
     const table = TABLES[resource];
 
