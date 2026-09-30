@@ -28,6 +28,9 @@
 //   - avviso del browser se si prova a lasciare la pagina con modifiche non ancora salvate;
 //   - i campi del contenuto di una casella si applicano subito (il bottone "Applica" non è più
 //     indispensabile).
+// COLLEGAMENTO (quarta richiesta): "📍 Collegato a" lega il dungeon a un Settore o a una
+// Sottosezione della Mappa (dg.link). Così il Master può invitare i giocatori a entrarci dal
+// pannello 🏰 del Tavolo, e sotto la mappa del dungeon compare la chat di quel luogo.
 // Cambiare le dimensioni di un dungeon già esplorato azzera l'esplorazione (lo fa il server,
 // perché le posizioni salvate non corrisponderebbero più alle caselle).
 
@@ -66,6 +69,7 @@
   let session = null, root = null;
   let data = null;          // stato completo (vista Master)
   let encounters = [];      // Incontri della Scena, per collegarli a una casella
+  let macroScenes = [];     // Macroscene → Settori → Sottosezioni, per collegare il dungeon a un luogo
   let dg = null;            // copia di lavoro del dungeon in modifica
   let tool = 'rect';        // chiave casella | 'rect' | 'room' | 'unroom' | 'select'
   let selRoom = null;       // stanza selezionata (pennello + pannello dettagli)
@@ -101,6 +105,7 @@
     if(d && d.warning) msg = d.warning;
     const sc = await get('/api/state?resource=scene&code=' + encodeURIComponent(session.code));
     encounters = (sc && sc.scene && Array.isArray(sc.scene.encounters)) ? sc.scene.encounters : [];
+    macroScenes = (sc && sc.scene && Array.isArray(sc.scene.macroScenes)) ? sc.scene.macroScenes : [];
   }
 
   function roomById(id){ return dg.rooms.find(r=>r.id===id) || null; }
@@ -293,10 +298,30 @@
     </div>`;
   }
 
+  function linkOptions(){
+    const out = [['', '— nessuno (il Master fa entrare tutto il gruppo) —']];
+    macroScenes.forEach(m=>{
+      (m.sectors||[]).forEach(sct=>{
+        out.push([`${m.id}|${sct.id}|`, `${m.name} → ${sct.name}`]);
+        (sct.subsections||[]).forEach(sub=> out.push([`${m.id}|${sct.id}|${sub.id}`, `${m.name} → ${sct.name} → ${sub.name}`]));
+      });
+    });
+    return out;
+  }
+  function linkFieldHTML(){
+    const cur = dg.link && dg.link.sectorId ? `${dg.link.macroId||''}|${dg.link.sectorId}|${dg.link.subsectionId||''}` : '';
+    const opts = linkOptions();
+    if(cur && !opts.some(o=>o[0]===cur)) opts.push([cur, '⚠ luogo non più esistente in Mappa']);
+    return `<div class="field"><label>📍 Collegato a (Settore o Sottosezione)</label>
+      <select id="dge-link">${opts.map(([v,l])=>`<option value="${esc(v)}" ${v===cur?'selected':''}>${esc(l)}</option>`).join('')}</select>
+      <div class="muted" style="font-size:10px;margin-top:2px;">Se collegato: il Master invita i giocatori a entrare dal pannello 🏰 del Tavolo; il dungeon lo vede e lo esplora solo chi accetta e si trova lì, e sotto la mappa compare la chat di quel luogo.</div></div>`;
+  }
+
   function editorHTML(){
     if(!dg) return '';
     return `
       <div class="field" style="margin-top:8px;"><label>Nome</label><input type="text" id="dge-name" value="${esc(dg.name)}" /></div>
+      ${linkFieldHTML()}
       <div class="field"><label>Descrizione (mostrata all'ingresso)</label><textarea id="dge-desc" rows="2" style="width:100%;">${esc(dg.desc)}</textarea></div>
       <div class="row" style="gap:6px;align-items:center;">
         <input type="text" id="dge-image" value="${esc(dg.image)}" placeholder="URL immagine copertina (facoltativa)" style="flex:2;" />
@@ -544,6 +569,12 @@
       render();
     };
     if(!dg) return;
+    const lk = document.getElementById('dge-link');
+    if(lk) lk.onchange = ()=>{
+      const [macroId, sectorId, subsectionId] = lk.value.split('|');
+      dg.link = sectorId ? { macroId: macroId||'', sectorId, subsectionId: subsectionId||'' } : null;
+      markDirty();
+    };
     ['dge-name','dge-desc','dge-image'].forEach(id=>{ const el = document.getElementById(id); if(el) el.oninput = ()=>{ syncTextFields(); markDirty(); }; });
     root.querySelectorAll('[data-dge-draft]').forEach(el=>{ el.oninput = el.onchange = ()=>syncDraft(); });
     const rs = document.getElementById('dge-resize');
