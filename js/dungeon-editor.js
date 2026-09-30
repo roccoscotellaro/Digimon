@@ -36,6 +36,10 @@
 // da trovare nel dungeon (🗝️); AREA DI PROVA (▶️ Prova): si gioca il dungeon come Capofila con la
 // vera logica del server, ma su uno stato separato — niente chat, niente Inventari, partita vera
 // intatta.
+// SESTA RICHIESTA: collegamento esplicito chiave ↔ porta chiusa (dal pannello della porta: menu
+// delle chiavi o "📍 Scegli la chiave sulla mappa"; dal pannello della chiave: "📍 Collega a una
+// porta"; i collegamenti si vedono evidenziati in magenta e rinominare una chiave aggiorna le sue
+// porte); "👁️ Raggio di vista" per la FOG OF WAR (dg.vision) e nebbia anche nell'area di prova.
 // Cambiare le dimensioni di un dungeon già esplorato azzera l'esplorazione (lo fa il server,
 // perché le posizioni salvate non corrisponderebbero più alle caselle).
 
@@ -82,7 +86,7 @@
   let selRoom = null;       // stanza selezionata (pennello + pannello dettagli)
   let selCell = null;       // casella selezionata (pannello contenuto)
   let draft = null;         // bozza del contenuto della casella selezionata
-  let pick = null;          // 'teleport' | 'lever' — il prossimo clic sulla mappa sceglie un bersaglio
+  let pick = null;          // 'teleport' | 'lever' | 'lockKey' | 'keyDoor' — il prossimo clic sulla mappa sceglie un bersaglio
   let rectStart = null, rectEnd = null;
   let dirty = false;
   let painting = false;
@@ -105,6 +109,9 @@
     return { id: uid('dg'), name:'Nuovo Dungeon', desc:'', image:'', rows, cols, grid: Array(n).fill('.'), roomOf: Array(n).fill(null), rooms: [], features: {}, _new:true };
   }
   function clone(o){ return JSON.parse(JSON.stringify(o)); }
+  const normName = s => String(s||'').trim().toLowerCase().replace(/\s+/g,' ');
+  function keysInDungeon(){ const out = []; Object.keys(dg.features).forEach(k=>{ const f = dg.features[k]; if(f.type==='key' && f.name) out.push({ idx:+k, name:f.name }); }); return out; }
+  function locksForKey(name){ const out = []; Object.keys(dg.features).forEach(k=>{ const f = dg.features[k]; if(f.type==='lock' && f.key && normName(f.key)===normName(name)) out.push(+k); }); return out; }
   function rc(i){ return { r: Math.floor(i/dg.cols), c: i%dg.cols }; }
   function cellLabel(i){ const p = rc(i); return `riga ${p.r+1}, col. ${p.c+1}`; }
 
@@ -185,7 +192,10 @@
     for(let i=0;i<dg.grid.length;i++){
       const sel = selCell===i ? 'outline:2px solid #ffd35a;outline-offset:-2px;' : '';
       const rect = inRect && inRect(i) ? 'outline:2px dashed #35e8c9;outline-offset:-2px;' : '';
-      const linked = draft && ((draft.type==='teleport' && !draft.targetDungeon && draft.targetIndex===i) || (draft.type==='lever' && (draft.targets||[]).includes(i))) ? 'outline:2px solid #ff5dd2;outline-offset:-2px;' : '';
+      const fi = dg.features[i];
+      const keyLinked = draft && ((draft.type==='key' && draft.name && fi && fi.type==='lock' && normName(fi.key)===normName(draft.name))
+        || (draft.type==='lock' && draft.key && fi && fi.type==='key' && normName(fi.name)===normName(draft.key)));
+      const linked = draft && (keyLinked || (draft.type==='teleport' && !draft.targetDungeon && draft.targetIndex===i) || (draft.type==='lever' && (draft.targets||[]).includes(i))) ? 'outline:2px solid #ff5dd2;outline-offset:-2px;' : '';
       h += `<div data-dge-cell="${i}" title="${esc(cellLabel(i))}" style="${cellStyle(i)}display:flex;align-items:center;justify-content:center;${sel}${rect}${linked}">${cellIcon(i)}</div>`;
     }
     return h + '</div>';
@@ -218,7 +228,7 @@
       <span class="muted" style="font-size:10px;text-transform:uppercase;">Contenuti</span>
       ${btn('select','👆 Seleziona casella / contenuto')}
     </div>
-    <div class="muted" style="font-size:10.5px;">${pick ? `<b style="color:#ff5dd2;">📍 Clicca sulla mappa la casella di destinazione${pick==='lever'?' (anche più di una)':''}.</b> <button class="btn ghost small" id="dge-pick-done">Fine</button>` : help}</div>`;
+    <div class="muted" style="font-size:10.5px;">${pick ? `<b style="color:#ff5dd2;">📍 ${({ lockKey:'Clicca sulla mappa la 🗝️ chiave che apre questa porta.', keyDoor:'Clicca sulla mappa le porte che questa chiave apre (anche più di una; una porta aperta diventa chiusa).', lever:'Clicca sulla mappa le caselle che la leva apre (anche più di una).' })[pick] || 'Clicca sulla mappa la casella di destinazione.'}</b> <button class="btn ghost small" id="dge-pick-done">Fine</button>` : help}</div>`;
   }
 
   function roomsHTML(){
@@ -283,14 +293,30 @@
     if(f.type==='lock'){
       const keysHere = [];
       (data.dungeons||[]).concat(dg ? [dg] : []).forEach(x=>Object.values(x.features||{}).forEach(k=>{ if(k.type==='key' && k.name && !keysHere.includes(k.name)) keysHere.push(k.name); }));
+      const here = keysInDungeon();
+      const linkedKey = f.key ? here.find(k=>normName(k.name)===normName(f.key)) : null;
       fields = `
-      <div class="field"><label>Chiave che la apre (nome dell'oggetto in Inventario — vuoto = la aprono solo il Master o una Leva)</label>${inp('dge-f-key', f.key||'', 'type="text" list="dge-keys" placeholder="es. Chiave d\'Ossidiana"')}
-        <datalist id="dge-keys">${keysHere.map(k=>`<option value="${esc(k)}"></option>`).join('')}</datalist>
-        ${keysHere.length ? `<div class="muted" style="font-size:10px;">Chiavi messe nei tuoi dungeon: ${keysHere.map(esc).join(', ')}</div>` : ''}</div>
+      <div class="field"><label>🔗 Chiave che la apre</label>
+        <div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;">
+          <select id="dge-f-keypick" style="flex:2;min-width:160px;">
+            <option value="">— nessuna: la aprono solo il Master o una Leva —</option>
+            ${keysHere.map(k=>`<option value="${esc(k)}" ${normName(k)===normName(f.key)?'selected':''}>🗝️ ${esc(k)}${here.some(h=>normName(h.name)===normName(k))?' (in questo dungeon)':''}</option>`).join('')}
+            ${f.key && !keysHere.some(k=>normName(k)===normName(f.key)) ? `<option value="${esc(f.key)}" selected>✏️ ${esc(f.key)} (oggetto esterno)</option>` : ''}
+            <option value="__other">✏️ Un altro oggetto (scrivi il nome)…</option>
+          </select>
+          <button type="button" class="btn ghost small" id="dge-pick-lockkey">📍 Scegli la chiave sulla mappa</button>
+        </div>
+        ${inp('dge-f-key', f.key||'', 'type="text" placeholder="nome esatto dell\'oggetto in Inventario" style="margin-top:4px;"')}
+        <div class="muted" style="font-size:10px;margin-top:2px;">${linkedKey ? `Collegata alla 🗝️ di ${esc(cellLabel(linkedKey.idx))} (evidenziata in magenta).` : (f.key ? 'La chiave non è in questo dungeon: si apre se un giocatore ha in Inventario un oggetto con questo nome (anche preso altrove o dato da te).' : 'Metti una 🗝️ Chiave da trovare nel dungeon e collegala qui, oppure scrivi il nome di un oggetto che i giocatori hanno già.')}</div>
+      </div>
       <label style="display:flex;gap:6px;align-items:center;font-size:11px;text-transform:none;"><input type="checkbox" id="dge-f-consume" data-dge-draft="dge-f-consume" ${f.consume?'checked':''} style="width:auto;" /> La chiave si consuma (sparisce dall'Inventario di chi apre)</label>`;
     }
     if(f.type==='key') fields = `
-      <div class="field"><label>Nome della chiave (deve coincidere con quello scritto sulla porta)</label>${inp('dge-f-kname', f.name||'', 'type="text" placeholder="es. Chiave d\'Ossidiana"')}</div>
+      <div class="field"><label>Nome della chiave</label>${inp('dge-f-kname', f.name||'', 'type="text" placeholder="es. Chiave d\'Ossidiana"')}</div>
+      <div class="field"><label>🔗 Porte che apre</label>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin:2px 0;">${f.name ? (locksForKey(f.name).map(t=>`<span class="tag" style="font-size:10.5px;">🔒 ${esc(cellLabel(t))} <a href="#" data-dge-unlink-door="${t}" style="color:inherit;">✕</a></span>`).join('') || '<span class="muted" style="font-size:10.5px;">nessuna porta collegata</span>') : '<span class="muted" style="font-size:10.5px;">dai prima un nome alla chiave</span>'}</div>
+        ${f.name ? `<button type="button" class="btn ghost small" id="dge-pick-keydoor">📍 Collega a una porta sulla mappa</button>` : ''}
+      </div>
       <div class="field"><label>Descrizione oggetto</label>${inp('dge-f-kdesc', f.desc||'')}</div>
       <div class="muted" style="font-size:10px;">Quando il gruppo arriva qui, in chat esce la chiave come bottino (la prende il primo che clicca, categoria Chiave/Quest).</div>`;
     if(f.type==='teleport'){
@@ -360,6 +386,8 @@
         <input type="number" class="dge-num" id="dge-cols" min="3" max="40" value="${dg.cols}" style="width:56px;" title="Colonne" /> colonne ×
         <input type="number" class="dge-num" id="dge-rows" min="3" max="40" value="${dg.rows}" style="width:56px;" title="Righe" /> righe
         <button class="btn ghost small" id="dge-resize">Applica</button>
+        <span class="muted" style="font-size:11px;margin-left:8px;" title="Fog of war: quante caselle vede il gruppo attorno alla pedina (muri e porte chiuse bloccano la vista). Dentro una stanza si vede sempre tutta la stanza.">👁️ Raggio di vista:</span>
+        <select id="dge-vision">${[1,2,3,4,5,6,8].map(n=>`<option value="${n}" ${(Number(dg.vision)||2)===n?'selected':''}>${n}</option>`).join('')}</select>
       </div>
       ${toolsHTML()}
       ${gridHTML()}
@@ -418,6 +446,23 @@
     if(d){ const evs = d.events||[]; if(!evs.length) testLogPush('👣 un passo'); evs.forEach(ev=>testLogPush(testEventText(ev))); }
     render();
   }
+  // Fog of war nell'area di prova: stessa funzione di lib/dungeon.js / js/dungeon.js.
+  function tNb8(v, idx){ const r = Math.floor(idx/v.cols), c = idx%v.cols, out = []; for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){ if(!dr&&!dc) continue; const rr=r+dr, cc=c+dc; if(rr>=0&&rr<v.rows&&cc>=0&&cc<v.cols) out.push(rr*v.cols+cc); } return out; }
+  function tOpaque(v, i){ const t = v.grid[i]; if(t==='.'||t==='?') return true; const run = v.run||{}; if(t==='s' && !(run.found||[]).includes(i)) return true; const f = v.features && v.features[i]; if(f && f.type==='lock' && !(f.unlocked || (run.unlocked||[]).includes(i))) return true; return false; }
+  function tVisible(v, pos){
+    const vis = new Set(); if(pos==null) return vis;
+    const R = Math.max(1, Math.min(8, Math.floor(Number(v.vision)||2)));
+    const pr = Math.floor(pos/v.cols), pc = pos%v.cols;
+    vis.add(pos); tNb8(v,pos).forEach(j=>vis.add(j));
+    for(let r=Math.max(0,pr-R); r<=Math.min(v.rows-1,pr+R); r++) for(let c=Math.max(0,pc-R); c<=Math.min(v.cols-1,pc+R); c++){
+      if((r-pr)*(r-pr)+(c-pc)*(c-pc) > (R+0.5)*(R+0.5)) continue;
+      let x=pc, y=pr; const dx=Math.abs(c-pc), sx=pc<c?1:-1, dy=-Math.abs(r-pr), sy=pr<r?1:-1; let err=dx+dy, ok=true;
+      while(!(x===c && y===r)){ const e2=2*err; if(e2>=dy){ err+=dy; x+=sx; } if(e2<=dx){ err+=dx; y+=sy; } if(x===c && y===r) break; if(tOpaque(v, y*v.cols+x)){ ok=false; break; } }
+      if(ok) vis.add(r*v.cols+c);
+    }
+    const rid = v.roomOf[pos]; if(rid) v.roomOf.forEach((x,i)=>{ if(x===rid){ vis.add(i); tNb8(v,i).forEach(j=>vis.add(j)); } });
+    return vis;
+  }
   function testGridHTML(){
     const v = testView;
     if(!v) return '<div class="muted">Prova non avviata.</div>';
@@ -430,6 +475,7 @@
       const r = Math.floor(pos/v.cols), c = pos%v.cols;
       [[r>0,pos-v.cols],[r<v.rows-1,pos+v.cols],[c>0,pos-1],[c<v.cols-1,pos+1]].forEach(([okk,i])=>{ if(okk && walk[v.grid[i]] && pts >= (v.grid[i]==='h'?2:1)) reach.add(i); });
     }
+    const vis = tVisible(v, pos);
     const colors = { '?':'#020304', '.':'#1a2226', f:'#22343a', d:'#8a5a26', e:'#1f5a3a', x:'#5a1f4e', s:'#4d2d6b', h:'repeating-linear-gradient(135deg,#4a3d2b 0 3px,#382e22 3px 6px)' };
     let h = `<div style="display:grid;grid-template-columns:repeat(${v.cols},${size}px);grid-auto-rows:${size}px;gap:1px;background:#05080b;padding:1px;width:max-content;max-width:100%;margin:6px auto;font-size:${Math.max(8,Math.floor(size*0.55))}px;">`;
     for(let i=0;i<v.grid.length;i++){
@@ -447,7 +493,8 @@
       }
       const icoHTML = ico ? (isImg(ico) ? `<img src="${esc(ico)}" style="width:85%;height:85%;object-fit:contain;" />` : esc(ico)) : '';
       const r = reach.has(i);
-      h += `<div ${r?`data-dgt-cell="${i}"`:''} style="background:${bg};display:flex;align-items:center;justify-content:center;position:relative;${r?'outline:2px solid #35e8c9;outline-offset:-2px;cursor:pointer;':''}">${icoHTML}${i===pos?'<div style="position:absolute;inset:10%;border-radius:50%;background:radial-gradient(circle,#ffd35a,#ff8a3d);box-shadow:0 0 8px #ffb020;"></div>':''}</div>`;
+      const fog = t!=='?' && !vis.has(i);
+      h += `<div ${r?`data-dgt-cell="${i}"`:''} ${fog?'data-dgt-fog="1"':''} style="background:${bg};display:flex;align-items:center;justify-content:center;position:relative;${r?'outline:2px solid #35e8c9;outline-offset:-2px;cursor:pointer;':''}">${icoHTML}${fog?'<div style="position:absolute;inset:0;background:rgba(2,4,6,0.62);pointer-events:none;"></div>':''}${i===pos?'<div style="position:absolute;inset:10%;border-radius:50%;background:radial-gradient(circle,#ffd35a,#ff8a3d);box-shadow:0 0 8px #ffb020;"></div>':''}</div>`;
     }
     return h + '</div>';
   }
@@ -669,7 +716,14 @@
     const set = (k, id, fn)=>{ const x = v(id); if(x!==undefined) draft[k] = fn ? fn(x) : x; };
     set('text','dge-f-text');
     if(draft.type==='trap'){ set('roll','dge-f-roll', x=>!!x); set('skill','dge-f-skill'); set('attr','dge-f-attr'); set('tn','dge-f-tn', x=>Number(x)||12); set('who','dge-f-who'); }
-    if(draft.type==='key'){ set('name','dge-f-kname', x=>x.trim()); set('desc','dge-f-kdesc'); }
+    if(draft.type==='key'){
+      const oldName = draft.name;
+      set('name','dge-f-kname', x=>x.trim()); set('desc','dge-f-kdesc');
+      // Rinominare una chiave mantiene il collegamento con le sue porte.
+      if(oldName && draft.name && normName(oldName)!==normName(draft.name)){
+        locksForKey(oldName).forEach(t=>{ dg.features[t].key = draft.name; });
+      }
+    }
     if(draft.type==='loot'){ set('name','dge-f-name', x=>x.trim()); set('qty','dge-f-qty', x=>Math.max(1,Number(x)||1)); set('category','dge-f-cat'); set('mode','dge-f-mode'); set('desc','dge-f-desc'); }
     if(draft.type==='encounter') set('encounterId','dge-f-enc');
     if(draft.type==='lock'){ set('key','dge-f-key', x=>x.trim()); set('consume','dge-f-consume', x=>!!x); }
@@ -754,6 +808,8 @@
     root.querySelectorAll('[data-dge-draft]').forEach(el=>{ el.oninput = el.onchange = ()=>syncDraft(); });
     const rollChk = document.getElementById('dge-f-roll');
     if(rollChk) rollChk.onchange = ()=>{ syncDraft(); render(); };
+    const vsel = document.getElementById('dge-vision');
+    if(vsel) vsel.onchange = ()=>{ dg.vision = Number(vsel.value)||2; markDirty(); };
     const rs = document.getElementById('dge-resize');
     if(rs) rs.onclick = ()=>{
       const rows = Number(document.getElementById('dge-rows').value), cols = Number(document.getElementById('dge-cols').value);
@@ -787,6 +843,18 @@
         if(pick && draft){
           if(pick==='teleport'){ draft.targetIndex = i; pick = null; }
           else if(pick==='lever'){ draft.targets = draft.targets || []; if(!draft.targets.includes(i)) draft.targets.push(i); }
+          else if(pick==='lockKey'){
+            const fk = dg.features[i];
+            if(fk && fk.type==='key' && fk.name){ draft.key = fk.name; pick = null; }
+            else { setMsg('Lì non c\'è una 🗝️ chiave (con un nome): clicca una casella con la chiave.'); return; }
+          }
+          else if(pick==='keyDoor'){
+            if(dg.grid[i]!=='d' && !(dg.features[i] && dg.features[i].type==='lock')){ setMsg('Clicca una porta (🚪 o 🔒).'); return; }
+            dg.grid[i] = 'd';
+            const prev = dg.features[i] && dg.features[i].type==='lock' ? dg.features[i] : { type:'lock', consume:false, text:'' };
+            dg.features[i] = Object.assign({}, prev, { type:'lock', key: draft.name });
+            markDirty(); setMsg('');
+          }
           commitDraft(); render(); return;
         }
         if(tool==='select'){ selectCell(i); render(); return; }
@@ -818,6 +886,7 @@
       syncDraft();
       const t = ft.value;
       draft = (dg.features[selCell] && dg.features[selCell].type===t) ? clone(dg.features[selCell]) : { type:t, text: draft ? draft.text : '' };
+      if(t==='key' && !draft.name) draft.name = 'Chiave ' + (keysInDungeon().length + 1);
       pick = null;
       commitDraft();
       render();
@@ -827,6 +896,17 @@
     if(tdg) tdg.onchange = ()=>{ syncDraft(); draft.targetDungeon = tdg.value; draft.targetIndex = null; render(); };
     const ptp = document.getElementById('dge-pick-tp');
     if(ptp) ptp.onclick = ()=>{ syncDraft(); pick = 'teleport'; render(); };
+    const plk = document.getElementById('dge-pick-lockkey');
+    if(plk) plk.onclick = ()=>{ syncDraft(); pick = 'lockKey'; render(); };
+    const pkd = document.getElementById('dge-pick-keydoor');
+    if(pkd) pkd.onclick = ()=>{ syncDraft(); pick = 'keyDoor'; render(); };
+    root.querySelectorAll('[data-dge-unlink-door]').forEach(a=> a.onclick = (e)=>{ e.preventDefault(); const t = +a.getAttribute('data-dge-unlink-door'); if(dg.features[t]) dg.features[t].key = ''; markDirty(); render(); });
+    const kp = document.getElementById('dge-f-keypick');
+    if(kp) kp.onchange = ()=>{
+      syncDraft();
+      if(kp.value==='__other'){ const ki = document.getElementById('dge-f-key'); if(ki){ ki.value=''; ki.focus(); } return; }
+      draft.key = kp.value; commitDraft(); render();
+    };
     const plv = document.getElementById('dge-pick-lever');
     if(plv) plv.onclick = ()=>{ syncDraft(); pick = 'lever'; render(); };
     root.querySelectorAll('[data-dge-lever-del]').forEach(a=> a.onclick = (e)=>{ e.preventDefault(); syncDraft(); const t = +a.getAttribute('data-dge-lever-del'); draft.targets = (draft.targets||[]).filter(x=>x!==t); commitDraft(); render(); });

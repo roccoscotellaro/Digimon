@@ -43,6 +43,50 @@
   let busy = false;
   let statusMsg = '';
   let masterMode = 'look';   // 'look' | 'teleport' | 'unlock'
+  let masterPlayerView = false; // il Master vede la mappa con la nebbia dei giocatori
+
+  // FOG OF WAR (sesta richiesta): stessa logica di visibleFrom in lib/dungeon.js. Le caselle già
+  // esplorate ma fuori dalla vista attuale del gruppo (raggio dg.vision + linea di vista, o la
+  // stanza intera se ci si è dentro) restano sulla mappa ma scurite.
+  function nb8(dg, idx){
+    const r = Math.floor(idx/dg.cols), c = idx%dg.cols, out = [];
+    for(let dr=-1; dr<=1; dr++) for(let dc=-1; dc<=1; dc++){ if(!dr && !dc) continue; const rr=r+dr, cc=c+dc; if(rr>=0 && rr<dg.rows && cc>=0 && cc<dg.cols) out.push(rr*dg.cols+cc); }
+    return out;
+  }
+  function isOpaque(dg, i){
+    const t = dg.grid[i];
+    if(t==='.' || t==='?') return true;
+    const run = dg.run || {};
+    if(t==='s' && !(run.found||[]).includes(i)) return true;
+    const f = dg.features && dg.features[i];
+    if(f && f.type==='lock' && !(f.unlocked || (run.unlocked||[]).includes(i))) return true;
+    return false;
+  }
+  function visibleFrom(dg, pos){
+    const vis = new Set();
+    if(pos==null || pos<0) return vis;
+    const R = Math.max(1, Math.min(8, Math.floor(Number(dg.vision)||2)));
+    const pr = Math.floor(pos/dg.cols), pc = pos%dg.cols;
+    vis.add(pos); nb8(dg, pos).forEach(j=>vis.add(j));
+    for(let r=Math.max(0,pr-R); r<=Math.min(dg.rows-1,pr+R); r++){
+      for(let c=Math.max(0,pc-R); c<=Math.min(dg.cols-1,pc+R); c++){
+        if((r-pr)*(r-pr)+(c-pc)*(c-pc) > (R+0.5)*(R+0.5)) continue;
+        let x=pc, y=pr; const dx=Math.abs(c-pc), sx=pc<c?1:-1, dy=-Math.abs(r-pr), sy=pr<r?1:-1;
+        let err=dx+dy, ok=true;
+        while(!(x===c && y===r)){
+          const e2=2*err;
+          if(e2>=dy){ err+=dy; x+=sx; }
+          if(e2<=dx){ err+=dx; y+=sy; }
+          if(x===c && y===r) break;
+          if(isOpaque(dg, y*dg.cols+x)){ ok=false; break; }
+        }
+        if(ok) vis.add(r*dg.cols+c);
+      }
+    }
+    const roomId = dg.roomOf[pos];
+    if(roomId) dg.roomOf.forEach((rid,i)=>{ if(rid===roomId){ vis.add(i); nb8(dg, i).forEach(j=>vis.add(j)); } });
+    return vis;
+  }
   let lastLoadError = null;
 
   function injectStyles(){
@@ -64,6 +108,9 @@
       .dg-secret{background:#4d2d6b;}
       .dg-ico img{width:85%;height:85%;object-fit:contain;display:block;margin:auto;}
       .dg-hidden{opacity:0.45;}
+      .dg-fog::after{content:'';position:absolute;inset:0;background:rgba(2,4,6,0.62);pointer-events:none;z-index:1;transition:background .35s;}
+      .dg-fog .dg-ico{filter:grayscale(1);}
+      .dg-cell.dg-lit{transition:filter .35s;}
       .dg-reach{outline:2px solid var(--cyan);outline-offset:-2px;cursor:pointer;animation:dgpulse 1.4s infinite;}
       .dg-click{cursor:pointer;}
       .dg-token{position:absolute;inset:8%;border-radius:50%;background:radial-gradient(circle,#ffd35a,#ff8a3d);box-shadow:0 0 8px #ffb020;display:flex;align-items:center;justify-content:center;overflow:hidden;z-index:2;}
@@ -223,9 +270,15 @@
     const step = size+1, bbox = {};
     (dg.rooms||[]).forEach(rm=>{ if(rm.image && rm.showOnMap!==false) bbox[rm.id] = { r0:1e9, c0:1e9, r1:-1, c1:-1 }; });
     dg.roomOf.forEach((rid,i)=>{ const b = rid && bbox[rid]; if(!b) return; const rr = Math.floor(i/dg.cols), cc = i%dg.cols; b.r0=Math.min(b.r0,rr); b.c0=Math.min(b.c0,cc); b.r1=Math.max(b.r1,rr); b.c1=Math.max(b.c1,cc); });
+    // Nebbia: per i giocatori sempre; per il Master solo con "👁️ Vista giocatori" attiva.
+    const fogOn = !isMaster() || masterPlayerView;
+    const visible = visibleFrom(dg, pos);
+    const seenSet = new Set((dg.run && dg.run.seen) || []);
     let html = `<div class="dg-grid" style="grid-template-columns:repeat(${dg.cols},${size}px);grid-auto-rows:${size}px;font-size:${Math.max(8, Math.floor(size*0.6))}px;">`;
     for(let i=0;i<dg.grid.length;i++){
-      const cls = cellClass(dg, i);
+      const unknownForPlayers = isMaster() && masterPlayerView && !seenSet.has(i);
+      const cls = unknownForPlayers ? 'dg-unk' : cellClass(dg, i);
+      const fog = fogOn && !unknownForPlayers && cls!=='dg-unk' && !visible.has(i);
       const r = reach.has(i);
       const masterClick = isMaster() && masterMode!=='look' && WALK[dg.grid[i]];
       const room = dg.roomOf[i] ? (dg.rooms||[]).find(x=>x.id===dg.roomOf[i]) : null;
@@ -235,8 +288,9 @@
         const rr = Math.floor(i/dg.cols), cc = i%dg.cols;
         bgStyle = `background-image:url('${String(room.image).replace(/'/g,'%27')}');background-size:${(b.c1-b.c0+1)*step}px ${(b.r1-b.r0+1)*step}px;background-position:${-(cc-b.c0)*step}px ${-(rr-b.r0)*step}px;`;
       }
-      html += `<div class="dg-cell ${cls} ${r?'dg-reach':''} ${masterClick?'dg-click':''}" style="${bgStyle}" ${(r||masterClick)?`data-dg-cell="${i}"`:''} title="${room?escapeAttr(room.name):''}${dg.grid[i]==='h'?' (terreno difficile: 2 Punti)':''}">`
-        + featureIcon(dg, i)
+      if(unknownForPlayers) bgStyle = '';
+      html += `<div class="dg-cell ${cls} ${fog?'dg-fog':'dg-lit'} ${r?'dg-reach':''} ${masterClick?'dg-click':''}" style="${bgStyle}" ${(r||masterClick)?`data-dg-cell="${i}"`:''} title="${room && !unknownForPlayers?escapeAttr(room.name):''}${dg.grid[i]==='h' && !unknownForPlayers?' (terreno difficile: 2 Punti)':''}">`
+        + (unknownForPlayers ? '' : featureIcon(dg, i))
         + (i===pos ? `<div class="dg-token">${leaderAvatar()}</div>` : '')
         + `</div>`;
     }
@@ -349,6 +403,7 @@
       ${dg ? `<div class="dg-bar">
         <span class="muted">Clic sulla mappa:</span>
         <button class="btn ${masterMode==='look'?'':'ghost'} small" data-dg-mode="look">👁️ Guarda</button>
+        <button class="btn ${masterPlayerView?'':'ghost'} small" id="dg-pview-btn" title="Mostra la mappa con la nebbia che vedono i giocatori">🌫️ Vista giocatori</button>
         <button class="btn ${masterMode==='teleport'?'':'ghost'} small" data-dg-mode="teleport">✋ Sposta pedina (gratis)</button>
         <button class="btn ${masterMode==='unlock'?'':'ghost'} small" data-dg-mode="unlock" title="Apre una porta chiusa o rivela una porta segreta">🔓 Sblocca / rivela</button>
         <button class="btn ghost small" id="dg-reset-btn">🧹 Azzera esplorazione</button>
@@ -640,6 +695,8 @@
       render();
       if(leader) await dgLog({ who:'Sistema', role:'gm', text: `👑 Il Master nomina ${nameOf(leader)} Capofila del gruppo.` });
     };
+    const pv = document.getElementById('dg-pview-btn');
+    if(pv) pv.onclick = ()=>{ masterPlayerView = !masterPlayerView; render(); };
     rootEl.querySelectorAll('[data-dg-mode]').forEach(b=>{
       b.onclick = ()=>{ masterMode = b.getAttribute('data-dg-mode'); render(); };
     });
