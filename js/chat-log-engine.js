@@ -212,6 +212,10 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
   }
 
   function currentLocationKey(){
+    // Dungeon (js/dungeon.js): con un dungeon collegato a un luogo, il Master "parla nel dungeon":
+    // i suoi messaggi in Generale e il filtro 📍 seguono il luogo del dungeon invece di quello del
+    // gruppo. Vale solo per il Master e si spegne da solo quando il dungeon viene chiuso.
+    if(typeof window!=='undefined' && window.__dvosMasterLocationOverride && session && session.role==='master') return window.__dvosMasterLocationOverride;
     if(!cachedScene) return '_|_|_|_';
     return `${cachedScene.currentMacroSceneId||'_'}|${cachedScene.currentSectorId||'_'}|${cachedScene.currentSubsectionId||'_'}|${cachedScene.currentLuogoId||'_'}`;
   }
@@ -782,7 +786,10 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         // vecchio def.attrs[0]).
         const attrKey = parts[3] || '';
         if(session && session.role==='player' && targets.includes(session.username)){
-          fulfillBtn = `<button class="btn amber small" style="margin-top:6px;" data-fulfill-target="${escapeAttr(parts[0])}" data-fulfill-skill="${escapeAttr(skillKey)}" data-fulfill-tn="${escapeAttr(tn)}" data-fulfill-attr="${escapeAttr(attrKey)}">🎲 Tira ora</button>`;
+          // Punto di scoperta del Dungeon (js/dungeon.js): la richiesta porta con sé meta.dgCheck, così
+          // l'esito del tiro può rivelare gli oggetti nascosti (vedi DungeonView.reportCheck più sotto).
+          const dgc = (l.meta && l.meta.dgCheck) ? ` data-fulfill-dgcheck="${escapeAttr(l.meta.dgCheck.dungeonId + '|' + l.meta.dgCheck.index)}"` : '';
+          fulfillBtn = `<button class="btn amber small" style="margin-top:6px;" data-fulfill-target="${escapeAttr(parts[0])}" data-fulfill-skill="${escapeAttr(skillKey)}" data-fulfill-tn="${escapeAttr(tn)}" data-fulfill-attr="${escapeAttr(attrKey)}"${dgc}>🎲 Tira ora</button>`;
         }
       }
       // Richiesta mirata di un Torment Check specifico (Master → un solo giocatore, un solo
@@ -1364,6 +1371,12 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
             // BUGFIX: stesso identico motivo del commento qui sopra — mancava anche sul ramo
             // Generale, non solo su Privata/Sottogruppo.
             await pushLog(code, { ...entry, meta: { ...(entry.meta||{}), location: memberLocationKey(me) } });
+          }
+          // Dungeon: esito di un Punto di scoperta → il server rivela (o no) gli oggetti nascosti.
+          const dgCheckAttr = fulfillBtn.getAttribute('data-fulfill-dgcheck');
+          if(dgCheckAttr && window.DungeonView && typeof window.DungeonView.reportCheck==='function'){
+            const success = !!(rollMeta && rollMeta.verdict && /^Successo/.test(rollMeta.verdict));
+            try{ await window.DungeonView.reportCheck(dgCheckAttr, success, displayName(me)); }catch(e){}
           }
           if(onChanged) onChanged();
         }

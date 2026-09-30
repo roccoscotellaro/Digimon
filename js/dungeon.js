@@ -25,6 +25,20 @@
 // Sotto la mappa c'è la CHAT DEL DUNGEON: la Chat Generale filtrata sulla posizione del dungeon
 // (stessi messaggi della chat normale con il filtro 📍 di quel luogo); tutti i messaggi automatici
 // del dungeon vengono taggati con quella posizione (dgLog).
+// Oggetti nascosti + 🔎 Punto di scoperta (ottava richiesta): arrivando sulla piastrella parte
+// una richiesta di tiro con meta.dgCheck; quando il giocatore tira ("🎲 Tira ora", in
+// js/chat-log-engine.js) l'esito arriva a DungeonView.reportCheck → op 'checkResult' sul server,
+// che rivela leve/tesori/… collegati. Il Master vede gli oggetti nascosti sbiaditi con 🙈 e può
+// rivelarli a mano (🔓 Sblocca / rivela).
+// NONA RICHIESTA: (1) la chat del dungeon È la chat normale: la card Chat vera (con "parla come"
+// Tamer/Digimon, NPC del Master, allegati, dadi, risposte…) viene "agganciata" sotto la mappa
+// (dockChat/undockChat, i nodi vengono spostati, non copiati, quindi funziona tutto come prima) e
+// al suo posto resta un segnaposto "💬 La chat è sotto la mappa del dungeon". Per il Master, con un
+// dungeon collegato, window.__dvosMasterLocationOverride fa sì che i suoi messaggi e il filtro 📍
+// della Chat Generale seguano il luogo del dungeon (vedi currentLocationKey in chat-log-engine).
+// (2) Stanze che rivelano oggetti e Incontri in Scena al primo ingresso (evento 'roomReveal').
+// (3) Mobile: mappa in un riquadro scorrevole con zoom ➖/➕, centrata sulla pedina; frecce grandi;
+// chat agganciata con le stesse regole mobile della scheda Chat.
 // Chi muove riceve dal server gli eventi appena scattati (una volta sola, grazie al
 // compare-and-swap lato server) ed è il suo client a pubblicarli in chat con pushLog — stesso
 // schema del voto di spostamento (justResolved) già in uso.
@@ -137,6 +151,27 @@
       .dg-bar{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:11.5px;margin:4px 0;}
       .dg-pad{display:grid;grid-template-columns:repeat(3,38px);grid-template-rows:repeat(3,34px);gap:3px;justify-content:center;margin:6px auto;}
       .dg-pad button{padding:0;font-size:15px;}
+      #dungeon-live{min-width:0;max-width:100%;}
+      .grid2 > div:has(#dungeon-live), .mobile-section:has(#dungeon-live){min-width:0;max-width:100%;}
+      .dg-wrap{min-width:0;max-width:100%;box-sizing:border-box;}
+      #dg-main{min-width:0;max-width:100%;overflow:hidden;}
+      .dg-scroll{width:100%;box-sizing:border-box;max-width:100%;max-height:62vh;overflow:auto;-webkit-overflow-scrolling:touch;margin:6px auto;border:1px solid var(--line);border-radius:4px;background:#05080b;}
+      .dg-scroll .dg-grid{margin:0 auto;border:none;}
+      .dg-zoom{display:flex;gap:4px;justify-content:center;align-items:center;font-size:11px;}
+      .dg-zoom .btn{min-width:32px;}
+      .dg-chat-placeholder{text-align:center;font-size:12px;}
+      #dg-chat-slot > .hud-frame.card{margin-top:10px;}
+      @media (max-width: 760px){
+        .dg-scroll{max-height:55svh;}
+        .dg-pad{grid-template-columns:repeat(3,52px);grid-template-rows:repeat(3,46px);gap:6px;}
+        .dg-pad button{font-size:20px;}
+        .dg-bar{font-size:12px;}
+        #dg-chat-slot .log{height:45svh !important;min-height:180px;max-height:60svh;font-size:14px;}
+        #dg-chat-slot textarea{font-size:16px;padding:10px;border-radius:8px;}
+        #dg-chat-slot #btn-correct{display:none;}
+        #dg-chat-slot #player-chat-seg, #dg-chat-slot #master-chat-seg{position:sticky;top:0;z-index:40;}
+        #dg-chat-slot #action-hint{font-size:10px;margin-top:2px !important;line-height:1.3;}
+      }
       .dg-room-card{display:flex;gap:10px;align-items:flex-start;padding:8px;border:1px solid var(--line);border-left:3px solid var(--cyan);border-radius:4px;background:var(--panel-2);margin:6px 0;}
       .dg-room-card img{width:120px;max-height:90px;object-fit:cover;border-radius:3px;cursor:zoom-in;flex:0 0 auto;}
       .dg-room-card .desc{font-size:11.5px;white-space:pre-wrap;color:var(--text);}
@@ -237,7 +272,7 @@
     return out;
   }
   const WALK = { f:1, d:1, e:1, x:1, h:1, s:1 };
-  const DEFAULT_ICON = { key:'🗝️', trap:'⚠️', loot:'🎁', encounter:'⚔️', lock:'🔒', note:'📜', teleport:'🪜', rest:'⛺', lever:'🕹️' };
+  const DEFAULT_ICON = { search:'🔎', key:'🗝️', trap:'⚠️', loot:'🎁', encounter:'⚔️', lock:'🔒', note:'📜', teleport:'🪜', rest:'⛺', lever:'🕹️' };
   function stepCost(dg, i){ return dg.grid[i]==='h' ? 2 : 1; }
   function icoHTML(ic){ return /^(https?:|data:|\/)/i.test(String(ic||'')) ? `<img src="${escapeAttr(ic)}" onerror="this.remove()" />` : escapeHTML(ic); }
 
@@ -253,8 +288,21 @@
     return dg.roomOf[i] ? 'dg-room' : 'dg-floor';
   }
 
+  function hiddenSetOf(dg){
+    const out = new Set(); const rev = new Set((dg.run && dg.run.revealedFeat) || []);
+    Object.values(dg.features || {}).forEach(f=>{ if(f && f.type==='search') (f.targets||[]).forEach(t=>{ if(!rev.has(t)) out.add(t); }); });
+    return out;
+  }
   function featureIcon(dg, i){
     const f = dg.features && dg.features[i];
+    if(f && f.type==='search'){
+      const solved = f.solved || ((dg.run && dg.run.solved)||[]).includes(i);
+      return `<span class="dg-ico dg-hidden" title="${solved?'Punto di scoperta risolto':'Punto di scoperta'}">${icoHTML(f.icon||'🔎')}</span>`;
+    }
+    if(f && isMaster() && hiddenSetOf(dg).has(i)){
+      const own = f.icon || DEFAULT_ICON[f.type] || '';
+      return `<span class="dg-ico dg-hidden" title="Nascosto: si rivela con un Punto di scoperta" style="opacity:0.35;">${icoHTML(own)}</span>`;
+    }
     const run = dg.run || {};
     const fired = (run.fired||[]).includes(i);
     const unlocked = (run.unlocked||[]).includes(i);
@@ -285,9 +333,13 @@
     return ico ? `<span class="dg-ico">${icoHTML(ico)}</span>` : '';
   }
 
+  // Zoom della mappa (per chi guarda, ricordato nel browser): 1 = la mappa entra in larghezza.
+  let dgZoom = (()=>{ try{ return Number(localStorage.getItem('dvos_dg_zoom'))||1; }catch(e){ return 1; } })();
+  let lastCenteredPos = null, lastScroll = null;
   function gridHTML(dg){
-    const avail = Math.max(160, (rootEl && rootEl.clientWidth ? rootEl.clientWidth : 320) - 12);
-    const size = Math.max(10, Math.min(30, Math.floor(avail/dg.cols) - 1));
+    const avail = Math.max(160, (rootEl && rootEl.clientWidth ? rootEl.clientWidth : 320) - 16);
+    const fit = Math.floor(avail/dg.cols) - 1;
+    const size = Math.max(10, Math.min(48, Math.round(Math.max(fit, dgZoom>1 ? 16 : 10) * dgZoom)));
     const pos = dg.run ? dg.run.pos : null;
     const reach = new Set();
     const pts = Number(state.party && state.party.points)||0;
@@ -300,7 +352,8 @@
     const fogOn = !isMaster() || masterPlayerView;
     const visible = visibleFrom(dg, pos);
     const seenSet = new Set((dg.run && dg.run.seen) || []);
-    let html = `<div class="dg-grid" style="grid-template-columns:repeat(${dg.cols},${size}px);grid-auto-rows:${size}px;font-size:${Math.max(8, Math.floor(size*0.6))}px;">`;
+    let html = `<div class="dg-zoom"><button class="btn ghost small" data-dg-zoom="-1" title="Rimpicciolisci">➖</button><button class="btn ghost small" data-dg-zoom="0" title="Centra sulla pedina">🎯</button><button class="btn ghost small" data-dg-zoom="1" title="Ingrandisci">➕</button></div>
+      <div class="dg-scroll" id="dg-scroll"><div class="dg-grid" style="grid-template-columns:repeat(${dg.cols},${size}px);grid-auto-rows:${size}px;font-size:${Math.max(8, Math.floor(size*0.6))}px;">`;
     for(let i=0;i<dg.grid.length;i++){
       const unknownForPlayers = isMaster() && masterPlayerView && !seenSet.has(i);
       const cls = unknownForPlayers ? 'dg-unk' : cellClass(dg, i);
@@ -320,7 +373,20 @@
         + (i===pos ? `<div class="dg-token">${leaderAvatar()}</div>` : '')
         + `</div>`;
     }
-    return html + '</div>';
+    return html + '</div></div>';
+  }
+  // Centra la mappa sulla pedina quando si muove (o al primo disegno); altrimenti mantiene lo
+  // scorrimento fatto a mano da chi guarda.
+  function positionScroll(dg, force){
+    const sc = rootEl && rootEl.querySelector('#dg-scroll');
+    if(!sc) return;
+    const pos = dg && dg.run ? dg.run.pos : null;
+    const tok = sc.querySelector('.dg-token');
+    if(force || (pos!==lastCenteredPos && tok)){
+      if(tok){ const cell = tok.parentNode; sc.scrollLeft = cell.offsetLeft - sc.clientWidth/2 + cell.offsetWidth/2; sc.scrollTop = cell.offsetTop - sc.clientHeight/2 + cell.offsetHeight/2; }
+      lastCenteredPos = pos;
+    } else if(lastScroll){ sc.scrollLeft = lastScroll.x; sc.scrollTop = lastScroll.y; }
+    sc.onscroll = ()=>{ lastScroll = { x: sc.scrollLeft, y: sc.scrollTop }; };
   }
 
   function roomCardHTML(dg){
@@ -437,15 +503,54 @@
       </div>` : ''}`;
   }
 
-  let chatBuilt = false, chatSig = '';
-  function clearShell(html){ rootEl.innerHTML = html || ''; chatBuilt = false; chatSig = ''; }
+  // ---------- chat: la card Chat normale agganciata sotto la mappa ----------
+  let dock = null; // { card, ph }
+  let chatDockPref = (()=>{ try{ return localStorage.getItem('dvos_dg_chatdock')!=='off'; }catch(e){ return true; } })();
+  let masterFollow = (()=>{ try{ return localStorage.getItem('dvos_dg_masterfollow')!=='off'; }catch(e){ return true; } })();
+  function chatCardEl(){ return document.querySelector('.mobile-section[data-mobile-tab="chat"] > .hud-frame.card:not(.dg-chat-placeholder)'); }
+  function dockChat(){
+    const slot = rootEl && rootEl.querySelector('#dg-chat-slot');
+    if(!slot || !chatDockPref || !activeDungeon()){ undockChat(); return; }
+    if(dock && dock.card && slot.contains(dock.card)) return;
+    const card = (dock && dock.card) || chatCardEl();
+    if(!card) return;
+    let ph = dock && dock.ph;
+    if(!ph || !ph.parentNode){
+      ph = document.createElement('div');
+      ph.className = 'hud-frame card dg-chat-placeholder';
+      ph.innerHTML = `<div style="margin-bottom:6px;">💬 La chat è sotto la mappa del dungeon.</div><button class="btn small" data-dg-goto="1">🏰 Vai al dungeon</button>`;
+      card.parentNode.insertBefore(ph, card);
+      ph.querySelector('[data-dg-goto]').onclick = ()=>{
+        if(typeof switchMobileTab==='function' && typeof isMobile==='function' && isMobile()) switchMobileTab('scena');
+        setTimeout(()=>{ const sl = rootEl && rootEl.querySelector('#dg-chat-slot'); if(sl) sl.scrollIntoView({ behavior:'smooth', block:'start' }); }, 60);
+      };
+    }
+    slot.appendChild(card);
+    dock = { card, ph };
+  }
+  function undockChat(){
+    if(!dock) return;
+    if(dock.ph && dock.ph.parentNode) dock.ph.parentNode.replaceChild(dock.card, dock.ph);
+    dock = null;
+  }
+  // Master + dungeon collegato: i suoi messaggi in Generale (e il filtro 📍) seguono il dungeon.
+  function applyMasterOverride(){
+    if(!isMaster()) return;
+    const dg = activeDungeon();
+    const want = (masterFollow && dg && isLinked(dg)) ? dungeonKey(dg) : null;
+    const prev = window.__dvosMasterLocationOverride || null;
+    if(want) window.__dvosMasterLocationOverride = want; else delete window.__dvosMasterLocationOverride;
+    if(prev !== want && ctx && ctx.onChanged) setTimeout(()=>ctx.onChanged(), 0);
+  }
+  function clearShell(html){ undockChat(); rootEl.innerHTML = html || ''; }
   function ensureShell(){
     if(rootEl.querySelector('#dg-main')) return;
-    rootEl.innerHTML = `<div class="hud-frame card dg-wrap"><div id="dg-main"></div><div id="dg-chat-box"></div></div>`;
-    chatBuilt = false; chatSig = '';
+    undockChat();
+    rootEl.innerHTML = `<div class="hud-frame card dg-wrap"><div id="dg-main"></div><div id="dg-chat-slot"></div></div>`;
   }
   function render(){
     if(!rootEl || !ctx) return;
+    applyMasterOverride();
     if(!state){ clearShell(lastLoadError ? `<div class="muted" style="font-size:11px;">${escapeHTML(lastLoadError)}</div>` : ''); return; }
     const dg = activeDungeon();
     if(!isMaster() && !dg){ clearShell(''); return; }
@@ -456,6 +561,8 @@
       return;
     }
     ensureShell();
+    const sc0 = rootEl.querySelector('#dg-scroll');
+    if(sc0) lastScroll = { x: sc0.scrollLeft, y: sc0.scrollTop };
     rootEl.querySelector('#dg-main').innerHTML = `
       <div class="section-title">🏰 ${dg ? escapeHTML(dg.name) : 'Dungeon'}</div>
       ${dg && isLinked(dg) ? `<div class="muted" style="font-size:10.5px;margin:-4px 0 4px;">📍 ${escapeHTML(linkLabel(dg))}</div>` : ''}
@@ -465,66 +572,36 @@
         ${partyHTML()}
         ${gridHTML(dg)}
         ${padHTML(dg)}
-        <div class="dg-legend">⛩️ ingresso · 🚪 porta chiusa · 🔒 a chiave · ⛔ sbarrata · 🗝️ chiave · 🎁 tesoro · 🪜 scale · ⛺ ristoro · 🕹️ leva · ▦ terreno difficile (2 ⚡)${isMaster()?' — sbiaditi = non ancora scattati (li vedi solo tu)':''}</div>
+        <div class="dg-legend">⛩️ ingresso · 🔎 scoperta · 🚪 porta chiusa · 🔒 a chiave · ⛔ sbarrata · 🗝️ chiave · 🎁 tesoro · 🪜 scale · ⛺ ristoro · 🕹️ leva · ▦ terreno difficile (2 ⚡)${isMaster()?' — sbiaditi = non ancora scattati o nascosti (li vedi solo tu)':''}</div>
         ${roomCardHTML(dg)}
+        <div class="dg-bar" style="justify-content:center;"><button class="btn ghost small" id="dg-dock-btn">${chatDockPref ? '💬 Chat sotto la mappa: sì' : '💬 Chat sotto la mappa: no'}</button>${isMaster() && isLinked(dg) ? `<button class="btn ghost small" id="dg-follow-btn" title="I tuoi messaggi in Chat Generale (e il filtro 📍) vanno nel luogo del dungeon">${masterFollow ? '🎙️ Parli nel dungeon: sì' : '🎙️ Parli nel dungeon: no'}</button>` : ''}</div>
       ` : ''}
       <div class="dg-status" id="dg-status">${escapeHTML(statusMsg)}</div>
       ${lastLoadError?`<div class="err">${escapeHTML(lastLoadError)}</div>`:''}`;
     bind();
-    renderChat();
-  }
-
-  // ---------- chat del dungeon ----------
-  function renderChat(){
-    const box = rootEl && rootEl.querySelector('#dg-chat-box');
-    if(!box) return;
-    const dg = activeDungeon();
-    if(!dg){ box.innerHTML = ''; chatBuilt = false; chatSig = ''; return; }
-    if(!chatBuilt){
-      box.innerHTML = `<div class="divider" style="margin:8px 0;"></div>
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-mute);margin-bottom:4px;">💬 Chat del dungeon${isLinked(dg)?'':' <span style="text-transform:none;">(posizione del gruppo)</span>'}</div>
-        <div class="log" id="dg-chat-log" style="height:200px;overflow-y:auto;"></div>
-        <div style="display:flex;gap:6px;margin-top:6px;">
-          <input type="text" id="dg-chat-input" placeholder="${isMaster()?'Scrivi come Master nel dungeon…':'Scrivi nella chat del dungeon…'}" style="flex:1;" />
-          <button class="btn small" id="dg-chat-send">Invia</button>
-        </div>
-        <div class="err" id="dg-chat-err"></div>`;
-      chatBuilt = true; chatSig = '';
-      const logEl = box.querySelector('#dg-chat-log');
-      if(typeof attachLogModeration==='function'){
-        const me = (!isMaster() && typeof cachedMe!=='undefined') ? cachedMe : undefined;
-        attachLogModeration(logEl, ctx.code, me, undefined, undefined, ()=>{ if(ctx.onChanged) ctx.onChanged(); });
-      }
-      const input = box.querySelector('#dg-chat-input');
-      const send = async ()=>{
-        const text = input.value.trim();
-        if(!text) return;
-        const errEl = box.querySelector('#dg-chat-err');
-        const meM = (cachedRoster||[]).find(m=>m.username===ctx.username);
-        const entry = isMaster() ? { who:'Master', role:'gm', text } : { who: meM ? displayName(meM) : ctx.username, role:'player', text };
-        const r = await dgLog(entry);
-        if(!r){ if(errEl) errEl.textContent = 'Messaggio non inviato: ' + (lastApiError||'errore'); return; }
-        if(errEl) errEl.textContent = '';
-        input.value = '';
-        if(Array.isArray(typeof cachedLog!=='undefined' ? cachedLog : null) && r.entry){ cachedLog.push(r.entry); renderChat(); }
-        if(ctx.advanceClock) ctx.advanceClock(5);
-        if(ctx.onChanged) ctx.onChanged();
-      };
-      box.querySelector('#dg-chat-send').onclick = send;
-      input.onkeydown = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); send(); } };
-    }
-    const all = (typeof cachedLog!=='undefined' && Array.isArray(cachedLog)) ? cachedLog : [];
-    const entries = all.filter(e=>entryInDungeon(e, dg)).slice(-80);
-    const sig = entries.length + ':' + (entries.length ? (entries[entries.length-1].id + '|' + JSON.stringify(entries[entries.length-1].meta||{}).length) : '') + ':' + entries.map(e=>e.meta&&e.meta.loot?JSON.stringify(e.meta.loot.claims||{}):'').join('');
-    if(sig===chatSig) return;
-    chatSig = sig;
-    const logEl = box.querySelector('#dg-chat-log');
-    const nearBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 40;
-    logEl.innerHTML = entries.length ? (typeof logHTML==='function' ? logHTML(entries, isMaster()) : entries.map(e=>`<div><b>${escapeHTML(e.who)}</b>: ${escapeHTML(e.text)}</div>`).join('')) : '<div class="muted" style="font-size:11px;">Ancora nessun messaggio nel dungeon.</div>';
-    if(nearBottom || !logEl.dataset.scrolled){ logEl.scrollTop = logEl.scrollHeight; logEl.dataset.scrolled = '1'; }
+    positionScroll(dg, false);
+    dockChat();
   }
 
   function setStatus(msg){ statusMsg = msg || ''; const el = document.getElementById('dg-status'); if(el) el.textContent = statusMsg; }
+
+  const REVEAL_LABEL = { lever:'🕹️ una leva', loot:'🎁 un tesoro', key:'🗝️ una chiave', teleport:'🪜 un passaggio', rest:'⛺ un punto di ristoro', note:'📜 qualcosa di scritto', trap:'⚠️ una trappola', encounter:'⚔️ qualcosa', lever2:'' };
+  async function announceReveal(list, who){
+    if(!list || !list.length) return;
+    const what = list.map(x=>REVEAL_LABEL[x.type] || '❔ qualcosa').join(', ');
+    await dgLog({ who:'Sistema', role:'gm', text: `🔎 ${who ? who + ' nota' : 'Si scopre'}: ${what}!` });
+  }
+  // Chiamata da js/chat-log-engine.js quando un giocatore tira su una richiesta con meta.dgCheck.
+  async function reportCheck(attr, success, who){
+    if(!ctx) return;
+    const [dungeonId, idx] = String(attr||'').split('|');
+    const d = await op({ op:'checkResult', id: dungeonId, index: Number(idx), success: !!success });
+    if(!d){ return; } // check già risolto o non più in attesa: niente da fare
+    render();
+    if(d.success) await announceReveal(d.revealed, who);
+    else if(d.allFailed) await dgLog({ who:'Sistema', role:'gm', text: `🔎 Nessuno nota nulla di strano… per ora.` });
+    if(ctx.onChanged) ctx.onChanged();
+  }
 
   // ---------- eventi -> chat ----------
   async function announceRoom(room){
@@ -542,6 +619,25 @@
         continue;
       }
       if(ev.type==='difficult') continue;
+      if(ev.type==='roomReveal'){
+        if((ev.objects||[]).length) await dgLog({ who:'Sistema', role:'gm', text: `✨ In «${ev.room}» notate: ${ev.objects.map(x=>REVEAL_LABEL[x.type] || '❔ qualcosa').join(', ')}!` });
+        const names = ev.encounterNames || [];
+        if((ev.encounters||[]).length){
+          await dgLog({ who:'Sistema', role:'gm', text: `⚔️ In «${ev.room}» non siete soli${names.length ? ': ' + names.join(', ') : ''}!` });
+          if(ctx.notifyMasters) ctx.notifyMasters('⚔️ Digimon in Scena', `Il gruppo è entrato in «${ev.room}»: ${names.join(', ') || 'Incontri'} ora visibili in Scena. Prepara lo scontro!`);
+        }
+        continue;
+      }
+      if(ev.type==='search'){
+        const def = (typeof SKILL_DEFS!=='undefined' ? SKILL_DEFS : []).find(d=>d.key===ev.skill);
+        const label = def ? def.label : ev.skill;
+        const attrPart = (def && ev.attr && ev.attr!==def.attrs[0]) ? ` (con ${ATTR_LABEL[ev.attr]||ev.attr})` : '';
+        const targets = (ev.targets||[]).filter(Boolean);
+        const payload = `${targets.join(',')}|${ev.skill}|${ev.tn||''}|${ev.attr||''}`;
+        await dgLog({ who:'Master', role:'request', text: `🔎 ${ev.text || 'Qualcosa attira la vostra attenzione…'} Richiesta a ${targets.map(nameOf).join(', ')}: tira ${label}${attrPart} (TN ${ev.tn})::REQ::${payload}`, meta: { dgCheck: { dungeonId: ev.dungeonId, index: ev.index } } });
+        if(ctx.notifyPlayers) ctx.notifyPlayers(targets, '🔎 Tiro di scoperta', `Tira ${label} (TN ${ev.tn}).`);
+        continue;
+      }
       if(ev.type==='dooropen'){ await dgLog({ who:'Sistema', role:'gm', text: `🚪 ${nameOf(leader)} apre la porta.${ev.text ? '\n' + ev.text : ''}` }); continue; }
       if(ev.type==='teleport'){ await dgLog({ who:'Sistema', role:'gm', text: `🪜 ${ev.text || 'Il gruppo prende un passaggio…'}${ev.toDungeon ? `\n🏰 Siete in: ${ev.toDungeon}` : ''}` }); continue; }
       if(ev.type==='rest'){ await dgLog({ who:'Sistema', role:'gm', text: `⛺ ${ev.text || 'Il gruppo riprende fiato.'}\n⚡ Punti Dungeon ricaricati.` }); continue; }
@@ -612,6 +708,7 @@
           if(!d){ setStatus(lastApiError); return; }
           render();
           if(d.enteredRoom) await announceRoom(d.enteredRoom);
+          await publishEvents(d.events);
           if(ctx.onChanged) ctx.onChanged();
           return;
         }
@@ -626,6 +723,14 @@
         }
         if(master && masterMode==='unlock'){
           const dgA = activeDungeon();
+          const fA = dgA && dgA.features && dgA.features[idx];
+          if(dgA && fA && (fA.type==='search' || hiddenSetOf(dgA).has(idx))){
+            const d = await op({ op:'revealFeat', index: idx });
+            if(!d){ setStatus(lastApiError); return; }
+            setStatus('Oggetto rivelato.'); render();
+            await announceReveal(d.revealed, null);
+            return;
+          }
           const secret = dgA && dgA.grid[idx]==='s';
           const d = await op({ op: secret ? 'reveal' : 'unlock', index: idx });
           if(!d){ setStatus(lastApiError); return; }
@@ -645,6 +750,17 @@
       render();
       if(d.leaderChanged) await dgLog({ who:'Sistema', role:'gm', text: `👑 ${nameOf(d.leaderChanged)} è il nuovo Capofila del gruppo.` });
     };
+    rootEl.querySelectorAll('[data-dg-zoom]').forEach(b=> b.onclick = ()=>{
+      const k = Number(b.getAttribute('data-dg-zoom'));
+      if(k===0){ positionScroll(activeDungeon(), true); return; }
+      dgZoom = Math.max(1, Math.min(3, Math.round((dgZoom + k*0.5)*2)/2));
+      try{ localStorage.setItem('dvos_dg_zoom', String(dgZoom)); }catch(e){}
+      lastCenteredPos = null; render();
+    });
+    const dockBtn = document.getElementById('dg-dock-btn');
+    if(dockBtn) dockBtn.onclick = ()=>{ chatDockPref = !chatDockPref; try{ localStorage.setItem('dvos_dg_chatdock', chatDockPref?'on':'off'); }catch(e){} render(); };
+    const fBtn = document.getElementById('dg-follow-btn');
+    if(fBtn) fBtn.onclick = ()=>{ masterFollow = !masterFollow; try{ localStorage.setItem('dvos_dg_masterfollow', masterFollow?'on':'off'); }catch(e){} render(); };
     const searchBtn = document.getElementById('dg-search-btn');
     if(searchBtn) searchBtn.onclick = async ()=>{
       if(busy) return;
@@ -676,6 +792,7 @@
         // in chat chi entra.
         await dgLog({ who:'Sistema', role:'gm', text: `🏰 ${dgI.name}${dgI.desc ? '\n' + dgI.desc : ''}`, meta: dgI.image ? { image: dgI.image } : {} });
         if(d.enteredRoom) await announceRoom(d.enteredRoom);
+        await publishEvents(d.events);
       }
       // 2) invito "Vuoi andare a…?" (::MOVEREQ::) come quelli della Mappa: accettando, il giocatore
       //    (o il gruppo, secondo la modalità) viene spostato nel Settore/Sottosezione del dungeon.
@@ -684,13 +801,21 @@
       const mode = isPrivate ? 'each' : (invMode ? invMode.value : 'each');
       const text = `🏰 Volete entrare nel dungeon "${dgI.name}"?::MOVEREQ::${dgI.link.sectorId}|${dgI.link.subsectionId||''}|${dgI.link.luogoId||''}|${mode}`;
       let ok;
-      if(target) ok = await pushPrivateLog(ctx.code, target, { who:'Master', role:'moverequest', text });
-      else {
-        const meta = {};
+      // L'invito va dove si trovano ADESSO i giocatori (non nel dungeon: il Master potrebbe
+      // "parlare nel dungeon"), quindi la posizione del messaggio è sempre esplicita.
+      const sc = (typeof cachedScene!=='undefined' && cachedScene) || {};
+      const groupKey = `${sc.currentMacroSceneId||'_'}|${sc.currentSectorId||'_'}|${sc.currentSubsectionId||'_'}|${sc.currentLuogoId||'_'}`;
+      if(target && target.startsWith('subgroup:')){
+        const g = ((typeof cachedSubgroups!=='undefined' && cachedSubgroups)||[]).find(x=>'subgroup:'+x.id===target);
+        ok = await pushPrivateLog(ctx.code, target, { who:'Master', role:'moverequest', text, meta: { location: g && typeof subgroupLocationKey==='function' ? subgroupLocationKey(g) : groupKey } });
+      } else if(target){
+        const m = (cachedRoster||[]).find(x=>x.username===target);
+        ok = await pushPrivateLog(ctx.code, target, { who:'Master', role:'moverequest', text, meta: { location: m && typeof memberLocationKey==='function' ? memberLocationKey(m) : groupKey } });
+      } else {
+        const meta = { location: groupKey };
         if(mode!=='each'){
           const all = players();
-          const hereKey = typeof currentLocationKey==='function' ? normalizeLocationKey(currentLocationKey()) : null;
-          const here = hereKey ? all.filter(m=>normalizeLocationKey(memberLocationKey(m))===hereKey).map(m=>m.username) : [];
+          const here = all.filter(m=>normalizeLocationKey(memberLocationKey(m))===normalizeLocationKey(groupKey)).map(m=>m.username);
           meta.moveGroup = here.length ? here : all.map(m=>m.username);
         }
         ok = await pushLog(ctx.code, { who:'Master', role:'moverequest', text, meta });
@@ -710,6 +835,7 @@
       if(dg){
         await dgLog({ who:'Sistema', role:'gm', text: `🏰 Il gruppo entra in: ${dg.name}${dg.desc ? '\n' + dg.desc : ''}`, meta: dg.image ? { image: dg.image } : {} });
         if(d.enteredRoom) await announceRoom(d.enteredRoom);
+        await publishEvents(d.events);
       }
       if(ctx.onChanged) ctx.onChanged();
     };
@@ -762,13 +888,19 @@
       injectStyles();
       rootEl = el;
       ctx = context;
+      dock = null; lastCenteredPos = null; lastScroll = null; // pagina ridisegnata da capo
       await load();
       render();
     },
+    reportCheck: (attr, success, who)=> reportCheck(attr, success, who),
     async refresh(){
       if(!rootEl || !ctx || busy || !document.body.contains(rootEl)) return;
+      const wasVisible = !!activeDungeon();
       await load();
-      if(!isEditingHere()) render(); else renderChat();
+      if(!isEditingHere()) render(); else dockChat();
+      // Appena il dungeon compare (es. dopo "Sì, andiamo!") ridisegniamo subito anche la chat,
+      // così il filtro 📍 passa al luogo del dungeon senza aspettare il giro di polling successivo.
+      if(!wasVisible && activeDungeon() && ctx.onChanged) setTimeout(()=>ctx.onChanged(), 2700);
     }
   };
 })();

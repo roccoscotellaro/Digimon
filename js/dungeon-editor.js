@@ -44,6 +44,14 @@
 // chiave (strumenti 🚪 Porta aperta, 🚪 Porta chiusa, 🔒 Porta a chiave; cliccando una porta con
 // 👆 Seleziona si cambia lo stato), e trappole che chiudono porte ("🚪 Chiude queste porte":
 // richiuse oppure sbarrate — le sbarrate si riaprono solo con una Leva o dal Master).
+// OTTAVA RICHIESTA: 🔎 Punto di scoperta (contenuto 'search') — la "piastrella" con il tiro
+// (Skill/Caratteristica/TN/chi tira/riprova) e l'elenco degli oggetti che rivela; quegli oggetti
+// (leve, tesori, chiavi, scale…) restano NASCOSTI ai giocatori finché il tiro non riesce. Dal
+// pannello di un oggetto: "🙈 Nascondi dietro un Punto di scoperta". Area di prova: ✅/❌ per
+// simulare l'esito del tiro.
+// NONA RICHIESTA: nella scheda di una stanza, "✨ Oggetti che compaiono entrando" (restano nascosti
+// finché il gruppo non entra) e "⚔️ Digimon che compaiono in Scena entrando" (Incontri della Scena
+// resi visibili al primo ingresso, per preparare lo scontro in anticipo).
 // Cambiare le dimensioni di un dungeon già esplorato azzera l'esplorazione (lo fa il server,
 // perché le posizioni salvate non corrisponderebbero più alle caselle).
 
@@ -67,7 +75,7 @@
   ];
   const ATTRS = [['','(standard della Skill)'],['agility','Agility'],['body','Body'],['charisma','Charisma'],['intelligence','Intelligence'],['willpower','Willpower']];
   const CATEGORIES = [['altro','Altro'],['cibo','Cibo'],['indossabile','Indossabile'],['arma','Arma'],['strumento','Strumento'],['chiave','Chiave/Quest']];
-  const FEATURE_TYPES = [['','— nessuno —'],['trap','⚠️ Trappola'],['loot','🎁 Tesoro'],['encounter','⚔️ Incontro'],['lock','🔒 Porta chiusa (serratura)'],['key','🗝️ Chiave da trovare'],['note','📜 Nota'],['teleport','🪜 Scale / Teletrasporto'],['rest','⛺ Punto di ristoro'],['lever','🕹️ Leva / interruttore']];
+  const FEATURE_TYPES = [['','— nessuno —'],['trap','⚠️ Trappola'],['loot','🎁 Tesoro'],['encounter','⚔️ Incontro'],['lock','🔒 Porta chiusa (serratura)'],['key','🗝️ Chiave da trovare'],['note','📜 Nota'],['teleport','🪜 Scale / Teletrasporto'],['rest','⛺ Punto di ristoro'],['lever','🕹️ Leva / interruttore'],['search','🔎 Punto di scoperta (rivela oggetti nascosti)']];
   // Icona predefinita (la prima) + alternative proposte nel menu, per tipo di contenuto.
   const ICONS = {
     trap:['⚠️','🕳️','🔥','⚡','🗡️','☠️','🕸️','💥'],
@@ -75,6 +83,7 @@
     encounter:['⚔️','👁️','💀','🐉','👾','🦴','🌑'],
     lock:['🔒','⛓️','🚧','🔐'],
     door:['🚪'],
+    search:['🔎','👁️','✨','❗'],
     key:['🗝️','🔑','🪪','💠'],
     note:['📜','📖','🪧','❗','❓','🗿','🕯️'],
     teleport:['🪜','🌀','⬆️','⬇️','✨','🔮','🚪'],
@@ -92,6 +101,7 @@
   let selRoom = null;       // stanza selezionata (pennello + pannello dettagli)
   let selCell = null;       // casella selezionata (pannello contenuto)
   let draft = null;         // bozza del contenuto della casella selezionata
+  let pickRoomIdx = null;
   let pick = null;          // 'teleport' | 'lever' | 'lockKey' | 'keyDoor' — il prossimo clic sulla mappa sceglie un bersaglio
   let rectStart = null, rectEnd = null;
   let dirty = false;
@@ -171,8 +181,12 @@
     if(!ic) return '';
     return isImg(ic) ? `<img src="${esc(ic)}" style="width:85%;height:85%;object-fit:contain;pointer-events:none;" onerror="this.remove()" />` : esc(ic);
   }
+  // Punti di scoperta che nascondono la casella i (per evidenziare e per il pannello dell'oggetto).
+  function searchesHiding(i){ const out = []; Object.keys(dg.features).forEach(k=>{ const f = dg.features[k]; if(f.type==='search' && (f.targets||[]).includes(i)) out.push(+k); }); return out; }
+  function roomsHiding(i){ return (dg.rooms||[]).filter(r=>(r.reveals||[]).includes(i)); }
   function cellIcon(i){
     const f = dg.features[i];
+    if(f && (searchesHiding(i).length || roomsHiding(i).length)) return `<span style="opacity:0.45;" title="Nascosto">${iconHTML(f.icon || (ICONS[f.type]||[''])[0])}</span>`;
     if(f) return iconHTML(f.icon || (ICONS[f.type]||[''])[0]);
     if(dg.grid[i]==='e') return '⛩️';
     if(dg.grid[i]==='x') return '🏁';
@@ -203,7 +217,7 @@
       const fi = dg.features[i];
       const keyLinked = draft && ((draft.type==='key' && draft.name && fi && fi.type==='lock' && normName(fi.key)===normName(draft.name))
         || (draft.type==='lock' && draft.key && fi && fi.type==='key' && normName(fi.name)===normName(draft.key)));
-      const trapLinked = draft && draft.type==='trap' && (draft.closeDoors||[]).includes(i);
+      const trapLinked = draft && ((draft.type==='trap' && (draft.closeDoors||[]).includes(i)) || (draft.type==='search' && (draft.targets||[]).includes(i)) || (draft.type && draft.type!=='search' && selCell!=null && fi && fi.type==='search' && (fi.targets||[]).includes(selCell)));
       const linked = draft && (keyLinked || trapLinked || (draft.type==='teleport' && !draft.targetDungeon && draft.targetIndex===i) || (draft.type==='lever' && (draft.targets||[]).includes(i))) ? 'outline:2px solid #ff5dd2;outline-offset:-2px;' : '';
       h += `<div data-dge-cell="${i}" title="${esc(cellLabel(i))}" style="${cellStyle(i)}display:flex;align-items:center;justify-content:center;${sel}${rect}${linked}">${cellIcon(i)}</div>`;
     }
@@ -239,7 +253,7 @@
       <span class="muted" style="font-size:10px;text-transform:uppercase;">Contenuti</span>
       ${btn('select','👆 Seleziona casella / contenuto')}
     </div>
-    <div class="muted" style="font-size:10.5px;">${pick ? `<b style="color:#ff5dd2;">📍 ${({ trapDoors:'Clicca sulla mappa le porte che la trappola chiude (anche più di una).', lockKey:'Clicca sulla mappa la 🗝️ chiave che apre questa porta.', keyDoor:'Clicca sulla mappa le porte che questa chiave apre (anche più di una; una porta aperta diventa chiusa).', lever:'Clicca sulla mappa le caselle che la leva apre (anche più di una).' })[pick] || 'Clicca sulla mappa la casella di destinazione.'}</b> <button class="btn ghost small" id="dge-pick-done">Fine</button>` : help}</div>`;
+    <div class="muted" style="font-size:10.5px;">${pick ? `<b style="color:#ff5dd2;">📍 ${({ roomReveals:'Clicca sulla mappa gli oggetti che compaiono quando il gruppo entra nella stanza (anche più di uno).', searchTargets:'Clicca sulla mappa gli oggetti (leve, tesori, chiavi…) che questo Punto di scoperta nasconde e rivela.', hideBehind:'Clicca sulla mappa il 🔎 Punto di scoperta che rivelerà questo oggetto.', trapDoors:'Clicca sulla mappa le porte che la trappola chiude (anche più di una).', lockKey:'Clicca sulla mappa la 🗝️ chiave che apre questa porta.', keyDoor:'Clicca sulla mappa le porte che questa chiave apre (anche più di una; una porta aperta diventa chiusa).', lever:'Clicca sulla mappa le caselle che la leva apre (anche più di una).' })[pick] || 'Clicca sulla mappa la casella di destinazione.'}</b> <button class="btn ghost small" id="dge-pick-done">Fine</button>` : help}</div>`;
   }
 
   function roomsHTML(){
@@ -261,6 +275,14 @@
           </div>
           ${r.image ? `<img src="${esc(r.image)}" style="max-width:100%;max-height:140px;margin-top:6px;border-radius:3px;display:block;" onerror="this.remove()" />` : ''}
           <label style="display:flex;gap:6px;align-items:center;font-size:11px;margin-top:6px;text-transform:none;"><input type="checkbox" data-dge-room-onmap="${idx}" ${r.showOnMap!==false?'checked':''} style="width:auto;" /> Mostra l'immagine sulla mappa, stesa sulle caselle della stanza</label>
+          <div class="field" style="margin-top:8px;"><label>✨ Oggetti che compaiono quando il gruppo entra (prima sono nascosti)</label>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin:2px 0;">${(r.reveals||[]).map(t=>{ const x = dg.features[t]; return `<span class="tag" style="font-size:10.5px;">${x ? iconHTML(x.icon || (ICONS[x.type]||[''])[0]) : '❔'} ${esc(cellLabel(t))} <a href="#" data-dge-roomrev-del="${idx}:${t}" style="color:inherit;">✕</a></span>`; }).join('') || '<span class="muted" style="font-size:10.5px;">nessuno</span>'}</div>
+            <button type="button" class="btn ghost small" data-dge-pick-roomrev="${idx}">📍 Aggiungi oggetti dalla mappa</button>
+          </div>
+          <div class="field"><label>⚔️ Digimon che compaiono in Scena quando il gruppo entra</label>
+            ${encounters.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px 12px;">${encounters.map(e=>`<label style="display:flex;gap:4px;align-items:center;font-size:11px;text-transform:none;margin:0;"><input type="checkbox" data-dge-room-enc="${idx}" value="${esc(e.id)}" ${(r.encounters||[]).includes(e.id)?'checked':''} style="width:auto;" /> ${esc(e.name||'Incontro')}${e.isBoss?' 👑':''}${e.revealed===false?' <span class="muted">(nascosto)</span>':''}</label>`).join('')}</div>
+            <div class="muted" style="font-size:10px;">Preparali prima nel pannello Incontri del Tavolo (nascosti): al primo ingresso diventano visibili in Scena e ricevi un avviso per avviare lo scontro.</div>` : '<div class="muted" style="font-size:10.5px;">Nessun Incontro nella Scena: preparali nel pannello Incontri del Tavolo.</div>'}
+          </div>
           <div class="muted" style="font-size:10px;margin-top:4px;">Con 🖌️ Allarga stanza aggiungi caselle a questa stanza; con 🧽 le togli.</div>
         </div>`;
       }).join('')}
@@ -353,11 +375,32 @@
     if(f.type==='rest') fields = `
       <label style="display:flex;gap:6px;align-items:center;font-size:11px;text-transform:none;"><input type="checkbox" id="dge-f-once" data-dge-draft="dge-f-once" ${f.once?'checked':''} style="width:auto;" /> Funziona una volta sola (altrimenti ogni volta che ci si passa)</label>
       <div class="muted" style="font-size:10px;">Ricarica i Punti Dungeon del gruppo e rimette a disposizione la Ricerca.</div>`;
+    if(f.type==='search') fields = `
+      <div class="muted" style="font-size:10.5px;margin-bottom:4px;">Quando il gruppo arriva su questa casella parte una richiesta di tiro; se riesce, gli oggetti qui sotto diventano visibili (prima i giocatori non li vedono e passarci sopra non fa nulla).</div>
+      <div class="row" style="gap:6px;"><div class="field" style="flex:2;"><label>Tiro richiesto (Skill)</label>${sel('dge-f-skill', SKILLS, f.skill||'awareness')}</div>
+      <div class="field" style="flex:2;"><label>Caratteristica</label>${sel('dge-f-attr', ATTRS, f.attr||'')}</div>
+      <div class="field" style="flex:1;"><label>TN</label>${inp('dge-f-tn', Number(f.tn)||12, 'type="number" class="dge-num" min="1" max="40"')}</div></div>
+      <div class="field"><label>Chi tira</label>${sel('dge-f-who', [['leader','👑 Il Capofila'],['all','🧍 Tutti i presenti (basta un successo)'],['random','🎲 Un presente a caso']], f.who||'leader')}</div>
+      <label style="display:flex;gap:6px;align-items:center;font-size:11px;text-transform:none;"><input type="checkbox" id="dge-f-retry" data-dge-draft="dge-f-retry" ${f.retry!==false?'checked':''} style="width:auto;" /> Se il tiro fallisce, si può ritentare ripassando sulla casella</label>
+      <div class="field" style="margin-top:6px;"><label>🙈 Oggetti nascosti che rivela</label>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin:2px 0;">${(f.targets||[]).map(t=>{ const x = dg.features[t]; return `<span class="tag" style="font-size:10.5px;">${x ? iconHTML(x.icon || (ICONS[x.type]||[''])[0]) : '❔'} ${esc(cellLabel(t))} <a href="#" data-dge-search-del="${t}" style="color:inherit;">✕</a></span>`; }).join('') || '<span class="muted" style="font-size:10.5px;">nessuno</span>'}</div>
+        <button type="button" class="btn ghost small" id="dge-pick-searchtargets">📍 Aggiungi oggetti dalla mappa</button>
+      </div>`;
     if(f.type==='lever') fields = `
       <div style="font-size:11px;">Quando il gruppo ci passa, apre queste caselle (porte chiuse 🔒 e porte segrete 🕳️):</div>
       <div style="display:flex;flex-wrap:wrap;gap:4px;margin:4px 0;">${(f.targets||[]).map(t=>`<span class="tag" style="font-size:10.5px;">${esc(cellLabel(t))} <a href="#" data-dge-lever-del="${t}" style="color:inherit;">✕</a></span>`).join('') || '<span class="muted" style="font-size:10.5px;">nessuna</span>'}</div>
       <button type="button" class="btn ghost small" id="dge-pick-lever">📍 Aggiungi dalla mappa</button>`;
-    const textLabel = { key:'Testo di scoperta (facoltativo)', trap:'Descrizione della trappola (esce in chat quando scatta)', loot:'Testo di scoperta (facoltativo)', encounter:'Testo in chat (il nome dell\'Incontro resta nascosto)', lock:'Testo quando viene aperta', note:'Testo narrato quando il gruppo arriva qui', teleport:'Testo in chat (es. "Scendete la scala a chiocciola…")', rest:'Testo in chat', lever:'Testo in chat (es. "Un meccanismo scatta in lontananza")' }[f.type];
+    if(f.type && !['search','lock','door'].includes(f.type)){
+      const hiders = searchesHiding(selCell);
+      const roomHiders = roomsHiding(selCell);
+      const myRoom = dg.roomOf[selCell] ? roomById(dg.roomOf[selCell]) : null;
+      fields += `<div class="field" style="margin-top:6px;"><label>🙈 Visibilità</label>
+        ${(hiders.length || roomHiders.length) ? `<div style="font-size:11px;">Nascosto: ${[hiders.length ? 'si rivela con il 🔎 di ' + hiders.map(h=>esc(cellLabel(h))).join(', ') : '', roomHiders.length ? 'compare entrando in ' + roomHiders.map(r=>'«'+esc(r.name)+'»').join(', ') : ''].filter(Boolean).join(' · ')} <a href="#" data-dge-unhide="1" style="color:inherit;">(rendi visibile ✕)</a></div>` : `<div class="muted" style="font-size:10.5px;">Visibile a tutti appena la casella viene vista.</div>`}
+        <button type="button" class="btn ghost small" id="dge-pick-hidebehind" style="margin-top:4px;">🙈 Nascondi dietro un Punto di scoperta</button>
+        ${myRoom && !roomHiders.includes(myRoom) ? `<button type="button" class="btn ghost small" id="dge-hide-room" style="margin-top:4px;">✨ Fallo comparire entrando in «${esc(myRoom.name)}»</button>` : ''}
+      </div>`;
+    }
+    const textLabel = { search:'Testo in chat quando scatta il tiro (es. "Noti della polvere smossa…")', key:'Testo di scoperta (facoltativo)', trap:'Descrizione della trappola (esce in chat quando scatta)', loot:'Testo di scoperta (facoltativo)', encounter:'Testo in chat (il nome dell\'Incontro resta nascosto)', lock:'Testo quando viene aperta', note:'Testo narrato quando il gruppo arriva qui', teleport:'Testo in chat (es. "Scendete la scala a chiocciola…")', rest:'Testo in chat', lever:'Testo in chat (es. "Un meccanismo scatta in lontananza")' }[f.type];
     return `<div class="hud-frame" style="padding:10px;margin-top:8px;border-left:3px solid #ffd35a;">
       <div style="font-size:12px;margin-bottom:6px;"><b>👆 Casella ${esc(cellLabel(selCell))}</b>${room?` · stanza <a href="#" data-dge-room-sel="${esc(room.id)}" style="color:${roomColor(room.id)};">${esc(room.name)}</a>`:''}${walk?'':' <span class="muted">(è un muro: disegnaci prima un pavimento)</span>'}</div>
       ${isDoor ? `<div class="field"><label>🚪 Porta — stato iniziale</label><select id="dge-door-state">
@@ -431,7 +474,8 @@
   // ---------- AREA DI PROVA ----------
   const SKILL_LABEL = Object.fromEntries(SKILLS);
   const WHO_LABEL = { leader:'il Capofila', all:'tutti i presenti', random:'un presente a caso' };
-  const T_ICON = { trap:'⚠️', loot:'🎁', key:'🗝️', encounter:'⚔️', lock:'🔒', note:'📜', teleport:'🪜', rest:'⛺', lever:'🕹️' };
+  let testPendingCheck = null;
+  const T_ICON = { search:'🔎', trap:'⚠️', loot:'🎁', key:'🗝️', encounter:'⚔️', lock:'🔒', note:'📜', teleport:'🪜', rest:'⛺', lever:'🕹️' };
   function testEventText(ev){
     const t = ev.text ? ` — ${ev.text}` : '';
     switch(ev.type){
@@ -446,6 +490,8 @@
       case 'rest': return `⛺ Punto di ristoro: Punti e Ricerca ricaricati${t}`;
       case 'lever': return `🕹️ Leva azionata (porte collegate aperte)${t}`;
       case 'dooropen': return `🚪 Porta aperta passandoci${t}`;
+      case 'roomReveal': return `✨ Entrando in «${ev.room}»: ${[(ev.objects||[]).length ? 'compaiono ' + ev.objects.map(x=>(T_ICON[x.type]||'❔')).join(' ') : '', (ev.encounters||[]).length ? 'in Scena comparirebbero ' + ev.encounters.map(id=>{ const e = encounters.find(x=>x.id===id); return e ? e.name : id; }).join(', ') : ''].filter(Boolean).join(' · ')}`;
+      case 'search': return `🔎 Punto di scoperta${t} → richiesta di tiro: ${SKILL_LABEL[ev.skill]||ev.skill}${ev.attr?' (con '+ev.attr+')':''} TN ${ev.tn}, tira ${WHO_LABEL[ev.who||'leader']} — simula l'esito con ✅ / ❌`;
       case 'exit': return '🚪 Uscita del dungeon';
       case 'difficult': return '🪨 Terreno difficile: −2 Punti';
       default: return ev.type;
@@ -463,14 +509,14 @@
   async function startTest(){
     syncTextFields();
     if(dirty || dg._new){ clearTimeout(autoTimer); const okSave = await doSave(false); if(!okSave) return; }
-    testMode = true; testLog = []; msg = '';
+    testMode = true; testLog = []; msg = ''; testPendingCheck = null;
     const d = await testOp({ op:'testStart', id: dg.id });
     if(d){ testLogPush(`▶️ Prova di «${dg.name}» iniziata: pedina all'ingresso, 5 Punti.`); (d.events||[]).forEach(ev=>testLogPush(testEventText(ev))); }
     render();
   }
   async function testMove(i){
     const d = await testOp({ op:'testMove', index: i, testKeys });
-    if(d){ const evs = d.events||[]; if(!evs.length) testLogPush('👣 un passo'); evs.forEach(ev=>testLogPush(testEventText(ev))); }
+    if(d){ const evs = d.events||[]; if(!evs.length) testLogPush('👣 un passo'); evs.forEach(ev=>{ testLogPush(testEventText(ev)); if(ev.type==='search') testPendingCheck = ev.index; }); }
     render();
   }
   // Fog of war nell'area di prova: stessa funzione di lib/dungeon.js / js/dungeon.js.
@@ -562,6 +608,7 @@
         <button class="btn small" id="dgt-refill">⚡ Ricarica Punti</button>
         <button class="btn small" id="dgt-search" ${p.searchUsed?'disabled':''}>🔍 Cerca passaggi segreti</button>
       </div>
+      ${testPendingCheck!=null ? `<div style="margin:6px 0;padding:6px;border:1px dashed #ffd35a;border-radius:4px;font-size:12px;">🔎 Tiro di scoperta in attesa: <button class="btn small" id="dgt-check-ok">✅ Riuscito</button> <button class="btn ghost small" id="dgt-check-ko">❌ Fallito</button></div>` : ''}
       ${testGridHTML()}
       ${v && pos!=null ? `<div style="display:grid;grid-template-columns:repeat(3,38px);grid-template-rows:repeat(3,32px);gap:3px;justify-content:center;">
         <span></span>${btn(can(r>0,pos-v.cols), pos-v.cols, '⬆️')}<span></span>
@@ -760,6 +807,7 @@
     const v = id => { const el = document.getElementById(id); return el ? (el.type==='checkbox' ? el.checked : el.value) : undefined; };
     const set = (k, id, fn)=>{ const x = v(id); if(x!==undefined) draft[k] = fn ? fn(x) : x; };
     set('text','dge-f-text');
+    if(draft.type==='search'){ set('skill','dge-f-skill'); set('attr','dge-f-attr'); set('tn','dge-f-tn', x=>Number(x)||12); set('who','dge-f-who'); set('retry','dge-f-retry', x=>!!x); }
     if(draft.type==='trap'){ set('closeMode','dge-f-closemode');  set('roll','dge-f-roll', x=>!!x); set('skill','dge-f-skill'); set('attr','dge-f-attr'); set('tn','dge-f-tn', x=>Number(x)||12); set('who','dge-f-who'); }
     if(draft.type==='key'){
       const oldName = draft.name;
@@ -810,6 +858,14 @@
       const rs = document.getElementById('dgt-restart'); if(rs) rs.onclick = ()=> startTest();
       const rf = document.getElementById('dgt-refill'); if(rf) rf.onclick = async ()=>{ const d = await testOp({ op:'testRefill' }); if(d) testLogPush('⚡ Punti ricaricati (anche la Ricerca).'); render(); };
       const sr = document.getElementById('dgt-search'); if(sr) sr.onclick = async ()=>{ const d = await testOp({ op:'testSearch' }); if(d) testLogPush(d.found ? `🔍 Trovat${d.found===1?'o un passaggio segreto':'i '+d.found+' passaggi segreti'}!` : `🔍 Nessun passaggio segreto ${d.where ? 'in «'+d.where+'»' : 'qui intorno'}.`); render(); };
+      const testCheck = async (ok)=>{
+        const d = await testOp({ op:'testCheck', index: testPendingCheck, success: ok });
+        testPendingCheck = null;
+        if(d) testLogPush(ok ? `🔎 Tiro riuscito: ${ (d.revealed||[]).length ? 'rivelati ' + d.revealed.map(x=>(T_ICON[x.type]||'❔')).join(' ') : 'niente da rivelare'}` : '🔎 Tiro fallito: gli oggetti restano nascosti.');
+        render();
+      };
+      const cok = document.getElementById('dgt-check-ok'); if(cok) cok.onclick = ()=> testCheck(true);
+      const cko = document.getElementById('dgt-check-ko'); if(cko) cko.onclick = ()=> testCheck(false);
       const kc = document.getElementById('dgt-keys'); if(kc) kc.onchange = ()=>{ testKeys = !!kc.checked; };
       root.querySelectorAll('[data-dgt-cell]').forEach(el=> el.onclick = ()=> testMove(Number(el.getAttribute('data-dgt-cell'))));
       return;
@@ -885,6 +941,14 @@
         if(i==null) return;
         e.preventDefault();
         syncTextFields();
+        if(pick==='roomReveals'){
+          const r = dg.rooms[pickRoomIdx];
+          const x = dg.features[i];
+          if(!r || !x || ['search','lock','door'].includes(x.type)){ setMsg('Clicca una casella con un oggetto (tesoro, leva, chiave, scale…).'); return; }
+          r.reveals = r.reveals || [];
+          if(!r.reveals.includes(i)) r.reveals.push(i);
+          markDirty(); setMsg(''); render(); return;
+        }
         if(pick && draft){
           if(pick==='teleport'){ draft.targetIndex = i; pick = null; }
           else if(pick==='lever'){ draft.targets = draft.targets || []; if(!draft.targets.includes(i)) draft.targets.push(i); }
@@ -892,6 +956,20 @@
             const fk = dg.features[i];
             if(fk && fk.type==='key' && fk.name){ draft.key = fk.name; pick = null; }
             else { setMsg('Lì non c\'è una 🗝️ chiave (con un nome): clicca una casella con la chiave.'); return; }
+          }
+          else if(pick==='searchTargets'){
+            const x = dg.features[i];
+            if(!x || ['search','lock','door'].includes(x.type) || i===selCell){ setMsg('Clicca una casella con un oggetto (leva, tesoro, chiave, scale…).'); return; }
+            draft.targets = draft.targets || [];
+            if(!draft.targets.includes(i)) draft.targets.push(i);
+            setMsg('');
+          }
+          else if(pick==='hideBehind'){
+            const x = dg.features[i];
+            if(!x || x.type!=='search'){ setMsg('Clicca una casella con un 🔎 Punto di scoperta (mettine prima uno con 👆 Seleziona).'); return; }
+            x.targets = x.targets || [];
+            if(!x.targets.includes(selCell)) x.targets.push(selCell);
+            pick = null; markDirty(); setMsg('');
           }
           else if(pick==='trapDoors'){
             const isD = dg.grid[i]==='d' || (dg.features[i] && dg.features[i].type==='lock');
@@ -933,6 +1011,18 @@
     }
 
     // --- pannello contenuto casella ---
+    const pst = document.getElementById('dge-pick-searchtargets');
+    if(pst) pst.onclick = ()=>{ syncDraft(); pick = 'searchTargets'; render(); };
+    root.querySelectorAll('[data-dge-search-del]').forEach(a=> a.onclick = (e)=>{ e.preventDefault(); syncDraft(); const t = +a.getAttribute('data-dge-search-del'); draft.targets = (draft.targets||[]).filter(x=>x!==t); commitDraft(); render(); });
+    const phb = document.getElementById('dge-pick-hidebehind');
+    if(phb) phb.onclick = ()=>{ syncDraft(); pick = 'hideBehind'; render(); };
+    const unh = root.querySelector('[data-dge-unhide]');
+    if(unh) unh.onclick = (e)=>{ e.preventDefault(); syncDraft(); searchesHiding(selCell).forEach(h=>{ dg.features[h].targets = dg.features[h].targets.filter(x=>x!==selCell); }); roomsHiding(selCell).forEach(r=>{ r.reveals = r.reveals.filter(x=>x!==selCell); }); markDirty(); render(); };
+    const hrm = document.getElementById('dge-hide-room');
+    if(hrm) hrm.onclick = ()=>{ syncDraft(); const r = roomById(dg.roomOf[selCell]); if(r){ r.reveals = r.reveals || []; if(!r.reveals.includes(selCell)) r.reveals.push(selCell); markDirty(); } render(); };
+    root.querySelectorAll('[data-dge-pick-roomrev]').forEach(b=> b.onclick = ()=>{ syncTextFields(); pickRoomIdx = +b.getAttribute('data-dge-pick-roomrev'); pick = 'roomReveals'; render(); });
+    root.querySelectorAll('[data-dge-roomrev-del]').forEach(a=> a.onclick = (e)=>{ e.preventDefault(); syncTextFields(); const [ri, t] = a.getAttribute('data-dge-roomrev-del').split(':').map(Number); const r = dg.rooms[ri]; if(r) r.reveals = (r.reveals||[]).filter(x=>x!==t); markDirty(); render(); });
+    root.querySelectorAll('[data-dge-room-enc]').forEach(cb=> cb.onchange = ()=>{ const r = dg.rooms[+cb.getAttribute('data-dge-room-enc')]; if(!r) return; r.encounters = r.encounters || []; if(cb.checked){ if(!r.encounters.includes(cb.value)) r.encounters.push(cb.value); } else r.encounters = r.encounters.filter(x=>x!==cb.value); markDirty(); });
     const ptd = document.getElementById('dge-pick-trapdoors');
     if(ptd) ptd.onclick = ()=>{ syncDraft(); pick = 'trapDoors'; render(); };
     root.querySelectorAll('[data-dge-trapdoor-del]').forEach(a=> a.onclick = (e)=>{ e.preventDefault(); syncDraft(); const t = +a.getAttribute('data-dge-trapdoor-del'); draft.closeDoors = (draft.closeDoors||[]).filter(x=>x!==t); commitDraft(); render(); });

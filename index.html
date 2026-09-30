@@ -4324,6 +4324,11 @@ let editingScene = false;
     cachedRoster = (await getRoster(code)).map(normalizeMember);
     const me = normalizeMember(cachedRoster.find(m=>m.username===session.username) || { username: session.username, role:'player' });
     cachedMe = me;
+    // BUGFIX (Dungeon, 2026-09-30): `me` qui sotto resta la Scheda letta all'apertura della pagina,
+    // mentre gli spostamenti (es. "Sì, andiamo!" su un invito, anche verso un dungeon) aggiornano
+    // cachedMe. Per il TAG DI POSIZIONE dei messaggi inviati usiamo quindi sempre la versione più
+    // recente: prima, dopo uno spostamento, i messaggi finivano nel luogo vecchio fino a ricaricare.
+    const liveMe = ()=> (cachedMe && cachedMe.username===me.username) ? cachedMe : me;
     cachedScene = await getScene(code);
     cachedLog = await getLog(code);
     cachedDex = await getDex(code);
@@ -4495,7 +4500,7 @@ let editingScene = false;
       if(playerChatMode==='private'){
         const privTextMeta = {};
         if(pendingActionImageUrl) privTextMeta.image = pendingActionImageUrl;
-        privTextMeta.location = memberLocationKey(me);
+        privTextMeta.location = memberLocationKey(liveMe());
         if(pendingReplyTo) privTextMeta.replyTo = pendingReplyTo;
         // Dado generico GDR (es. "2d6", "/roll 1d20+3")
         const diceResult = parseGenericDiceRoll(raw);
@@ -4524,7 +4529,7 @@ let editingScene = false;
         // currentLocationKey() (la posizione CONDIVISA del gruppo) invece della posizione EFFETTIVA
         // del mittente, esattamente come già corretto per Privata/Sottogruppo poco sopra in questo
         // stesso handler.
-        const rollMeta = { location: memberLocationKey(me) };
+        const rollMeta = { location: memberLocationKey(liveMe()) };
         if(pendingActionImageUrl) rollMeta.image = pendingActionImageUrl;
         if(pendingReplyTo) rollMeta.replyTo = pendingReplyTo;
         generalPushRes = await pushLog(code, { who: displayName(me), role:'roll', text: genericDice.text, meta: rollMeta });
@@ -4538,7 +4543,7 @@ let editingScene = false;
           resEl.innerHTML = '';
         }
         // BUGFIX: stesso motivo del ramo genericDice qui sopra.
-        const rollMeta = Object.assign({ location: memberLocationKey(me) }, rollResult.dice ? { dice: rollResult.dice } : {});
+        const rollMeta = Object.assign({ location: memberLocationKey(liveMe()) }, rollResult.dice ? { dice: rollResult.dice } : {});
         // Richiesta utente ("estendi il reroll con Ispirazione anche a /tira"): il bottone
         // "🔄 Ritira" (marcatore ::REROLL:: dentro rollResult.text, vedi tryParseRollShortcut in
         // js/tamer-card.js) confronta il nuovo tiro col vecchio leggendo meta.total/meta.successes/
@@ -4558,7 +4563,7 @@ let editingScene = false;
       } else {
         // BUGFIX: stesso motivo dei due rami sopra — il testo libero in Generale è il caso più
         // frequente in assoluto, quindi quello con il maggior impatto sul bug segnalato.
-        const textMeta = { location: memberLocationKey(me) };
+        const textMeta = { location: memberLocationKey(liveMe()) };
         if(pendingActionImageUrl) textMeta.image = pendingActionImageUrl;
         if(pendingReplyTo) textMeta.replyTo = pendingReplyTo;
         generalPushRes = await pushLog(code, { who: displayName(me), role:'player', text: raw, meta: textMeta });
