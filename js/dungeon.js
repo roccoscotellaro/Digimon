@@ -88,7 +88,7 @@
   // i messaggi del dungeon: il luogo collegato, oppure la posizione del gruppo se non collegato.
   function dungeonKey(dg){
     dg = dg || activeDungeon();
-    if(isLinked(dg)) return `${dg.link.macroId||'_'}|${dg.link.sectorId}|${dg.link.subsectionId||'_'}|_`;
+    if(isLinked(dg)) return `${dg.link.macroId||'_'}|${dg.link.sectorId}|${dg.link.subsectionId||'_'}|${dg.link.luogoId||'_'}`;
     return typeof currentLocationKey==='function' ? currentLocationKey() : undefined;
   }
   function entryInDungeon(e, dg){
@@ -96,7 +96,7 @@
     if(!raw || !dg) return false;
     const key = typeof normalizeLocationKey==='function' ? normalizeLocationKey(raw) : raw;
     const parts = String(key).split('|');
-    if(isLinked(dg)) return parts[1]===dg.link.sectorId && (!dg.link.subsectionId || parts[2]===dg.link.subsectionId);
+    if(isLinked(dg)) return parts[1]===dg.link.sectorId && (!dg.link.subsectionId || parts[2]===dg.link.subsectionId) && (!dg.link.luogoId || parts[3]===dg.link.luogoId);
     const dk = dungeonKey(dg);
     return !!dk && key===(typeof normalizeLocationKey==='function' ? normalizeLocationKey(dk) : dk);
   }
@@ -109,9 +109,13 @@
   function linkLabel(dg){
     if(!isLinked(dg)) return '';
     const sc = typeof cachedScene!=='undefined' ? cachedScene : null;
-    let sName = null, subName = null;
-    ((sc && sc.macroScenes)||[]).forEach(m=>(m.sectors||[]).forEach(sct=>{ if(sct.id===dg.link.sectorId){ sName = `${m.name} → ${sct.name}`; const sub = (sct.subsections||[]).find(x=>x.id===dg.link.subsectionId); if(sub) subName = sub.name; } }));
-    return (sName || 'luogo non trovato in Mappa') + (subName ? ` → ${subName}` : '');
+    let sName = null, subName = null, lName = null;
+    ((sc && sc.macroScenes)||[]).forEach(m=>(m.sectors||[]).forEach(sct=>{ if(sct.id===dg.link.sectorId){
+      sName = `${m.name} → ${sct.name}`;
+      const sub = (sct.subsections||[]).find(x=>x.id===dg.link.subsectionId); if(sub) subName = sub.name;
+      const lg = ((sub ? sub.luoghi : sct.luoghi)||[]).find(x=>x.id===dg.link.luogoId); if(lg) lName = lg.name;
+    } }));
+    return (sName || 'luogo non trovato in Mappa') + (subName ? ` → ${subName}` : '') + (lName ? ` → 📍 ${lName}` : '');
   }
   // Giocatori "nel dungeon": per un dungeon collegato, quelli che il server dice presenti; altrimenti tutti.
   function presentPlayers(){
@@ -169,7 +173,7 @@
     return out;
   }
   const WALK = { f:1, d:1, e:1, x:1, h:1, s:1 };
-  const DEFAULT_ICON = { trap:'⚠️', loot:'🎁', encounter:'⚔️', lock:'🔒', note:'📜', teleport:'🪜', rest:'⛺', lever:'🕹️' };
+  const DEFAULT_ICON = { key:'🗝️', trap:'⚠️', loot:'🎁', encounter:'⚔️', lock:'🔒', note:'📜', teleport:'🪜', rest:'⛺', lever:'🕹️' };
   function stepCost(dg, i){ return dg.grid[i]==='h' ? 2 : 1; }
   function icoHTML(ic){ return /^(https?:|data:|\/)/i.test(String(ic||'')) ? `<img src="${escapeAttr(ic)}" onerror="this.remove()" />` : escapeHTML(ic); }
 
@@ -197,7 +201,7 @@
     if(f){
       const own = f.icon || DEFAULT_ICON[f.type] || '';
       if(f.type==='lock') ico = (f.unlocked || unlocked) ? '🔓' : own;
-      else if(f.type==='loot') ico = (f.taken || fired) ? '' : own;
+      else if(f.type==='loot' || f.type==='key') ico = (f.taken || fired) ? '' : own;
       else if(f.type==='rest') ico = (f.once && (f.fired || fired)) ? '' : own;
       else if(f.type==='lever') ico = own;
       else ico = own;
@@ -379,7 +383,7 @@
         ${partyHTML()}
         ${gridHTML(dg)}
         ${padHTML(dg)}
-        <div class="dg-legend">⛩️ ingresso · 🚪 uscita · 🔒 chiuso · 🎁 tesoro · 🪜 scale · ⛺ ristoro · 🕹️ leva · ▦ terreno difficile (2 ⚡)${isMaster()?' — sbiaditi = non ancora scattati (li vedi solo tu)':''}</div>
+        <div class="dg-legend">⛩️ ingresso · 🚪 uscita · 🔒 porta chiusa · 🗝️ chiave · 🎁 tesoro · 🪜 scale · ⛺ ristoro · 🕹️ leva · ▦ terreno difficile (2 ⚡)${isMaster()?' — sbiaditi = non ancora scattati (li vedi solo tu)':''}</div>
         ${roomCardHTML(dg)}
       ` : ''}
       <div class="dg-status" id="dg-status">${escapeHTML(statusMsg)}</div>
@@ -452,7 +456,7 @@
     for(const ev of (events||[])){
       if(ev.type==='room'){ await announceRoom(ev.room); continue; }
       if(ev.type==='unlock'){
-        await dgLog({ who:'Sistema', role:'gm', text: `🔓 ${nameOf(ev.by)} apre il passaggio con «${ev.key}».${ev.text ? '\n' + ev.text : ''}` });
+        await dgLog({ who:'Sistema', role:'gm', text: `🔓 ${nameOf(ev.by)} apre la porta con «${ev.key}»${ev.consumed ? ' (la chiave si consuma)' : ''}.${ev.text ? '\n' + ev.text : ''}` });
         continue;
       }
       if(ev.type==='difficult') continue;
@@ -468,16 +472,30 @@
         continue;
       }
       if(ev.type==='trap'){
+        // Descrizione sempre; richiesta di tiro solo se prevista, a chi scelto nell'editor
+        // (Capofila / tutti i presenti / un presente a caso).
+        if(ev.roll===false){ await dgLog({ who:'Sistema', role:'gm', text: `⚠️ Trappola!${ev.text ? ' ' + ev.text : ''}` }); continue; }
         const def = (typeof SKILL_DEFS!=='undefined' ? SKILL_DEFS : []).find(d=>d.key===ev.skill);
         const label = def ? def.label : ev.skill;
         const attrPart = (def && ev.attr && ev.attr!==def.attrs[0]) ? ` (con ${ATTR_LABEL[ev.attr]||ev.attr})` : '';
-        const payload = `${leader}|${ev.skill}|${ev.tn||''}|${ev.attr||''}`;
-        await dgLog({ who:'Master', role:'request', text: `⚠️ Trappola!${ev.text ? ' ' + ev.text : ''} Richiesta a ${nameOf(leader)}: tira ${label}${attrPart} (TN ${ev.tn})::REQ::${payload}` });
-        if(ctx.notifyPlayers) ctx.notifyPlayers([leader], '⚠️ Trappola!', `Tira ${label} (TN ${ev.tn}).`);
+        const pres = presentPlayers().map(m=>m.username);
+        let targets = [leader];
+        if(ev.who==='all') targets = pres.length ? pres : [leader];
+        else if(ev.who==='random') targets = pres.length ? [pres[Math.floor(Math.random()*pres.length)]] : [leader];
+        targets = targets.filter(Boolean);
+        const payload = `${targets.join(',')}|${ev.skill}|${ev.tn||''}|${ev.attr||''}`;
+        await dgLog({ who:'Master', role:'request', text: `⚠️ Trappola!${ev.text ? ' ' + ev.text : ''} Richiesta a ${targets.map(nameOf).join(', ')}: tira ${label}${attrPart} (TN ${ev.tn})::REQ::${payload}` });
+        if(ctx.notifyPlayers) ctx.notifyPlayers(targets, '⚠️ Trappola!', `Tira ${label} (TN ${ev.tn}).`);
+        continue;
+      }
+      if(ev.type==='key'){
+        const allowed = presentPlayers().map(m=>m.username);
+        if(ev.text) await dgLog({ who:'Sistema', role:'gm', text: `🗝️ ${ev.text}` });
+        await dgLog({ who:'Master', role:'loot', text: `🗝️ Trovata una chiave: ${ev.name} (al primo che la prende)`, meta: { loot: { v:0, name: ev.name, qty: 1, category: 'chiave', desc: ev.desc||'', mode: 'first', allowed, claims:{} } } });
         continue;
       }
       if(ev.type==='loot'){
-        const allowed = players().map(m=>m.username);
+        const allowed = presentPlayers().map(m=>m.username);
         const modeText = ev.mode==='pool' ? ` (da spartire: ${ev.qty} in tutto)` : (ev.mode==='first' ? ' (al primo che lo prende)' : (ev.qty>1 ? ' (a testa)' : ''));
         if(ev.text) await dgLog({ who:'Sistema', role:'gm', text: `🎁 ${ev.text}` });
         await dgLog({ who:'Master', role:'loot', text: `🎁 Bottino: ${ev.name} ×${ev.qty}${modeText}`, meta: { loot: { v:0, name: ev.name, qty: ev.qty, category: ev.category||'altro', desc: ev.desc||'', mode: ev.mode||'first', allowed, claims:{} } } });
@@ -569,7 +587,7 @@
       const target = invTarget ? invTarget.value : '';
       const isPrivate = !!target && !target.startsWith('subgroup:');
       const mode = isPrivate ? 'each' : (invMode ? invMode.value : 'each');
-      const text = `🏰 Volete entrare nel dungeon "${dgI.name}"?::MOVEREQ::${dgI.link.sectorId}|${dgI.link.subsectionId||''}||${mode}`;
+      const text = `🏰 Volete entrare nel dungeon "${dgI.name}"?::MOVEREQ::${dgI.link.sectorId}|${dgI.link.subsectionId||''}|${dgI.link.luogoId||''}|${mode}`;
       let ok;
       if(target) ok = await pushPrivateLog(ctx.code, target, { who:'Master', role:'moverequest', text });
       else {
