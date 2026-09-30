@@ -40,6 +40,10 @@
 // delle chiavi o "📍 Scegli la chiave sulla mappa"; dal pannello della chiave: "📍 Collega a una
 // porta"; i collegamenti si vedono evidenziati in magenta e rinominare una chiave aggiorna le sue
 // porte); "👁️ Raggio di vista" per la FOG OF WAR (dg.vision) e nebbia anche nell'area di prova.
+// SETTIMA RICHIESTA: porte con stato iniziale Aperta / Chiusa (si apre passandoci) / Chiusa a
+// chiave (strumenti 🚪 Porta aperta, 🚪 Porta chiusa, 🔒 Porta a chiave; cliccando una porta con
+// 👆 Seleziona si cambia lo stato), e trappole che chiudono porte ("🚪 Chiude queste porte":
+// richiuse oppure sbarrate — le sbarrate si riaprono solo con una Leva o dal Master).
 // Cambiare le dimensioni di un dungeon già esplorato azzera l'esplorazione (lo fa il server,
 // perché le posizioni salvate non corrisponderebbero più alle caselle).
 
@@ -48,7 +52,8 @@
     { key:'.', label:'🧱 Muro' },
     { key:'f', label:'⬜ Pavimento' },
     { key:'d', label:'🚪 Porta aperta' },
-    { key:'L', label:'🔒 Porta chiusa' },
+    { key:'C', label:'🚪 Porta chiusa' },
+    { key:'L', label:'🔒 Porta a chiave' },
     { key:'s', label:'🕳️ Porta segreta' },
     { key:'h', label:'🪨 Terreno difficile' },
     { key:'e', label:'⛩️ Ingresso' },
@@ -69,6 +74,7 @@
     loot:['🎁','💰','💎','🧰','📦','🗝️','⚗️','🍖','📜','🪙'],
     encounter:['⚔️','👁️','💀','🐉','👾','🦴','🌑'],
     lock:['🔒','⛓️','🚧','🔐'],
+    door:['🚪'],
     key:['🗝️','🔑','🪪','💠'],
     note:['📜','📖','🪧','❗','❓','🗿','🕯️'],
     teleport:['🪜','🌀','⬆️','⬇️','✨','🔮','🚪'],
@@ -140,14 +146,16 @@
     const t = dg.grid[i];
     let bg = '#141b1f';
     if(t==='f') bg = '#3a4c52';
-    if(t==='d') bg = '#8a5a26';
+    const dfe = dg.features[i];
+    const doorClosed = t==='d' && dfe && (dfe.type==='lock' || (dfe.type==='door' && dfe.closed));
+    if(t==='d') bg = doorClosed ? '#8a5a26' : '#3a4c52';
     if(t==='s') bg = '#4d2d6b';
     if(t==='h') bg = 'repeating-linear-gradient(135deg,#5a4a33 0 3px,#43372a 3px 6px)';
     if(t==='e') bg = '#2a8a55';
     if(t==='x') bg = '#8a2a73';
     const rid = t!=='.' ? dg.roomOf[i] : null;
     const room = rid ? roomById(rid) : null;
-    let extra = '';
+    let extra = (t==='d' && !doorClosed) ? 'box-shadow:inset 0 0 0 3px #8a5a26;' : '';
     if(room){
       if(t==='f') bg = roomColor(rid);
       extra += `box-shadow:inset 0 0 0 2px ${roomColor(rid)};`;
@@ -195,7 +203,8 @@
       const fi = dg.features[i];
       const keyLinked = draft && ((draft.type==='key' && draft.name && fi && fi.type==='lock' && normName(fi.key)===normName(draft.name))
         || (draft.type==='lock' && draft.key && fi && fi.type==='key' && normName(fi.name)===normName(draft.key)));
-      const linked = draft && (keyLinked || (draft.type==='teleport' && !draft.targetDungeon && draft.targetIndex===i) || (draft.type==='lever' && (draft.targets||[]).includes(i))) ? 'outline:2px solid #ff5dd2;outline-offset:-2px;' : '';
+      const trapLinked = draft && draft.type==='trap' && (draft.closeDoors||[]).includes(i);
+      const linked = draft && (keyLinked || trapLinked || (draft.type==='teleport' && !draft.targetDungeon && draft.targetIndex===i) || (draft.type==='lever' && (draft.targets||[]).includes(i))) ? 'outline:2px solid #ff5dd2;outline-offset:-2px;' : '';
       h += `<div data-dge-cell="${i}" title="${esc(cellLabel(i))}" style="${cellStyle(i)}display:flex;align-items:center;justify-content:center;${sel}${rect}${linked}">${cellIcon(i)}</div>`;
     }
     return h + '</div>';
@@ -214,7 +223,9 @@
       room: selRoom ? `Pennello attivo su "${esc((roomById(selRoom)||{}).name||'')}": clic o trascina per aggiungere caselle a questa stanza.` : 'Seleziona prima una stanza dall\'elenco qui sotto (o creane una col rettangolo).',
       unroom: 'Clic o trascina per togliere caselle dalla loro stanza (restano pavimento).',
       select: 'Clic su una casella per metterci un contenuto (trappola, tesoro, chiave, scale…) e per vedere la stanza a cui appartiene.',
-      L: 'Clic su una casella per metterci una porta chiusa, poi scegli qui sotto la chiave che la apre e se la chiave si consuma. (🚪 Porta aperta toglie la serratura.)'
+      L: 'Clic su una casella per metterci una porta chiusa a chiave, poi scegli qui sotto la chiave che la apre e se la chiave si consuma. (🚪 Porta aperta toglie la serratura.)',
+      C: 'Clic su una casella per metterci una porta chiusa: si apre da sola quando il gruppo ci passa (costa il passo). Può essere richiusa da una trappola.',
+      d: 'Clic su una casella per metterci una porta aperta (toglie anche serrature e chiusure).'
     }[tool] || 'Clic o trascina per disegnare le caselle.';
     return `<div style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0;align-items:center;">
       <span class="muted" style="font-size:10px;text-transform:uppercase;">Stanze</span>
@@ -228,7 +239,7 @@
       <span class="muted" style="font-size:10px;text-transform:uppercase;">Contenuti</span>
       ${btn('select','👆 Seleziona casella / contenuto')}
     </div>
-    <div class="muted" style="font-size:10.5px;">${pick ? `<b style="color:#ff5dd2;">📍 ${({ lockKey:'Clicca sulla mappa la 🗝️ chiave che apre questa porta.', keyDoor:'Clicca sulla mappa le porte che questa chiave apre (anche più di una; una porta aperta diventa chiusa).', lever:'Clicca sulla mappa le caselle che la leva apre (anche più di una).' })[pick] || 'Clicca sulla mappa la casella di destinazione.'}</b> <button class="btn ghost small" id="dge-pick-done">Fine</button>` : help}</div>`;
+    <div class="muted" style="font-size:10.5px;">${pick ? `<b style="color:#ff5dd2;">📍 ${({ trapDoors:'Clicca sulla mappa le porte che la trappola chiude (anche più di una).', lockKey:'Clicca sulla mappa la 🗝️ chiave che apre questa porta.', keyDoor:'Clicca sulla mappa le porte che questa chiave apre (anche più di una; una porta aperta diventa chiusa).', lever:'Clicca sulla mappa le caselle che la leva apre (anche più di una).' })[pick] || 'Clicca sulla mappa la casella di destinazione.'}</b> <button class="btn ghost small" id="dge-pick-done">Fine</button>` : help}</div>`;
   }
 
   function roomsHTML(){
@@ -276,12 +287,22 @@
     const sel = (id, opts, val)=>`<select id="${id}" data-dge-draft="${id}">${opts.map(([v,l])=>`<option value="${esc(v)}" ${String(val)===String(v)?'selected':''}>${esc(l)}</option>`).join('')}</select>`;
     const inp = (id, val, extra)=>`<input id="${id}" data-dge-draft="${id}" value="${esc(val==null?'':val)}" ${extra||'type="text"'} />`;
     let fields = '';
+    const isDoor = dg.grid[selCell]==='d';
+    const doorSt = !isDoor ? null : (f.type==='lock' ? 'locked' : (f.type==='door' && f.closed ? 'closed' : 'open'));
     if(f.type==='trap') fields = `
       <label style="display:flex;gap:6px;align-items:center;font-size:11px;text-transform:none;margin:4px 0;"><input type="checkbox" id="dge-f-roll" data-dge-draft="dge-f-roll" ${f.roll!==false?'checked':''} style="width:auto;" /> Quando scatta, parte una <b>richiesta di tiro</b> in chat</label>
       ${f.roll!==false ? `<div class="row" style="gap:6px;"><div class="field" style="flex:2;"><label>Tiro richiesto (Skill)</label>${sel('dge-f-skill', SKILLS, f.skill||'awareness')}</div>
       <div class="field" style="flex:2;"><label>Caratteristica</label>${sel('dge-f-attr', ATTRS, f.attr||'')}</div>
       <div class="field" style="flex:1;"><label>TN</label>${inp('dge-f-tn', Number(f.tn)||12, 'type="number" class="dge-num" min="1" max="40"')}</div></div>
       <div class="field"><label>Chi tira</label>${sel('dge-f-who', [['leader','👑 Il Capofila'],['all','🧍 Tutti i presenti nel dungeon'],['random','🎲 Un presente a caso']], f.who||'leader')}</div>` : '<div class="muted" style="font-size:10.5px;">Nessun tiro: in chat esce solo la descrizione (l\'effetto lo gestisci tu).</div>'}`;
+    if(f.type==='trap') fields += `
+      <div class="field" style="margin-top:6px;"><label>🚪 Chiude queste porte quando scatta</label>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin:2px 0;">${(f.closeDoors||[]).map(t=>`<span class="tag" style="font-size:10.5px;">🚪 ${esc(cellLabel(t))} <a href="#" data-dge-trapdoor-del="${t}" style="color:inherit;">✕</a></span>`).join('') || '<span class="muted" style="font-size:10.5px;">nessuna</span>'}</div>
+        <div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;">
+          <button type="button" class="btn ghost small" id="dge-pick-trapdoors">📍 Aggiungi porte dalla mappa</button>
+          ${(f.closeDoors||[]).length ? sel('dge-f-closemode', [['closed','🚪 Richiuse (si riaprono passandoci; quelle a chiave tornano a chiave)'],['barred','⛔ Sbarrate (solo una Leva o il Master le riaprono)']], f.closeMode||'closed') : ''}
+        </div>
+      </div>`;
     if(f.type==='loot') fields = `
       <div class="row" style="gap:6px;"><div class="field" style="flex:3;"><label>Oggetto</label>${inp('dge-f-name', f.name||'')}</div>
       <div class="field" style="flex:1;"><label>Q.tà</label>${inp('dge-f-qty', Number(f.qty)||1, 'type="number" class="dge-num" min="1"')}</div></div>
@@ -339,10 +360,15 @@
     const textLabel = { key:'Testo di scoperta (facoltativo)', trap:'Descrizione della trappola (esce in chat quando scatta)', loot:'Testo di scoperta (facoltativo)', encounter:'Testo in chat (il nome dell\'Incontro resta nascosto)', lock:'Testo quando viene aperta', note:'Testo narrato quando il gruppo arriva qui', teleport:'Testo in chat (es. "Scendete la scala a chiocciola…")', rest:'Testo in chat', lever:'Testo in chat (es. "Un meccanismo scatta in lontananza")' }[f.type];
     return `<div class="hud-frame" style="padding:10px;margin-top:8px;border-left:3px solid #ffd35a;">
       <div style="font-size:12px;margin-bottom:6px;"><b>👆 Casella ${esc(cellLabel(selCell))}</b>${room?` · stanza <a href="#" data-dge-room-sel="${esc(room.id)}" style="color:${roomColor(room.id)};">${esc(room.name)}</a>`:''}${walk?'':' <span class="muted">(è un muro: disegnaci prima un pavimento)</span>'}</div>
-      <div class="field"><label>Contenuto</label>${sel('dge-f-type', FEATURE_TYPES, f.type||'')}</div>
-      ${f.type ? iconPickerHTML() : ''}
+      ${isDoor ? `<div class="field"><label>🚪 Porta — stato iniziale</label><select id="dge-door-state">
+          <option value="open" ${doorSt==='open'?'selected':''}>🚪 Aperta</option>
+          <option value="closed" ${doorSt==='closed'?'selected':''}>🚪 Chiusa (si apre passandoci)</option>
+          <option value="locked" ${doorSt==='locked'?'selected':''}>🔒 Chiusa a chiave</option>
+        </select><div class="muted" style="font-size:10px;margin-top:2px;">Durante il gioco: le trappole possono richiuderla o sbarrarla, le leve e le chiavi riaprirla, e tu puoi aprirla/chiuderla dal Tavolo (🚪 Apri / chiudi porta).</div></div>
+        ${doorSt==='locked' ? iconPickerHTML() : ''}` : `<div class="field"><label>Contenuto</label>${sel('dge-f-type', FEATURE_TYPES, f.type||'')}</div>
+      ${f.type ? iconPickerHTML() : ''}`}
       ${fields}
-      ${f.type ? `<div class="field"><label>${textLabel}</label><textarea id="dge-f-text" data-dge-draft="dge-f-text" rows="2" style="width:100%;">${esc(f.text||'')}</textarea></div>` : ''}
+      ${f.type ? `<div class="field"><label>${f.type==='door' ? 'Testo quando viene aperta (facoltativo)' : textLabel}</label><textarea id="dge-f-text" data-dge-draft="dge-f-text" rows="2" style="width:100%;">${esc(f.text||'')}</textarea></div>` : ''}
       <button class="btn small" id="dge-f-apply">✔ Applica alla casella</button>
     </div>`;
   }
@@ -391,7 +417,7 @@
       </div>
       ${toolsHTML()}
       ${gridHTML()}
-      <div class="muted" style="font-size:10px;text-align:center;">🧱 muro · ⬜ pavimento · 🟫 porta aperta · 🔒 porta chiusa · 🟪 porta segreta · ▦ terreno difficile · ⛩️ ingresso · 🏁 uscita</div>
+      <div class="muted" style="font-size:10px;text-align:center;">🧱 muro · ⬜ pavimento · 🟫 porta aperta · 🚪 porta chiusa · 🔒 porta a chiave · 🟪 porta segreta · ▦ terreno difficile · ⛩️ ingresso · 🏁 uscita</div>
       ${featureHTML()}
       ${roomsHTML()}
       <div class="row" style="gap:6px;margin-top:10px;align-items:center;flex-wrap:wrap;">
@@ -410,7 +436,7 @@
     const t = ev.text ? ` — ${ev.text}` : '';
     switch(ev.type){
       case 'room': return `🏛️ Entrate in «${ev.room.name}»${ev.room.desc ? ': ' + ev.room.desc : ''}${ev.room.image ? ' 🖼️' : ''}`;
-      case 'trap': return `⚠️ Trappola!${t}` + (ev.roll!==false ? ` → richiesta di tiro: ${SKILL_LABEL[ev.skill]||ev.skill}${ev.attr?' (con '+ev.attr+')':''} TN ${ev.tn}, tira ${WHO_LABEL[ev.who||'leader']}` : ' (nessun tiro)');
+      case 'trap': return `⚠️ Trappola!${t}` + (ev.roll!==false ? ` → richiesta di tiro: ${SKILL_LABEL[ev.skill]||ev.skill}${ev.attr?' (con '+ev.attr+')':''} TN ${ev.tn}, tira ${WHO_LABEL[ev.who||'leader']}` : ' (nessun tiro)') + ((ev.closedDoors||[]).length ? ` — ${ev.closeMode==='barred' ? '⛔ sbarra' : '🚪 richiude'} ${ev.closedDoors.length} port${ev.closedDoors.length===1?'a':'e'}` : '');
       case 'loot': return `🎁 Tesoro in chat: ${ev.name} ×${ev.qty}${t}`;
       case 'key': return `🗝️ Chiave in chat: «${ev.name}» (la prende il primo)${t}`;
       case 'encounter': { const e = encounters.find(x=>x.id===ev.encounterId); return `⚔️ Incontro${e ? ' ('+e.name+')' : ''}${t || ' — avviso al Master'}`; }
@@ -418,7 +444,8 @@
       case 'note': return `📜 ${ev.text||'(nota vuota)'}`;
       case 'teleport': return `🪜 Passaggio${t}${ev.toDungeon ? ' → ' + ev.toDungeon : ''}`;
       case 'rest': return `⛺ Punto di ristoro: Punti e Ricerca ricaricati${t}`;
-      case 'lever': return `🕹️ Leva azionata${t}`;
+      case 'lever': return `🕹️ Leva azionata (porte collegate aperte)${t}`;
+      case 'dooropen': return `🚪 Porta aperta passandoci${t}`;
       case 'exit': return '🚪 Uscita del dungeon';
       case 'difficult': return '🪨 Terreno difficile: −2 Punti';
       default: return ev.type;
@@ -448,7 +475,16 @@
   }
   // Fog of war nell'area di prova: stessa funzione di lib/dungeon.js / js/dungeon.js.
   function tNb8(v, idx){ const r = Math.floor(idx/v.cols), c = idx%v.cols, out = []; for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){ if(!dr&&!dc) continue; const rr=r+dr, cc=c+dc; if(rr>=0&&rr<v.rows&&cc>=0&&cc<v.cols) out.push(rr*v.cols+cc); } return out; }
-  function tOpaque(v, i){ const t = v.grid[i]; if(t==='.'||t==='?') return true; const run = v.run||{}; if(t==='s' && !(run.found||[]).includes(i)) return true; const f = v.features && v.features[i]; if(f && f.type==='lock' && !(f.unlocked || (run.unlocked||[]).includes(i))) return true; return false; }
+  function tIsDoor(v, i){ const f = v.features && v.features[i]; return v.grid[i]==='d' || !!(f && f.type==='lock' && v.grid[i]!=='.' && v.grid[i]!=='?'); }
+  function tDoorState(v, i){
+    if(!tIsDoor(v, i)) return null;
+    const run = v.run||{}; const ov = run.doors && run.doors[i]; if(ov) return ov;
+    const f = v.features && v.features[i];
+    if(f && f.type==='lock') return (f.unlocked || (run.unlocked||[]).includes(i)) ? 'open' : 'locked';
+    if(f && f.type==='door' && f.closed) return 'closed';
+    return 'open';
+  }
+  function tOpaque(v, i){ const t = v.grid[i]; if(t==='.'||t==='?') return true; const run = v.run||{}; if(t==='s' && !(run.found||[]).includes(i)) return true; if(tIsDoor(v, i) && tDoorState(v, i)!=='open') return true; return false; }
   function tVisible(v, pos){
     const vis = new Set(); if(pos==null) return vis;
     const R = Math.max(1, Math.min(8, Math.floor(Number(v.vision)||2)));
@@ -473,7 +509,7 @@
     const reach = new Set();
     if(pos!=null){
       const r = Math.floor(pos/v.cols), c = pos%v.cols;
-      [[r>0,pos-v.cols],[r<v.rows-1,pos+v.cols],[c>0,pos-1],[c<v.cols-1,pos+1]].forEach(([okk,i])=>{ if(okk && walk[v.grid[i]] && pts >= (v.grid[i]==='h'?2:1)) reach.add(i); });
+      [[r>0,pos-v.cols],[r<v.rows-1,pos+v.cols],[c>0,pos-1],[c<v.cols-1,pos+1]].forEach(([okk,i])=>{ if(okk && walk[v.grid[i]] && pts >= (v.grid[i]==='h'?2:1) && tDoorState(v, i)!=='barred') reach.add(i); });
     }
     const vis = tVisible(v, pos);
     const colors = { '?':'#020304', '.':'#1a2226', f:'#22343a', d:'#8a5a26', e:'#1f5a3a', x:'#5a1f4e', s:'#4d2d6b', h:'repeating-linear-gradient(135deg,#4a3d2b 0 3px,#382e22 3px 6px)' };
@@ -484,7 +520,11 @@
       if(t==='f' && v.roomOf[i]) bg = '#2b4a4f';
       const f = v.features && v.features[i];
       let ico = t==='e' ? '⛩️' : (t==='x' ? '🚪' : '');
-      if(f){
+      const tds = tDoorState(v, i);
+      if(tds){
+        ico = tds==='barred' ? '⛔' : (tds==='locked' ? ((f && f.icon) || '🔒') : (tds==='closed' ? '🚪' : ''));
+        bg = tds==='open' ? '#22343a' : (tds==='barred' ? '#5a2a1e' : '#8a5a26');
+      } else if(f){
         const own = f.icon || T_ICON[f.type] || '';
         if(f.type==='lock') ico = f.unlocked ? '🔓' : own;
         else if(f.type==='loot' || f.type==='key') ico = f.taken ? '' : own;
@@ -505,7 +545,7 @@
     const r = v && pos!=null ? Math.floor(pos/v.cols) : 0, c = v && pos!=null ? pos%v.cols : 0;
     const btn = (ok, i, lab)=> ok ? `<button class="btn small" data-dgt-cell="${i}">${lab}</button>` : `<button class="btn small" disabled>${lab}</button>`;
     const walk = { f:1, d:1, e:1, x:1, h:1, s:1 };
-    const can = (okk, i)=> okk && v && walk[v.grid[i]] && (Number(p.points)||0) >= (v.grid[i]==='h'?2:1);
+    const can = (okk, i)=> okk && v && walk[v.grid[i]] && (Number(p.points)||0) >= (v.grid[i]==='h'?2:1) && tDoorState(v, i)!=='barred';
     return `<div class="hud-frame" style="padding:10px;border-left:3px solid #35e8c9;">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
         <b>▶️ Area di prova — ${esc(dg ? dg.name : '')}</b>
@@ -624,6 +664,11 @@
       dg.roomOf[i] = selRoom;
     } else if(tool==='unroom'){
       dg.roomOf[i] = null;
+    } else if(tool==='C'){
+      // Porta chiusa (senza chiave): si apre quando il gruppo ci passa.
+      dg.grid[i] = 'd';
+      const prevText = dg.features[i] && dg.features[i].text || '';
+      dg.features[i] = { type:'door', closed:true, text: prevText };
     } else if(tool==='L'){
       // Porta chiusa = casella porta + serratura (chiave e consumo si scelgono nel pannello sotto).
       dg.grid[i] = 'd';
@@ -633,7 +678,7 @@
       if(tool==='e'){ dg.grid = dg.grid.map(t=>t==='e'?'f':t); } // un solo ingresso
       dg.grid[i] = tool;
       if(tool==='.'){ dg.roomOf[i] = null; delete dg.features[i]; }
-      if(tool==='d' && dg.features[i] && dg.features[i].type==='lock') delete dg.features[i]; // porta aperta: via la serratura
+      if(tool==='d' && dg.features[i] && (dg.features[i].type==='lock' || dg.features[i].type==='door')) delete dg.features[i]; // porta aperta: via serratura/chiusura
     } else return;
     markDirty();
     const el = root.querySelector(`[data-dge-cell="${i}"]`);
@@ -715,7 +760,7 @@
     const v = id => { const el = document.getElementById(id); return el ? (el.type==='checkbox' ? el.checked : el.value) : undefined; };
     const set = (k, id, fn)=>{ const x = v(id); if(x!==undefined) draft[k] = fn ? fn(x) : x; };
     set('text','dge-f-text');
-    if(draft.type==='trap'){ set('roll','dge-f-roll', x=>!!x); set('skill','dge-f-skill'); set('attr','dge-f-attr'); set('tn','dge-f-tn', x=>Number(x)||12); set('who','dge-f-who'); }
+    if(draft.type==='trap'){ set('closeMode','dge-f-closemode');  set('roll','dge-f-roll', x=>!!x); set('skill','dge-f-skill'); set('attr','dge-f-attr'); set('tn','dge-f-tn', x=>Number(x)||12); set('who','dge-f-who'); }
     if(draft.type==='key'){
       const oldName = draft.name;
       set('name','dge-f-kname', x=>x.trim()); set('desc','dge-f-kdesc');
@@ -848,6 +893,13 @@
             if(fk && fk.type==='key' && fk.name){ draft.key = fk.name; pick = null; }
             else { setMsg('Lì non c\'è una 🗝️ chiave (con un nome): clicca una casella con la chiave.'); return; }
           }
+          else if(pick==='trapDoors'){
+            const isD = dg.grid[i]==='d' || (dg.features[i] && dg.features[i].type==='lock');
+            if(!isD){ setMsg('Clicca una porta (🚪 o 🔒).'); return; }
+            draft.closeDoors = draft.closeDoors || [];
+            if(!draft.closeDoors.includes(i)) draft.closeDoors.push(i);
+            setMsg('');
+          }
           else if(pick==='keyDoor'){
             if(dg.grid[i]!=='d' && !(dg.features[i] && dg.features[i].type==='lock')){ setMsg('Clicca una porta (🚪 o 🔒).'); return; }
             dg.grid[i] = 'd';
@@ -881,6 +933,18 @@
     }
 
     // --- pannello contenuto casella ---
+    const ptd = document.getElementById('dge-pick-trapdoors');
+    if(ptd) ptd.onclick = ()=>{ syncDraft(); pick = 'trapDoors'; render(); };
+    root.querySelectorAll('[data-dge-trapdoor-del]').forEach(a=> a.onclick = (e)=>{ e.preventDefault(); syncDraft(); const t = +a.getAttribute('data-dge-trapdoor-del'); draft.closeDoors = (draft.closeDoors||[]).filter(x=>x!==t); commitDraft(); render(); });
+    const dst = document.getElementById('dge-door-state');
+    if(dst) dst.onchange = ()=>{
+      syncDraft();
+      const txt = draft && draft.text || '';
+      if(dst.value==='open') draft = { type:'' };
+      else if(dst.value==='closed') draft = { type:'door', closed:true, text: txt };
+      else draft = (dg.features[selCell] && dg.features[selCell].type==='lock') ? clone(dg.features[selCell]) : { type:'lock', key:'', consume:false, text: txt };
+      commitDraft(); render();
+    };
     const ft = document.getElementById('dge-f-type');
     if(ft) ft.onchange = ()=>{
       syncDraft();

@@ -53,13 +53,28 @@
     for(let dr=-1; dr<=1; dr++) for(let dc=-1; dc<=1; dc++){ if(!dr && !dc) continue; const rr=r+dr, cc=c+dc; if(rr>=0 && rr<dg.rows && cc>=0 && cc<dg.cols) out.push(rr*dg.cols+cc); }
     return out;
   }
+  // PORTE APERTE/CHIUSE (settima richiesta): stessa logica di doorState in lib/dungeon.js.
+  // 'open' | 'closed' (si apre passandoci) | 'locked' (chiave) | 'barred' (solo leva/Master).
+  function isDoorCell(dg, i){
+    const f = dg.features && dg.features[i];
+    return dg.grid[i]==='d' || !!(f && f.type==='lock' && WALK[dg.grid[i]]);
+  }
+  function doorState(dg, i){
+    if(!isDoorCell(dg, i)) return null;
+    const run = dg.run || {};
+    const ov = run.doors && run.doors[i];
+    if(ov) return ov;
+    const f = dg.features && dg.features[i];
+    if(f && f.type==='lock') return (f.unlocked || (run.unlocked||[]).includes(i)) ? 'open' : 'locked';
+    if(f && f.type==='door' && f.closed) return 'closed';
+    return 'open';
+  }
   function isOpaque(dg, i){
     const t = dg.grid[i];
     if(t==='.' || t==='?') return true;
     const run = dg.run || {};
     if(t==='s' && !(run.found||[]).includes(i)) return true;
-    const f = dg.features && dg.features[i];
-    if(f && f.type==='lock' && !(f.unlocked || (run.unlocked||[]).includes(i))) return true;
+    if(isDoorCell(dg, i) && doorState(dg, i)!=='open') return true;
     return false;
   }
   function visibleFrom(dg, pos){
@@ -102,6 +117,8 @@
       .dg-floor{background:#22343a;}
       .dg-room{background:#2b4a4f;}
       .dg-door{background:#5a3d1e;}
+      .dg-door-open{background:#22343a;box-shadow:inset 0 0 0 2px #7a5426;}
+      .dg-door-barred{background:repeating-linear-gradient(45deg,#5a2a1e 0 4px,#3a1a14 4px 8px);}
       .dg-ent{background:#1f5a3a;}
       .dg-exit{background:#5a1f4e;}
       .dg-hard{background:repeating-linear-gradient(135deg,#4a3d2b 0 3px,#382e22 3px 6px);}
@@ -228,7 +245,7 @@
     const t = dg.grid[i];
     if(t==='?') return 'dg-unk';
     if(t==='.') return 'dg-wall';
-    if(t==='d') return 'dg-door';
+    if(t==='d'){ const st = doorState(dg, i); return st==='open' ? 'dg-door-open' : (st==='barred' ? 'dg-door-barred' : 'dg-door'); }
     if(t==='e') return 'dg-ent';
     if(t==='x') return 'dg-exit';
     if(t==='h') return 'dg-hard';
@@ -245,6 +262,15 @@
     if(dg.grid[i]==='e') ico = '⛩️';
     if(dg.grid[i]==='x') ico = '🚪';
     if(dg.grid[i]==='s' && isMaster() && !(run.found||[]).includes(i)) return `<span class="dg-ico dg-hidden">🕳️</span>`;
+    const ds = doorState(dg, i);
+    if(ds){
+      // Le porte mostrano sempre il loro stato attuale.
+      if(ds==='barred') return `<span class="dg-ico" title="Porta sbarrata">⛔</span>`;
+      if(ds==='locked') return `<span class="dg-ico" title="Porta chiusa a chiave">${icoHTML((f && f.type==='lock' && f.icon) || '🔒')}</span>`;
+      if(ds==='closed') return `<span class="dg-ico" title="Porta chiusa">🚪</span>`;
+      if(f && f.type==='lock') return `<span class="dg-ico dg-hidden" title="Porta aperta">🔓</span>`;
+      return '';
+    }
     if(f){
       const own = f.icon || DEFAULT_ICON[f.type] || '';
       if(f.type==='lock') ico = (f.unlocked || unlocked) ? '🔓' : own;
@@ -265,7 +291,7 @@
     const pos = dg.run ? dg.run.pos : null;
     const reach = new Set();
     const pts = Number(state.party && state.party.points)||0;
-    if(pos!=null && amLeader()) neighbors4(dg, pos).forEach(i=>{ if(WALK[dg.grid[i]] && pts>=stepCost(dg, i)) reach.add(i); });
+    if(pos!=null && amLeader()) neighbors4(dg, pos).forEach(i=>{ if(WALK[dg.grid[i]] && pts>=stepCost(dg, i) && doorState(dg, i)!=='barred') reach.add(i); });
     // Immagine della stanza stesa sulle sue caselle (room.showOnMap), calcolata sul riquadro della stanza.
     const step = size+1, bbox = {};
     (dg.rooms||[]).forEach(rm=>{ if(rm.image && rm.showOnMap!==false) bbox[rm.id] = { r0:1e9, c0:1e9, r1:-1, c1:-1 }; });
@@ -343,7 +369,7 @@
     if(!amLeader() || dg.run.pos==null) return '';
     const pos = dg.run.pos, r = Math.floor(pos/dg.cols), c = pos%dg.cols;
     const pts = Number(state.party.points)||0;
-    const can = (idx, ok)=> ok && WALK[dg.grid[idx]] && pts>=stepCost(dg, idx) ? `data-dg-cell="${idx}"` : 'disabled';
+    const can = (idx, ok)=> ok && WALK[dg.grid[idx]] && pts>=stepCost(dg, idx) && doorState(dg, idx)!=='barred' ? `data-dg-cell="${idx}"` : 'disabled';
     const up = can(pos-dg.cols, r>0), down = can(pos+dg.cols, r<dg.rows-1), left = can(pos-1, c>0), right = can(pos+1, c<dg.cols-1);
     const used = !!state.party.searchUsed;
     return `<div class="dg-pad">
@@ -405,6 +431,7 @@
         <button class="btn ${masterMode==='look'?'':'ghost'} small" data-dg-mode="look">👁️ Guarda</button>
         <button class="btn ${masterPlayerView?'':'ghost'} small" id="dg-pview-btn" title="Mostra la mappa con la nebbia che vedono i giocatori">🌫️ Vista giocatori</button>
         <button class="btn ${masterMode==='teleport'?'':'ghost'} small" data-dg-mode="teleport">✋ Sposta pedina (gratis)</button>
+        <button class="btn ${masterMode==='door'?'':'ghost'} small" data-dg-mode="door" title="Clic su una porta: aperta ↔ chiusa">🚪 Apri / chiudi porta</button>
         <button class="btn ${masterMode==='unlock'?'':'ghost'} small" data-dg-mode="unlock" title="Apre una porta chiusa o rivela una porta segreta">🔓 Sblocca / rivela</button>
         <button class="btn ghost small" id="dg-reset-btn">🧹 Azzera esplorazione</button>
       </div>` : ''}`;
@@ -438,7 +465,7 @@
         ${partyHTML()}
         ${gridHTML(dg)}
         ${padHTML(dg)}
-        <div class="dg-legend">⛩️ ingresso · 🚪 uscita · 🔒 porta chiusa · 🗝️ chiave · 🎁 tesoro · 🪜 scale · ⛺ ristoro · 🕹️ leva · ▦ terreno difficile (2 ⚡)${isMaster()?' — sbiaditi = non ancora scattati (li vedi solo tu)':''}</div>
+        <div class="dg-legend">⛩️ ingresso · 🚪 porta chiusa · 🔒 a chiave · ⛔ sbarrata · 🗝️ chiave · 🎁 tesoro · 🪜 scale · ⛺ ristoro · 🕹️ leva · ▦ terreno difficile (2 ⚡)${isMaster()?' — sbiaditi = non ancora scattati (li vedi solo tu)':''}</div>
         ${roomCardHTML(dg)}
       ` : ''}
       <div class="dg-status" id="dg-status">${escapeHTML(statusMsg)}</div>
@@ -515,6 +542,7 @@
         continue;
       }
       if(ev.type==='difficult') continue;
+      if(ev.type==='dooropen'){ await dgLog({ who:'Sistema', role:'gm', text: `🚪 ${nameOf(leader)} apre la porta.${ev.text ? '\n' + ev.text : ''}` }); continue; }
       if(ev.type==='teleport'){ await dgLog({ who:'Sistema', role:'gm', text: `🪜 ${ev.text || 'Il gruppo prende un passaggio…'}${ev.toDungeon ? `\n🏰 Siete in: ${ev.toDungeon}` : ''}` }); continue; }
       if(ev.type==='rest'){ await dgLog({ who:'Sistema', role:'gm', text: `⛺ ${ev.text || 'Il gruppo riprende fiato.'}\n⚡ Punti Dungeon ricaricati.` }); continue; }
       if(ev.type==='lever'){ await dgLog({ who:'Sistema', role:'gm', text: `🕹️ ${ev.text || 'Un meccanismo scatta da qualche parte nel dungeon…'}` }); continue; }
@@ -529,7 +557,10 @@
       if(ev.type==='trap'){
         // Descrizione sempre; richiesta di tiro solo se prevista, a chi scelto nell'editor
         // (Capofila / tutti i presenti / un presente a caso).
-        if(ev.roll===false){ await dgLog({ who:'Sistema', role:'gm', text: `⚠️ Trappola!${ev.text ? ' ' + ev.text : ''}` }); continue; }
+        const nClosed = (ev.closedDoors||[]).length;
+        const doorLine = nClosed ? (ev.closeMode==='barred' ? `\n⛔ ${nClosed===1?'Una porta si sbarra':nClosed+' porte si sbarrano'}: si riapriranno solo con un meccanismo…` : `\n🚪 ${nClosed===1?'Una porta si richiude':nClosed+' porte si richiudono'} di colpo!`) : '';
+        if(ev.roll===false){ await dgLog({ who:'Sistema', role:'gm', text: `⚠️ Trappola!${ev.text ? ' ' + ev.text : ''}${doorLine}` }); continue; }
+        if(doorLine) await dgLog({ who:'Sistema', role:'gm', text: doorLine.trim() });
         const def = (typeof SKILL_DEFS!=='undefined' ? SKILL_DEFS : []).find(d=>d.key===ev.skill);
         const label = def ? def.label : ev.skill;
         const attrPart = (def && ev.attr && ev.attr!==def.attrs[0]) ? ` (con ${ATTR_LABEL[ev.attr]||ev.attr})` : '';
@@ -582,6 +613,15 @@
           render();
           if(d.enteredRoom) await announceRoom(d.enteredRoom);
           if(ctx.onChanged) ctx.onChanged();
+          return;
+        }
+        if(master && masterMode==='door'){
+          const dgA = activeDungeon();
+          if(!dgA || !isDoorCell(dgA, idx)){ setStatus('Clicca una porta.'); return; }
+          const d = await op({ op:'door', index: idx });
+          if(!d){ setStatus(lastApiError); return; }
+          setStatus(d.door==='open' ? 'Porta aperta.' : 'Porta chiusa.'); render();
+          await dgLog({ who:'Sistema', role:'gm', text: d.door==='open' ? '🚪 Una porta si apre.' : '🚪 Una porta si chiude.' });
           return;
         }
         if(master && masterMode==='unlock'){
