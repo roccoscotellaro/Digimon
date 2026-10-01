@@ -39,6 +39,11 @@
 // (2) Stanze che rivelano oggetti e Incontri in Scena al primo ingresso (evento 'roomReveal').
 // (3) Mobile: mappa in un riquadro scorrevole con zoom ➖/➕, centrata sulla pedina; frecce grandi;
 // chat agganciata con le stesse regole mobile della scheda Chat.
+// DECIMA RICHIESTA (rivede la nona): la chat NON si sposta più. È il dungeon che si mette subito
+// SOPRA la card Chat (placeRoot: #dungeon-live viene spostato, la sua posizione originale nella
+// Scena resta segnata da un commento-ancora e da un avviso "🏰 Il dungeon è sopra la chat"). Da
+// telefono quindi mappa e chat stanno insieme nella scheda Chat. Sezione del voto più evidente
+// (candidati con miniatura, da toccare) e pedina = miniatura del Tamer Capofila.
 // Chi muove riceve dal server gli eventi appena scattati (una volta sola, grazie al
 // compare-and-swap lato server) ed è il suo client a pubblicarli in chat con pushLog — stesso
 // schema del voto di spostamento (justResolved) già in uso.
@@ -144,8 +149,26 @@
       .dg-cell.dg-lit{transition:filter .35s;}
       .dg-reach{outline:2px solid var(--cyan);outline-offset:-2px;cursor:pointer;animation:dgpulse 1.4s infinite;}
       .dg-click{cursor:pointer;}
-      .dg-token{position:absolute;inset:8%;border-radius:50%;background:radial-gradient(circle,#ffd35a,#ff8a3d);box-shadow:0 0 8px #ffb020;display:flex;align-items:center;justify-content:center;overflow:hidden;z-index:2;}
-      .dg-token img{width:100%;height:100%;object-fit:cover;}
+      .dg-token{position:absolute;inset:6%;border-radius:50%;background:radial-gradient(circle,#ffd35a,#ff8a3d);box-shadow:0 0 8px #ffb020;display:flex;align-items:center;justify-content:center;overflow:hidden;z-index:2;color:#2a1600;font-weight:700;}
+      .dg-token.dg-token-img{background:#05080b;border:2px solid #ffd35a;box-sizing:border-box;inset:2%;}
+      .dg-token img{width:100%;height:100%;object-fit:cover;display:block;}
+      .dg-vote{border:1px solid var(--line);border-radius:6px;padding:8px;margin:6px 0;background:var(--panel-2);}
+      .dg-vote.dg-vote-need{border:2px solid var(--amber);box-shadow:0 0 10px rgba(255,176,32,0.35);animation:dgvote 2s infinite;}
+      @keyframes dgvote{0%,100%{box-shadow:0 0 10px rgba(255,176,32,0.35);}50%{box-shadow:0 0 2px rgba(255,176,32,0.1);}}
+      .dg-vote-head{font-size:13px;margin-bottom:6px;}
+      .dg-vote-need .dg-vote-head{color:var(--amber);font-weight:700;}
+      .dg-vote-list{display:flex;flex-wrap:wrap;gap:6px;}
+      .dg-cand{display:flex;align-items:center;gap:6px;padding:5px 9px 5px 5px;border:1px solid var(--line);border-radius:20px;background:#0b1216;color:var(--text);font:inherit;font-size:12px;cursor:pointer;min-height:36px;}
+      .dg-cand:disabled{cursor:default;opacity:1;}
+      .dg-cand.mine{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan) inset;}
+      .dg-cand.leader{border-color:#ffd35a;}
+      .dg-cand .av{width:26px;height:26px;border-radius:50%;overflow:hidden;background:#1a2226;display:flex;align-items:center;justify-content:center;font-size:12px;flex:0 0 auto;}
+      .dg-cand .av img{width:100%;height:100%;object-fit:cover;}
+      .dg-cand .ct{font-size:10.5px;color:var(--text-mute);}
+      .dg-vote-foot{font-size:10.5px;color:var(--text-mute);margin-top:6px;}
+      .dg-lead-av{display:inline-flex;width:22px;height:22px;border-radius:50%;overflow:hidden;vertical-align:middle;border:1px solid #ffd35a;margin-right:4px;}
+      .dg-lead-av img{width:100%;height:100%;object-fit:cover;}
+      .dg-scene-note{text-align:center;font-size:12px;margin-top:10px;padding:8px;border:1px dashed var(--line);border-radius:4px;}
       .dg-ico{position:relative;z-index:1;pointer-events:none;}
       @keyframes dgpulse{0%,100%{outline-color:var(--cyan);}50%{outline-color:rgba(53,232,201,0.25);}}
       .dg-bar{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:11.5px;margin:4px 0;}
@@ -159,18 +182,15 @@
       .dg-scroll .dg-grid{margin:0 auto;border:none;}
       .dg-zoom{display:flex;gap:4px;justify-content:center;align-items:center;font-size:11px;}
       .dg-zoom .btn{min-width:32px;}
-      .dg-chat-placeholder{text-align:center;font-size:12px;}
-      #dg-chat-slot > .hud-frame.card{margin-top:10px;}
       @media (max-width: 760px){
         .dg-scroll{max-height:55svh;}
         .dg-pad{grid-template-columns:repeat(3,52px);grid-template-rows:repeat(3,46px);gap:6px;}
         .dg-pad button{font-size:20px;}
         .dg-bar{font-size:12px;}
-        #dg-chat-slot .log{height:45svh !important;min-height:180px;max-height:60svh;font-size:14px;}
-        #dg-chat-slot textarea{font-size:16px;padding:10px;border-radius:8px;}
-        #dg-chat-slot #btn-correct{display:none;}
-        #dg-chat-slot #player-chat-seg, #dg-chat-slot #master-chat-seg{position:sticky;top:0;z-index:40;}
-        #dg-chat-slot #action-hint{font-size:10px;margin-top:2px !important;line-height:1.3;}
+        .mobile-section[data-mobile-tab="chat"] #dungeon-live .dg-scroll{max-height:45svh;}
+        .mobile-section[data-mobile-tab="chat"]:has(#dungeon-live .dg-scroll) .log{height:50svh !important;min-height:200px;}
+        .dg-cand{font-size:13px;min-height:42px;}
+        .dg-cand .av{width:30px;height:30px;}
       }
       .dg-room-card{display:flex;gap:10px;align-items:flex-start;padding:8px;border:1px solid var(--line);border-left:3px solid var(--cyan);border-radius:4px;background:var(--panel-2);margin:6px 0;}
       .dg-room-card img{width:120px;max-height:90px;object-fit:cover;border-radius:3px;cursor:zoom-in;flex:0 0 auto;}
@@ -254,13 +274,24 @@
     return ` · ricarica tra ${h}h ${String(m).padStart(2,'0')}m`;
   }
 
-  function leaderAvatar(){
-    const u = state && state.party && state.party.leader;
+  // Miniatura del Tamer (quella del cerchio della scheda: imageThumbUrl, altrimenti imageUrl).
+  function thumbOf(u){
     const m = u ? (cachedRoster||[]).find(x=>x.username===u) : null;
-    // Il Digimon del Capofila, salvo che sia nascosto al gruppo: allora il ritratto del Tamer.
-    const hidden = m && typeof isDigimonHiddenFromViewer==='function' && isDigimonHiddenFromViewer(m);
-    const img = m ? ((!hidden && m.digimon && m.digimon.imageUrl) || (m.tamer && m.tamer.imageUrl) || '') : '';
-    return img ? `<img src="${escapeAttr(img)}" onerror="this.remove()" />` : '';
+    return (m && m.tamer && (m.tamer.imageThumbUrl || m.tamer.imageUrl)) || '';
+  }
+  function avatarHTML(u){
+    const img = thumbOf(u);
+    if(img) return `<img src="${escapeAttr(img)}" onerror="this.remove()" />`;
+    return escapeHTML(initialOf(u));
+  }
+  function initialOf(u){ const n = String(nameOf(u)||'?').trim(); return (n[0]||'?').toUpperCase(); }
+  // Pedina del gruppo = miniatura del Capofila (senza Capofila: il pallino dorato).
+  function tokenHTML(){
+    const u = state && state.party && state.party.leader;
+    if(!u) return `<div class="dg-token"></div>`;
+    const img = thumbOf(u);
+    return img ? `<div class="dg-token dg-token-img" title="👑 ${escapeAttr(nameOf(u))}">${avatarHTML(u)}</div>`
+               : `<div class="dg-token" title="👑 ${escapeAttr(nameOf(u))}">${escapeHTML(initialOf(u))}</div>`;
   }
 
   function neighbors4(dg, idx){
@@ -370,7 +401,7 @@
       if(unknownForPlayers) bgStyle = '';
       html += `<div class="dg-cell ${cls} ${fog?'dg-fog':'dg-lit'} ${r?'dg-reach':''} ${masterClick?'dg-click':''}" style="${bgStyle}" ${(r||masterClick)?`data-dg-cell="${i}"`:''} title="${room && !unknownForPlayers?escapeAttr(room.name):''}${dg.grid[i]==='h' && !unknownForPlayers?' (terreno difficile: 2 Punti)':''}">`
         + (unknownForPlayers ? '' : featureIcon(dg, i))
-        + (i===pos ? `<div class="dg-token">${leaderAvatar()}</div>` : '')
+        + (i===pos ? tokenHTML() : '')
         + `</div>`;
     }
     return html + '</div></div>';
@@ -414,21 +445,28 @@
     Object.keys(votes).forEach(v=>{ if(list.some(x=>x.username===v)) counts[votes[v]] = (counts[votes[v]]||0)+1; });
     const tally = Object.keys(counts).map(u=>`${escapeHTML(nameOf(u))} ${counts[u]}/${list.length}`).join(' · ');
     const myVote = ctx.role==='player' ? votes[ctx.username] : null;
+    const iAmIn = ctx.role==='player' && list.some(m=>m.username===ctx.username);
     let voteUI = '';
-    if(ctx.role==='player'){
-      voteUI = `<div class="dg-bar">
-        <span class="muted">🗳️ Vota il Capofila:</span>
-        <select id="dg-vote-sel" style="max-width:160px;">${list.map(m=>`<option value="${escapeAttr(m.username)}" ${myVote===m.username?'selected':''}>${escapeHTML(displayName(m))}</option>`).join('')}</select>
-        <button class="btn small" id="dg-vote-btn">${myVote?'Cambia voto':'Vota'}</button>
-        <span class="muted" style="font-size:10.5px;">serve la maggioranza (${need}/${list.length})${tally?` — ${tally}`:''}</span>
+    if(list.length){
+      const head = !p.leader
+        ? (ctx.role==='player' ? '🗳️ Eleggete il Capofila! Senza Capofila la pedina non si muove.' : '🗳️ I giocatori devono eleggere il Capofila.')
+        : (ctx.username===p.leader ? '👑 Sei tu il Capofila: muovi la pedina con le frecce sotto la mappa.' : `🗳️ Capofila: <b>${escapeHTML(nameOf(p.leader))}</b>${iAmIn ? ' — puoi cambiare voto quando volete.' : ''}`);
+      const chips = list.map(m=>{
+        const u = m.username, n = counts[u]||0;
+        const cls = `dg-cand ${myVote===u?'mine':''} ${p.leader===u?'leader':''}`;
+        return `<button class="${cls}" ${iAmIn ? `data-dg-vote="${escapeAttr(u)}"` : 'disabled'} title="${iAmIn ? 'Vota ' + escapeAttr(displayName(m)) : ''}">
+          <span class="av">${avatarHTML(u)}</span><span class="nm">${p.leader===u?'👑 ':''}${escapeHTML(displayName(m))}</span><span class="ct">${n} ${n===1?'voto':'voti'}${myVote===u?' · tuo':''}</span></button>`;
+      }).join('');
+      voteUI = `<div class="dg-vote ${p.leader?'':'dg-vote-need'}">
+        <div class="dg-vote-head">${head}</div>
+        <div class="dg-vote-list">${chips}</div>
+        <div class="dg-vote-foot">Serve la maggioranza: ${need} su ${list.length}.${iAmIn ? (myVote ? ` Hai votato ${escapeHTML(nameOf(myVote))}: tocca un altro nome per cambiare.` : ' Tocca un nome per votare.') : ''}</div>
       </div>`;
-    } else {
-      voteUI = `<div class="dg-bar"><span class="muted">🗳️ Voti: ${tally || 'nessuno'} (maggioranza ${need}/${list.length})</span></div>`;
     }
     return `<div class="dg-bar">
-        <span>👑 Capofila: <b>${p.leader ? escapeHTML(nameOf(p.leader)) : '— da eleggere —'}</b></span>
+        <span>👑 Capofila: ${p.leader ? `<span class="dg-lead-av">${thumbOf(p.leader) ? avatarHTML(p.leader) : ''}</span><b>${escapeHTML(nameOf(p.leader))}</b>` : '<b>— da eleggere —</b>'}</span>
         <span>⚡ Punti Dungeon: <b>${Number(p.points)||0}/${Number(p.maxPoints)||5}</b><span class="muted">${refillLabel(p)}</span></span>
-      </div>${presentLine}${list.length ? voteUI : ''}`;
+      </div>${presentLine}${voteUI}`;
   }
 
   function padHTML(dg){
@@ -503,35 +541,33 @@
       </div>` : ''}`;
   }
 
-  // ---------- chat: la card Chat normale agganciata sotto la mappa ----------
-  let dock = null; // { card, ph }
-  let chatDockPref = (()=>{ try{ return localStorage.getItem('dvos_dg_chatdock')!=='off'; }catch(e){ return true; } })();
+  // ---------- posizione: il dungeon sta subito SOPRA la card Chat ----------
+  // Si sposta #dungeon-live (non la chat): la chat resta com'è. Al suo posto nella Scena resta
+  // un'ancora (commento) per riportarlo indietro quando il dungeon si chiude, più un avviso.
+  let homeAnchor = null, sceneNote = null;
   let masterFollow = (()=>{ try{ return localStorage.getItem('dvos_dg_masterfollow')!=='off'; }catch(e){ return true; } })();
-  function chatCardEl(){ return document.querySelector('.mobile-section[data-mobile-tab="chat"] > .hud-frame.card:not(.dg-chat-placeholder)'); }
-  function dockChat(){
-    const slot = rootEl && rootEl.querySelector('#dg-chat-slot');
-    if(!slot || !chatDockPref || !activeDungeon()){ undockChat(); return; }
-    if(dock && dock.card && slot.contains(dock.card)) return;
-    const card = (dock && dock.card) || chatCardEl();
-    if(!card) return;
-    let ph = dock && dock.ph;
-    if(!ph || !ph.parentNode){
-      ph = document.createElement('div');
-      ph.className = 'hud-frame card dg-chat-placeholder';
-      ph.innerHTML = `<div style="margin-bottom:6px;">💬 La chat è sotto la mappa del dungeon.</div><button class="btn small" data-dg-goto="1">🏰 Vai al dungeon</button>`;
-      card.parentNode.insertBefore(ph, card);
-      ph.querySelector('[data-dg-goto]').onclick = ()=>{
-        if(typeof switchMobileTab==='function' && typeof isMobile==='function' && isMobile()) switchMobileTab('scena');
-        setTimeout(()=>{ const sl = rootEl && rootEl.querySelector('#dg-chat-slot'); if(sl) sl.scrollIntoView({ behavior:'smooth', block:'start' }); }, 60);
-      };
+  function chatCardEl(){ return document.querySelector('.mobile-section[data-mobile-tab="chat"] > .hud-frame.card'); }
+  function placeRoot(above){
+    if(!rootEl || !rootEl.parentNode) return;
+    if(!homeAnchor){ homeAnchor = document.createComment('dungeon-home'); rootEl.parentNode.insertBefore(homeAnchor, rootEl); }
+    const card = above ? chatCardEl() : null;
+    if(card){
+      if(rootEl.nextElementSibling !== card) card.parentNode.insertBefore(rootEl, card);
+      if((!sceneNote || !sceneNote.parentNode) && homeAnchor.parentNode){
+        sceneNote = document.createElement('div');
+        sceneNote.className = 'dg-scene-note';
+        sceneNote.innerHTML = `🏰 Il dungeon è sopra la chat. <button class="btn small" data-dg-goto="1">Vai al dungeon</button>`;
+        homeAnchor.parentNode.insertBefore(sceneNote, homeAnchor.nextSibling);
+        sceneNote.querySelector('[data-dg-goto]').onclick = ()=>{
+          if(typeof switchMobileTab==='function' && typeof isMobile==='function' && isMobile()) switchMobileTab('chat');
+          setTimeout(()=>{ if(rootEl) rootEl.scrollIntoView({ behavior:'smooth', block:'start' }); }, 60);
+        };
+      }
+    } else {
+      if(homeAnchor.parentNode && homeAnchor.nextSibling !== rootEl) homeAnchor.parentNode.insertBefore(rootEl, homeAnchor.nextSibling);
+      if(sceneNote && sceneNote.parentNode) sceneNote.remove();
+      sceneNote = null;
     }
-    slot.appendChild(card);
-    dock = { card, ph };
-  }
-  function undockChat(){
-    if(!dock) return;
-    if(dock.ph && dock.ph.parentNode) dock.ph.parentNode.replaceChild(dock.card, dock.ph);
-    dock = null;
   }
   // Master + dungeon collegato: i suoi messaggi in Generale (e il filtro 📍) seguono il dungeon.
   function applyMasterOverride(){
@@ -542,11 +578,10 @@
     if(want) window.__dvosMasterLocationOverride = want; else delete window.__dvosMasterLocationOverride;
     if(prev !== want && ctx && ctx.onChanged) setTimeout(()=>ctx.onChanged(), 0);
   }
-  function clearShell(html){ undockChat(); rootEl.innerHTML = html || ''; }
+  function clearShell(html){ placeRoot(false); rootEl.innerHTML = html || ''; }
   function ensureShell(){
     if(rootEl.querySelector('#dg-main')) return;
-    undockChat();
-    rootEl.innerHTML = `<div class="hud-frame card dg-wrap"><div id="dg-main"></div><div id="dg-chat-slot"></div></div>`;
+    rootEl.innerHTML = `<div class="hud-frame card dg-wrap"><div id="dg-main"></div></div>`;
   }
   function render(){
     if(!rootEl || !ctx) return;
@@ -561,6 +596,7 @@
       return;
     }
     ensureShell();
+    placeRoot(!!dg);
     const sc0 = rootEl.querySelector('#dg-scroll');
     if(sc0) lastScroll = { x: sc0.scrollLeft, y: sc0.scrollTop };
     rootEl.querySelector('#dg-main').innerHTML = `
@@ -574,13 +610,12 @@
         ${padHTML(dg)}
         <div class="dg-legend">⛩️ ingresso · 🔎 scoperta · 🚪 porta chiusa · 🔒 a chiave · ⛔ sbarrata · 🗝️ chiave · 🎁 tesoro · 🪜 scale · ⛺ ristoro · 🕹️ leva · ▦ terreno difficile (2 ⚡)${isMaster()?' — sbiaditi = non ancora scattati o nascosti (li vedi solo tu)':''}</div>
         ${roomCardHTML(dg)}
-        <div class="dg-bar" style="justify-content:center;"><button class="btn ghost small" id="dg-dock-btn">${chatDockPref ? '💬 Chat sotto la mappa: sì' : '💬 Chat sotto la mappa: no'}</button>${isMaster() && isLinked(dg) ? `<button class="btn ghost small" id="dg-follow-btn" title="I tuoi messaggi in Chat Generale (e il filtro 📍) vanno nel luogo del dungeon">${masterFollow ? '🎙️ Parli nel dungeon: sì' : '🎙️ Parli nel dungeon: no'}</button>` : ''}</div>
+        ${isMaster() && isLinked(dg) ? `<div class="dg-bar" style="justify-content:center;"><button class="btn ghost small" id="dg-follow-btn" title="I tuoi messaggi in Chat Generale (e il filtro 📍) vanno nel luogo del dungeon">${masterFollow ? '🎙️ Parli nel dungeon: sì' : '🎙️ Parli nel dungeon: no'}</button></div>` : ''}
       ` : ''}
       <div class="dg-status" id="dg-status">${escapeHTML(statusMsg)}</div>
       ${lastLoadError?`<div class="err">${escapeHTML(lastLoadError)}</div>`:''}`;
     bind();
     positionScroll(dg, false);
-    dockChat();
   }
 
   function setStatus(msg){ statusMsg = msg || ''; const el = document.getElementById('dg-status'); if(el) el.textContent = statusMsg; }
@@ -741,15 +776,16 @@
         await doMove(idx);
       };
     });
-    const voteBtn = document.getElementById('dg-vote-btn');
-    if(voteBtn) voteBtn.onclick = async ()=>{
-      const cand = document.getElementById('dg-vote-sel').value;
+    rootEl.querySelectorAll('[data-dg-vote]').forEach(btn=> btn.onclick = async ()=>{
+      const cand = btn.getAttribute('data-dg-vote');
+      const myVote = state && state.party && state.party.votes ? state.party.votes[ctx.username] : null;
+      if(busy || cand===myVote) return;
       const d = await op({ op:'vote', candidate: cand });
       if(!d){ setStatus(lastApiError); return; }
       statusMsg = d.leaderChanged ? '' : 'Voto registrato.';
       render();
       if(d.leaderChanged) await dgLog({ who:'Sistema', role:'gm', text: `👑 ${nameOf(d.leaderChanged)} è il nuovo Capofila del gruppo.` });
-    };
+    });
     rootEl.querySelectorAll('[data-dg-zoom]').forEach(b=> b.onclick = ()=>{
       const k = Number(b.getAttribute('data-dg-zoom'));
       if(k===0){ positionScroll(activeDungeon(), true); return; }
@@ -757,8 +793,6 @@
       try{ localStorage.setItem('dvos_dg_zoom', String(dgZoom)); }catch(e){}
       lastCenteredPos = null; render();
     });
-    const dockBtn = document.getElementById('dg-dock-btn');
-    if(dockBtn) dockBtn.onclick = ()=>{ chatDockPref = !chatDockPref; try{ localStorage.setItem('dvos_dg_chatdock', chatDockPref?'on':'off'); }catch(e){} render(); };
     const fBtn = document.getElementById('dg-follow-btn');
     if(fBtn) fBtn.onclick = ()=>{ masterFollow = !masterFollow; try{ localStorage.setItem('dvos_dg_masterfollow', masterFollow?'on':'off'); }catch(e){} render(); };
     const searchBtn = document.getElementById('dg-search-btn');
@@ -888,7 +922,7 @@
       injectStyles();
       rootEl = el;
       ctx = context;
-      dock = null; lastCenteredPos = null; lastScroll = null; // pagina ridisegnata da capo
+      homeAnchor = null; sceneNote = null; lastCenteredPos = null; lastScroll = null; // pagina ridisegnata da capo
       await load();
       render();
     },
@@ -897,7 +931,7 @@
       if(!rootEl || !ctx || busy || !document.body.contains(rootEl)) return;
       const wasVisible = !!activeDungeon();
       await load();
-      if(!isEditingHere()) render(); else dockChat();
+      if(!isEditingHere()) render();
       // Appena il dungeon compare (es. dopo "Sì, andiamo!") ridisegniamo subito anche la chat,
       // così il filtro 📍 passa al luogo del dungeon senza aspettare il giro di polling successivo.
       if(!wasVisible && activeDungeon() && ctx.onChanged) setTimeout(()=>ctx.onChanged(), 2700);
