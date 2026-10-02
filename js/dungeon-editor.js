@@ -154,11 +154,12 @@
   let cellSize = 24;
   function cellStyle(i){
     const t = dg.grid[i];
-    let bg = '#141b1f';
-    if(t==='f') bg = '#3a4c52';
+    // Muro = blocchi di pietra, pavimento chiaro: differenza netta (richiesta di Rocco).
+    let bg = 'linear-gradient(#17120f 1px,transparent 1px) 0 0/50% 50%,linear-gradient(90deg,#17120f 1px,transparent 1px) 0 0/50% 50%,#3a322b';
+    if(t==='f') bg = '#4f7470';
     const dfe = dg.features[i];
     const doorClosed = t==='d' && dfe && (dfe.type==='lock' || (dfe.type==='door' && dfe.closed));
-    if(t==='d') bg = doorClosed ? '#8a5a26' : '#3a4c52';
+    if(t==='d') bg = doorClosed ? '#8a5a26' : '#4f7470';
     if(t==='s') bg = '#4d2d6b';
     if(t==='h') bg = 'repeating-linear-gradient(135deg,#5a4a33 0 3px,#43372a 3px 6px)';
     if(t==='e') bg = '#2a8a55';
@@ -556,18 +557,29 @@
       [[r>0,pos-v.cols],[r<v.rows-1,pos+v.cols],[c>0,pos-1],[c<v.cols-1,pos+1]].forEach(([okk,i])=>{ if(okk && walk[v.grid[i]] && pts >= (v.grid[i]==='h'?2:1) && tDoorState(v, i)!=='barred') reach.add(i); });
     }
     const vis = tVisible(v, pos);
-    const colors = { '?':'#020304', '.':'#1a2226', f:'#22343a', d:'#8a5a26', e:'#1f5a3a', x:'#5a1f4e', s:'#4d2d6b', h:'repeating-linear-gradient(135deg,#4a3d2b 0 3px,#382e22 3px 6px)' };
+    const colors = { '?':'#020304', '.':'linear-gradient(#17120f 1px,transparent 1px) 0 0/50% 50%,linear-gradient(90deg,#17120f 1px,transparent 1px) 0 0/50% 50%,#3a322b', f:'#4f7470', d:'#8a5a26', e:'#1f5a3a', x:'#5a1f4e', s:'#4d2d6b', h:'repeating-linear-gradient(135deg,#4a3d2b 0 3px,#382e22 3px 6px)' };
     let h = `<div style="display:grid;grid-template-columns:repeat(${v.cols},${size}px);grid-auto-rows:${size}px;gap:1px;background:#05080b;padding:1px;width:max-content;max-width:100%;margin:6px auto;font-size:${Math.max(8,Math.floor(size*0.55))}px;">`;
     for(let i=0;i<v.grid.length;i++){
       const t = v.grid[i];
-      let bg = colors[t] || '#22343a';
-      if(t==='f' && v.roomOf[i]) bg = '#2b4a4f';
+      let bg = colors[t] || '#4f7470';
+      if(t==='f' && v.roomOf[i]) bg = '#5f8c82';
+      // bordo chiaro dei muri verso pavimento/porte (come nella vista di gioco)
+      let rim = '';
+      if(t==='.'){
+        const rr = Math.floor(i/v.cols), cc = i%v.cols, open = (j)=> v.grid[j]!=='.' && v.grid[j]!=='?';
+        const sh = [];
+        if(rr>0 && open(i-v.cols)) sh.push('inset 0 3px 0 #b39a72');
+        if(rr<v.rows-1 && open(i+v.cols)) sh.push('inset 0 -3px 0 #b39a72');
+        if(cc>0 && open(i-1)) sh.push('inset 3px 0 0 #b39a72');
+        if(cc<v.cols-1 && open(i+1)) sh.push('inset -3px 0 0 #b39a72');
+        if(sh.length) rim = `box-shadow:${sh.join(',')};`;
+      }
       const f = v.features && v.features[i];
       let ico = t==='e' ? '⛩️' : (t==='x' ? '🚪' : '');
       const tds = tDoorState(v, i);
       if(tds){
         ico = tds==='barred' ? '⛔' : (tds==='locked' ? ((f && f.icon) || '🔒') : (tds==='closed' ? '🚪' : ''));
-        bg = tds==='open' ? '#22343a' : (tds==='barred' ? '#5a2a1e' : '#8a5a26');
+        bg = tds==='open' ? '#4f7470' : (tds==='barred' ? '#5a2a1e' : '#8a5a26');
       } else if(f){
         const own = f.icon || T_ICON[f.type] || '';
         if(f.type==='lock') ico = f.unlocked ? '🔓' : own;
@@ -578,7 +590,7 @@
       const icoHTML = ico ? (isImg(ico) ? `<img src="${esc(ico)}" style="width:85%;height:85%;object-fit:contain;" />` : esc(ico)) : '';
       const r = reach.has(i);
       const fog = t!=='?' && !vis.has(i);
-      h += `<div ${r?`data-dgt-cell="${i}"`:''} ${fog?'data-dgt-fog="1"':''} style="background:${bg};display:flex;align-items:center;justify-content:center;position:relative;${r?'outline:2px solid #35e8c9;outline-offset:-2px;cursor:pointer;':''}">${icoHTML}${fog?'<div style="position:absolute;inset:0;background:rgba(2,4,6,0.62);pointer-events:none;"></div>':''}${i===pos?'<div style="position:absolute;inset:10%;border-radius:50%;background:radial-gradient(circle,#ffd35a,#ff8a3d);box-shadow:0 0 8px #ffb020;"></div>':''}</div>`;
+      h += `<div ${r?`data-dgt-cell="${i}"`:''} ${fog?'data-dgt-fog="1"':''} style="background:${bg};${rim}display:flex;align-items:center;justify-content:center;position:relative;${r?'outline:2px solid #35e8c9;outline-offset:-2px;cursor:pointer;':''}">${icoHTML}${fog?'<div style="position:absolute;inset:0;background:rgba(2,4,6,0.62);pointer-events:none;"></div>':''}${i===pos?'<div style="position:absolute;inset:10%;border-radius:50%;background:radial-gradient(circle,#ffd35a,#ff8a3d);box-shadow:0 0 8px #ffb020;"></div>':''}</div>`;
     }
     return h + '</div>';
   }

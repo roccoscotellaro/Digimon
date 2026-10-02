@@ -139,11 +139,11 @@
       .dg-grid{display:grid;gap:1px;background:#05080b;padding:1px;border:1px solid var(--line);width:max-content;max-width:100%;margin:6px auto;touch-action:manipulation;}
       .dg-cell{position:relative;display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1;user-select:none;}
       .dg-unk{background:#020304;}
-      .dg-wall{background:#1a2226;background-image:repeating-linear-gradient(45deg,rgba(255,255,255,0.03) 0 2px,transparent 2px 5px);}
-      .dg-floor{background:#22343a;}
-      .dg-room{background:#2b4a4f;}
+      .dg-wall{background-color:#3a322b;background-image:linear-gradient(#17120f 1px,transparent 1px),linear-gradient(90deg,#17120f 1px,transparent 1px);background-size:50% 50%;}
+      .dg-floor{background:#4f7470;}
+      .dg-room{background:#5f8c82;}
       .dg-door{background:#5a3d1e;}
-      .dg-door-open{background:#22343a;box-shadow:inset 0 0 0 2px #7a5426;}
+      .dg-door-open{background:#4f7470;box-shadow:inset 0 0 0 2px #7a5426;}
       .dg-door-barred{background:repeating-linear-gradient(45deg,#5a2a1e 0 4px,#3a1a14 4px 8px);}
       .dg-ent{background:#1f5a3a;}
       .dg-exit{background:#5a1f4e;}
@@ -432,8 +432,20 @@
       const r = reach.has(i);
       const masterClick = isMaster() && masterMode!=='look' && WALK[dg.grid[i]];
       const room = dg.roomOf[i] ? (dg.rooms||[]).find(x=>x.id===dg.roomOf[i]) : null;
+      // Muri: bordo chiaro sui lati che danno su pavimento/porte, così il confine è netto.
+      let rim = '';
+      if(cls==='dg-wall'){
+        const rr = Math.floor(i/dg.cols), cc = i%dg.cols;
+        const open = (j)=>{ if(isMaster() && masterPlayerView && !seenSet.has(j)) return false; const c2 = cellClass(dg, j); return c2!=='dg-wall' && c2!=='dg-unk'; };
+        const sh = [];
+        if(rr>0 && open(i-dg.cols)) sh.push('inset 0 3px 0 #b39a72');
+        if(rr<dg.rows-1 && open(i+dg.cols)) sh.push('inset 0 -3px 0 #b39a72');
+        if(cc>0 && open(i-1)) sh.push('inset 3px 0 0 #b39a72');
+        if(cc<dg.cols-1 && open(i+1)) sh.push('inset -3px 0 0 #b39a72');
+        if(sh.length) rim = `box-shadow:${sh.join(',')};`;
+      }
       const imgOpen = room && room.image && !unknownForPlayers && !r && !masterClick && dg.grid[i]!=='?' && dg.grid[i]!=='.';
-      html += `<div class="dg-cell ${cls} ${fog?'dg-fog':'dg-lit'} ${r?'dg-reach':''} ${(masterClick||imgOpen)?'dg-click':''}" ${(r||masterClick)?`data-dg-cell="${i}"`:''} ${imgOpen?`data-avatar-expand="${escapeAttr(room.image)}"`:''} title="${room && !unknownForPlayers?escapeAttr(room.name) + (room.image ? ' — tocca per vedere l\'immagine' : ''):''}${dg.grid[i]==='h' && !unknownForPlayers?' (terreno difficile: 2 Punti)':''}">`
+      html += `<div class="dg-cell ${cls} ${fog?'dg-fog':'dg-lit'} ${r?'dg-reach':''} ${(masterClick||imgOpen)?'dg-click':''}" style="${rim}" ${(r||masterClick)?`data-dg-cell="${i}"`:''} ${imgOpen?`data-avatar-expand="${escapeAttr(room.image)}"`:''} title="${room && !unknownForPlayers?escapeAttr(room.name) + (room.image ? ' — tocca per vedere l\'immagine' : ''):''}${dg.grid[i]==='h' && !unknownForPlayers?' (terreno difficile: 2 Punti)':''}">`
         + (unknownForPlayers ? '' : featureIcon(dg, i))
         + (room && room.image && !unknownForPlayers && !r && firstCell[room.id]===i ? `<span class="dg-imgmark" data-avatar-expand="${escapeAttr(room.image)}">🖼️</span>` : '')
         + (i===pos ? tokenHTML() : '')
