@@ -596,11 +596,11 @@
               tor.boxes = Math.max(0, preBoxes-1);
               me.tamer.inspirationPoints = ipBaseline + 1;
               tor.usedThisRest = true;
-              outcomeText = 'Successo Critico! Cancella 1 Casella Torment e guadagna 1 IP.';
+              outcomeText = tormentAutoMsg('torment_out_crit_success', {}, 'Successo Critico! Cancella 1 Casella Torment e guadagna 1 IP.');
             } else if(result.outcome==='success'){
               me.tamer.inspirationPoints = ipBaseline + 1;
               tor.usedThisRest = true;
-              outcomeText = 'Successo! Guadagna 1 IP.';
+              outcomeText = tormentAutoMsg('torment_out_success', {}, 'Successo! Guadagna 1 IP.');
             } else if(result.outcome==='deep-crit-fail'){
               tor.boxes = Math.min(10, preBoxes+1);
               tor.usedThisRest = true;
@@ -610,17 +610,17 @@
               if(result._deepCritMinor){
                 me.tamer.tormentPenalty = -3;
                 combatant.tamerActionsLocked = true;
-                outcomeText = 'Fallimento Critico Profondo! +1 Casella Torment, penalità -3 fino al Rest — non può più usare Azioni Tamer fino alla fine del Combattimento.';
+                outcomeText = tormentAutoMsg('torment_out_deep_minor', {}, 'Fallimento Critico Profondo! +1 Casella Torment, penalità -3 fino al Rest — non può più usare Azioni Tamer fino alla fine del Combattimento.');
               } else {
                 me.tamer.tormentPenalty = -5;
-                outcomeText = 'Fallimento Critico Profondo! +1 Casella Torment, penalità -5 fino al Rest.';
+                outcomeText = tormentAutoMsg('torment_out_deep', {}, 'Fallimento Critico Profondo! +1 Casella Torment, penalità -5 fino al Rest.');
               }
             } else if(result.outcome==='crit-fail'){
               me.tamer.tormentPenalty = -2;
               tor.usedThisRest = true;
-              outcomeText = 'Fallimento Critico! Penalità -2 fino al Rest.';
+              outcomeText = tormentAutoMsg('torment_out_crit_fail', {}, 'Fallimento Critico! Penalità -2 fino al Rest.');
             } else {
-              outcomeText = 'Fallimento. Nessun effetto, si può ritentare più tardi.';
+              outcomeText = tormentAutoMsg('torment_out_fail', {}, 'Fallimento. Nessun effetto, si può ritentare più tardi.');
             }
             if(combatant && combatant.tamerActionsLocked !== preTamerActionsLocked){
               await apiPost('/api/state', { resource:'combat', code: session.code, data: cachedCombat });
@@ -644,7 +644,9 @@
                 await saveMember(session.code, me);
                 // BUGFIX (privacy): stesso motivo del tiro originale qui sotto -- niente nome vero
                 // del Torment fuori dal payload ::TORMENTRESULT::.
-                const rerollLogText = `Ispirazione (-1 IP): ri-tira Torment Check → 3d6[${result2.dice.join(',')}] +1 (regola 2.05a) = ${result2.total} vs TN ${result2.tn} — tenuto: ${keepNew?'il NUOVO':'il VECCHIO'} risultato (${finalResult.total}) → ${finalOutcomeText}::TORMENTRESULT::${session.username}|${tor.name}`;
+                // Testo personalizzabile dal Master (AUTO_MSG_DEFS 'torment_reroll', vedi tormentAutoMsg in
+                // js/chat-log-engine.js) -- il fallback è la frase storica, identica a prima.
+                const rerollLogText = `${tormentAutoMsg('torment_reroll', { dice: result2.dice.join(','), total: result2.total, tn: result2.tn, kept: keepNew?'il NUOVO':'il VECCHIO', finalTotal: finalResult.total, outcomeText: finalOutcomeText }, `Ispirazione (-1 IP): ri-tira Torment Check → 3d6[${result2.dice.join(',')}] +1 (regola 2.05a) = ${result2.total} vs TN ${result2.tn} — tenuto: ${keepNew?'il NUOVO':'il VECCHIO'} risultato (${finalResult.total}) → ${finalOutcomeText}`)}::TORMENTRESULT::${session.username}|${tor.name}`;
                 await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: rerollLogText, meta:{dice: finalResult.dice} });
                 if(tor.usedThisRest){ btn.disabled = true; btn.textContent = 'Già tentato (Rest)'; }
                 renderResult(finalResult, finalOutcomeText, newIpBaseline);
@@ -663,7 +665,7 @@
           // giocatore che ha tirato e al Master.
           // BUGFIX: stesso motivo dei Major/Minor Aspect qui sopra (memberLocationKey via
           // pushPlayerNarration invece del pushLog diretto che taggava con la posizione del gruppo).
-          await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: `Ha completato un Torment Check: 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText}::TORMENTRESULT::${session.username}|${tor.name}`, meta:{dice: result.dice} });
+          await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: `${tormentAutoMsg('torment_roll', { dice: result.dice.join(','), total: result.total, tn: result.tn, outcomeText }, `Ha completato un Torment Check: 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText}`)}::TORMENTRESULT::${session.username}|${tor.name}`, meta:{dice: result.dice} });
           if(tor.usedThisRest){ btn.disabled = true; btn.textContent = 'Già tentato (Rest)'; }
           renderResult(result, outcomeText, preIP);
           if(onChanged) onChanged();

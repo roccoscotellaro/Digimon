@@ -1098,7 +1098,26 @@ let editingScene = false;
     { key:'temp_wounds_add', category:'Editing Manuale (Master)', label:'PF Temporanei aggiunti manualmente', defaultTemplate:'{{name}} ottiene +{{amount}} PF Temporanei (manuale) — ora {{newVal}}.', vars:[{token:'name'},{token:'amount'},{token:'newVal'}] },
     { key:'temp_wounds_remove', category:'Editing Manuale (Master)', label:'PF Temporanei rimossi manualmente', defaultTemplate:'{{name}} perde {{amount}} PF Temporanei (manuale) — ora {{newVal}}.', vars:[{token:'name'},{token:'amount'},{token:'newVal'}] },
     { key:'manual_bonus_set', category:'Editing Manuale (Master)', label:'Bonus manuale impostato in coda', defaultTemplate:'{{name}}: bonus manuale +{{amount}} ({{statLabel}}) impostato in coda sul prossimo Pool Check.', vars:[{token:'name'},{token:'amount'},{token:'statLabel'}] },
-    { key:'manual_bonus_clear', category:'Editing Manuale (Master)', label:'Bonus in coda rimosso', defaultTemplate:'{{name}}: bonus in coda rimosso (manuale).', vars:[{token:'name'}] }
+    { key:'manual_bonus_clear', category:'Editing Manuale (Master)', label:'Bonus in coda rimosso', defaultTemplate:'{{name}}: bonus in coda rimosso (manuale).', vars:[{token:'name'}] },
+    // RICHIESTA UTENTE (2026-10-02, Rocco: "non vedo la possibilità di cambiare i messaggi del
+    // torment check"): i testi del Torment Check erano scritti a mano in js/tamer-card.js
+    // (Check in autonomia + ri-tiro con Ispirazione), in js/chat-log-engine.js (Check evaso da
+    // una richiesta del Master) e qui sotto (la richiesta stessa) -- mai passati da AUTO_MSG_DEFS,
+    // quindi assenti dal pannello. fixed:true = sempre attivi (niente checkbox): sono parte del
+    // flusso di gioco, disattivarli farebbe sparire la richiesta o l'esito -- si personalizza solo
+    // il testo. Gli esiti (torment_out_*) finiscono dentro {{outcomeText}} delle righe di tiro e
+    // anche nel riquadro del risultato sulla Scheda Tamer. Il nome del Torment NON è mai un
+    // segnaposto apposta (privacy: vedi ::TORMENTRESULT:: in js/chat-log-engine.js).
+    { key:'torment_request', category:'Torment Check', fixed:true, label:'Richiesta del Master a un giocatore', defaultTemplate:'Richiesta a {{name}}: tira un Torment Check.', vars:[{token:'name',desc:'nome del giocatore'}] },
+    { key:'torment_roll', category:'Torment Check', fixed:true, label:'Riga del tiro (Check in autonomia dalla Scheda Tamer)', defaultTemplate:'Ha completato un Torment Check: 3d6[{{dice}}]={{total}} vs TN {{tn}} → {{outcomeText}}', vars:[{token:'dice'},{token:'total'},{token:'tn'},{token:'outcomeText',desc:'uno degli esiti qui sotto'}] },
+    { key:'torment_roll_requested', category:'Torment Check', fixed:true, label:'Riga del tiro (richiesto dal Master)', defaultTemplate:'Ha completato un Torment Check: 3d6[{{dice}}]={{total}} vs TN {{tn}} → {{outcomeText}} (richiesto dal Master)', vars:[{token:'dice'},{token:'total'},{token:'tn'},{token:'outcomeText',desc:'uno degli esiti qui sotto'}] },
+    { key:'torment_reroll', category:'Torment Check', fixed:true, label:'Riga del ri-tiro con Ispirazione', defaultTemplate:'Ispirazione (-1 IP): ri-tira Torment Check → 3d6[{{dice}}] +1 (regola 2.05a) = {{total}} vs TN {{tn}} — tenuto: {{kept}} risultato ({{finalTotal}}) → {{outcomeText}}', vars:[{token:'dice'},{token:'total'},{token:'tn'},{token:'kept',desc:'"il NUOVO" o "il VECCHIO"'},{token:'finalTotal'},{token:'outcomeText'}] },
+    { key:'torment_out_crit_success', category:'Torment Check', fixed:true, label:'Esito — Successo Critico', defaultTemplate:'Successo Critico! Cancella 1 Casella Torment e guadagna 1 IP.', vars:[] },
+    { key:'torment_out_success', category:'Torment Check', fixed:true, label:'Esito — Successo', defaultTemplate:'Successo! Guadagna 1 IP.', vars:[] },
+    { key:'torment_out_fail', category:'Torment Check', fixed:true, label:'Esito — Fallimento', defaultTemplate:'Fallimento. Nessun effetto, si può ritentare più tardi.', vars:[] },
+    { key:'torment_out_crit_fail', category:'Torment Check', fixed:true, label:'Esito — Fallimento Critico (-2)', defaultTemplate:'Fallimento Critico! Penalità -2 fino al Rest.', vars:[] },
+    { key:'torment_out_deep_minor', category:'Torment Check', fixed:true, label:'Esito — Fallimento Critico Profondo, scelta -3 + niente Azioni Tamer', defaultTemplate:'Fallimento Critico Profondo! +1 Casella Torment, penalità -3 fino al Rest — non può più usare Azioni Tamer fino alla fine del Combattimento.', vars:[] },
+    { key:'torment_out_deep', category:'Torment Check', fixed:true, label:'Esito — Fallimento Critico Profondo (-5)', defaultTemplate:'Fallimento Critico Profondo! +1 Casella Torment, penalità -5 fino al Rest.', vars:[] },
   ];
   // Preferenze caricate una volta per sessione (renderMaster/renderPlayer) e poi tenute aggiornate
   // dal polling a bassa frequenza (vedi dexCycle in refreshLiveParts): {} finché non arriva la
@@ -1113,6 +1132,8 @@ let editingScene = false;
     return apiPost('/api/state', { resource:'automsg', code, data: settings });
   }
   function autoMsgEnabled(key){
+    const fixedDef = AUTO_MSG_DEFS.find(d=>d.key===key);
+    if(fixedDef && fixedDef.fixed) return true; // vedi voci 'Torment Check' (fixed:true): sempre attive
     const s = cachedAutoMsgSettings && cachedAutoMsgSettings[key];
     return !(s && s.enabled===false);
   }
@@ -1162,11 +1183,11 @@ let editingScene = false;
       const tokensHTML = def.vars && def.vars.length ? `<div class="muted" style="font-size:10px;margin-top:2px;">Segnaposto: ${def.vars.map(v=>`<code>{{${v.token}}}</code>${v.desc?` (${escapeHTML(v.desc)})`:''}`).join(', ')}</div>` : '';
       return `<div class="automsg-row" style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.08);">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:4px;">
-          <input type="checkbox" class="automsg-enabled" data-key="${def.key}" ${enabled?'checked':''} />
+          ${def.fixed ? '' : `<input type="checkbox" class="automsg-enabled" data-key="${def.key}" ${enabled?'checked':''} />`}
           <span style="font-size:12.5px;">${escapeHTML(def.label)}</span>
           ${isCustom?'<span class="muted" style="font-size:10px;">(personalizzato)</span>':''}
         </label>
-        <textarea class="automsg-template" data-key="${def.key}" rows="2" style="width:100%;font-size:11.5px;" ${enabled?'':'disabled'}>${escapeHTML(currentTemplate)}</textarea>
+        <textarea class="automsg-template" data-key="${def.key}" rows="2" style="width:100%;font-size:11.5px;" ${(enabled||def.fixed)?'':'disabled'}>${escapeHTML(currentTemplate)}</textarea>
         ${tokensHTML}
         <button class="btn ghost automsg-reset" data-key="${def.key}" style="font-size:10px;padding:3px 8px;margin-top:3px;">↺ Ripristina default</button>
       </div>`;
@@ -3321,6 +3342,10 @@ let editingScene = false;
   // completo) la trova con lo stesso identico typeof-check già scritto in quei due file, senza
   // dover toccarli.
   window.renderDicePanel = renderDicePanel;
+  // Stesso motivo di renderDicePanel qui sopra: autoMsgText vive in questa IIFE ma serve anche a
+  // js/tamer-card.js e js/chat-log-engine.js per i testi personalizzabili del Torment Check
+  // (vedi tormentAutoMsg in js/chat-log-engine.js).
+  window.autoMsgText = autoMsgText;
 
   // Richiesta utente: "continuo a non vedere il tiro di dadi su tutte e tre le chat" -- il tiro
   // in realtà arrivava sempre come RIGA DI TESTO (rollText), ma non mostrava mai le faccine 3D
@@ -5342,7 +5367,7 @@ let editingScene = false;
         // personaggio non loro. Il nome del Torment resta quindi SOLO nel payload dopo il
         // marcatore (letto in chiaro solo dal client del giocatore bersaglio, vedi logHTML in
         // js/chat-log-engine.js) — il testo mostrato a tutti ora è generico.
-        const entry = { who:'Master', role:'tormentrequest', text: `Richiesta a ${targetLabel}: tira un Torment Check.::TORMENTREQ::${payload}` };
+        const entry = { who:'Master', role:'tormentrequest', text: `${autoMsgText('torment_request', { name: targetLabel })}::TORMENTREQ::${payload}` };
         if(sendGeneral) await pushLog(code, entry);
         if(sendPrivate){
           await pushPrivateLog(code, targetUsername, { ...entry, meta: { location: memberLocationKey(targetMember) } });

@@ -332,12 +332,19 @@
         p.digimon.evolutionPoints = cap;
         p.tamer.tormentPenalty = 0;
         (p.tamer.torments||[]).forEach(t=>{ t.usedThisRest = false; });
+        // BUGFIX (Rocco 2026-10-02: "quando il Master richiede il tiro non fa tirare major e
+        // minor"): il messaggio di Rest e la descrizione del pannello promettevano il reset degli
+        // Aspects, ma il codice non lo faceva -- una volta spesi, gli usi restavano a 0 per sempre e
+        // "Tira ora" smetteva di proporli. Scelta di Rocco: si ricaricano al Rest (manuale 8.01b:
+        // Major 1 uso, Minor 2 usi).
+        if(p.tamer.majorAspect) p.tamer.majorAspect.usesLeft = 1;
+        if(p.tamer.minorAspect) p.tamer.minorAspect.usesLeft = 2;
         if(!p.tamer.specialOrdersUsed) p.tamer.specialOrdersUsed = {};
         TALENT_DEFS.filter(t=>t.once==='rest').forEach(t=>{ p.tamer.specialOrdersUsed[t.order] = false; });
         (p.digimon.armorForms||[]).forEach(af=>{ af.usedThisRest = false; });
         await saveMember(code, p);
       }
-      await publishDowntimeMessage({ who:'Sistema', role:'gm', text: `😴 Il party fa un Rest: Ferite ed Evolution Points recuperati del tutto, penalità Torment rimosse, Torment Check di nuovo disponibili.` });
+      await publishDowntimeMessage({ who:'Sistema', role:'gm', text: `😴 Il party fa un Rest: Ferite ed Evolution Points recuperati del tutto, penalità Torment rimosse, Torment Check di nuovo disponibili, Aspects ricaricati (Major 1, Minor 2).` });
       // Richiesta utente (Razioni): oltre al Rest ufficiale (8.04) sopra, invia ai giocatori un
       // prompt per consumare le razioni giornaliere (2, oggetti inventario categoria 'cibo' — vedi
       // js/tamer-card.js/renderInventoryCard e il marcatore ::RATIONREQ:: gestito in

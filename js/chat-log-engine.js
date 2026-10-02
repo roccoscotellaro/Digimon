@@ -116,6 +116,15 @@
 // membro esistente (vedi api/roster.js, "Inventario: operazioni atomiche") — passare true SOLO
 // quando l'Inventario va davvero sostituito (Azzera Scheda Tamer).
 async function saveMember(code, member, opts){ const d = await apiPost('/api/roster', { code, member, replaceInventory: !!(opts && opts.replaceInventory) }); return !!(d && d.ok); }
+// Testi personalizzabili del Torment Check (richiesta Rocco 2026-10-02: "non vedo la possibilità
+// di cambiare i messaggi del torment check"). Le voci vivono in AUTO_MSG_DEFS (index.html,
+// categoria 'Torment Check', pannello Master "Messaggi Automatici"); autoMsgText è esposta su
+// window da index.html. `fallback` = testo storico, usato se autoMsgText non esiste (pagine che non
+// caricano index.html, es. player.html) o non conosce la chiave: comportamento identico a prima.
+function tormentAutoMsg(key, vars, fallback){
+  const t = (typeof window!=='undefined' && typeof window.autoMsgText==='function') ? window.autoMsgText(key, vars) : null;
+  return (t!=null && t!=='') ? t : fallback;
+}
 // Modifica atomica dell'Inventario lato server (op: 'add' {item} | 'remove' {index,name} |
 // 'setCategory' {index,name,category} | 'consumeFood' {qty}). Restituisce { inventory, consumed }
 // dal server, o null in caso di errore (lastApiError). Dopo il successo allinea anche la copia
@@ -954,6 +963,21 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       // (js/digimon-card.js) e dall'evasione di ::REQ:: qui sotto. role==='roll' su questi
       // messaggi non è mai controllato da nessun altro blocco ::marker:: sopra, quindi fulfillBtn
       // è sempre vuoto a questo punto per loro.
+      // Esito di un Torment Check (js/tamer-card.js e data-fulfill-torment qui sotto): payload =
+      // username|nomeTorment (il nome può contenere "|": si ricompone tutto dopo il primo pipe).
+      // BUGFIX: il marcatore veniva già scritto da js/tamer-card.js ma nessuno lo interpretava, quindi
+      // compariva in chiaro in chat ("::TORMENTRESULT::utente|NomeTorment") rivelando a tutti il nome
+      // del Torment. Ora viene rimosso dal testo, e il nome è mostrato SOLO a chi ha tirato e al Master.
+      if(l.text && l.text.includes('::TORMENTRESULT::')){
+        const [shown, payload] = l.text.split('::TORMENTRESULT::');
+        displayText = shown;
+        const sepIdx = (payload||'').indexOf('|');
+        const trUser = sepIdx>=0 ? payload.slice(0, sepIdx) : (payload||'');
+        const trName = sepIdx>=0 ? payload.slice(sepIdx+1) : '';
+        if(trName && session && (session.role==='master' || session.username===trUser)){
+          fulfillBtn = `<div class="muted" style="margin-top:4px;font-size:10.5px;">🔒 Torment: <b>${escapeHTML(trName)}</b> (visibile solo a te e al Master)</div>`;
+        }
+      }
       if(l.role==='roll' && l.text && l.text.includes('::REROLL::')){
         const [shown, payload] = l.text.split('::REROLL::');
         displayText = shown;
@@ -1314,16 +1338,47 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
             let aspectNote = digimonBonus>0 ? ` +${digimonBonus} dal Digimon (Prodigious Skill/Mind Over Matter)` : '';
             const majorLeft = me.tamer.majorAspect ? (me.tamer.majorAspect.usesLeft||0) : 0;
             const minorLeft = me.tamer.minorAspect ? (me.tamer.minorAspect.usesLeft||0) : 0;
-            if(majorLeft>0 || minorLeft>0){
-              const choice = window.prompt(`Usare un Aspect? Scrivi "major" (+4, ${majorLeft} usi), "minor" (+2, ${minorLeft} usi), o lascia vuoto per nessuno.`, '');
-              if(choice && choice.trim().toLowerCase().startsWith('major') && majorLeft>0){
-                total += 4; me.tamer.majorAspect.usesLeft -= 1;
-                aspectNote = ` +4 Major Aspect (${me.tamer.majorAspect.text})`;
+            // BUGFIX (Rocco 2026-10-02: "quando il Master richiede il tiro non fa tirare major e
+            // minor"): prima il popup compariva SOLO con usi > 0, e gli usi non si ricaricavano mai
+            // (vedi Rest in js/progression.js, ora corretto) -- quindi dopo il primo uso spariva per
+            // sempre, senza spiegazioni. Ora compare sempre se il Tamer ha almeno un Aspect scritto, e
+            // offre anche la PENALITÀ (manuale 8.01b, stessa logica della Scheda Tamer in
+            // js/tamer-card.js): Major -4 → ripristina l'uso e +1 IP; Minor -2 → ripristina i 2 usi.
+            // Accetta il numero dell'opzione oppure le parole "major"/"minor" (compatibile col vecchio).
+            const majorTxt = (me.tamer.majorAspect && me.tamer.majorAspect.text) ? me.tamer.majorAspect.text : '';
+            const minorTxt = (me.tamer.minorAspect && me.tamer.minorAspect.text) ? me.tamer.minorAspect.text : '';
+            if(majorTxt || minorTxt){
+              const lines = [];
+              if(majorTxt) lines.push(majorLeft>0 ? `1 = Major +4 ("${majorTxt}", ${majorLeft} uso)` : `   (Major +4 esaurito — usa il 3 per ricaricarlo)`);
+              if(minorTxt) lines.push(minorLeft>0 ? `2 = Minor +2 ("${minorTxt}", ${minorLeft} usi)` : `   (Minor +2 esaurito — usa il 4 per ricaricarlo)`);
+              if(majorTxt) lines.push(`3 = Major −4 (penalità: ripristina l'uso e guadagni 1 IP)`);
+              if(minorTxt) lines.push(`4 = Minor −2 (penalità: ripristina entrambi gli usi)`);
+              const choiceRaw = window.prompt(`Usare un Aspect su questo tiro?\n\n${lines.join('\n')}\n\nScrivi il numero, oppure lascia vuoto per nessuno.`, '');
+              const c = (choiceRaw||'').trim().toLowerCase();
+              let pick = '';
+              if(c==='1' || c==='major' || c==='major+') pick = 'major+';
+              else if(c==='2' || c==='minor' || c==='minor+') pick = 'minor+';
+              else if(c==='3' || c==='major-') pick = 'major-';
+              else if(c==='4' || c==='minor-') pick = 'minor-';
+              if(pick==='major+' && majorTxt && majorLeft>0){
+                total += 4; me.tamer.majorAspect.usesLeft = majorLeft - 1;
+                aspectNote += ` +4 Major Aspect (${majorTxt})`;
                 await saveMember(session.code, me);
-              } else if(choice && choice.trim().toLowerCase().startsWith('minor') && minorLeft>0){
-                total += 2; me.tamer.minorAspect.usesLeft -= 1;
-                aspectNote = ` +2 Minor Aspect (${me.tamer.minorAspect.text})`;
+              } else if(pick==='minor+' && minorTxt && minorLeft>0){
+                total += 2; me.tamer.minorAspect.usesLeft = minorLeft - 1;
+                aspectNote += ` +2 Minor Aspect (${minorTxt})`;
                 await saveMember(session.code, me);
+              } else if(pick==='major-' && majorTxt){
+                total -= 4; me.tamer.majorAspect.usesLeft = 1;
+                me.tamer.inspirationPoints = Number(me.tamer.inspirationPoints||0) + 1;
+                aspectNote += ` −4 penalità Major Aspect (${majorTxt}: uso ripristinato, +1 IP)`;
+                await saveMember(session.code, me);
+              } else if(pick==='minor-' && minorTxt){
+                total -= 2; me.tamer.minorAspect.usesLeft = 2;
+                aspectNote += ` −2 penalità Minor Aspect (${minorTxt}: usi ripristinati)`;
+                await saveMember(session.code, me);
+              } else if(pick){
+                window.alert('Quell\'Aspect non ha usi disponibili: tiro senza Aspect.');
               }
             }
             // Richiesta utente (Razioni/Affaticamento): terzo (e ultimo) dei 3 punti dove il
@@ -1465,11 +1520,11 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
             tor.boxes = Math.max(0, tor.boxes-1);
             me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1;
             tor.usedThisRest = true;
-            outcomeText = 'Successo Critico! Cancella 1 Casella Torment e guadagna 1 IP.';
+            outcomeText = tormentAutoMsg('torment_out_crit_success', {}, 'Successo Critico! Cancella 1 Casella Torment e guadagna 1 IP.');
           } else if(result.outcome==='success'){
             me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1;
             tor.usedThisRest = true;
-            outcomeText = 'Successo! Guadagna 1 IP.';
+            outcomeText = tormentAutoMsg('torment_out_success', {}, 'Successo! Guadagna 1 IP.');
           } else if(result.outcome==='deep-crit-fail'){
             tor.boxes = Math.min(10, tor.boxes+1);
             tor.usedThisRest = true;
@@ -1482,20 +1537,23 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
               me.tamer.tormentPenalty = -3;
               combatant.tamerActionsLocked = true;
               await apiPost('/api/state', { resource:'combat', code: session.code, data: cachedCombat });
-              outcomeText = 'Fallimento Critico Profondo! +1 Casella Torment, penalità -3 fino al Rest — non può più usare Azioni Tamer fino alla fine del Combattimento.';
+              outcomeText = tormentAutoMsg('torment_out_deep_minor', {}, 'Fallimento Critico Profondo! +1 Casella Torment, penalità -3 fino al Rest — non può più usare Azioni Tamer fino alla fine del Combattimento.');
             } else {
               me.tamer.tormentPenalty = -5;
-              outcomeText = 'Fallimento Critico Profondo! +1 Casella Torment, penalità -5 fino al Rest.';
+              outcomeText = tormentAutoMsg('torment_out_deep', {}, 'Fallimento Critico Profondo! +1 Casella Torment, penalità -5 fino al Rest.');
             }
           } else if(result.outcome==='crit-fail'){
             me.tamer.tormentPenalty = -2;
             tor.usedThisRest = true;
-            outcomeText = 'Fallimento Critico! Penalità -2 fino al Rest.';
+            outcomeText = tormentAutoMsg('torment_out_crit_fail', {}, 'Fallimento Critico! Penalità -2 fino al Rest.');
           } else {
-            outcomeText = 'Fallimento. Nessun effetto, si può ritentare più tardi.';
+            outcomeText = tormentAutoMsg('torment_out_fail', {}, 'Fallimento. Nessun effetto, si può ritentare più tardi.');
           }
           await saveMember(session.code, me);
-          const entry = { who: displayName(me), role:'roll', text: `Torment Check su "${tor.name}": 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText} (richiesto dal Master)`, meta:{dice: result.dice} };
+          const entry = { who: displayName(me), role:'roll', text: `${tormentAutoMsg('torment_roll_requested', { dice: result.dice.join(','), total: result.total, tn: result.tn, outcomeText }, `Ha completato un Torment Check: 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText} (richiesto dal Master)`)}::TORMENTRESULT::${session.username}|${tor.name}`, meta:{dice: result.dice} };
+          // BUGFIX (privacy, stesso motivo già applicato in js/tamer-card.js): prima questa riga
+          // scriveva in chiaro "Torment Check su "<nome>"" visibile a tutti nel canale -- ora il
+          // nome viaggia solo nel payload ::TORMENTRESULT:: (vedi logHTML).
           // Stessa logica di risposta-nello-stesso-canale già usata sopra per data-fulfill-target.
           if(playerChatMode==='private'){
             await pushPrivateLog(code, session.username, { ...entry, meta: { ...(entry.meta||{}), location: memberLocationKey(me) } });
