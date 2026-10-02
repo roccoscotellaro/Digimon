@@ -44,6 +44,13 @@
 // Scena resta segnata da un commento-ancora e da un avviso "🏰 Il dungeon è sopra la chat"). Da
 // telefono quindi mappa e chat stanno insieme nella scheda Chat. Sezione del voto più evidente
 // (candidati con miniatura, da toccare) e pedina = miniatura del Tamer Capofila.
+// UNDICESIMA RICHIESTA: (1) le immagini delle stanze non coprono più le caselle: toccando una
+// casella di una stanza con immagine (segnata da 🖼️) o la scheda della stanza si apre la lightbox.
+// (2) Timer del Capofila: 6 ore "attive" (ferme tra mezzanotte e le 10, ora italiana) dall'ultima
+// azione di chi ha il comando; a timer scaduto qualsiasi giocatore presente può muovere/cercare
+// e prende il comando finché non finiscono i Punti Dungeon, poi torna al Capofila (che può
+// comunque riprenderselo in qualsiasi momento). Logica e calcolo del tempo sul server
+// (claimControl/afterControlAction/controlInfo in lib/dungeon.js); qui solo mostra state.control.
 // Chi muove riceve dal server gli eventi appena scattati (una volta sola, grazie al
 // compare-and-swap lato server) ed è il suo client a pubblicarli in chat con pushLog — stesso
 // schema del voto di spostamento (justResolved) già in uso.
@@ -195,6 +202,10 @@
       .dg-room-card{display:flex;gap:10px;align-items:flex-start;padding:8px;border:1px solid var(--line);border-left:3px solid var(--cyan);border-radius:4px;background:var(--panel-2);margin:6px 0;}
       .dg-room-card img{width:120px;max-height:90px;object-fit:cover;border-radius:3px;cursor:zoom-in;flex:0 0 auto;}
       .dg-room-card .desc{font-size:11.5px;white-space:pre-wrap;color:var(--text);}
+      .dg-imgmark{position:absolute;top:0;left:1px;font-size:9px;line-height:1;z-index:3;cursor:zoom-in;filter:drop-shadow(0 0 2px #000);}
+      .dg-room-card .dg-img-btn{margin-top:6px;}
+      .dg-ctl{font-size:11.5px;margin:4px 0;padding:5px 8px;border-radius:4px;background:#0b1216;border:1px solid var(--line);}
+      .dg-ctl.dg-ctl-free{border-color:var(--cyan);color:var(--cyan);}
       .dg-legend{font-size:10px;color:var(--text-mute);text-align:center;}
       .dg-status{font-size:11px;min-height:14px;color:var(--amber);}
     `;
@@ -250,10 +261,39 @@
     return (state.dungeons||[]).find(d=>d.id===state.activeId) || null;
   }
   function amLeader(){ return !!(state && state.party && ctx && ctx.role==='player' && state.party.leader===ctx.username); }
+  // ---- timer del Capofila (state.control arriva dal server) ----
+  let stateAt = Date.now();
+  function controlLeftMs(){
+    const c = state && state.control;
+    if(!c) return Infinity;
+    return Math.max(0, (Number(c.remainingMs)||0) - (c.paused ? 0 : Date.now() - stateAt));
+  }
+  function controlExpired(){ return !!(state && state.control) && (state.control.expired || controlLeftMs() <= 0); }
+  function driverOf(){ return (state && state.party && state.party.driver) || null; }
+  function amPresent(){ return presentPlayers().some(m=>m.username===ctx.username); }
+  // Chi ha il comando ADESSO (per la pedina e per chi tira "come Capofila").
+  function controllerOf(){ return driverOf() || (state && state.party && state.party.leader) || null; }
+  // Posso muovere/cercare? Capofila, chi ha già preso il comando, o chiunque a timer scaduto.
+  function canAct(){
+    if(!state || !state.party || !ctx || ctx.role!=='player' || !amPresent()) return false;
+    const u = ctx.username;
+    return state.party.leader===u || driverOf()===u || controlExpired();
+  }
+  function fmtLeft(ms){ const h = Math.floor(ms/3600000), m = Math.floor((ms%3600000)/60000); return `${h}h ${String(m).padStart(2,'0')}m`; }
+  function controlLine(){
+    const p = state.party || {};
+    const drv = driverOf();
+    if(drv) return `🎮 Comando a <b>${escapeHTML(nameOf(drv))}</b> finché ha Punti Dungeon, poi torna ${p.leader ? 'al Capofila' : 'libero'}.`;
+    if(controlExpired()) return p.leader
+      ? `⏰ ${escapeHTML(nameOf(p.leader))} è fermo da 6 ore: <b>chiunque nel dungeon può muovere</b> (il comando torna al Capofila a Punti finiti).`
+      : `⏰ Nessun Capofila da 6 ore: <b>chiunque nel dungeon può muovere</b>.`;
+    const paused = state.control && state.control.paused;
+    return `⏳ ${p.leader ? 'Turno del Capofila' : 'Senza Capofila'}: tra <b>${fmtLeft(controlLeftMs())}</b> potrà muovere chiunque${paused ? ' <span class="muted">(timer in pausa fino alle 10:00)</span>' : ''}.`;
+  }
 
   async function load(){
     const d = await apiGet('/api/state?resource=dungeon&code=' + encodeURIComponent(ctx.code) + '&username=' + encodeURIComponent(ctx.username), true);
-    if(d && d.dungeon){ state = d.dungeon; lastLoadError = d.warning || null; }
+    if(d && d.dungeon){ state = d.dungeon; stateAt = Date.now(); lastLoadError = d.warning || null; }
     else if(!state) lastLoadError = 'Impossibile caricare il dungeon.';
   }
 
@@ -261,7 +301,7 @@
     busy = true;
     const d = await apiPost('/api/state', Object.assign({ resource:'dungeon', code: ctx.code, username: ctx.username }, body));
     busy = false;
-    if(d && d.dungeon) state = d.dungeon;
+    if(d && d.dungeon){ state = d.dungeon; stateAt = Date.now(); }
     return d;
   }
 
@@ -287,7 +327,7 @@
   function initialOf(u){ const n = String(nameOf(u)||'?').trim(); return (n[0]||'?').toUpperCase(); }
   // Pedina del gruppo = miniatura del Capofila (senza Capofila: il pallino dorato).
   function tokenHTML(){
-    const u = state && state.party && state.party.leader;
+    const u = controllerOf();
     if(!u) return `<div class="dg-token"></div>`;
     const img = thumbOf(u);
     return img ? `<div class="dg-token dg-token-img" title="👑 ${escapeAttr(nameOf(u))}">${avatarHTML(u)}</div>`
@@ -374,11 +414,11 @@
     const pos = dg.run ? dg.run.pos : null;
     const reach = new Set();
     const pts = Number(state.party && state.party.points)||0;
-    if(pos!=null && amLeader()) neighbors4(dg, pos).forEach(i=>{ if(WALK[dg.grid[i]] && pts>=stepCost(dg, i) && doorState(dg, i)!=='barred') reach.add(i); });
-    // Immagine della stanza stesa sulle sue caselle (room.showOnMap), calcolata sul riquadro della stanza.
-    const step = size+1, bbox = {};
-    (dg.rooms||[]).forEach(rm=>{ if(rm.image && rm.showOnMap!==false) bbox[rm.id] = { r0:1e9, c0:1e9, r1:-1, c1:-1 }; });
-    dg.roomOf.forEach((rid,i)=>{ const b = rid && bbox[rid]; if(!b) return; const rr = Math.floor(i/dg.cols), cc = i%dg.cols; b.r0=Math.min(b.r0,rr); b.c0=Math.min(b.c0,cc); b.r1=Math.max(b.r1,rr); b.c1=Math.max(b.c1,cc); });
+    if(pos!=null && canAct()) neighbors4(dg, pos).forEach(i=>{ if(WALK[dg.grid[i]] && pts>=stepCost(dg, i) && doorState(dg, i)!=='barred') reach.add(i); });
+    // Immagine della stanza: NON copre le caselle (undicesima richiesta). Si apre toccando una
+    // casella della stanza; la prima casella (in alto a sinistra) porta il segno 🖼️.
+    const firstCell = {};
+    dg.roomOf.forEach((rid,i)=>{ if(rid && firstCell[rid]==null && dg.grid[i]!=='?' && dg.grid[i]!=='.') firstCell[rid] = i; });
     // Nebbia: per i giocatori sempre; per il Master solo con "👁️ Vista giocatori" attiva.
     const fogOn = !isMaster() || masterPlayerView;
     const visible = visibleFrom(dg, pos);
@@ -392,15 +432,10 @@
       const r = reach.has(i);
       const masterClick = isMaster() && masterMode!=='look' && WALK[dg.grid[i]];
       const room = dg.roomOf[i] ? (dg.rooms||[]).find(x=>x.id===dg.roomOf[i]) : null;
-      let bgStyle = '';
-      const b = room && bbox[room.id];
-      if(b && dg.grid[i]!=='?' && dg.grid[i]!=='.'){
-        const rr = Math.floor(i/dg.cols), cc = i%dg.cols;
-        bgStyle = `background-image:url('${String(room.image).replace(/'/g,'%27')}');background-size:${(b.c1-b.c0+1)*step}px ${(b.r1-b.r0+1)*step}px;background-position:${-(cc-b.c0)*step}px ${-(rr-b.r0)*step}px;`;
-      }
-      if(unknownForPlayers) bgStyle = '';
-      html += `<div class="dg-cell ${cls} ${fog?'dg-fog':'dg-lit'} ${r?'dg-reach':''} ${masterClick?'dg-click':''}" style="${bgStyle}" ${(r||masterClick)?`data-dg-cell="${i}"`:''} title="${room && !unknownForPlayers?escapeAttr(room.name):''}${dg.grid[i]==='h' && !unknownForPlayers?' (terreno difficile: 2 Punti)':''}">`
+      const imgOpen = room && room.image && !unknownForPlayers && !r && !masterClick && dg.grid[i]!=='?' && dg.grid[i]!=='.';
+      html += `<div class="dg-cell ${cls} ${fog?'dg-fog':'dg-lit'} ${r?'dg-reach':''} ${(masterClick||imgOpen)?'dg-click':''}" ${(r||masterClick)?`data-dg-cell="${i}"`:''} ${imgOpen?`data-avatar-expand="${escapeAttr(room.image)}"`:''} title="${room && !unknownForPlayers?escapeAttr(room.name) + (room.image ? ' — tocca per vedere l\'immagine' : ''):''}${dg.grid[i]==='h' && !unknownForPlayers?' (terreno difficile: 2 Punti)':''}">`
         + (unknownForPlayers ? '' : featureIcon(dg, i))
+        + (room && room.image && !unknownForPlayers && !r && firstCell[room.id]===i ? `<span class="dg-imgmark" data-avatar-expand="${escapeAttr(room.image)}">🖼️</span>` : '')
         + (i===pos ? tokenHTML() : '')
         + `</div>`;
     }
@@ -430,7 +465,7 @@
     }
     return `<div class="dg-room-card">
       ${room.image ? `<img src="${escapeAttr(room.image)}" data-avatar-expand="${escapeAttr(room.image)}" onerror="this.remove()" />` : ''}
-      <div><b>🏛️ ${escapeHTML(room.name)}</b>${room.desc ? `<div class="desc">${escapeHTML(room.desc)}</div>` : ''}</div>
+      <div><b>🏛️ ${escapeHTML(room.name)}</b>${room.desc ? `<div class="desc">${escapeHTML(room.desc)}</div>` : ''}${room.image ? `<div class="dg-img-btn"><button class="btn ghost small" data-avatar-expand="${escapeAttr(room.image)}">🖼️ Apri immagine</button></div>` : ''}</div>
     </div>`;
   }
 
@@ -451,6 +486,7 @@
       const head = !p.leader
         ? (ctx.role==='player' ? '🗳️ Eleggete il Capofila! Senza Capofila la pedina non si muove.' : '🗳️ I giocatori devono eleggere il Capofila.')
         : (ctx.username===p.leader ? '👑 Sei tu il Capofila: muovi la pedina con le frecce sotto la mappa.' : `🗳️ Capofila: <b>${escapeHTML(nameOf(p.leader))}</b>${iAmIn ? ' — puoi cambiare voto quando volete.' : ''}`);
+      const ctlFree = controlExpired() || !!driverOf();
       const chips = list.map(m=>{
         const u = m.username, n = counts[u]||0;
         const cls = `dg-cand ${myVote===u?'mine':''} ${p.leader===u?'leader':''}`;
@@ -459,6 +495,7 @@
       }).join('');
       voteUI = `<div class="dg-vote ${p.leader?'':'dg-vote-need'}">
         <div class="dg-vote-head">${head}</div>
+        <div class="dg-ctl ${ctlFree?'dg-ctl-free':''}">${controlLine()}</div>
         <div class="dg-vote-list">${chips}</div>
         <div class="dg-vote-foot">Serve la maggioranza: ${need} su ${list.length}.${iAmIn ? (myVote ? ` Hai votato ${escapeHTML(nameOf(myVote))}: tocca un altro nome per cambiare.` : ' Tocca un nome per votare.') : ''}</div>
       </div>`;
@@ -470,7 +507,8 @@
   }
 
   function padHTML(dg){
-    if(!amLeader() || dg.run.pos==null) return '';
+    if(!canAct() || dg.run.pos==null) return '';
+    const takeover = !amLeader() && driverOf()!==ctx.username;
     const pos = dg.run.pos, r = Math.floor(pos/dg.cols), c = pos%dg.cols;
     const pts = Number(state.party.points)||0;
     const can = (idx, ok)=> ok && WALK[dg.grid[idx]] && pts>=stepCost(dg, idx) && doorState(dg, idx)!=='barred' ? `data-dg-cell="${idx}"` : 'disabled';
@@ -478,9 +516,10 @@
     const used = !!state.party.searchUsed;
     return `<div class="dg-pad">
       <span></span><button class="btn small" ${up}>⬆️</button><span></span>
-      <button class="btn small" ${left}>⬅️</button><span style="display:flex;align-items:center;justify-content:center;font-size:10px;" class="muted">👑</span><button class="btn small" ${right}>➡️</button>
+      <button class="btn small" ${left}>⬅️</button><span style="display:flex;align-items:center;justify-content:center;font-size:10px;" class="muted">${amLeader() ? '👑' : '🎮'}</span><button class="btn small" ${right}>➡️</button>
       <span></span><button class="btn small" ${down}>⬇️</button><span></span>
     </div>
+    ${takeover ? `<div class="muted" style="text-align:center;font-size:10.5px;">🎮 Muovendo prendi il comando: torna ${state.party.leader ? 'al Capofila' : 'libero'} quando finiscono i Punti.</div>` : ''}
     <div style="text-align:center;margin-bottom:4px;"><button class="btn ghost small" id="dg-search-btn" ${used?'disabled':''} title="Una volta per ricarica: cerca passaggi segreti nella stanza in cui siete (o attorno a voi, se siete in corridoio). Non costa Punti.">🔍 ${used?'Ricerca già usata (torna alla ricarica)':'Cerca passaggi segreti'}</button></div>`;
   }
 
@@ -645,8 +684,8 @@
     await dgLog({ who:'Sistema', role:'gm', text: `🏛️ ${room.name}${room.desc ? '\n' + room.desc : ''}`, meta });
   }
 
-  async function publishEvents(events){
-    const leader = state && state.party ? state.party.leader : ctx.username;
+  async function publishEvents(events, mover){
+    const leader = mover || (state && state.party ? state.party.leader : ctx.username);
     for(const ev of (events||[])){
       if(ev.type==='room'){ await announceRoom(ev.room); continue; }
       if(ev.type==='unlock'){
@@ -729,8 +768,15 @@
     statusMsg = '';
     render();
     if(ctx.advanceClock) await ctx.advanceClock(1);
-    await publishEvents(d.events);
+    await announceControl(d);
+    await publishEvents(d.events, d.mover);
     if(ctx.onChanged) ctx.onChanged();
+  }
+  async function announceControl(d){
+    if(!d) return;
+    const leader = state && state.party && state.party.leader;
+    if(d.tookControl) await dgLog({ who:'Sistema', role:'gm', text: `🎮 ${leader ? `${nameOf(leader)} è fermo da 6 ore: ` : 'Nessun Capofila da 6 ore: '}${nameOf(d.tookControl)} prende il comando finché ci sono Punti Dungeon.` });
+    if(d.controlReturned) await dgLog({ who:'Sistema', role:'gm', text: leader ? `👑 Punti Dungeon finiti: il comando torna a ${nameOf(leader)}.` : '👑 Punti Dungeon finiti: il comando è di nuovo libero.' });
   }
 
   function bind(){
@@ -802,6 +848,7 @@
       if(!d){ setStatus(lastApiError); render(); return; }
       render();
       if(ctx.advanceClock) await ctx.advanceClock(1);
+      await announceControl(d);
       const where = d.where ? `la stanza «${d.where}»` : 'i dintorni';
       await dgLog({ who:'Sistema', role:'gm', text: d.found ? `🔍 ${nameOf(ctx.username)} perlustra ${where}… e trova ${d.found===1?'un passaggio segreto':d.found+' passaggi segreti'}!` : `🔍 ${nameOf(ctx.username)} perlustra ${where}, ma non trova nulla.` });
       if(ctx.onChanged) ctx.onChanged();

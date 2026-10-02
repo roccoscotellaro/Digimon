@@ -169,10 +169,8 @@
     if(room){
       if(t==='f') bg = roomColor(rid);
       extra += `box-shadow:inset 0 0 0 2px ${roomColor(rid)};`;
-      if(room.image && room.showOnMap!==false){
-        const bb = roomBBox(rid), p = rc(i), step = cellSize+1;
-        extra += `background-image:linear-gradient(rgba(0,0,0,0.15),rgba(0,0,0,0.15)),url('${String(room.image).replace(/'/g,'%27')}');background-size:${bb.w*step}px ${bb.h*step}px;background-position:${-(p.c-bb.c0)*step}px ${-(p.r-bb.r0)*step}px;`;
-      }
+      // (decima richiesta) l'immagine della stanza non copre più le caselle: i giocatori la aprono
+      // toccando la stanza sulla mappa o dalla scheda della stanza.
     }
     if(selRoom && rid===selRoom) extra += 'filter:brightness(1.25);';
     return `background:${bg};${extra}`;
@@ -274,7 +272,7 @@
             <button class="btn ghost small" data-dge-upload-btn="room:${idx}">📤 Carica immagine</button>
           </div>
           ${r.image ? `<img src="${esc(r.image)}" style="max-width:100%;max-height:140px;margin-top:6px;border-radius:3px;display:block;" onerror="this.remove()" />` : ''}
-          <label style="display:flex;gap:6px;align-items:center;font-size:11px;margin-top:6px;text-transform:none;"><input type="checkbox" data-dge-room-onmap="${idx}" ${r.showOnMap!==false?'checked':''} style="width:auto;" /> Mostra l'immagine sulla mappa, stesa sulle caselle della stanza</label>
+          ${r.image ? `<div class="muted" style="font-size:10.5px;margin-top:4px;">🖼️ L'immagine non copre la mappa: i giocatori la aprono toccando la stanza o la sua scheda.</div>` : ''}
           <div class="field" style="margin-top:8px;"><label>✨ Oggetti che compaiono quando il gruppo entra (prima sono nascosti)</label>
             <div style="display:flex;flex-wrap:wrap;gap:4px;margin:2px 0;">${(r.reveals||[]).map(t=>{ const x = dg.features[t]; return `<span class="tag" style="font-size:10.5px;">${x ? iconHTML(x.icon || (ICONS[x.type]||[''])[0]) : '❔'} ${esc(cellLabel(t))} <a href="#" data-dge-roomrev-del="${idx}:${t}" style="color:inherit;">✕</a></span>`; }).join('') || '<span class="muted" style="font-size:10.5px;">nessuno</span>'}</div>
             <button type="button" class="btn ghost small" data-dge-pick-roomrev="${idx}">📍 Aggiungi oggetti dalla mappa</button>
