@@ -286,7 +286,7 @@
   function defaultTamer(){
     const skills = {}; SKILL_DEFS.forEach(s=>skills[s.key]=0);
     return { agility:1, body:1, charisma:1, intelligence:1, willpower:1, imageUrl:'', currentWounds:null, inventory:[], skills,
-      unspentGrowthPoints:0, inspirationPoints:0, tormentPenalty:0,
+      unspentGrowthPoints:0, inspirationPoints:0, luckyNumber:null, tormentPenalty:0,
       // Richiesta utente (Razioni/Affaticamento): gemello di tormentPenalty ma non si azzera con
       // un Rest qualunque — si azzera solo insieme al Digimon quando il Tamer consuma entrambe le
       // 2 razioni in un Rest (vedi ::RATIONREQ:: in js/chat-log-engine.js). -1/livello ai Check.
@@ -659,7 +659,8 @@
         <div class="grid-2">
           <div class="field"><label>Ferite Attuali</label><div class="mono">${t.currentWounds ?? '—'}</div></div>
           <div class="field"><label>Punti Crescita non spesi</label><div class="mono">${t.unspentGrowthPoints||0}</div></div>
-          <div class="field"><label>Punti Ispirazione</label><div class="mono">${t.inspirationPoints||0}</div></div>
+          <div class="field"><label>Punti Ispirazione</label><div class="mono">${t.inspirationPoints||0} / ${2+Number(t.willpower||0)}</div></div>
+          <div class="field"><label>🍀 Lucky Number</label><div class="mono">${Number(t.luckyNumber)>=1 && Number(t.luckyNumber)<=6 ? t.luckyNumber : '—'}</div></div>
           <div class="field"><label>Penalità Torment</label><div class="mono">${t.tormentPenalty||0}</div></div>
           <div class="field"><label>😴 Affaticamento</label><div class="mono">${t.fatigueLevel||0}</div></div>
         </div>
@@ -671,7 +672,21 @@
       <div class="grid-2">
         <div class="field"><label>Ferite Attuali</label><input type="number" id="p-currentWounds" value="${t.currentWounds ?? 0}" /></div>
         <div class="field"><label>Punti Crescita non spesi</label><input type="number" id="p-unspentGrowthPoints" value="${t.unspentGrowthPoints||0}" /></div>
-        <div class="field"><label>Punti Ispirazione</label><input type="number" id="p-inspirationPoints" value="${t.inspirationPoints||0}" /></div>
+        ${(()=>{
+          // Richiesta Rocco: gli IP li modifica a mano solo il Master (tetto 2+Willpower, regola
+          // 2.05); il giocatore li vede soltanto. Lucky Number (2.05b): il giocatore lo sceglie
+          // una volta (se è vuoto), il Master può sempre cambiarlo.
+          const isM = session && session.role==='master';
+          const cap = 2 + Number(t.willpower||0);
+          const lnSet = Number(t.luckyNumber)>=1 && Number(t.luckyNumber)<=6;
+          const ipField = isM
+            ? `<div class="field"><label>Punti Ispirazione (max ${cap})</label><input type="number" id="p-inspirationPoints" min="0" max="${cap}" value="${t.inspirationPoints||0}" /></div>`
+            : `<div class="field"><label>Punti Ispirazione</label><div class="mono">${t.inspirationPoints||0} / ${cap}</div></div>`;
+          const lnField = (!lnSet || isM)
+            ? `<div class="field"><label>🍀 Lucky Number (1-6)</label><select id="p-luckyNumber"><option value="">—</option>${[1,2,3,4,5,6].map(n=>`<option value="${n}" ${Number(t.luckyNumber)===n?'selected':''}>${n}</option>`).join('')}</select></div>`
+            : `<div class="field"><label>🍀 Lucky Number</label><div class="mono">${t.luckyNumber}</div></div>`;
+          return ipField + lnField;
+        })()}
         <div class="field"><label>Penalità Torment</label><input type="number" id="p-tormentPenalty" value="${t.tormentPenalty||0}" /></div>
         <div class="field"><label>😴 Affaticamento (Razioni)</label><input type="number" id="p-fatigueLevel" value="${t.fatigueLevel||0}" /></div>
       </div>
@@ -1226,7 +1241,9 @@
     const gpEl = document.getElementById('p-unspentGrowthPoints');
     if(gpEl) target.tamer.unspentGrowthPoints = Math.max(0, Number(gpEl.value)||0);
     const ipEl = document.getElementById('p-inspirationPoints');
-    if(ipEl) target.tamer.inspirationPoints = Math.max(0, Number(ipEl.value)||0);
+    if(ipEl) target.tamer.inspirationPoints = Math.max(0, Math.min(2 + Number(target.tamer.willpower||0), Number(ipEl.value)||0));
+    const luckyEl = document.getElementById('p-luckyNumber');
+    if(luckyEl) target.tamer.luckyNumber = luckyEl.value ? Number(luckyEl.value) : null;
     const tpEl = document.getElementById('p-tormentPenalty');
     if(tpEl) target.tamer.tormentPenalty = Number(tpEl.value)||0;
     const fatEl = document.getElementById('p-fatigueLevel');

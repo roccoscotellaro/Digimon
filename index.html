@@ -4580,6 +4580,8 @@ let editingScene = false;
           } else {
             rollMeta.total = Number(rollResult.resultLabel) || 0;
             if(rollResult.verdict) rollMeta.verdict = rollResult.verdict.label;
+            // IP automatici (Fallimento Critico/Lucky Number): salvati per il ri-tiro.
+            if(rollResult.ipGained) rollMeta.ipGained = rollResult.ipGained;
           }
         }
         if(pendingActionImageUrl) rollMeta.image = pendingActionImageUrl;

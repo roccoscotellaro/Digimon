@@ -114,3 +114,45 @@
   }
 
   const ATTR_ABBR = { agility:'AGI', body:'BODY', charisma:'CAR', intelligence:'INT', willpower:'WILL' };
+
+  // ---------- Punti Ispirazione (regola 2.05) ----------
+  // Richiesta Rocco ("automatizzare le fonti di IP senza intaccare il regolamento, e dare al
+  // Master la possibilità di aggiungerne e toglierne"): unico punto in cui un IP viene AGGIUNTO
+  // o TOLTO da una regola automatica o dal Master, così il tetto 2 + Willpower (2.05) vale
+  // ovunque allo stesso modo. Le SPESE del giocatore (Ritira, Miracle) restano dove erano.
+  function ipCap(tamer){ return 2 + Number((tamer && tamer.willpower)||0); }
+  // Ritorna di quanto è cambiato davvero il valore (0 se il Tamer era già al tetto). Un valore
+  // già sopra il tetto (schede vecchie, prima di questa regola) non viene mai tagliato da un
+  // +1: semplicemente non sale oltre.
+  function grantIP(me, amount){
+    if(!me || !me.tamer) return 0;
+    const cur = Number(me.tamer.inspirationPoints||0);
+    const amt = Number(amount)||0;
+    let next;
+    if(amt>0) next = Math.max(cur, Math.min(ipCap(me.tamer), cur + amt));
+    else next = Math.max(0, cur + amt);
+    me.tamer.inspirationPoints = next;
+    return next - cur;
+  }
+  // Lucky Number (2.05b): almeno 2 dei 3 dadi tenuti uguali al numero scelto dal Tamer.
+  function isLuckyRoll(tamer, dice){
+    const n = Number(tamer && tamer.luckyNumber);
+    if(!(n>=1 && n<=6) || !Array.isArray(dice)) return false;
+    return dice.filter(d=>Number(d)===n).length >= 2;
+  }
+  // Fonti automatiche di IP su un Check del Tamer: Fallimento Critico (2.05) + Lucky Number
+  // (2.05b). `verdict` può essere l'oggetto di evaluateVsTN o la sola etichetta salvata in meta.
+  // Applica subito gli IP (col tetto) e ritorna { gained, note } — gained va salvato nel meta
+  // del messaggio, così un ri-tiro con Ispirazione che scarta questo risultato può toglierli.
+  function applyCheckIP(me, dice, verdict){
+    const label = verdict ? (typeof verdict==='string' ? verdict : verdict.label) : null;
+    const reasons = [];
+    if(label==='Fallimento Critico') reasons.push('Fallimento Critico');
+    if(isLuckyRoll(me.tamer, dice)) reasons.push('Lucky Number '+me.tamer.luckyNumber);
+    if(!reasons.length) return { gained:0, note:'' };
+    const gained = grantIP(me, reasons.length);
+    const note = gained>0
+      ? ` · 💡 +${gained} IP (${reasons.join(', ')})`
+      : ` · 💡 ${reasons.join(', ')}: IP già al massimo (${ipCap(me.tamer)})`;
+    return { gained, note };
+  }

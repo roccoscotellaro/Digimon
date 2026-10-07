@@ -1370,8 +1370,8 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
                 await saveMember(session.code, me);
               } else if(pick==='major-' && majorTxt){
                 total -= 4; me.tamer.majorAspect.usesLeft = 1;
-                me.tamer.inspirationPoints = Number(me.tamer.inspirationPoints||0) + 1;
-                aspectNote += ` −4 penalità Major Aspect (${majorTxt}: uso ripristinato, +1 IP)`;
+                const gAsp = grantIP(me, 1); // tetto 2+Willpower (js/rules.js)
+                aspectNote += ` −4 penalità Major Aspect (${majorTxt}: uso ripristinato, ${gAsp?'+1 IP':'IP già al massimo'})`;
                 await saveMember(session.code, me);
               } else if(pick==='minor-' && minorTxt){
                 total -= 2; me.tamer.minorAspect.usesLeft = 2;
@@ -1394,13 +1394,17 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
               aspectNote += ` ${restPenalty>0?'+':''}${restPenalty} Torment/Affaticamento`;
             }
             const verdict = evaluateVsTN(total, tn, dice);
+            // Richiesta Rocco (IP automatici, 2.05/2.05b): Fallimento Critico e Lucky Number,
+            // stesse fonti del pannello 🎲 della Scheda Tamer (applyCheckIP in js/rules.js).
+            const ipRes = applyCheckIP(me, dice, verdict);
+            if(ipRes.gained) await saveMember(session.code, me);
             // Stesso marcatore ::REROLL:: del ramo Pool qui sopra — payload = username|skill|
             // etichetta|attrVal|skillVal|stuntDice(0, nessuno Stunt su un tiro richiesto dal
             // Master)|flatExtra(bonus non-dado già sommati: Aspect/Torment/Affaticamento)|tn.
             const flatExtra = total - baseTotal;
             const rerollPayload = `${session.username}|skill|${encodeURIComponent(def.label)}|${attrVal}|${skillVal}|0|${flatExtra}|${tn!=null?tn:''}`;
-            text = `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict?` vs TN ${tn} → ${verdict.label}`:'') + ' (richiesto dal Master)' + `::REROLL::${rerollPayload}`;
-            rollMeta = { dice, total, verdict: verdict?verdict.label:null };
+            text = `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict?` vs TN ${tn} → ${verdict.label}`:'') + ' (richiesto dal Master)' + ipRes.note + `::REROLL::${rerollPayload}`;
+            rollMeta = { dice, total, verdict: verdict?verdict.label:null, ipGained: ipRes.gained };
           }
         }
         if(text){
@@ -1484,8 +1488,20 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
             const finalDice = keepNew ? dice2 : (oldDice||dice2);
             const finalTotal = keepNew ? total2 : (oldTotal!=null?oldTotal:total2);
             const finalVerdictLabel = keepNew ? (verdict2?verdict2.label:null) : oldVerdictLabel;
-            rerollLogText = `Ispirazione (-1 IP): ri-tira ${label} → 3d6[${dice2.join(',')}] + ${attrVal} + ${skillVal}${flatExtra?` +${flatExtra} (bonus già applicati)`:''} = ${total2}` + (verdict2 ? ` vs TN ${tnVal} → ${verdict2.label}` : '') + ` — tenuto: ${keepNew?'il NUOVO':'il VECCHIO'} risultato (${finalTotal})`;
-            rollMeta = { dice: finalDice, total: finalTotal, verdict: finalVerdictLabel };
+            // Richiesta Rocco (IP automatici): se il NUOVO risultato viene tenuto, gli IP dati dal
+            // vecchio (Fallimento Critico/Lucky Number, meta.ipGained) vengono tolti e si valutano
+            // quelli del nuovo — regola 2.05b, valgono solo per il risultato che tieni.
+            const oldIpGained = Number(oldMeta.ipGained||0);
+            let finalIpGained = oldIpGained;
+            let ipNote = '';
+            if(keepNew){
+              if(oldIpGained) grantIP(me, -oldIpGained);
+              const ipRes2 = applyCheckIP(me, dice2, verdict2);
+              finalIpGained = ipRes2.gained;
+              ipNote = (oldIpGained ? ` · 💡 −${oldIpGained} IP del risultato scartato` : '') + ipRes2.note;
+            }
+            rerollLogText = `Ispirazione (-1 IP): ri-tira ${label} → 3d6[${dice2.join(',')}] + ${attrVal} + ${skillVal}${flatExtra?` +${flatExtra} (bonus già applicati)`:''} = ${total2}` + (verdict2 ? ` vs TN ${tnVal} → ${verdict2.label}` : '') + ` — tenuto: ${keepNew?'il NUOVO':'il VECCHIO'} risultato (${finalTotal})` + ipNote;
+            rollMeta = { dice: finalDice, total: finalTotal, verdict: finalVerdictLabel, ipGained: finalIpGained };
           }
           if(rerollLogText){
             await saveMember(session.code, me);
@@ -1518,11 +1534,11 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
           let outcomeText;
           if(result.outcome==='crit-success'){
             tor.boxes = Math.max(0, tor.boxes-1);
-            me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1;
+            grantIP(me, 1); // tetto 2+Willpower (js/rules.js)
             tor.usedThisRest = true;
             outcomeText = tormentAutoMsg('torment_out_crit_success', {}, 'Successo Critico! Cancella 1 Casella Torment e guadagna 1 IP.');
           } else if(result.outcome==='success'){
-            me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1;
+            grantIP(me, 1);
             tor.usedThisRest = true;
             outcomeText = tormentAutoMsg('torment_out_success', {}, 'Successo! Guadagna 1 IP.');
           } else if(result.outcome==='deep-crit-fail'){
@@ -1549,8 +1565,14 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
           } else {
             outcomeText = tormentAutoMsg('torment_out_fail', {}, 'Fallimento. Nessun effetto, si può ritentare più tardi.');
           }
+          // Richiesta Rocco (IP automatici): Lucky Number vale anche sui Torment Check (2.05b).
+          let luckyNote = '';
+          if(isLuckyRoll(me.tamer, result.dice)){
+            const g = grantIP(me, 1);
+            luckyNote = g ? ` · 💡 +1 IP (Lucky Number ${me.tamer.luckyNumber})` : ` · 💡 Lucky Number ${me.tamer.luckyNumber}: IP già al massimo (${ipCap(me.tamer)})`;
+          }
           await saveMember(session.code, me);
-          const entry = { who: displayName(me), role:'roll', text: `${tormentAutoMsg('torment_roll_requested', { dice: result.dice.join(','), total: result.total, tn: result.tn, outcomeText }, `Ha completato un Torment Check: 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText} (richiesto dal Master)`)}::TORMENTRESULT::${session.username}|${tor.name}`, meta:{dice: result.dice} };
+          const entry = { who: displayName(me), role:'roll', text: `${tormentAutoMsg('torment_roll_requested', { dice: result.dice.join(','), total: result.total, tn: result.tn, outcomeText }, `Ha completato un Torment Check: 3d6[${result.dice.join(',')}]=${result.total} vs TN ${result.tn} → ${outcomeText} (richiesto dal Master)`)}${luckyNote}::TORMENTRESULT::${session.username}|${tor.name}`, meta:{dice: result.dice} };
           // BUGFIX (privacy, stesso motivo già applicato in js/tamer-card.js): prima questa riga
           // scriveva in chiaro "Torment Check su "<nome>"" visibile a tutti nel canale -- ora il
           // nome viaggia solo nel payload ::TORMENTRESULT:: (vedi logHTML).

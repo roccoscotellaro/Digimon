@@ -74,6 +74,7 @@
       // Digimon. Editabile sia dal giocatore stesso sia dal Master (Scheda Tamer, vedi sotto).
       chatColor:'#5aa8ff',
       inspirationPoints:0, tormentPenalty:0,
+      luckyNumber:null, // Lucky Number 1-6 (regola 2.05b), vedi isLuckyRoll in js/rules.js
       // Richiesta utente (Razioni): "Affaticamento" — nuovo house-rule, gemello di tormentPenalty
       // ma con vita diversa: si accumula di 1 livello ogni volta che a un Rest il Tamer NON
       // consuma entrambe le 2 razioni giornaliere previste (vedi il marcatore ::RATIONREQ:: in
@@ -357,10 +358,14 @@
         <div class="flex-between" style="margin-bottom:8px;">
           <span class="muted">Inspiration Points</span>
           <span style="display:flex;align-items:center;gap:6px;">
-            <span class="mono" style="color:var(--cyan);font-size:16px;">${t.inspirationPoints||0}</span>
-            <button class="btn ghost small" id="ip-minus">−</button>
-            <button class="btn ghost small" id="ip-plus">+</button>
+            <span class="mono" style="color:var(--cyan);font-size:16px;">${t.inspirationPoints||0}</span><span class="muted">/ ${ipCap(t)}</span>
+            ${session && session.role==='master' ? `<button class="btn ghost small" id="ip-minus">−</button>
+            <button class="btn ghost small" id="ip-plus">+</button>` : ''}
           </span>
+        </div>
+        <div class="flex-between" style="margin-bottom:8px;">
+          <span class="muted">🍀 Lucky Number <span style="font-size:10px;">(2 dadi uguali su un Check o Torment Check = +1 IP)</span></span>
+          <span class="mono" style="color:var(--cyan);">${Number(t.luckyNumber)>=1 && Number(t.luckyNumber)<=6 ? t.luckyNumber : '—'}</span>
         </div>
         <div class="flex-between" style="margin-bottom:8px;">
           <span class="muted">Growth Points (non spesi)</span>
@@ -467,8 +472,12 @@
       }
       document.getElementById('tamer-w-minus').onclick = async ()=>{ me.tamer.currentWounds = Math.max(0, me.tamer.currentWounds-1); await saveMember(session.code, me); renderTamerCard(me, containerId, onChanged); };
       document.getElementById('tamer-w-plus').onclick = async ()=>{ me.tamer.currentWounds = Math.min(maxW, me.tamer.currentWounds+1); await saveMember(session.code, me); renderTamerCard(me, containerId, onChanged); };
-      document.getElementById('ip-minus').onclick = async ()=>{ me.tamer.inspirationPoints = Math.max(0, (me.tamer.inspirationPoints||0)-1); await saveMember(session.code, me); renderTamerCard(me, containerId, onChanged); };
-      document.getElementById('ip-plus').onclick = async ()=>{ me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1; await saveMember(session.code, me); renderTamerCard(me, containerId, onChanged); };
+      // Richiesta Rocco: gli IP li cambia solo il Master a mano (i bottoni non esistono per il
+      // giocatore), sempre col tetto 2+Willpower (grantIP, js/rules.js).
+      const ipMinusBtn = document.getElementById('ip-minus');
+      if(ipMinusBtn) ipMinusBtn.onclick = async ()=>{ grantIP(me, -1); await saveMember(session.code, me); renderTamerCard(me, containerId, onChanged); };
+      const ipPlusBtn = document.getElementById('ip-plus');
+      if(ipPlusBtn) ipPlusBtn.onclick = async ()=>{ if(!grantIP(me, 1)){ window.alert(`IP già al massimo (${ipCap(me.tamer)} = 2 + Willpower).`); return; } await saveMember(session.code, me); renderTamerCard(me, containerId, onChanged); };
       // Richiesta utente: correzione manuale dei Growth Points non spesi, visibile sia al Master
       // (dalla propria vista Roster, containerId "m-tamer-N") sia al giocatore sulla propria
       // Scheda Tamer -- stesso pattern di ip-minus/ip-plus qui sopra. Serve perché finora l'unico
@@ -492,8 +501,8 @@
           await pushPlayerNarration(session.code, me, { who: displayName(me), role:'player', text: `Usa il Major Aspect "${me.tamer.majorAspect.text}" (+4 al prossimo Check).` });
         } else {
           me.tamer.majorAspect.usesLeft = 1;
-          me.tamer.inspirationPoints = (me.tamer.inspirationPoints||0)+1;
-          await pushPlayerNarration(session.code, me, { who: displayName(me), role:'player', text: `Invoca la penalità del Major Aspect "${me.tamer.majorAspect.text}" (-4), ripristina l'uso e guadagna 1 IP.` });
+          const gAsp = grantIP(me, 1); // tetto 2+Willpower (js/rules.js)
+          await pushPlayerNarration(session.code, me, { who: displayName(me), role:'player', text: `Invoca la penalità del Major Aspect "${me.tamer.majorAspect.text}" (-4), ripristina l'uso e ${gAsp?'guadagna 1 IP':'avrebbe guadagnato 1 IP (già al massimo)'}.` });
         }
         await saveMember(session.code, me);
         renderTamerCard(me, containerId, onChanged);
@@ -594,11 +603,11 @@
             let outcomeText;
             if(result.outcome==='crit-success'){
               tor.boxes = Math.max(0, preBoxes-1);
-              me.tamer.inspirationPoints = ipBaseline + 1;
+              grantIP(me, 1); // parte da ipBaseline, tetto 2+Willpower
               tor.usedThisRest = true;
               outcomeText = tormentAutoMsg('torment_out_crit_success', {}, 'Successo Critico! Cancella 1 Casella Torment e guadagna 1 IP.');
             } else if(result.outcome==='success'){
-              me.tamer.inspirationPoints = ipBaseline + 1;
+              grantIP(me, 1); // parte da ipBaseline, tetto 2+Willpower
               tor.usedThisRest = true;
               outcomeText = tormentAutoMsg('torment_out_success', {}, 'Successo! Guadagna 1 IP.');
             } else if(result.outcome==='deep-crit-fail'){
@@ -621,6 +630,12 @@
               outcomeText = tormentAutoMsg('torment_out_crit_fail', {}, 'Fallimento Critico! Penalità -2 fino al Rest.');
             } else {
               outcomeText = tormentAutoMsg('torment_out_fail', {}, 'Fallimento. Nessun effetto, si può ritentare più tardi.');
+            }
+            // Richiesta Rocco (IP automatici): Lucky Number vale anche sui Torment Check (2.05b),
+            // solo sul risultato effettivamente tenuto — applyOutcome riparte sempre da ipBaseline.
+            if(isLuckyRoll(me.tamer, result.dice)){
+              const gLucky = grantIP(me, 1);
+              outcomeText += gLucky ? ` · 💡 +1 IP (Lucky Number ${me.tamer.luckyNumber})` : ` · 💡 Lucky Number ${me.tamer.luckyNumber}: IP già al massimo (${ipCap(me.tamer)})`;
             }
             if(combatant && combatant.tamerActionsLocked !== preTamerActionsLocked){
               await apiPost('/api/state', { resource:'combat', code: session.code, data: cachedCombat });
@@ -712,6 +727,15 @@
         <div class="divider"></div>
         <div class="field"><label>Major Aspect</label><input type="text" id="e-t-aspect-major" value="${escapeAttr(t.majorAspect.text)}" placeholder="es. Track Star..." /></div>
         <div class="field"><label>Minor Aspect</label><input type="text" id="e-t-aspect-minor" value="${escapeAttr(t.minorAspect.text)}" placeholder="es. Smarter Than They Act..." /></div>
+        ${(()=>{
+          // Lucky Number (2.05b): si sceglie una volta, alla creazione. Il giocatore può impostarlo
+          // solo se è ancora vuoto; il Master può sempre cambiarlo.
+          const lnSet = Number(t.luckyNumber)>=1 && Number(t.luckyNumber)<=6;
+          const canEditLn = !lnSet || (session && session.role==='master');
+          return `<div class="field" style="max-width:160px;"><label>🍀 Lucky Number (1-6)</label>${canEditLn
+            ? `<select id="e-t-lucky"><option value="">—</option>${[1,2,3,4,5,6].map(n=>`<option value="${n}" ${Number(t.luckyNumber)===n?'selected':''}>${n}</option>`).join('')}</select>`
+            : `<div class="mono">${t.luckyNumber} <span class="muted" style="font-size:10px;">(lo cambia solo il Master)</span></div>`}</div>`;
+        })()}
         <div class="row" style="margin-top:10px;">
           <button class="btn ghost" id="btn-cancel-tamer">Annulla</button>
           <button class="btn solid" id="btn-save-tamer">Salva</button>
@@ -730,6 +754,8 @@
         if(tColorEl) me.tamer.chatColor = tColorEl.value;
         me.tamer.majorAspect.text = document.getElementById('e-t-aspect-major').value.trim();
         me.tamer.minorAspect.text = document.getElementById('e-t-aspect-minor').value.trim();
+        const luckyEl = document.getElementById('e-t-lucky');
+        if(luckyEl) me.tamer.luckyNumber = luckyEl.value ? Number(luckyEl.value) : null;
         SKILL_DEFS.forEach(def=>{
           const max = skillMax(me.tamer, def);
           const cur = Number(me.tamer.skills[def.key])||0;
@@ -985,12 +1011,15 @@
           total += restPenalty;
           aspectNote += ` ${restPenalty>0?'+':''}${restPenalty} Torment/Affaticamento`;
         }
-        await saveMember(session.code, me);
         const verdict = evaluateVsTN(total, tnVal, dice);
+        // Richiesta Rocco (IP automatici, regola 2.05/2.05b): Fallimento Critico e Lucky Number
+        // danno +1 IP ciascuno (col tetto 2+Willpower, vedi applyCheckIP in js/rules.js).
+        const ipRes = applyCheckIP(me, dice, verdict);
+        await saveMember(session.code, me);
         const resEl = document.getElementById('roll-result-'+containerId);
-        const logText = `tira ${def.label} (${ATTR_ABBR[chosenAttr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict ? ` vs TN ${tnVal} → ${verdict.label}` : '');
+        const logText = `tira ${def.label} (${ATTR_ABBR[chosenAttr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict ? ` vs TN ${tnVal} → ${verdict.label}` : '') + ipRes.note;
         // BUGFIX: stesso motivo di Torment Check/Aspect qui sopra.
-        await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: logText, meta: { dice, total, verdict: verdict?verdict.label:null } });
+        await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: logText, meta: { dice, total, verdict: verdict?verdict.label:null, ipGained: ipRes.gained } });
 
         // ---------- Ispirazione: Ritira (richiesta utente: "Come funziona l'ispirazione? ...
         // implementiamo la funzione automatica per il lancio") ----------
@@ -1000,7 +1029,9 @@
         // tutti i bonus NON-dado già applicati sopra (Stunt/Teamwork/Aspects/Miracle/Torment-
         // Affaticamento) così il ri-tiro rifà solo i 3d6 e riusa automaticamente gli stessi bonus fissi.
         const flatExtra = total - baseTotal;
-        const renderResult = (curDice, curTotal, curVerdict)=>{
+        // curIpGained = IP già dati dal risultato attualmente tenuto (Fallimento Critico/Lucky
+        // Number): se un ri-tiro lo scarta, vengono tolti (2.05b: valgono solo se tieni il risultato).
+        const renderResult = (curDice, curTotal, curVerdict, curIpGained)=>{
           const ipNow = Number(me.tamer.inspirationPoints||0);
           resEl.innerHTML = `${diceRowHTML(curDice)}<span class="roll-total">${curTotal}</span>${curVerdict?`<span class="roll-verdict ${curVerdict.cls}">${curVerdict.label}</span>`:''}` +
             (ipNow>=1 ? `<div style="margin-top:8px;"><button class="btn ghost small" id="roll-reroll-${containerId}">🔄 Ispirazione: Ritira (1 IP, hai ${ipNow})</button></div>` : '');
@@ -1016,15 +1047,24 @@
               const finalDice = keepNew ? dice2 : curDice;
               const finalTotal = keepNew ? total2 : curTotal;
               const finalVerdict = keepNew ? verdict2 : curVerdict;
-              const rerollLogText = `Ispirazione (-1 IP): ri-tira ${def.label} → 3d6[${dice2.join(',')}] + ${attrVal} + ${skillVal}${flatExtra?` +${flatExtra} (bonus già applicati)`:''} = ${total2}` + (verdict2 ? ` vs TN ${tnVal} → ${verdict2.label}` : '') + ` — tenuto: ${keepNew?'il NUOVO':'il VECCHIO'} risultato (${finalTotal})`;
+              let finalIpGained = curIpGained||0;
+              let ipNote = '';
+              if(keepNew){
+                if(curIpGained) grantIP(me, -curIpGained);
+                const ipRes2 = applyCheckIP(me, dice2, verdict2);
+                finalIpGained = ipRes2.gained;
+                ipNote = (curIpGained ? ` · 💡 −${curIpGained} IP del risultato scartato` : '') + ipRes2.note;
+                await saveMember(session.code, me);
+              }
+              const rerollLogText = `Ispirazione (-1 IP): ri-tira ${def.label} → 3d6[${dice2.join(',')}] + ${attrVal} + ${skillVal}${flatExtra?` +${flatExtra} (bonus già applicati)`:''} = ${total2}` + (verdict2 ? ` vs TN ${tnVal} → ${verdict2.label}` : '') + ` — tenuto: ${keepNew?'il NUOVO':'il VECCHIO'} risultato (${finalTotal})` + ipNote;
               // BUGFIX: stesso motivo del tiro originale qui sopra.
-              await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: rerollLogText, meta: { dice: finalDice, total: finalTotal, verdict: finalVerdict?finalVerdict.label:null } });
-              renderResult(finalDice, finalTotal, finalVerdict);
+              await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: rerollLogText, meta: { dice: finalDice, total: finalTotal, verdict: finalVerdict?finalVerdict.label:null, ipGained: finalIpGained } });
+              renderResult(finalDice, finalTotal, finalVerdict, finalIpGained);
               if(onChanged) onChanged();
             };
           }
         };
-        renderResult(dice, total, verdict);
+        renderResult(dice, total, verdict, ipRes.gained);
         if(onChanged) onChanged();
       };
     };
@@ -1102,14 +1142,18 @@
         aspectNote += ` ${restPenalty>0?'+':''}${restPenalty} Torment/Affaticamento`;
       }
       const verdict = evaluateVsTN(total, tn, dice);
+      // Richiesta Rocco (IP automatici): stesse fonti di openSkillRollPanel (Fallimento Critico,
+      // Lucky Number). ipGained va nel meta del messaggio (vedi index.html) per il ri-tiro.
+      const ipRes = applyCheckIP(me, dice, verdict);
+      if(ipRes.gained) await saveMember(session.code, me);
       // Stesso marcatore ::REROLL:: del ramo Pool qui sopra — payload = username|skill|etichetta|
       // attrVal|skillVal|stuntDice(sempre 0 qui, /tira non ha lo Stunt del pannello completo)|
       // flatExtra(bonus non-dado già sommati: Aspect/Torment/Affaticamento)|tn.
       const flatExtra = total - baseTotal;
       const rerollPayload = `${session.username}|skill|${encodeURIComponent(def.label)}|${attrVal}|${skillVal}|0|${flatExtra}|${tn!=null?tn:''}`;
       return {
-        dice, isPool:false, resultLabel: String(total), verdict,
-        text: `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict ? ` vs TN ${tn} → ${verdict.label}` : '') + `::REROLL::${rerollPayload}`
+        dice, isPool:false, resultLabel: String(total), verdict, ipGained: ipRes.gained,
+        text: `tira ${def.label} (${ATTR_ABBR[attr]}+Skill): 3d6[${dice.join(',')}] + ${attrVal} + ${skillVal}${aspectNote} = ${total}` + (verdict ? ` vs TN ${tn} → ${verdict.label}` : '') + ipRes.note + `::REROLL::${rerollPayload}`
       };
     }
     return { text: `⚠ comando non riconosciuto: "${rest}". Usa /tira <NomeSkill|Accuracy|Dodge|Health> [TN] [major|minor]`, dice:null };

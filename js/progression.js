@@ -3,8 +3,8 @@
 // Natural Critical Results, Blast/Slide/Dark Evolution), i contatori Milestone/XP con i bottoni
 // "+1 XP" per motivo, l'assegnazione di una Milestone Narrativa, l'annullamento dell'ultima
 // Milestone concessa per errore (btn-milestone-undo), Break/Rest del party (8.04), la correzione
-// manuale di Milestone/XP, e un riepilogo di sola lettura dei Punti Ispirazione (IP) di ciascun
-// giocatore. Include anche grantMilestoneRewards (unico punto in cui una Milestone viene davvero
+// manuale di Milestone/XP, e il pannello Punti Ispirazione (IP) del Master (+/- per giocatore
+// con motivo, Inizia Sessione, Sconfitta del Party -- tetto 2+Willpower via grantIP, js/rules.js). Include anche grantMilestoneRewards (unico punto in cui una Milestone viene davvero
 // concessa, sia da soglia XP sia da assegnazione Narrativa: +3 Growth Points/+1 IP/+3 DP Bonus a
 // ogni giocatore, con l'istantanea in prog.lastMilestoneGrant usata da btn-milestone-undo per
 // l'annullamento) e saveProgression (wrapper dati verso /api/state, usato solo da questo cluster
@@ -62,9 +62,13 @@
 
   async function grantMilestoneRewards(code, prog, milestoneNumber, reason, xpConsumed){
     const players = cachedRoster.filter(m=>m.role==='player');
+    // Richiesta Rocco (IP col tetto 2+Willpower, js/rules.js grantIP): l'IP della Milestone può
+    // non entrare se il Tamer è già al massimo -- ipByUser registra quanto è stato DAVVERO dato,
+    // così btn-milestone-undo toglie solo quello (e non un IP che il Tamer aveva già prima).
+    const ipByUser = {};
     for(const p of players){
       p.tamer.unspentGrowthPoints = Number(p.tamer.unspentGrowthPoints||0) + 3;
-      p.tamer.inspirationPoints = Number(p.tamer.inspirationPoints||0) + 1;
+      ipByUser[p.username] = grantIP(p, 1);
       p.digimon.unspentBonusDP = Number(p.digimon.unspentBonusDP||0) + 3;
       p.digimon.bonusDpLog = Array.isArray(p.digimon.bonusDpLog) ? p.digimon.bonusDpLog : [];
       p.digimon.bonusDpLog.push({ amount: 3, milestone: milestoneNumber, date: new Date().toISOString(), reason: reason || 'Milestone' });
@@ -76,7 +80,8 @@
         reason: reason || 'Milestone',
         at: new Date().toISOString(),
         xpConsumed: xpConsumed || 0,
-        playerUsernames: players.map(p=>p.username)
+        playerUsernames: players.map(p=>p.username),
+        ipByUser
       };
       await saveProgression(code, prog);
     }
@@ -126,11 +131,6 @@
         <div class="stat-box"><div class="v">${prog.milestone}</div><div class="l">Milestone</div></div>
         <div class="stat-box"><div class="v">${prog.xp}/7</div><div class="l">XP</div></div>
       </div>
-      <div class="muted" style="margin-bottom:4px;">Punti Ispirazione (2.05 — individuali, non di party)</div>
-      <div class="muted" style="margin-bottom:8px;">
-        ${players.length ? players.map(p=>`<span class="mono" style="margin-right:10px;">${escapeHTML(p.username)}: <b style="color:var(--cyan);">${Number(p.tamer.inspirationPoints||0)}</b></span>`).join('') : 'Nessun giocatore nel roster.'}
-      </div>
-      <div class="muted" style="margin-bottom:8px;font-size:11px;">Si modifica dalla Scheda Tamer di ciascun giocatore (bottoni +/-), non da qui.</div>
       <div class="muted" style="margin-bottom:6px;">Aggiungi XP</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
         <button class="btn small" data-xp-add="1" data-xp-label="Sessione senza Combattimento">+1 No-Combat</button>
@@ -142,7 +142,7 @@
       ${prog.lastMilestoneGrant ? `<button class="btn ghost" id="btn-milestone-undo" style="width:100%;margin-bottom:6px;" title="Annulla la Milestone ${escapeAttr(String(prog.lastMilestoneGrant.milestone))} (${escapeAttr(prog.lastMilestoneGrant.reason)}), consegnata il ${escapeAttr(new Date(prog.lastMilestoneGrant.at).toLocaleString('it-IT'))}">↩️ Annulla ultima Milestone (${escapeHTML(String(prog.lastMilestoneGrant.milestone))})</button>` : ''}
       <div class="divider"></div>
       <div class="muted" style="margin-bottom:6px;">Downtime del Party (8.04)</div>
-      <div class="muted" style="margin:2px 0 6px;font-size:11px;">Dove pubblicare l'esito (almeno uno):</div>
+      <div class="muted" style="margin:2px 0 6px;font-size:11px;">Dove pubblicare l'esito (almeno uno) — vale anche per i Punti Ispirazione qui sotto:</div>
       <div class="checkbox-row">
         <input type="checkbox" id="downtime-chan-general" checked />
         <label for="downtime-chan-general">📣 Chat Generale (visibile a tutti)</label>
@@ -163,6 +163,25 @@
         <button class="btn solid" id="btn-take-rest" style="flex:1;">😴 Rest</button>
       </div>
       <div class="muted" style="margin-bottom:8px;">Break: Ferite piene + 1 EP. Rest: Ferite piene + EP piene + rimuove penalità Torment + reset "Torment Check" e Aspects.</div>
+      <div class="divider"></div>
+      <div class="muted" style="margin-bottom:4px;">💡 Punti Ispirazione (2.05 — individuali, tetto 2 + Willpower)</div>
+      <div class="muted" style="margin-bottom:6px;font-size:11px;">Automatici: Milestone, Torment Check riuscito, penalità del Major Aspect, Fallimento Critico su un Check, Lucky Number (anche sui Torment Check).</div>
+      ${players.length ? players.map((p,i)=>`
+        <div class="flex-between" style="margin-bottom:4px;">
+          <span class="mono">${escapeHTML(displayName(p))}</span>
+          <span style="display:flex;align-items:center;gap:6px;">
+            <b class="mono" style="color:var(--cyan);">${Number(p.tamer.inspirationPoints||0)}</b><span class="muted">/ ${ipCap(p.tamer)}</span>
+            <button class="btn ghost small" data-ip-adjust="-1" data-ip-user="${escapeAttr(p.username)}">−</button>
+            <button class="btn ghost small" data-ip-adjust="1" data-ip-user="${escapeAttr(p.username)}">+</button>
+          </span>
+        </div>`).join('') : '<div class="muted">Nessun giocatore nel roster.</div>'}
+      <div class="field" style="margin-top:6px;"><label>Motivo (facoltativo, finisce nel messaggio)</label><input type="text" id="ip-reason" placeholder="es. buon roleplay" /></div>
+      <div class="row" style="margin-bottom:6px;">
+        <button class="btn" id="btn-ip-session" style="flex:1;">🎬 Inizia Sessione</button>
+        <button class="btn" id="btn-ip-defeat" style="flex:1;">💀 Sconfitta del Party</button>
+      </div>
+      <div class="muted" style="margin-bottom:8px;font-size:11px;">Inizia Sessione: +1 IP a chi è a 0. Sconfitta: +1 IP a ogni giocatore. Il tetto vale sempre, anche per i bottoni +/−.</div>
+      <div class="muted" id="ip-status" style="margin-bottom:8px;"></div>
       <div class="muted" style="margin-top:8px;">Correzione manuale</div>
       <div class="row">
         <input type="number" id="prog-milestone-manual" value="${prog.milestone}" style="flex:1;" />
@@ -259,7 +278,9 @@
           const p = cachedRoster.find(m=>m.role==='player' && m.username===username);
           if(!p) continue;
           p.tamer.unspentGrowthPoints = Math.max(0, Number(p.tamer.unspentGrowthPoints||0) - 3);
-          p.tamer.inspirationPoints = Math.max(0, Number(p.tamer.inspirationPoints||0) - 1);
+          // ipByUser assente = Milestone consegnata prima del tetto IP: valeva sempre 1.
+          const ipGiven = (grant.ipByUser && grant.ipByUser[username]!==undefined) ? Number(grant.ipByUser[username]||0) : 1;
+          if(ipGiven) grantIP(p, -ipGiven);
           p.digimon.unspentBonusDP = Math.max(0, Number(p.digimon.unspentBonusDP||0) - 3);
           if(Array.isArray(p.digimon.bonusDpLog)){
             const idx = p.digimon.bonusDpLog.map((e,i)=>({e,i})).filter(x=>x.e && x.e.milestone===grant.milestone).map(x=>x.i).pop();
@@ -290,7 +311,9 @@
         }
       };
     }
-    async function publishDowntimeMessage(entry){
+    // privateTargets (opzionale): a chi mandare la copia in Chat Privata -- default tutto il party
+    // (Break/Rest), un solo giocatore per un IP assegnato a mano dal Master.
+    async function publishDowntimeMessage(entry, privateTargets){
       const sendGeneral = document.getElementById('downtime-chan-general').checked;
       const sendPrivate = document.getElementById('downtime-chan-private').checked;
       const sendSubgroup = downtimeSubChk ? downtimeSubChk.checked : false;
@@ -302,7 +325,7 @@
       }
       if(sendGeneral) await pushLog(code, entry);
       if(sendPrivate){
-        for(const p of cachedRoster.filter(m=>m.role==='player')){
+        for(const p of (privateTargets || cachedRoster.filter(m=>m.role==='player'))){
           await pushPrivateLog(code, p.username, { ...entry, meta: { location: memberLocationKey(p) } });
         }
       }
@@ -311,6 +334,45 @@
         await pushPrivateLog(code, 'subgroup:'+subgroupId, { ...entry, meta: { location: subgroupLocationKey(group) } });
       }
     }
+    // ---------- Punti Ispirazione: controllo del Master (richiesta Rocco) ----------
+    // Tutte le variazioni passano da grantIP (js/rules.js), quindi rispettano il tetto 2+Willpower.
+    const ipStatus = (msg, isErr)=>{ const el = document.getElementById('ip-status'); if(el){ el.style.color = isErr?'var(--danger)':'var(--text-mute)'; el.textContent = msg; } };
+    const ipReason = ()=>{ const el = document.getElementById('ip-reason'); return el ? el.value.trim() : ''; };
+    cardEl.querySelectorAll('[data-ip-adjust]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const p = cachedRoster.find(m=>m.role==='player' && m.username===btn.getAttribute('data-ip-user'));
+        if(!p) return;
+        const delta = grantIP(p, Number(btn.getAttribute('data-ip-adjust')));
+        if(!delta){ ipStatus(Number(btn.getAttribute('data-ip-adjust'))>0 ? `${displayName(p)} è già al massimo (${ipCap(p.tamer)} IP).` : `${displayName(p)} non ha IP da togliere.`, true); return; }
+        await saveMember(code, p);
+        const why = ipReason();
+        await publishDowntimeMessage({ who:'Sistema', role:'gm', text: `💡 ${displayName(p)} ${delta>0?'guadagna':'perde'} 1 IP${why?` (${why})`:''}. IP: ${Number(p.tamer.inspirationPoints||0)}/${ipCap(p.tamer)}.` }, [p]);
+        renderProgressionMaster(code, onChanged);
+        if(onChanged) onChanged();
+      };
+    });
+    // Regola 2.05: "+1 IP se non ne hai all'inizio della sessione". Il sito non ha un concetto di
+    // sessione, quindi è il Master a dichiararla con questo bottone.
+    document.getElementById('btn-ip-session').onclick = async ()=>{
+      const got = [];
+      for(const p of cachedRoster.filter(m=>m.role==='player')){
+        if(Number(p.tamer.inspirationPoints||0)===0 && grantIP(p, 1)){ await saveMember(code, p); got.push(displayName(p)); }
+      }
+      await publishDowntimeMessage({ who:'Sistema', role:'gm', text: `🎬 Inizia la sessione! ${got.length ? `+1 IP a chi non ne aveva: ${got.join(', ')}.` : 'Tutti hanno già almeno 1 IP.'}` });
+      renderProgressionMaster(code, onChanged);
+      if(onChanged) onChanged();
+    };
+    // Regola 2.05: "+1 IP se il party subisce una Sconfitta in Combattimento".
+    document.getElementById('btn-ip-defeat').onclick = async ()=>{
+      if(!window.confirm('Il party ha subito una Sconfitta? Ogni giocatore riceve 1 IP (regola 2.05, tetto 2 + Willpower).')) return;
+      const got = [], full = [];
+      for(const p of cachedRoster.filter(m=>m.role==='player')){
+        if(grantIP(p, 1)){ await saveMember(code, p); got.push(displayName(p)); } else full.push(displayName(p));
+      }
+      await publishDowntimeMessage({ who:'Sistema', role:'gm', text: `💀 Il party subisce una Sconfitta. +1 IP a: ${got.length?got.join(', '):'nessuno'}${full.length?` (già al massimo: ${full.join(', ')})`:''}.` });
+      renderProgressionMaster(code, onChanged);
+      if(onChanged) onChanged();
+    };
     document.getElementById('btn-take-break').onclick = async ()=>{
       const players = cachedRoster.filter(m=>m.role==='player');
       for(const p of players){
