@@ -1089,6 +1089,8 @@ let editingScene = false;
     { key:'defeat_resolve_enemy_egg', category:'Sconfitta', label:'Risoluzione Sconfitta Nemico — Richiudi nell\'Uovo', defaultTemplate:'🥚 Il Master risolve la Sconfitta di {{name}}: torna Digitama (rimosso dal Combattimento).', vars:[{token:'name'}] },
     { key:'evolve_combat', category:'Digievoluzione', label:'Evolvi (box dedicato durante il turno)', defaultTemplate:'🧬 {{name}}: {{oldName}} digivolve in {{newName}}! (1 Azione{{costText}} spesi) — Stat aggiornate.', vars:[{token:'name'},{token:'oldName'},{token:'newName'},{token:'costText',desc:'" + N Evolution Points" o vuoto'}] },
     { key:'force_evolve_combat', category:'Digievoluzione', label:'Forza Evoluzione (box dedicato durante il turno)', defaultTemplate:'⚡ Forza Evoluzione di {{name}} (TN {{tn}}, 2 Azioni spese): 3d6[{{dice}}] + Willpower {{willVal}} = {{total}} → {{outcomeText}}', vars:[{token:'name'},{token:'tn'},{token:'dice'},{token:'willVal'},{token:'total'},{token:'outcomeText'}] },
+    { key:'evolution_lock', category:'Digievoluzione', label:'Blocco evoluzioni (🔒 in Gestione Combattimento)', defaultTemplate:'🔒 {{name}} non può digievolvere per il resto di questo combattimento.', vars:[{token:'name'}] },
+    { key:'evolution_unlock', category:'Digievoluzione', label:'Sblocco evoluzioni (🧬 in Gestione Combattimento)', defaultTemplate:'🧬 {{name}} può di nuovo digievolvere.', vars:[{token:'name'}] },
     { key:'reenter_risk', category:'Editing Manuale (Master)', label:'Rientro in combattimento a rischio', defaultTemplate:'↩️ {{name}} rientra in combattimento a proprio rischio.', vars:[{token:'name'}] },
     { key:'resync_name', category:'Editing Manuale (Master)', label:'Risincronizzazione nome/immagine con la Scheda', defaultTemplate:'🔄 {{oldName}} → {{newName}} (nome/immagine risincronizzati con la Scheda).', vars:[{token:'oldName'},{token:'newName'}] },
     { key:'action_refund', category:'Editing Manuale (Master)', label:'Restituzione 1 Azione (Digimon)', defaultTemplate:'{{name}} riottiene 1 Azione (es. Reload/Battle Cry/Horde Duelist riuscito) — ora {{current}}/2.', vars:[{token:'name'},{token:'current'}] },
@@ -1948,6 +1950,17 @@ let editingScene = false;
   async function endCombatNow(code, players){
     if(!window.confirm('Terminare il combattimento e azzerare i partecipanti?')) return;
     const prevLock = cachedCombat && cachedCombat.chatLock;
+    // Richiesta Rocco (2026-10-08): a fine combattimento le Ferite Temporanee dei Digimon PC si
+    // azzerano (pool tempWounds + la quota da Reinforce, reinforceTempWounds). Quelle dei Nemici
+    // spariscono già da sole con l'array participants.
+    for(const p of ((cachedCombat && cachedCombat.participants) || [])){
+      if(!p.isPC) continue;
+      const member = cachedRoster.find(m=>m.username===p.username);
+      if(!member || !(Number(member.digimon.tempWounds||0) || Number(member.digimon.reinforceTempWounds||0))) continue;
+      member.digimon.tempWounds = 0;
+      member.digimon.reinforceTempWounds = 0;
+      await patchMember(code, member.username, { tempWounds: 0, reinforceTempWounds: 0 });
+    }
     cachedCombat = defaultCombat();
     await saveCombat(code, cachedCombat);
     // Sblocco simmetrico all'avviso di inizio (vedi btn-combat-start): la chat scelta dal Master
@@ -7071,9 +7084,9 @@ let editingScene = false;
         const p = combat.participants.find(x=>x.id===id);
         if(!p || !p.isPC) return;
         p.evolutionLocked = !p.evolutionLocked;
-        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: p.evolutionLocked
-          ? `🔒 ${p.name} non può digievolvere per il resto di questo combattimento.`
-          : `🧬 ${p.name} può di nuovo digievolvere.` });
+        // Testo personalizzabile dal pannello Messaggi Automatici (evolution_lock/evolution_unlock).
+        const lockText = autoMsgText(p.evolutionLocked ? 'evolution_lock' : 'evolution_unlock', { name: p.name });
+        if(lockText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: lockText });
         await persistAndRefresh();
       };
     });
