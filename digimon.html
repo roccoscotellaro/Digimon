@@ -2846,6 +2846,17 @@
       root.querySelectorAll('[data-stage-switch]').forEach(btn=>{
         btn.onclick = async ()=>{
           const newStage = btn.getAttribute('data-stage-switch');
+          // Richiesta Rocco ("bloccare le evoluzioni in un fight per uno o più giocatori"): questa
+          // pagina non carica il Combattimento, quindi lo legge al volo SOLO quando un giocatore
+          // prova a salire di Stage -- scendere resta sempre permesso, il Master non è mai bloccato.
+          // Stesso flag participant.evolutionLocked impostato dal Master in Gestione Combattimento
+          // (index.html, vedi evolutionLockedFor in js/rules.js).
+          if(session.role!=='master' && STAGES.indexOf(newStage) > STAGES.indexOf(target.digimon.stage)){
+            const cd = await apiGet('/api/state?resource=combat&code=' + encodeURIComponent(session.code), true);
+            const combat = cd ? cd.combat : null;
+            const locked = !!(combat && combat.active && Array.isArray(combat.participants) && combat.participants.some(p=>p.isPC && p.username===target.username && p.evolutionLocked));
+            if(locked){ window.alert('🔒 Il Master ha bloccato le evoluzioni per questo combattimento.'); return; }
+          }
           applyStageChange(target.digimon, target.digimon.stage, newStage);
           // Regola 8.05: un Digimon che cambia Stage recupera tutte le Wound Box.
           target.digimon.currentWounds = target.digimon.maxWounds;

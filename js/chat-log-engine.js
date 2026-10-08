@@ -1821,7 +1821,10 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       if(evoQuickBtn && me && me.digimon){
         const d = me.digimon;
         const target = STAGES[Math.min(5, stageIndex(d.stage)+1)];
-        if(target === d.stage){
+        if(evolutionLockedFor(me.username)){
+          // Richiesta Rocco: evoluzioni bloccate dal Master per questo fight (js/rules.js).
+          window.alert(EVOLUTION_LOCKED_MSG);
+        } else if(target === d.stage){
           window.alert(`${d.name||'Il tuo Digimon'} è già al massimo Stage raggiungibile.`);
         } else if(!(d.stageStats && d.stageStats[target]) && target !== d.stage){
           window.alert(`Lo Stage ${target} non è ancora pronto: vai su Scheda Digimon → Evoluzione, assegna i punti per costruirlo (è come creare un Digimon nuovo, regola 3.19), poi potrai evolvere anche da qui.`);

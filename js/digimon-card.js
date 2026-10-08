@@ -1020,6 +1020,7 @@
         evoBtn.onclick = async ()=>{
           const target = document.getElementById('evo-target-'+containerId).value;
           const statusEl = document.getElementById('evo-status-'+containerId);
+          if(evolutionLockedFor(me.username)){ statusEl.style.color='var(--danger)'; statusEl.textContent = EVOLUTION_LOCKED_MSG; return; } // blocco del Master, vedi js/rules.js
           if(target === me.digimon.stage){
             statusEl.style.color='var(--danger)';
             statusEl.textContent = `${me.digimon.name||'Il Digimon'} è già a Stage ${target} — scegli uno Stage superiore dal menu per evolvere davvero.`;
@@ -1060,6 +1061,7 @@
         forceBtn.onclick = async ()=>{
           const target = document.getElementById('evo-target-'+containerId).value;
           const statusEl = document.getElementById('evo-status-'+containerId);
+          if(evolutionLockedFor(me.username)){ statusEl.style.color='var(--danger)'; statusEl.textContent = EVOLUTION_LOCKED_MSG; return; } // blocco del Master, vedi js/rules.js
           if(target === me.digimon.stage){
             statusEl.style.color='var(--danger)';
             statusEl.textContent = `${me.digimon.name||'Il Digimon'} è già a Stage ${target} — scegli uno Stage superiore dal menu per forzare l'evoluzione.`;
@@ -1161,6 +1163,7 @@
         blastBtn.onclick = async ()=>{
           const target = document.getElementById('blast-target-'+containerId).value;
           const statusEl = document.getElementById('blast-status-'+containerId);
+          if(evolutionLockedFor(me.username)){ statusEl.style.color='var(--danger)'; statusEl.textContent = EVOLUTION_LOCKED_MSG; return; } // blocco del Master, vedi js/rules.js
           const usesLeft = me.digimon.blastEvolutionUses!=null ? me.digimon.blastEvolutionUses : 1;
           const maxAccessible = STAGES[Math.min(5, stageIndex(me.digimon.defaultStage)+Number(me.digimon.defaultRange||0))];
           if(usesLeft<=0){ statusEl.textContent = 'Nessun uso di Blast Evolution rimasto in questa campagna.'; return; }
@@ -1204,6 +1207,7 @@
           const newName = document.getElementById('slide-name-'+containerId).value.trim();
           const woundDiff = Number(document.getElementById('slide-wounddiff-'+containerId).value)||0;
           const statusEl = document.getElementById('slide-status-'+containerId);
+          if(evolutionLockedFor(me.username)){ statusEl.style.color='var(--danger)'; statusEl.textContent = EVOLUTION_LOCKED_MSG; return; } // blocco del Master, vedi js/rules.js
           if(!newName){ statusEl.textContent = 'Inserisci il nome della forma alternativa.'; return; }
           if(Number(me.digimon.evolutionPoints||0) < 1){ statusEl.textContent = 'Serve almeno 1 Evolution Point.'; return; }
           me.digimon.evolutionPoints = Number(me.digimon.evolutionPoints||0) - 1;
@@ -1225,6 +1229,7 @@
         darkStartBtn.onclick = async ()=>{
           const target = document.getElementById('dark-target-'+containerId).value;
           const statusEl = document.getElementById('dark-status-'+containerId);
+          if(evolutionLockedFor(me.username)){ statusEl.style.color='var(--danger)'; statusEl.textContent = EVOLUTION_LOCKED_MSG; return; } // blocco del Master, vedi js/rules.js
           applyStageChange(me.digimon, me.digimon.stage, target);
           me.digimon.darkEvolutionActive = true;
           if(!me.digimon.qualities) me.digimon.qualities = [];
@@ -1259,6 +1264,7 @@
           const idx = Number(btn.getAttribute('data-armor-use'));
           const af = me.digimon.armorForms[idx];
           if(!af || af.usedThisRest) return;
+          if(evolutionLockedFor(me.username)){ window.alert(EVOLUTION_LOCKED_MSG); return; } // blocco del Master, vedi js/rules.js
           applyStageChange(me.digimon, me.digimon.stage, af.stage);
           if(!me.digimon.qualities) me.digimon.qualities = [];
           (af.qualities||[]).forEach(q=>{

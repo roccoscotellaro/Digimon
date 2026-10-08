@@ -156,3 +156,17 @@
       : ` · 💡 ${reasons.join(', ')}: IP già al massimo (${ipCap(me.tamer)})`;
     return { gained, note };
   }
+
+  // ---------- Blocco Evoluzioni in Combattimento ----------
+  // Richiesta Rocco ("poter bloccare le evoluzioni in un fight per uno o più giocatori"): flag
+  // participant.evolutionLocked sul partecipante PC del Combattimento attivo, attivato/disattivato
+  // dal Master col bottone 🔒 nella riga del partecipante (Gestione Combattimento, index.html).
+  // Vive DENTRO cachedCombat.participants, quindi vale solo per quel fight: endCombatNow svuota
+  // l'array e il blocco sparisce da solo, come tamerActionsLocked. Blocca solo le evoluzioni
+  // VERSO L'ALTO (Evolvi, Forza, Blast, Slide, Dark, Armor, "Evolvi ora" in chat); tornare al
+  // Default Stage / terminare Dark o Armor resta sempre permesso.
+  function evolutionLockedFor(username){
+    if(!username || typeof cachedCombat==='undefined' || !cachedCombat || !cachedCombat.active || !Array.isArray(cachedCombat.participants)) return false;
+    return cachedCombat.participants.some(p=>p.isPC && p.username===username && p.evolutionLocked);
+  }
+  const EVOLUTION_LOCKED_MSG = '🔒 Il Master ha bloccato le evoluzioni per questo combattimento.';
