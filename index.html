@@ -7771,12 +7771,13 @@ let editingScene = false;
       if(combat.participants.some(p=>p.username===username)) return;
       const member = cachedRoster.find(m=>m.username===username);
       // BUGFIX (Rocco 2026-10-08): regola 9.12a, la Sconfitta vale solo "per il resto della
-      // battaglia". Un flag defeated rimasto da un combattimento PRECEDENTE (già risolto, cioè senza
-      // defeatPending) faceva entrare il Digimon nel nuovo fight già Sconfitto e saltato nei turni.
-      // Una Sconfitta ancora da risolvere (defeatPending) resta: la decide il Master dalla riga.
-      if(member && member.digimon.defeated && !member.digimon.defeatPending){
+      // battaglia". Una Sconfitta rimasta da un combattimento PRECEDENTE (anche con la scelta
+      // Regredisci/Uovo mai fatta) faceva entrare il Digimon nel nuovo fight già Sconfitto e saltato
+      // nei turni: il vecchio combattimento è finito, quindi si toglie tutto in silenzio.
+      if(member && (member.digimon.defeated || member.digimon.defeatPending)){
         member.digimon.defeated = false;
-        await patchMember(code, member.username, { defeated: false });
+        member.digimon.defeatPending = false;
+        await patchMember(code, member.username, { defeated: false, defeatPending: false });
       }
       const ram = member ? computeDerivedStats(member.digimon).ram : 0;
       const startActions = (member && member.digimon.hybridMode) ? 3 : 2;
