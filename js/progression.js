@@ -58,6 +58,24 @@
 // codice, solo mostrato accanto al vero valore per-giocatore. Questo pannello ora mostra invece un
 // riepilogo di sola lettura dell'IP di ciascun giocatore (la modifica resta sulla Scheda Tamer).
 
+  // BUGFIX (Rocco 2026-10-08: "un Digimon sconfitto nella scorsa battaglia, nonostante il riposo
+  // e la battaglia finita, dice che è stato sconfitto"): regola 9.12a -- un Digimon Sconfitto è
+  // ignorato "per il resto della battaglia", non oltre. Il flag member.digimon.defeated però non
+  // veniva mai tolto da Break/Rest né da un nuovo combattimento (solo a mano con ↩️), quindi restava
+  // "Sconfitto" per sempre e veniva saltato anche nei fight successivi. Ora Break e Rest lo tolgono.
+  // Se la scelta Regredisci/Uovo (defeatPending) non è ancora stata fatta, NON la si decide al posto
+  // del Master: il flag resta e il messaggio lo ricorda (si risolve dalla Scheda Digimon).
+  // Ritorna il nome del Digimon se aveva ancora una Sconfitta da risolvere, altrimenti null.
+  function clearStaleDefeat(p){
+    if(!p || !p.digimon || !p.digimon.defeated) return null;
+    if(p.digimon.defeatPending) return p.digimon.name || displayName(p);
+    p.digimon.defeated = false;
+    return null;
+  }
+  function pendingDefeatNote(names){
+    return names.length ? ` ⚠️ Sconfitta ancora da risolvere (Regredisci o Uovo) dalla Scheda Digimon: ${names.join(', ')}.` : '';
+  }
+
   async function saveProgression(code, data){ return apiPost('/api/state', { resource:'progression', code, ...data }); }
 
   async function grantMilestoneRewards(code, prog, milestoneNumber, reason, xpConsumed){
@@ -375,18 +393,21 @@
     };
     document.getElementById('btn-take-break').onclick = async ()=>{
       const players = cachedRoster.filter(m=>m.role==='player');
+      const pendingDefeats = [];
       for(const p of players){
         p.tamer.currentWounds = 3 + Number(p.tamer.skills.endurance||0);
         p.digimon.currentWounds = p.digimon.maxWounds;
         const cap = cachedProgression ? Number(cachedProgression.milestone||0) : 0;
         p.digimon.evolutionPoints = Math.min(cap, Number(p.digimon.evolutionPoints||0)+1);
+        const pend = clearStaleDefeat(p); if(pend) pendingDefeats.push(pend);
         await saveMember(code, p);
       }
-      await publishDowntimeMessage({ who:'Sistema', role:'gm', text: `☕ Il party prende un Break: Ferite recuperate del tutto, +1 Evolution Point a testa.` });
+      await publishDowntimeMessage({ who:'Sistema', role:'gm', text: `☕ Il party prende un Break: Ferite recuperate del tutto, +1 Evolution Point a testa.${pendingDefeatNote(pendingDefeats)}` });
       if(onChanged) onChanged();
     };
     document.getElementById('btn-take-rest').onclick = async ()=>{
       const players = cachedRoster.filter(m=>m.role==='player');
+      const pendingDefeats = [];
       for(const p of players){
         p.tamer.currentWounds = 3 + Number(p.tamer.skills.endurance||0);
         p.digimon.currentWounds = p.digimon.maxWounds;
@@ -404,9 +425,10 @@
         if(!p.tamer.specialOrdersUsed) p.tamer.specialOrdersUsed = {};
         TALENT_DEFS.filter(t=>t.once==='rest').forEach(t=>{ p.tamer.specialOrdersUsed[t.order] = false; });
         (p.digimon.armorForms||[]).forEach(af=>{ af.usedThisRest = false; });
+        const pend = clearStaleDefeat(p); if(pend) pendingDefeats.push(pend);
         await saveMember(code, p);
       }
-      await publishDowntimeMessage({ who:'Sistema', role:'gm', text: `😴 Il party fa un Rest: Ferite ed Evolution Points recuperati del tutto, penalità Torment rimosse, Torment Check di nuovo disponibili, Aspects ricaricati (Major 1, Minor 2).` });
+      await publishDowntimeMessage({ who:'Sistema', role:'gm', text: `😴 Il party fa un Rest: Ferite ed Evolution Points recuperati del tutto, penalità Torment rimosse, Torment Check di nuovo disponibili, Aspects ricaricati (Major 1, Minor 2).${pendingDefeatNote(pendingDefeats)}` });
       // Richiesta utente (Razioni): oltre al Rest ufficiale (8.04) sopra, invia ai giocatori un
       // prompt per consumare le razioni giornaliere (2, oggetti inventario categoria 'cibo' — vedi
       // js/tamer-card.js/renderInventoryCard e il marcatore ::RATIONREQ:: gestito in
