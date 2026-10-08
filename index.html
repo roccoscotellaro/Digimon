@@ -1451,6 +1451,11 @@ let editingScene = false;
     if(def.pool==='tamer' && participant.tamerActionsLocked){
       return { ok:false, msg:'Il Tamer è sopraffatto dal Torment: non può più usare Azioni Tamer fino alla fine del Combattimento.' };
     }
+    // Richiesta Rocco: evoluzioni bloccate dal Master per questo fight (vedi evolutionLockedFor in
+    // js/rules.js). Controllato PRIMA di scalare le Azioni, così un tentativo bloccato non costa nulla.
+    if((actionKey==='evolve' || actionKey==='force_evolve') && participant.evolutionLocked){
+      return { ok:false, msg: EVOLUTION_LOCKED_MSG };
+    }
     const poolKey = def.pool==='tamer' ? 'tamerActions' : 'actions';
     if(actionKey==='move' && (participant.effects||[]).some(e=>e.key==='root')){
       return { ok:false, msg:'È sotto [ROOT]: non può usare Muovi finché l\'Effetto non termina.' };
@@ -2182,6 +2187,11 @@ let editingScene = false;
     const selfEvolveBoxHTML = !d ? '' : (()=>{
       const nextIdx = Math.min(5, stageIndex(d.stage)+1);
       const defaultEvoTarget = STAGES[nextIdx] || d.stage;
+      // Richiesta Rocco: evoluzioni bloccate dal Master per questo fight -- box sostituito da un avviso.
+      if(evolutionLockedFor(username)) return `
+      <div style="margin:8px 0;padding:8px;border:1px solid rgba(255,93,93,0.4);border-radius:6px;background:rgba(255,93,93,0.05);">
+        <div class="muted" style="font-size:11px;color:var(--danger);">${EVOLUTION_LOCKED_MSG} Stage attuale: <b>${escapeHTML(d.stage)}</b>.</div>
+      </div>`;
       return `
       <div style="margin:8px 0;padding:8px;border:1px solid rgba(255,196,0,0.35);border-radius:6px;background:rgba(255,196,0,0.05);">
         <div class="muted" style="font-size:11px;margin-bottom:6px;">🧬 Evoluzione in Combattimento (regola 8.05a/8.05c) — Stage attuale: <b>${escapeHTML(d.stage)}</b>, Evolution Points: <b>${d.evolutionPoints||0}</b></div>
@@ -6167,6 +6177,10 @@ let editingScene = false;
           const evolveBoxHTML = !pcDigimonForEvolve ? '' : (()=>{
             const nextIdx = Math.min(5, stageIndex(pcDigimonForEvolve.stage)+1);
             const defaultEvoTarget = STAGES[nextIdx] || pcDigimonForEvolve.stage;
+            if(p.evolutionLocked) return `
+            <div style="margin:6px 0;padding:8px;border:1px solid rgba(255,93,93,0.4);border-radius:6px;background:rgba(255,93,93,0.05);">
+              <div class="muted" style="font-size:11px;color:var(--danger);">🔒 Evoluzioni bloccate per questo combattimento — Stage attuale: <b>${escapeHTML(pcDigimonForEvolve.stage)}</b>. Clicca 🔒 accanto al nome per sbloccarle.</div>
+            </div>`;
             return `
             <div style="margin:6px 0;padding:8px;border:1px solid rgba(255,196,0,0.35);border-radius:6px;background:rgba(255,196,0,0.05);">
               <div class="muted" style="font-size:11px;margin-bottom:6px;">🧬 Evoluzione in Combattimento (regola 8.05a/8.05c) — Stage attuale: <b>${escapeHTML(pcDigimonForEvolve.stage)}</b>, Evolution Points: <b>${pcDigimonForEvolve.evolutionPoints||0}</b></div>
@@ -6190,6 +6204,7 @@ let editingScene = false;
               <span style="display:flex;align-items:center;gap:6px;">
                 <input type="number" data-part-init="${p.id}" value="${p.initiative}" style="width:60px;padding:4px;" />
                 ${defeated ? `<button class="btn ghost small" data-part-reenter="${p.id}" title="Rientra a proprio rischio (a discrezione del Master)">↩️</button>` : ''}
+                ${p.isPC ? `<button class="btn ghost small" data-part-evolock="${p.id}" title="${p.evolutionLocked?'Evoluzioni BLOCCATE per questo combattimento — clicca per sbloccarle':'Clicca per bloccare le evoluzioni di questo giocatore per questo combattimento'}" style="${p.evolutionLocked?'color:var(--danger);border-color:var(--danger);':''}">${p.evolutionLocked?'🔒':'🧬'}</button>` : ''}
                 ${p.isPC ? `<button class="btn ghost small" data-part-sync="${p.id}" title="Se questo Digimon si è evoluto/regredito durante questo combattimento e il nome/immagine qui sono rimasti quelli vecchi (può succedere se l'evoluzione è avvenuta prima di un aggiornamento del sito), clicca per risincronizzarli subito con la Scheda attuale.">🔄</button>` : ''}
                 ${isCurrentTurn ? '' : `<button class="btn ghost small" data-part-toggle="${p.id}">${expanded?'▲':'▼'}</button>`}
                 <button class="btn ghost small" data-part-remove="${p.id}">✕</button>
@@ -7044,6 +7059,21 @@ let editingScene = false;
         const p = combat.participants.find(x=>x.id===id);
         if(!p) return;
         p.side = p.side==='ally' ? 'enemy' : 'ally';
+        await persistAndRefresh();
+      };
+    });
+    // Richiesta Rocco ("bloccare le evoluzioni in un fight per uno o più giocatori"): attiva/disattiva
+    // participant.evolutionLocked. Il flag vive nel partecipante, quindi sparisce da solo a fine
+    // Combattimento (endCombatNow svuota participants). Vedi evolutionLockedFor in js/rules.js.
+    cardEl.querySelectorAll('[data-part-evolock]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const id = btn.getAttribute('data-part-evolock');
+        const p = combat.participants.find(x=>x.id===id);
+        if(!p || !p.isPC) return;
+        p.evolutionLocked = !p.evolutionLocked;
+        await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: p.evolutionLocked
+          ? `🔒 ${p.name} non può digievolvere per il resto di questo combattimento.`
+          : `🧬 ${p.name} può di nuovo digievolvere.` });
         await persistAndRefresh();
       };
     });
