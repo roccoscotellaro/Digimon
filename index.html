@@ -1422,8 +1422,8 @@ let editingScene = false;
     // Azione spesa") che la Scheda Digimon si limita a scrivere in chat.
     { key:'evolve', label:'Evolvi (Azione)', cost:1, pool:'digimon', desc:'Il Digimon evolve a uno Stage già raggiunto/nel Default Range, spendendo gli Evolution Points necessari (regola 8.05a).' },
     { key:'force_evolve', label:'Forza Evoluzione (2 Azioni)', cost:2, pool:'digimon', desc:'Il Tamer tenta di forzare l\'Evoluzione con un Check di Willpower, TN 18 + Evolution Points normalmente richiesti (regola 8.05c). Le 2 Azioni si spendono comunque, anche in caso di fallimento.' },
-    { key:'bolster_tamer', label:'Bolster (Tamer, +2)', cost:1, pool:'tamer', desc:'Trasforma 1 Azione con Pool Check in 2 Azioni: +2 dadi al Pool Check (anche per potenziare Direct/Aid/Guard).' },
-    { key:'bolster_digimon', label:'Bolster (Digimon, +SV)', cost:1, pool:'digimon', desc:'Come sopra, ma per il Digimon: il bonus è pari al suo SV più alto nel Default Range invece di +2.' },
+    { key:'bolster_tamer', label:'Bolster (Tamer, +2)', cost:1, pool:'tamer', desc:'Trasforma 1 Azione con Pool Check in 2 Azioni: +2 dadi al tuo prossimo Pool Check (Attacco/Dodge, o in aggiunta a un Guard). Per potenziare un Direct/Aid appena dato, scegli come bersaglio l\'alleato che lo ha ricevuto.' },
+    { key:'bolster_digimon', label:'Bolster (Digimon, +SV)', cost:1, pool:'digimon', desc:'Come sopra, ma per il Digimon: il bonus è pari al suo SV più alto nel Default Range (Rookie +2, Champion +3...) invece di +2.' },
     { key:'aid', label:'Aid', cost:1, pool:'digimon', desc:'Il Digimon tenta di aiutare un alleato entro il proprio Reach: su questo tavolo si tira un vero Pool Check (Nd6 = Stage) e, se riesce almeno 1 successo, l\'alleato ottiene il bonus prima del suo prossimo turno (variante rispetto al bonus garantito da regolamento). Una volta a turno.' },
     { key:'guard', label:'Guard', cost:1, pool:'digimon', desc:'Il Digimon si prepara: ottiene un bonus pari al proprio SV al prossimo Dodge Pool prima del suo prossimo turno (non conta ai fini delle penalità da Dodge ripetuto). Una volta a turno.' },
     { key:'resist1', label:'Resist (1 Az.)', cost:1, pool:'digimon', desc:'Riduce di 1 la Potenza di tutti gli Effetti attivi sul Digimon (a 0 l\'Effetto termina).' },
@@ -1600,12 +1600,29 @@ let editingScene = false;
       return { ok:true, note: `Tiro di Aid ${sv}d6[${roll.dice.join(',')}]=${roll.successes} succ. → NON RIUSCITO: nessun bonus accodato.` };
     }
     if(actionKey==='bolster_tamer' || actionKey==='bolster_digimon'){
-      if(!target) return { ok:false, note:'nessun bersaglio scelto: nessun bonus accodato.' };
-      const amount = actionKey==='bolster_tamer' ? 2 : participantSV(actor);
-      const hadExisting = !!target.pendingRollBonus;
-      const existingStat = hadExisting ? target.pendingRollBonus.stat : 'either';
-      queuePendingRollBonus(target, amount, 'Bolster', existingStat);
-      return { ok:true, note: `+${amount} extra in coda sul prossimo Pool Check di ${narratorName(target)}${hadExisting?' (potenzia un bonus già in coda)':''} — totale in coda: +${target.pendingRollBonus.amount}.` };
+      // BUGFIX (Rocco 2026-10-09: "il Bolster sembra non funzionare"): il bersaglio veniva preso dal
+      // menu BERSAGLIO degli Attacchi, che di solito punta a un NEMICO -- così il +bonus finiva sul
+      // prossimo Dodge del nemico invece che sul proprio tiro, oppure "nessun bersaglio scelto".
+      // Regola 9.06a: Bolster potenzia il PROPRIO Pool Check (Attacco/Dodge/Guard) o il bonus di un
+      // proprio Direct/Aid già dato. Quindi: va su se stesso, a meno che il bersaglio scelto sia un
+      // ALLEATO che ha già un bonus in coda (Direct/Aid appena dato) -- in quel caso lo potenzia.
+      const boostAlly = !!(target && target.id!==actor.id && target.side===actor.side && target.pendingRollBonus);
+      const dest = boostAlly ? target : actor;
+      // Digimon: SV più alto nel Default Range (regola 9.06a, es. "resta Champion -> +3"), con SV =
+      // indice di Stage come in stanceModifiers (Rookie 2, Champion 3). Tamer e NPC: +2 fisso.
+      let amount = 2;
+      if(actionKey==='bolster_digimon' && actor.isPC){
+        const member = cachedRoster.find(m=>m.username===actor.username);
+        if(member){
+          const d = member.digimon;
+          const topIdx = Math.min(STAGES.length-1, stageIndex(d.defaultStage||d.stage) + Number(d.defaultRange||0));
+          amount = Math.max(2, Math.max(topIdx, stageIndex(d.stage)));
+        }
+      }
+      const hadExisting = !!dest.pendingRollBonus;
+      const existingStat = hadExisting ? dest.pendingRollBonus.stat : 'either';
+      queuePendingRollBonus(dest, amount, 'Bolster', existingStat);
+      return { ok:true, note: `+${amount} dadi in coda sul prossimo Pool Check ${existingStat==='dodge'?'di Dodge':'(Accuracy/Dodge)'} di ${narratorName(dest)}${hadExisting?' (potenzia un bonus già in coda)':''} — totale in coda: +${dest.pendingRollBonus.amount}.` };
     }
     return { ok:false, note:'' };
   }
