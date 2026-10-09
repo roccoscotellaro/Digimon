@@ -762,9 +762,19 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
     return null;
   }
 
-  function logHTML(log, canModerate){
+  // Richiesta Rocco (2026-10-09: "una sezione a parte per la descrizione degli attacchi, separata
+  // dalla chat normale"): i messaggi automatici del combattimento (pushCombatNarration in
+  // index.html li marca con meta.combatLog) NON compaiono più nelle chat normali -- vanno nella
+  // "⚔️ Cronaca del Combattimento" (index.html, combatChronicleHTML). combatMode: undefined = chat
+  // normale (li esclude), 'only' = solo quelli. I messaggi scritti prima di questa modifica non
+  // hanno il flag e restano dove sono.
+  function isCombatLogEntry(l){ return !!(l && l.meta && l.meta.combatLog); }
+  function logHTML(log, canModerate, combatMode){
+    log = (log||[]).filter(l=> combatMode==='only' ? isCombatLogEntry(l) : !isCombatLogEntry(l));
     log = applyManualReorder(log);
-    if(!log || log.length===0) return '<div class="muted">Il registro è vuoto. Le azioni appariranno qui.</div>';
+    if(!log || log.length===0) return combatMode==='only'
+      ? '<div class="muted">Nessuna azione di combattimento ancora. Attacchi, danni ed effetti appariranno qui.</div>'
+      : '<div class="muted">Il registro è vuoto. Le azioni appariranno qui.</div>';
     return log.map(l=>{
       let displayText = l.text;
       let fulfillBtn = '';
@@ -1975,3 +1985,42 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
   function mentionImageOnlyHTML(avatar, name){
     return `<img class="who-avatar" src="${escapeAttr(avatar)}" alt="${escapeAttr(name)}" data-avatar-expand="${escapeAttr(avatar)}" style="width:22px;height:22px;border-radius:4px;object-fit:cover;cursor:zoom-in;vertical-align:middle;" onerror="this.style.display='none'" />`;
   }
+
+
+  // ---------- Chat che parte sempre dall'ultimo messaggio ----------
+  // BUGFIX (Rocco 2026-10-09: "la chat generale parte sempre dal primo messaggio e non
+  // dall'ultimo"): le chat vengono disegnate anche quando sono NASCOSTE (su telefono la sezione
+  // Chat è display:none finché non tocchi la sua scheda, vedi .mobile-section) -- in quel momento
+  // scrollTop non può funzionare, quindi quando la chat compariva restava in cima. Ogni contenitore
+  // .log ora "si incolla" in fondo da solo: quando diventa visibile o cambia dimensione
+  // (ResizeObserver), quando viene ridisegnato (MutationObserver) e quando un'immagine finisce di
+  // caricare -- a meno che l'utente non abbia scrollato in su per leggere messaggi vecchi.
+  (function installStickyChatLogs(){
+    if(typeof window==='undefined' || typeof MutationObserver==='undefined') return;
+    const NEAR = 40;
+    const stick = (el)=>{ if(el.isConnected && !el.__chatScrolledUp) el.scrollTop = el.scrollHeight; };
+    const setup = (el)=>{
+      if(el.__stickyChat) return;
+      el.__stickyChat = true;
+      el.__chatScrolledUp = false;
+      el.addEventListener('scroll', ()=>{
+        if(el.clientHeight===0) return; // nascosto: non è l'utente che scorre
+        el.__chatScrolledUp = (el.scrollHeight - el.scrollTop - el.clientHeight) > NEAR;
+      }, { passive:true });
+      if(typeof ResizeObserver!=='undefined') new ResizeObserver(()=>stick(el)).observe(el);
+      new MutationObserver(()=>stick(el)).observe(el, { childList:true, subtree:true });
+      el.addEventListener('load', ()=>stick(el), true); // immagini (load non risale: capture)
+      stick(el);
+    };
+    const scan = (root)=>{
+      if(!root || root.nodeType!==1) return;
+      if(root.classList && root.classList.contains('log')) setup(root);
+      root.querySelectorAll && root.querySelectorAll('.log').forEach(setup);
+    };
+    const start = ()=>{
+      scan(document.body);
+      new MutationObserver(muts=>{ muts.forEach(m=>m.addedNodes.forEach(scan)); })
+        .observe(document.body, { childList:true, subtree:true });
+    };
+    if(document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+  })();
