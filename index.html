@@ -1273,6 +1273,11 @@ let editingScene = false;
     return null;
   }
   async function pushCombatNarration(combat, entry){
+    // Richiesta Rocco (2026-10-09): tutto ciò che passa di qui (attacchi, danni, effetti, azioni,
+    // movimenti, Clash...) va nella "⚔️ Cronaca del Combattimento" e non nella chat normale -- vedi
+    // isCombatLogEntry/logHTML in js/chat-log-engine.js. Eccezione: meta.inChat (es. l'avviso di
+    // chat di nuovo libera a fine combattimento), che deve restare visibile in chat.
+    if(!(entry.meta && entry.meta.inChat)) entry = { ...entry, meta: { ...(entry.meta||{}), combatLog: true } };
     const lock = combat && combat.chatLock;
     if(!lock || !lock.location || lock.location==='general') return pushLog(session.code, entry);
     if(lock.location.startsWith('sub:')){
@@ -1984,7 +1989,7 @@ let editingScene = false;
     // torna libera per i giocatori, con un messaggio che lo conferma nello stesso posto.
     if(prevLock && prevLock.location){
       const unlockText = autoMsgText('combat_unlock', {});
-      if(unlockText) await pushCombatNarration({ chatLock: prevLock }, { who:'Sistema', role:'gm', text: unlockText });
+      if(unlockText) await pushCombatNarration({ chatLock: prevLock }, { who:'Sistema', role:'gm', text: unlockText, meta:{ inChat:true } });
     }
     __combatMusicSynced = false;
     stopCombatMusic();
@@ -3771,6 +3776,37 @@ let editingScene = false;
   // lo riapplica ancora ogni volta che un'immagine ancora in caricamento finisce (successo o
   // errore) — così l'ultimo messaggio resta davvero visibile anche quando il contenuto cambia
   // altezza dopo il primo scroll.
+  // "⚔️ Cronaca del Combattimento" (richiesta Rocco 2026-10-09): pannello a parte, nella sezione
+  // Combattimento, con i soli messaggi automatici del fight (meta.combatLog, vedi
+  // pushCombatNarration). Stessa fonte di pushCombatNarration: Chat Generale, oppure il Sottogruppo
+  // in cui il Master ha bloccato il combattimento (chatLock "sub:<id>"). Resta visibile anche a
+  // combattimento finito finché ci sono messaggi da rileggere. Il Master può modificarli/cancellarli
+  // come in chat (solo quando la fonte è la Generale: stessa moderazione di #log-live).
+  function combatChronicleCardHTML(){
+    const show = (cachedCombat && cachedCombat.active) || (cachedLog||[]).some(isCombatLogEntry);
+    return `<div class="hud-frame card" id="combat-chronicle-card" style="${show?'':'display:none;'}">
+      <div class="section-title" style="margin-bottom:6px;">⚔️ Cronaca del Combattimento</div>
+      <div class="log" id="combat-chronicle" style="height:260px;"></div>
+    </div>`;
+  }
+  async function refreshCombatChronicle(){
+    const el = document.getElementById('combat-chronicle');
+    if(!el || !session) return;
+    const lock = cachedCombat && cachedCombat.chatLock && cachedCombat.chatLock.location;
+    let src = cachedLog || [];
+    let thread = null;
+    if(lock && lock.startsWith('sub:')){
+      thread = 'subgroup:'+lock.slice(4);
+      try{ src = await getPrivateLog(session.code, thread); }catch(e){ src = cachedLog || []; thread = null; }
+    }
+    const entries = (src||[]).filter(isCombatLogEntry).slice(-120);
+    const card = document.getElementById('combat-chronicle-card');
+    if(card) card.style.display = ((cachedCombat && cachedCombat.active) || entries.length) ? '' : 'none';
+    const canMod = session.role==='master' && !thread;
+    el.innerHTML = logHTML(entries, canMod, 'only');
+    if(canMod) attachLogModeration(el, session.code, undefined, undefined, undefined, refreshLiveParts);
+  }
+
   function scrollLogToBottomRobust(el){
     if(!el) return;
     el.scrollTop = el.scrollHeight;
@@ -4196,29 +4232,12 @@ let editingScene = false;
         bindCombatSelfActions(session.code, session.username);
       }
     }
-    // ===== Mini-log nel tab Battle (mobile): mostra gli ultimi 4 messaggi della chat =====
+    // ===== ⚔️ Cronaca del Combattimento (Giocatore e Master) =====
+    // Sostituisce il vecchio mini-log "Ultimi messaggi" del tab Battle: ora mostra solo i messaggi
+    // automatici del combattimento, che non stanno più nella chat normale -- vedi
+    // refreshCombatChronicle (stessa fonte Generale/Sottogruppo bloccato del vecchio mini-log).
+    await refreshCombatChronicle();
     if(session.role==='player'){
-      const miniLogEl = document.getElementById('combat-mini-log');
-      const miniLogCard = document.getElementById('combat-mini-log-card');
-      if(miniLogCard) miniLogCard.style.display = (cachedCombat && cachedCombat.active) ? '' : 'none';
-      // BUGFIX: mostrava sempre cachedLog (Chat Generale), ma pushCombatNarration instrada la
-      // narrazione di combattimento verso il Sottogruppo scelto dal Master quando combat.chatLock
-      // è impostato su "sub:<id>" -- in quel caso il mini-log restava vuoto/con messaggi vecchi
-      // nonostante il combattimento stesse effettivamente narrando altrove. Stessa fonte di
-      // pushCombatNarration: Generale se nessun chatLock (o "general"), altrimenti il thread del
-      // Sottogruppo bloccato -- letto solo se il giocatore ne fa parte (getPrivateLog risponde
-      // comunque solo con ciò a cui il thread dà accesso, stesso canale già usato dalla sua Chat
-      // "Gruppo" quando ci entra volontariamente).
-      const miniLogLock = cachedCombat && cachedCombat.chatLock && cachedCombat.chatLock.location;
-      let miniLogSource = cachedLog;
-      if(miniLogLock && miniLogLock.startsWith('sub:')){
-        try{ miniLogSource = await getPrivateLog(session.code, 'subgroup:'+miniLogLock.slice(4)); }catch(e){ miniLogSource = cachedLog; }
-      }
-      if(miniLogEl && miniLogSource && miniLogSource.length > 0){
-        const last4 = miniLogSource.slice(-4);
-        miniLogEl.innerHTML = typeof logHTML === 'function' ? logHTML(last4, false) : last4.map(e=>`<div style="padding:2px 0;font-size:12px;"><b style="color:var(--cyan);font-size:11px;">${escapeHTML(e.who||'')}</b> <span>${escapeHTML(e.text||'')}</span></div>`).join('');
-        scrollLogToBottomRobust(miniLogEl);
-      }
       // ===== Banner "È il tuo turno, ora puoi parlare!" nel tab Battle =====
       const turnBannerEl = document.getElementById('combat-turn-chat-banner');
       if(turnBannerEl){
@@ -4459,10 +4478,7 @@ let editingScene = false;
             <div id="combat-self-actions">${combatSelfActionHTML(cachedCombat, session.username)}</div>
           </div>
 
-          <div class="hud-frame card" id="combat-mini-log-card" style="${(cachedCombat && cachedCombat.active) ? '' : 'display:none;'}">
-            <div class="section-title" style="font-size:11px;margin-bottom:4px;">💬 Ultimi messaggi</div>
-            <div id="combat-mini-log"></div>
-          </div>
+          ${combatChronicleCardHTML()}
           </div>
         </div>
 
@@ -4495,12 +4511,7 @@ let editingScene = false;
     renderChatArea(code, me, { forceScrollBottom:true }); // riempie il selettore location + il Registro (vedi sopra)
     // Popola il mini-log nel tab Battle al primo render
     {
-      const _ml = document.getElementById('combat-mini-log');
-      if(_ml && cachedLog && cachedLog.length > 0){
-        const _last4 = cachedLog.slice(-4);
-        _ml.innerHTML = typeof logHTML === 'function' ? logHTML(_last4, false) : _last4.map(e=>`<div style="padding:2px 0;font-size:12px;"><b style="color:var(--cyan);font-size:11px;">${escapeHTML(e.who||'')}</b> <span>${escapeHTML(e.text||'')}</span></div>`).join('');
-        scrollLogToBottomRobust(_ml);
-      }
+      refreshCombatChronicle();
       // Banner turno iniziale
       const _tb = document.getElementById('combat-turn-chat-banner');
       if(_tb && cachedCombat && cachedCombat.active && isMyCombatTurn(cachedCombat, session.username)){
@@ -4832,6 +4843,7 @@ let editingScene = false;
             </div>
           </div>
           <div class="hud-frame card" id="combat-turn-now-card">${combatCurrentTurnCardHTML(cachedCombat)}</div>
+          ${combatChronicleCardHTML()}
           <div class="hud-frame card" id="combat-mgr-card"></div>
           <div class="hud-frame card" id="combat-notif-center-card"></div>
           <div class="hud-frame card" id="encounter-balance-card"></div>
@@ -5043,6 +5055,7 @@ let editingScene = false;
     // solo se l'utente era già in fondo — mai vero al primissimo render). Il Master vedeva quindi
     // sempre il messaggio più vecchio finché non scrollava a mano.
     scrollLogToBottomRobust(document.getElementById('log-live'));
+    refreshCombatChronicle(); // ⚔️ Cronaca del Combattimento del Master (vedi combatChronicleCardHTML)
     bindSceneAudio(cachedScene);
     bindSceneAudioUpload(code);
     bindSceneCombatAudioUpload(code);
