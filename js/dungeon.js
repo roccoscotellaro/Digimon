@@ -61,6 +61,11 @@
 // Gioco, notifiche push mirate) arrivano tramite il contesto passato a DungeonView.mount().
 
 (function(){
+  // INTERRUTTORE (richiesta Rocco, 2026-10-11: "ha rallentato davvero troppo il dungeon… per ora
+  // vorrei spegnere"): con false la vista di gioco non viene montata, niente pannello nel Tavolo,
+  // niente chiamate al server e niente "Parli nel dungeon" del Master. I dungeon salvati restano
+  // intatti (editor in Mappa e dati su dungeon_state): per riaccendere basta rimettere true.
+  const DUNGEON_ENABLED = false;
   const ATTR_LABEL = { agility:'Agility', body:'Body', charisma:'Charisma', intelligence:'Intelligence', willpower:'Willpower' };
   const REFILL_MS = 10*60*60*1000;
   let ctx = null;
@@ -978,6 +983,12 @@
   window.DungeonView = {
     // ctx: { code, username, role, advanceClock(min), notifyPlayers(usernames,title,body), notifyMasters(title,body), onChanged() }
     async mount(el, context){
+      if(!DUNGEON_ENABLED){
+        delete window.__dvosMasterLocationOverride;
+        if(el) el.innerHTML = '';
+        rootEl = null; ctx = null; state = null;
+        return;
+      }
       injectStyles();
       rootEl = el;
       ctx = context;
@@ -985,7 +996,7 @@
       await load();
       render();
     },
-    reportCheck: (attr, success, who)=> reportCheck(attr, success, who),
+    reportCheck: (attr, success, who)=> DUNGEON_ENABLED ? reportCheck(attr, success, who) : undefined,
     async refresh(){
       if(!rootEl || !ctx || busy || !document.body.contains(rootEl)) return;
       const wasVisible = !!activeDungeon();

@@ -258,12 +258,33 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
     return label;
   }
 
+  // UNIFICAZIONE (richiesta Rocco, 2026-10-11: "unificare le chat del luogo avendo lo stesso nome
+  // mappa normale e dungeon"): chiavi diverse che portano allo STESSO nome di luogo (es. i
+  // messaggi taggati dal dungeon col suo collegamento e quelli della mappa normale) diventano una
+  // sola voce nel filtro 📍 e un solo registro. Si confronta il nome completo (Settore — Sottosezione
+  // — Luogo), quindi luoghi omonimi in Settori diversi restano separati; "Nessun Settore" e
+  // "Settore eliminato" non vengono mai fusi (lì si confronta la chiave esatta).
+  const UNMERGEABLE_LABELS = { 'Nessun Settore':1, 'Settore eliminato':1, 'Storico precedente':1 };
+  function locationGroupId(key, cache){
+    if(!key) return key;
+    const k = normalizeLocationKey(key);
+    if(cache && cache.has(k)) return cache.get(k);
+    const label = locationLabelForKey(k);
+    const id = UNMERGEABLE_LABELS[label] ? 'key:' + k : 'label:' + label;
+    if(cache) cache.set(k, id);
+    return id;
+  }
   function buildLocationOptions(entries, currentKey){
     const map = new Map();
+    const cache = new Map();
+    const groupToKey = new Map();
+    if(currentKey) groupToKey.set(locationGroupId(currentKey, cache), currentKey);
     (entries||[]).forEach(e=>{
       const rawKey = (e.meta && e.meta.location) || null;
       if(!rawKey) return; // i messaggi "legacy" senza tag non diventano una voce a sé: restano sempre visibili (vedi filterByLocation)
-      const key = normalizeLocationKey(rawKey);
+      const g = locationGroupId(rawKey, cache);
+      if(!groupToKey.has(g)) groupToKey.set(g, normalizeLocationKey(rawKey));
+      const key = groupToKey.get(g);
       if(!map.has(key)) map.set(key, locationLabelForKey(key));
     });
     if(currentKey && !map.has(currentKey)) map.set(currentKey, locationLabelForKey(currentKey));
@@ -279,7 +300,9 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
   function filterByLocation(entries, selected, currentKey){
     const effective = (selected===null || selected===undefined) ? currentKey : selected;
     if(effective==='__all__') return entries||[];
-    return (entries||[]).filter(e => !(e.meta && e.meta.location) || normalizeLocationKey(e.meta.location)===effective);
+    const cache = new Map();
+    const want = locationGroupId(effective, cache);
+    return (entries||[]).filter(e => !(e.meta && e.meta.location) || locationGroupId(e.meta.location, cache)===want);
   }
 
   function locationFilterSelectHTML(id, entries, currentKey, selected){

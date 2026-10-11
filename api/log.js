@@ -226,6 +226,30 @@ function normalizeLocationKey(key) {
   return key;
 }
 
+// Stesso raggruppamento di locationGroupId in js/chat-log-engine.js (richiesta Rocco 2026-10-11,
+// "unificare le chat del luogo avendo lo stesso nome mappa normale e dungeon"): due chiavi che
+// portano allo stesso nome completo (Settore — Sottosezione — Luogo) contano come lo stesso luogo,
+// così chi ha accesso a uno vede anche i messaggi dell'altro. Settori inesistenti: chiave esatta.
+function locationGroupId(scene, key) {
+  const k = normalizeLocationKey(key);
+  if (!k) return k;
+  const parts = String(k).split('|');
+  const sectorId = parts[1], subId = parts[2], luogoId = parts[3];
+  const found = sectorId && sectorId !== '_' ? findSectorAnywhere(scene && scene.macroScenes, sectorId) : null;
+  if (!found) return 'key:' + k;
+  let label = found.sector.name || '';
+  let sub = null;
+  if (subId && subId !== '_') {
+    sub = (found.sector.subsections || []).find(x => x.id === subId) || null;
+    if (sub) label += ' — ' + sub.name;
+  }
+  if (luogoId && luogoId !== '_') {
+    const lg = ((sub && sub.luoghi) || []).find(x => x.id === luogoId) || (found.sector.luoghi || []).find(x => x.id === luogoId);
+    if (lg) label += ' — ' + lg.name;
+  }
+  return 'label:' + label;
+}
+
 // Filtra un elenco di righe del log pubblico per i luoghi SBLOCCATI da `requesterUsername` (il
 // luogo attuale più ogni altro luogo in cui è già stato presente almeno una volta — vedi punto 2
 // della nota di testa). Nessun filtro (log invariato) se: manca requesterUsername (chiamante non
@@ -264,7 +288,8 @@ async function filterLogForRequester(campaignCode, rows, requesterUsername) {
     if (!updateError) visited.push(myKey);
   }
 
-  return rows.filter(l => !(l.meta && l.meta.location) || visited.includes(normalizeLocationKey(l.meta.location)));
+  const visitedGroups = new Set(visited.map(k => locationGroupId(scene, k)));
+  return rows.filter(l => !(l.meta && l.meta.location) || visited.includes(normalizeLocationKey(l.meta.location)) || visitedGroups.has(locationGroupId(scene, l.meta.location)));
 }
 
 // Testo della Web Push a partire dal testo del messaggio: toglie i marcatori tecnici (::TECH::,
