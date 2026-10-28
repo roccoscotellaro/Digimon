@@ -624,6 +624,17 @@
     .master-side #log-live{height:calc(100vh - 430px);min-height:240px;}
   }
 
+  /* Pannello "🧭 Spostamenti" della Vista Master (vedi renderSectorMap in js/scene-encounters.js) */
+  .travel-step{display:flex;align-items:center;gap:6px;margin:12px 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-mute);}
+  .travel-num{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;border:1px solid var(--cyan-dim);color:var(--cyan);font-size:10px;font-family:'Share Tech Mono',monospace;}
+  .travel-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+  .travel-grid select{width:100%;min-width:0;}
+  .travel-players{display:flex;flex-direction:column;gap:4px;}
+  .travel-player{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel-2);font-size:12px;}
+  .travel-player.picked{border-color:var(--cyan);background:rgba(53,232,201,0.08);}
+  .travel-invite{margin-top:8px;padding:8px;border:1px dashed var(--line);border-radius:6px;}
+  @media (max-width: 760px){ .travel-grid{grid-template-columns:1fr;} }
+
   /* Menu a tendina "📂 Pagine" della barra in alto del Master */
   .topbar-pages{position:relative;display:inline-block;}
   .topbar-pages > summary{list-style:none;cursor:pointer;}
@@ -4144,6 +4155,13 @@ let editingScene = false;
     if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, isMasterRole);
     if(isMasterRole) refreshCombatTurnNowCard();
     if(isMasterRole && typeof setMasterMenuBadge==='function') setMasterMenuBadge('combattimento', !!(cachedCombat && cachedCombat.active));
+    // Pannello "🧭 Spostamenti": aggiorna le posizioni dei giocatori (es. dopo un "Sì, andiamo!" in
+    // chat), ma non mentre il Master sta usando un menu o un campo al suo interno.
+    if(isMasterRole){
+      const travelCard = document.getElementById('sector-map-card');
+      const ae = document.activeElement;
+      if(travelCard && !(ae && travelCard.contains(ae) && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName))) renderSectorMap(session.code, refreshLiveParts);
+    }
     // Comodità per il Master (richiesta Rocco 2026-10-28): quando un combattimento INIZIA (anche se
     // avviato da un altro dispositivo) la vista passa da sola su Battaglia. Solo al passaggio
     // "nessun combattimento -> combattimento", mai ad ogni giro, e mai mentre si sta scrivendo.
@@ -4744,14 +4762,14 @@ let editingScene = false;
             <div class="field" style="margin-top:10px;"><label>Titolo Scena</label><input type="text" id="scene-title" value="${escapeAttr(cachedScene.title)}" placeholder="es. Foresta di File" /></div>
             <div class="field"><label>URL Immagine di Sfondo</label><input type="text" id="scene-bg" value="${escapeAttr(cachedScene.background)}" placeholder="https://..." /></div>
             <div class="field"><label>URL Musica (mp3 diretto)</label><input type="text" id="scene-music" value="${escapeAttr(cachedScene.music)}" placeholder="https://.../traccia.mp3" /></div>
-            <div class="muted" style="margin-top:-6px;margin-bottom:8px;font-size:11px;">Se vuota, parte in automatico la musica del Settore attuale (o della Macroscena, se il Settore non ne ha una) — impostabili qui sotto nel pannello Mappa. Se compilata, questa vince sempre.</div>
+            <div class="muted" style="margin-top:-6px;margin-bottom:8px;font-size:11px;">Se vuota, parte in automatico la musica del Settore attuale (o della Macroscena, se il Settore non ne ha una) — impostabili nella Mappa (🗺️ map.html). Se compilata, questa vince sempre.</div>
             <div class="row" style="align-items:center;gap:8px;margin-top:-4px;margin-bottom:12px;">
               <input type="file" accept="audio/*" id="scene-audio-file" style="display:none;" />
               <button type="button" class="btn ghost small" id="scene-audio-upload-btn">🎵 Carica Traccia (mp3, max 3MB)</button>
               <span class="muted" id="scene-audio-upload-status" style="font-size:11px;"></span>
             </div>
             <div class="field"><label>🗡️ URL Musica da Combattimento (opzionale)</label><input type="text" id="scene-combat-music" value="${escapeAttr(cachedScene.combatMusic||'')}" placeholder="https://.../boss-theme.mp3" /></div>
-            <div class="muted" style="margin-top:-6px;margin-bottom:8px;font-size:11px;">Se vuota, in combattimento continua a suonare la musica normale della Scena/Settore/Macroscena. Se compilata, appena il Master preme "Inizia Combattimento" questa traccia interrompe quella in corso — utile per dare un tema diverso ai boss fight. Torna alla musica normale a "Termina" combattimento. Stessa cascata di Settore/Macroscena vale anche qui (vedi pannello Mappa).</div>
+            <div class="muted" style="margin-top:-6px;margin-bottom:8px;font-size:11px;">Se vuota, in combattimento continua a suonare la musica normale della Scena/Settore/Macroscena. Se compilata, appena il Master preme "Inizia Combattimento" questa traccia interrompe quella in corso — utile per dare un tema diverso ai boss fight. Torna alla musica normale a "Termina" combattimento. Stessa cascata di Settore/Macroscena vale anche qui (impostabile nella Mappa, 🗺️ map.html).</div>
             <div class="row" style="align-items:center;gap:8px;margin-top:-4px;margin-bottom:12px;">
               <input type="file" accept="audio/*" id="scene-combat-audio-file" style="display:none;" />
               <button type="button" class="btn ghost small" id="scene-combat-audio-upload-btn">🗡️ Carica Traccia Combattimento (mp3, max 3MB)</button>
@@ -4960,7 +4978,7 @@ let editingScene = false;
                 <div class="flex-between" style="margin-bottom:6px;">
                   <div class="section-title" style="margin:0;border:none;padding:0;">Mappa</div>
                 </div>
-                <div class="muted" style="margin-bottom:10px;">Gestisci Macroscene, Settori e Luoghi dal pannello Mappa. Per la vista esplorabile usa la pagina dedicata.</div>
+                <div class="muted" style="margin-bottom:10px;">Crea e modifica Macroscene, Settori, Sottosezioni e Luoghi nella pagina dedicata. Per spostare i giocatori usa il pannello 🧭 Spostamenti in Scena.</div>
                 <a href="map.html" target="_blank" class="btn solid" style="display:inline-block;text-decoration:none;padding:10px 18px;">🗺️ Apri la Mappa Completa →</a>
               </div>
               <div class="hud-frame card">
