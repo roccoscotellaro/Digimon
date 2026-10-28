@@ -598,6 +598,47 @@
     .mobile-section{display:block !important;}
   }
 
+  /* ===== Vista Master riorganizzata (2026-10-28) — vedi masterDesktopMenuHTML in js/ui-nav.js =====
+     Sottomenu (Giocatori/Strumenti): valgono su PC e telefono. */
+  .master-subnav{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px;}
+  .master-subnav-btn{background:var(--panel-2);border:1px solid var(--line);color:var(--text-mute);border-radius:16px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent;}
+  .master-subnav-btn:hover{border-color:var(--cyan-dim);color:var(--text);}
+  .master-subnav-btn.active{border-color:var(--cyan);color:var(--cyan);background:rgba(53,232,201,0.08);}
+  .master-sub{display:none;}
+  .master-sub.sub-active{display:block;}
+  .master-menu{display:none;}
+  @media (min-width: 761px){
+    /* Menu principale in alto, sempre a portata. */
+    .master-menu{display:flex;gap:6px;position:sticky;top:0;z-index:50;padding:8px 0;margin:-8px 0 10px;background:var(--bg);}
+    .master-menu-btn{flex:1;position:relative;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--panel);border:1px solid var(--line);color:var(--text-mute);padding:10px 12px;font-size:13px;font-family:'Share Tech Mono',monospace;letter-spacing:0.04em;text-transform:uppercase;cursor:pointer;border-radius:4px;}
+    .master-menu-btn:hover{border-color:var(--cyan-dim);color:var(--text);}
+    .master-menu-btn.active{border-color:var(--cyan);color:var(--cyan);box-shadow:inset 0 -2px 0 var(--cyan);}
+    .master-menu-btn .mm-icon{font-size:16px;}
+    .master-menu-btn .mm-badge{display:none;position:absolute;top:6px;right:8px;width:8px;height:8px;border-radius:50%;background:var(--danger);box-shadow:0 0 6px var(--danger);}
+    .master-menu-btn .mm-badge.on{display:block;}
+    /* A sinistra una sezione alla volta, a destra la Chat fissa. */
+    .master-layout{grid-template-columns:minmax(0,1.1fr) minmax(380px,1fr);align-items:start;}
+    .master-layout .master-pane{display:none !important;}
+    .master-layout .master-pane.pane-active{display:block !important;}
+    .master-side{position:sticky;top:58px;max-height:calc(100vh - 66px);overflow-y:auto;}
+    .master-side #log-live{height:calc(100vh - 430px);min-height:240px;}
+  }
+
+  /* Menu a tendina "📂 Pagine" della barra in alto del Master */
+  .topbar-pages{position:relative;display:inline-block;}
+  .topbar-pages > summary{list-style:none;cursor:pointer;}
+  .topbar-pages > summary::-webkit-details-marker{display:none;}
+  .topbar-pages-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:9600;display:flex;flex-direction:column;gap:4px;padding:8px;min-width:170px;background:var(--panel);}
+  .topbar-pages-menu .btn{text-align:left;}
+
+  /* Tastini 😄 Scherzo / 📝 Nota / 📌 Avviso sotto le chat (vedi toneButtonsHTML in js/chat-composer.js) */
+  .chat-tone-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
+  .chat-tone-btn{padding:3px 10px !important;font-size:11px !important;border-radius:14px !important;opacity:0.75;}
+  .chat-tone-btn.tone-on{opacity:1;font-weight:bold;}
+  .chat-tone-btn.tone-scherzo.tone-on{border-color:#ff8a3d !important;color:#ff8a3d !important;background:rgba(255,138,61,0.14) !important;}
+  .chat-tone-btn.tone-nota.tone-on{border-color:var(--cyan) !important;color:var(--cyan) !important;background:rgba(53,232,201,0.12) !important;}
+  .chat-tone-btn.tone-avviso.tone-on{border-color:var(--danger) !important;color:var(--danger) !important;background:rgba(255,93,93,0.14) !important;}
+
   .portrait{width:56px;height:56px;border-radius:8px;object-fit:cover;flex-shrink:0;}
   .portrait-sm{width:36px;height:36px;border-radius:6px;object-fit:cover;flex-shrink:0;}
   .sheet-head{display:flex;gap:12px;align-items:center;margin-bottom:14px;}
@@ -3531,6 +3572,21 @@ let editingScene = false;
     });
   }
 
+  // Link alle altre pagine del sito. Per il Master (richiesta Rocco 2026-10-28, interfaccia "troppo
+  // piena") sono raccolti in un unico menu a tendina "📂 Pagine" invece di 8 bottoni in fila; per
+  // i giocatori restano come prima.
+  function topbarPageLinksHTML(){
+    const links = [
+      ['dex.html','📖 Digidex'], ['npc.html','🎭 NPC'], ['digivice-scan.html','📡 Scan Starter'],
+      ['map.html','🗺️ Mappa'], ['player.html','👤 Giocatore'], ['digimon.html','👾 Digimon']
+    ];
+    if(session && session.role==='master') links.push(['gennai.html','🔮 Gennai']);
+    links.push(['DDA2E_Indice_Regole.html','📜 Regole']);
+    const a = ([href,label])=>`<a href="${href}" target="_blank" class="btn ghost small" style="text-decoration:none;">${label}</a>`;
+    if(!(session && session.role==='master')) return links.map(a).join('\n        ');
+    return `<details class="topbar-pages"><summary class="btn ghost small">📂 Pagine ▾</summary><div class="topbar-pages-menu hud-frame">${links.map(a).join('')}</div></details>`;
+  }
+
   function topbar(subtitle){
     return `
     <div class="hud-frame topbar">
@@ -3548,14 +3604,7 @@ let editingScene = false;
         ${session && session.role==='player' ? (()=>{ const myTopbar = cachedMe || (cachedRoster||[]).find(m=>m.username===session.username); return myTopbar ? `<span>|</span> <span>IP <b style="color:var(--cyan);">${Number(myTopbar.tamer.inspirationPoints||0)}</b></span>` : ''; })() : ''}
         ${session ? `<span id="game-clock-live">${typeof gameClockHTML==='function'?gameClockHTML():''}</span>` : ''}
         ${session ? `<button class="btn ghost small" id="topbar-chat-jump" style="position:relative;">💬 Registro<span id="topbar-chat-badge" style="display:${__topbarUnreadFlag?'inline-block':'none'};position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:var(--danger);box-shadow:0 0 4px var(--danger);"></span></button>` : ''}
-        ${session ? `<a href="dex.html" target="_blank" class="btn ghost small" style="text-decoration:none;">📖 Digidex</a>` : ''}
-        ${session ? `<a href="npc.html" target="_blank" class="btn ghost small" style="text-decoration:none;">🎭 NPC</a>` : ''}
-        ${session ? `<a href="digivice-scan.html" target="_blank" class="btn ghost small" style="text-decoration:none;">📡 Scan Starter</a>` : ''}
-        ${session ? `<a href="map.html" target="_blank" class="btn ghost small" style="text-decoration:none;">🗺️ Mappa</a>` : ''}
-        ${session ? `<a href="player.html" target="_blank" class="btn ghost small" style="text-decoration:none;">👤 Giocatore</a>` : ''}
-        ${session ? `<a href="digimon.html" target="_blank" class="btn ghost small" style="text-decoration:none;">👾 Digimon</a>` : ''}
-        ${session && session.role==='master' ? `<a href="gennai.html" target="_blank" class="btn ghost small" style="text-decoration:none;">🔮 Gennai</a>` : ''}
-        ${session ? `<a href="DDA2E_Indice_Regole.html" target="_blank" class="btn ghost small" style="text-decoration:none;">📜 Regole</a>` : ''}
+        ${session ? topbarPageLinksHTML() : ''}
         ${session ? `<button class="btn ghost small" id="btn-open-missions">📋 Missioni</button>` : ''}
         ${session ? `<button class="btn ghost small" id="btn-logout">Esci</button>` : ''}
       </div>
@@ -3817,6 +3866,100 @@ let editingScene = false;
       img.addEventListener('load', snap, { once:true });
       img.addEventListener('error', snap, { once:true });
     });
+  }
+
+  // ===== Tocco sulla notifica -> apre la chat giusta, già all'ultimo messaggio =====
+  // Richiesta Rocco 2026-10-28. Le Web Push portano un URL (vedi chatDeepLink in api/log.js):
+  //   ?chat=general | ?chat=private[&thread=<username>] | ?chat=subgroup&group=<id> | ?tab=combattimento
+  // Arriva in due modi: come query string quando la notifica apre una pagina nuova (letta qui al
+  // caricamento, applicata appena renderPlayer/renderMaster hanno finito — consumePendingChatDeepLink),
+  // oppure con un postMessage di sw.js quando DigiVice è già aperto (applicata subito, senza ricaricare).
+  function parseChatDeepLink(url){
+    try{
+      const u = new URL(url, location.origin);
+      const p = u.searchParams;
+      const link = { chat: p.get('chat') || null, thread: p.get('thread') || null, group: p.get('group') || null, tab: p.get('tab') || null };
+      return (link.chat || link.tab) ? link : null;
+    }catch(e){ return null; }
+  }
+  let pendingChatDeepLink = parseChatDeepLink(location.href);
+  if(pendingChatDeepLink){
+    // Toglie i parametri dalla barra degli indirizzi: un ricaricamento successivo non deve
+    // riaprire di nuovo quella chat.
+    try{ history.replaceState(null, '', location.pathname); }catch(e){}
+  }
+  function consumePendingChatDeepLink(){
+    if(!pendingChatDeepLink || !session) return;
+    const link = pendingChatDeepLink;
+    pendingChatDeepLink = null;
+    applyChatDeepLink(link);
+  }
+  async function applyChatDeepLink(link){
+    if(!link || !session) return;
+    if(link.tab){
+      if(isMobile()) switchMobileTab(link.tab);
+      else if(session.role==='master' && typeof setMasterPane==='function') setMasterPane(link.tab);
+      return;
+    }
+    if(isMobile()) switchMobileTab('chat');
+    if(session.role==='master'){
+      if(link.chat==='private'){
+        if(link.thread) masterPrivateThread = link.thread;
+        const b = document.getElementById('mchatmode-private'); if(b) await b.onclick();
+      } else if(link.chat==='subgroup'){
+        if(link.group) activeSubgroupId = link.group;
+        const b = document.getElementById('mchatmode-subgroup'); if(b) await b.onclick();
+      } else {
+        const b = document.getElementById('mchatmode-general'); if(b) b.onclick();
+      }
+    } else {
+      const mode = link.chat==='private' ? 'private' : (link.chat==='subgroup' ? 'subgroup' : 'public');
+      if(mode==='subgroup' && link.group) playerActiveSubgroupId = link.group;
+      const b = document.querySelector(`#player-chat-seg .chat-seg-btn[data-chatmode="${mode}"]`);
+      if(b && b.onclick) await b.onclick();
+      const subSel = document.getElementById('player-subgroup-select');
+      if(subSel && mode==='subgroup' && link.group) subSel.value = link.group;
+      // Su PC la Chat del giocatore sta a metà pagina: la portiamo in vista.
+      if(!isMobile()){
+        const card = document.getElementById('log-live');
+        if(card && card.closest('.hud-frame')) card.closest('.hud-frame').scrollIntoView({ block:'start', behavior:'smooth' });
+      }
+    }
+    scrollVisibleChatLogsToBottom();
+  }
+  // Porta in fondo tutti i Registri chat attualmente visibili (non la Cronaca del Combattimento,
+  // che ha il suo comportamento).
+  function scrollVisibleChatLogsToBottom(){
+    document.querySelectorAll('.log').forEach(el=>{
+      if(el.id==='combat-chronicle') return;
+      if(el.offsetParent===null) return;
+      scrollLogToBottomRobust(el);
+    });
+  }
+  // Riaprendo l'app dopo un po' (telefono bloccato, cambio app, tocco su una notifica di cui il
+  // browser non ci passa il messaggio) la chat riparte dall'ultimo messaggio, come se la si
+  // aprisse adesso. Solo se si era via da almeno 30 secondi, per non disturbare chi passa un
+  // attimo su un'altra app mentre sta rileggendo messaggi vecchi.
+  let __hiddenSince = null;
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState==='hidden'){ __hiddenSince = Date.now(); return; }
+    if(__hiddenSince && Date.now()-__hiddenSince > 30000 && session){
+      setTimeout(scrollVisibleChatLogsToBottom, 400);
+    }
+    __hiddenSince = null;
+  });
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.addEventListener('message', (ev)=>{
+      const d = ev.data || {};
+      if(d.type!=='dvos-open-chat') return;
+      const link = parseChatDeepLink(d.url || '');
+      if(!link) return;
+      if(session && root && root.innerHTML) applyChatDeepLink(link);
+      else pendingChatDeepLink = link;
+    });
+    // sw.js è cambiato (nuovo comportamento del tocco sulla notifica): chiediamo al browser di
+    // controllare subito se c'è una versione nuova, invece di aspettare il suo controllo periodico.
+    navigator.serviceWorker.getRegistration().then(r=>{ if(r) r.update().catch(()=>{}); }).catch(()=>{});
   }
 
   // Disegna insieme il selettore "Storico per Settore" (con le opzioni ricavate dal thread
@@ -4157,6 +4300,7 @@ let editingScene = false;
     const isMasterRole = session && session.role==='master';
     if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, isMasterRole);
     if(isMasterRole) refreshCombatTurnNowCard();
+    if(isMasterRole && typeof setMasterMenuBadge==='function') setMasterMenuBadge('combattimento', !!(cachedCombat && cachedCombat.active));
     // Prima si legava solo per il Master: ora le frecce ◀/▶ compaiono anche al Giocatore nel
     // proprio turno (vedi zoneLineHTML/bindZoneLineArrows) — bindZoneLineArrows è comunque un
     // no-op sicuro quando non ci sono bottoni [data-zoneline-move] nel DOM.
@@ -4452,6 +4596,7 @@ let editingScene = false;
               <textarea id="action-text" rows="1" placeholder="Scrivi..." style="margin-top:8px;"></textarea>
               <button class="btn solid" id="btn-send-action">Invia</button>
             </div>
+            ${toneButtonsHTML('action', false)}
             <div id="dice-panel-player" class="dice-panel" style="margin-top:6px;"></div>
             <div class="muted" id="action-hint" style="margin-top:4px;font-size:11px;">${ACTION_HINT_DEFAULT_TEXT}</div>
             <div id="action-roll-result" style="margin-top:6px;"></div>
@@ -4560,11 +4705,12 @@ let editingScene = false;
         const diceResult = parseGenericDiceRoll(raw);
         const subPushRes = diceResult
           ? await pushPrivateLog(code, subThread, { who: displayName(me), role:'roll', text: diceResult.text, meta: subMeta })
-          : await pushPrivateLog(code, subThread, { who: displayName(me), role:'player', text: raw, meta: subMeta });
+          : await pushPrivateLog(code, subThread, { who: displayName(me), role:'player', text: applyChatTone('action', raw), meta: subMeta });
         await maybeApplyReplyMove(code, subThread, replyMoveTarget, replyMoveWanted, subPushRes);
         advanceGameClock('sub:'+playerActiveSubgroupId, 5); // +5min per messaggio sottogruppo
         await consumeTalentIfPending(code, me);
         ta.value='';
+        resetChatTone('action');
         pendingActionImageUrl = null;
         pendingReplyTo = null;
         renderReplyBanner('action-reply-preview', null);
@@ -4582,11 +4728,12 @@ let editingScene = false;
         const diceResult = parseGenericDiceRoll(raw);
         const privPushRes = diceResult
           ? await pushPrivateLog(code, session.username, { who: displayName(me), role:'roll', text: diceResult.text, meta: privTextMeta })
-          : await pushPrivateLog(code, session.username, { who: displayName(me), role:'player', text: raw, meta: privTextMeta });
+          : await pushPrivateLog(code, session.username, { who: displayName(me), role:'player', text: applyChatTone('action', raw), meta: privTextMeta });
         await maybeApplyReplyMove(code, session.username, replyMoveTarget, replyMoveWanted, privPushRes);
         advanceGameClock('private:'+session.username, 5); // +5min per messaggio privato
         await consumeTalentIfPending(code, me);
         ta.value='';
+        resetChatTone('action');
         pendingActionImageUrl = null;
         pendingReplyTo = null;
         renderReplyBanner('action-reply-preview', null);
@@ -4644,13 +4791,14 @@ let editingScene = false;
         const textMeta = { location: memberLocationKey(liveMe()) };
         if(pendingActionImageUrl) textMeta.image = pendingActionImageUrl;
         if(pendingReplyTo) textMeta.replyTo = pendingReplyTo;
-        generalPushRes = await pushLog(code, { who: displayName(me), role:'player', text: raw, meta: textMeta });
+        generalPushRes = await pushLog(code, { who: displayName(me), role:'player', text: applyChatTone('action', raw), meta: textMeta });
       }
       } // fine else genericDice
       await maybeApplyReplyMove(code, undefined, replyMoveTarget, replyMoveWanted, generalPushRes);
       advanceGameClock('general', 5); // +5min per messaggio generale
       await consumeTalentIfPending(code, me);
       ta.value='';
+      resetChatTone('action');
       pendingActionImageUrl = null;
       pendingReplyTo = null;
       renderReplyBanner('action-reply-preview', null);
@@ -4694,6 +4842,7 @@ let editingScene = false;
     mountDungeonView(code);
 
     startPolling();
+    consumePendingChatDeepLink();
   }
 
   // renderSkillsCard/TALENT_DEFS/computeUnlockedTalents/renderTamerCard/renderInventoryCard/
@@ -4716,9 +4865,16 @@ let editingScene = false;
 
     root.innerHTML = `
       ${topbar('Vista Master')}
-      <div class="grid2">
-        <div>
-          <div class="mobile-section" data-mobile-tab="scena">
+      ${masterDesktopMenuHTML()}
+      <!-- Vista Master riorganizzata (richiesta Rocco 2026-10-28, "troppo caotica, sistemala in
+           sottomenu"): a sinistra UNA sezione alla volta (menu in alto su PC, barra in basso su
+           telefono), a destra la Chat sempre visibile su PC. Giocatori e Strumenti hanno un
+           sottomenu. Tutte le schede sono le stesse di prima (stessi id): cambiano solo il
+           raggruppamento e cosa è visibile — vedi masterDesktopMenuHTML/masterSubnavHTML in
+           js/ui-nav.js. -->
+      <div class="grid2 master-layout">
+        <div class="master-main">
+          <div class="mobile-section master-pane" data-mobile-tab="scena">
           <div class="hud-frame card">
             <div class="section-title">Composizione Scena</div>
             <div style="margin-bottom:12px;">
@@ -4771,6 +4927,199 @@ let editingScene = false;
           <div class="hud-frame card" id="sector-map-card"></div>
           </div>
 
+          <div class="mobile-section master-pane" data-mobile-tab="combattimento">
+          <div class="hud-frame card">
+            <div class="section-title">Combattimento</div>
+            <div id="combat-live">${combatDisplayHTML(cachedCombat, true)}</div>
+            <div class="row" style="margin-top:8px;" id="combat-live-turn-controls">
+              <button class="btn ghost" id="btn-combat-prev-turn-top" style="flex:1;" title="Sposta indietro il puntatore del turno di 1 posizione, senza ricalcolare l'ordine né toccare Azioni/Battery/Effetti — solo per correggere un errore di sequenza.">⏮ Turno Precedente</button>
+              <button class="btn amber" id="btn-combat-next-turn-top" style="flex:1;">Turno Successivo</button>
+              <button class="btn ghost" id="btn-combat-end-top" style="flex:1;">Termina</button>
+            </div>
+          </div>
+          <div class="hud-frame card" id="combat-turn-now-card">${combatCurrentTurnCardHTML(cachedCombat)}</div>
+          ${combatChronicleCardHTML()}
+          <div class="hud-frame card" id="combat-mgr-card"></div>
+          <div class="hud-frame card" id="combat-notif-center-card"></div>
+          <div class="hud-frame card" id="encounter-balance-card"></div>
+          </div>
+
+          <div class="mobile-section master-pane" data-mobile-tab="roster">
+          ${masterSubnavHTML('giocatori', [{key:'roster',label:'👥 Roster'},{key:'tiri',label:'🎲 Richiedi Tiro'},{key:'torment',label:'😰 Torment Check'},{key:'loot',label:'🎁 Loot'}])}
+            <div class="master-sub" data-sub-group="giocatori" data-sub="roster">
+          <div class="hud-frame card">
+            <div class="section-title">Roster Campagna</div>
+            <div id="roster-live">${players.length===0 ? '<div class="muted">Nessun giocatore ha ancora effettuato l\'accesso a questa campagna.</div>' : players.map((p,i)=>rosterItemHTML(p,i)).join('')}</div>
+          </div>
+            </div>
+            <div class="master-sub" data-sub-group="giocatori" data-sub="tiri">
+          <div class="hud-frame card">
+            <div class="section-title">Richiedi un Tiro</div>
+            <div class="muted" style="font-size:11px;margin-bottom:4px;">A chi (una o più persone):</div>
+            <div style="margin-bottom:8px;">
+              ${players.map(p=>`<div class="checkbox-row"><input type="checkbox" class="req-player-chk" value="${escapeAttr(p.username)}" /><label>${escapeHTML(displayName(p))}</label></div>`).join('')}
+            </div>
+            <div class="field"><label>Skill o Stat</label>
+              <select id="req-skill">
+                ${SKILL_DEFS.map(d=>`<option value="${d.key}">${escapeHTML(d.label)}</option>`).join('')}
+                <option value="baseAccuracy">Accuracy (Pool - Digimon)</option>
+                <option value="baseDodge">Dodge (Pool - Digimon)</option>
+                <option value="baseHealth">Health (Pool - Digimon)</option>
+              </select>
+            </div>
+            <div class="field" id="req-attr-field"><label>Caratteristica da abbinare</label>
+              <select id="req-attr">
+                <option value="agility">Agility</option>
+                <option value="body">Body</option>
+                <option value="charisma">Charisma</option>
+                <option value="intelligence">Intelligence</option>
+                <option value="willpower">Willpower</option>
+              </select>
+              <div class="muted" style="font-size:10px;margin-top:2px;">Precompilata con una delle due Caratteristiche standard della Skill scelta — per regolamento (2.05b) il Master può comunque richiedere una combinazione insolita quando la situazione lo giustifica (es. "Agility + Decipher Intent").</div>
+            </div>
+            <div class="field"><label>TN (opzionale, solo per Skill)</label><input type="number" id="req-tn" placeholder="es. 15" /></div>
+            <div class="muted" style="margin:2px 0 6px;font-size:11px;">Dove mostrare la richiesta (almeno una):</div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="req-chan-general" checked />
+              <label for="req-chan-general">📣 Chat Generale (visibile a tutti)</label>
+            </div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="req-chan-private" />
+              <label for="req-chan-private">✉️ Chat Privata (una per ciascun giocatore selezionato sopra, invisibile agli altri)</label>
+            </div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="req-chan-subgroup" />
+              <label for="req-chan-subgroup">👥 Sottogruppo</label>
+            </div>
+            <div class="field" id="req-subgroup-field" style="display:none;"><label>Quale sottogruppo</label>
+              <select id="req-subgroup-select"><option value="">Caricamento...</option></select>
+            </div>
+            <button class="btn amber" id="btn-request-roll" style="width:100%;">Richiedi Tiro</button>
+            <div class="muted" id="req-roll-status" style="margin-top:6px;"></div>
+          </div>
+            </div>
+            <div class="master-sub" data-sub-group="giocatori" data-sub="torment">
+          <div class="hud-frame card">
+            <div class="section-title">Richiedi Torment Check</div>
+            <div class="muted" style="font-size:11px;margin-bottom:4px;">Richiesta mirata a UN giocatore, su UNO dei suoi Torment già registrati (a differenza di "Richiedi un Tiro" nel tab Roster, qui il Master sceglie anche quale Torment specifico).</div>
+            <div class="field"><label>A chi</label>
+              <select id="torment-req-player">
+                <option value="">— scegli un giocatore —</option>
+                ${players.map(p=>`<option value="${escapeAttr(p.username)}">${escapeHTML(displayName(p))}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field"><label>Quale Torment</label>
+              <select id="torment-req-torment"><option value="">— scegli prima un giocatore —</option></select>
+            </div>
+            <div class="muted" style="margin:2px 0 6px;font-size:11px;">Dove mostrare la richiesta (almeno una):</div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="torment-req-chan-general" checked />
+              <label for="torment-req-chan-general">📣 Chat Generale (visibile a tutti)</label>
+            </div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="torment-req-chan-private" />
+              <label for="torment-req-chan-private">✉️ Chat Privata (solo per il giocatore scelto sopra)</label>
+            </div>
+            <div class="checkbox-row">
+              <input type="checkbox" id="torment-req-chan-subgroup" />
+              <label for="torment-req-chan-subgroup">👥 Sottogruppo</label>
+            </div>
+            <div class="field" id="torment-req-subgroup-field" style="display:none;"><label>Quale sottogruppo</label>
+              <select id="torment-req-subgroup-select"><option value="">Caricamento...</option></select>
+            </div>
+            <button class="btn amber" id="btn-request-torment" style="width:100%;">Richiedi Torment Check</button>
+            <div class="muted" id="torment-req-status" style="margin-top:6px;"></div>
+          </div>
+            </div>
+            <div class="master-sub" data-sub-group="giocatori" data-sub="loot">
+          <!-- Loot in chat (richiesta Rocco 2026-09-25): il Master pubblica un bottino in UNA chat,
+               chi ci clicca se lo aggiunge all'Inventario. Logica di presa/anti-doppioni lato
+               server (api/log.js, resource=loot-claim), rendering in js/chat-log-engine.js
+               (lootCardHTML). Handler: btn-send-loot più sotto, in renderMaster. -->
+          <div class="hud-frame card" id="loot-card">
+            <div class="section-title">🎁 Loot in chat</div>
+            <div class="row">
+              <div class="field"><label>Oggetto</label><input type="text" id="loot-name" placeholder="es. Carne di Meat Farm" /></div>
+              <div class="field" style="max-width:80px;"><label>Q.tà</label><input type="number" id="loot-qty" value="1" min="1" /></div>
+            </div>
+            <div class="field"><label>Categoria</label>
+              <select id="loot-category">${(typeof INVENTORY_CATEGORIES!=='undefined' ? INVENTORY_CATEGORIES : [{value:'altro',label:'Altro'}]).map(c=>`<option value="${c.value}" ${c.value==='altro'?'selected':''}>${escapeHTML(c.label)}</option>`).join('')}</select>
+            </div>
+            <div class="field"><label>Descrizione (opz.)</label><input type="text" id="loot-desc" placeholder="cosa fa..." /></div>
+            <div class="field"><label>Come si divide</label>
+              <select id="loot-mode">
+                <option value="each">Stessa quantità a ciascuno (ognuno prende la Q.tà indicata)</option>
+                <option value="pool">Quantità totale da spartire (ognuno prende quanto vuole finché ce n'è)</option>
+                <option value="first">Tutto al primo che clicca</option>
+              </select>
+            </div>
+            <div class="muted" style="font-size:11px;margin-bottom:4px;">Chi può prenderlo:</div>
+            <div style="margin-bottom:8px;">
+              ${players.map(p=>`<div class="checkbox-row"><input type="checkbox" class="loot-player-chk" value="${escapeAttr(p.username)}" checked /><label>${escapeHTML(displayName(p))}</label></div>`).join('')}
+            </div>
+            <div class="field"><label>In quale chat</label>
+              <select id="loot-channel">
+                <option value="general">📣 Chat Generale</option>
+                <option value="subgroup">👥 Sottogruppo</option>
+                <option value="private">✉️ Chat Privata (una copia per ciascun giocatore spuntato)</option>
+              </select>
+            </div>
+            <div class="field" id="loot-subgroup-field" style="display:none;"><label>Quale sottogruppo</label>
+              <select id="loot-subgroup-select"><option value="">Caricamento...</option></select>
+            </div>
+            <div class="muted" style="font-size:10px;margin-bottom:6px;">Ognuno può prendere lo stesso bottino una volta sola; se ha già in Inventario un oggetto con lo stesso nome e Categoria, la quantità viene sommata invece di creare un doppione.</div>
+            <button class="btn amber" id="btn-send-loot" style="width:100%;">🎁 Pubblica bottino</button>
+            <div class="muted" id="loot-status" style="margin-top:6px;"></div>
+          </div>
+            </div>
+          </div>
+
+          <div class="mobile-section master-pane" data-mobile-tab="strumenti">
+          ${masterSubnavHTML('strumenti', [{key:'avvisi',label:'📢 Avvisi'},{key:'progressione',label:'📈 Progressione'},{key:'automatici',label:'🤖 Messaggi auto'},{key:'regole',label:'📚 Regole'},{key:'archivio',label:'🗂️ Archivio'},{key:'bug',label:'🐞 Bug'}])}
+            <div class="master-sub" data-sub-group="strumenti" data-sub="avvisi">
+          <div class="hud-frame card" id="notice-mgr-card"></div>
+            </div>
+            <div class="master-sub" data-sub-group="strumenti" data-sub="progressione">
+          <div class="hud-frame card" id="progression-card"></div>
+            </div>
+            <div class="master-sub" data-sub-group="strumenti" data-sub="automatici">
+          <div class="hud-frame card" id="auto-msg-card"></div>
+            </div>
+            <div class="master-sub" data-sub-group="strumenti" data-sub="regole">
+          <div class="hud-frame card" id="mounting-tn-card"></div>
+          <div class="hud-frame card" id="gm-reference-card"></div>
+            </div>
+            <div class="master-sub" data-sub-group="strumenti" data-sub="archivio">
+              <div class="hud-frame card" id="scan-log-card"></div>
+              <div class="hud-frame card">
+                <div class="flex-between" style="margin-bottom:6px;">
+                  <div class="section-title" style="margin:0;border:none;padding:0;">Digidex</div>
+                </div>
+                <div class="muted" style="margin-bottom:10px;">Registra rapidamente un Digimon incontrato dal bottone "+Dex" sugli Incontri della Scena. Per la gestione completa usa la pagina dedicata.</div>
+                <a href="dex.html" target="_blank" class="btn solid" style="display:inline-block;text-decoration:none;padding:10px 18px;">📖 Apri il Digidex Completo →</a>
+              </div>
+              <div class="hud-frame card">
+                <div class="flex-between" style="margin-bottom:6px;">
+                  <div class="section-title" style="margin:0;border:none;padding:0;">Mappa</div>
+                </div>
+                <div class="muted" style="margin-bottom:10px;">Gestisci Macroscene, Settori e Luoghi dal pannello Mappa. Per la vista esplorabile usa la pagina dedicata.</div>
+                <a href="map.html" target="_blank" class="btn solid" style="display:inline-block;text-decoration:none;padding:10px 18px;">🗺️ Apri la Mappa Completa →</a>
+              </div>
+              <div class="hud-frame card">
+                <div class="flex-between" style="margin-bottom:6px;">
+                  <div class="section-title" style="margin:0;border:none;padding:0;">NPC</div>
+                </div>
+                <div class="muted" style="margin-bottom:10px;">Crea e gestisci il registro degli NPC (nome, colore chat, ritratti). Poi richiamali al volo in chat da "Parla come".</div>
+                <a href="npc.html" target="_blank" class="btn solid" style="display:inline-block;text-decoration:none;padding:10px 18px;">🎭 Apri il Registro NPC →</a>
+              </div>
+            </div>
+            <div class="master-sub" data-sub-group="strumenti" data-sub="bug">
+          <div class="hud-frame card" id="bugreports-card"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="master-side">
           <div class="mobile-section" data-mobile-tab="chat">
           <div class="hud-frame card">
             <div class="flex-between" style="margin-bottom:8px;">
@@ -4821,6 +5170,7 @@ let editingScene = false;
               <textarea id="gm-text" rows="1" placeholder="Narrazione del Master..."></textarea>
               <button class="btn amber" id="btn-gm-post">Pubblica</button>
             </div>
+            ${toneButtonsHTML('gm', true)}
             <div id="dice-panel-master" class="dice-panel" style="margin-top:6px;"></div>
             ${chatAttachHTML('gm')}
             ${mentionButtonHTML('gm')}
@@ -4830,191 +5180,10 @@ let editingScene = false;
           </div>
           </div>
         </div>
-
-        <div>
-          <div class="mobile-section" data-mobile-tab="combattimento">
-          <div class="hud-frame card">
-            <div class="section-title">Combattimento</div>
-            <div id="combat-live">${combatDisplayHTML(cachedCombat, true)}</div>
-            <div class="row" style="margin-top:8px;" id="combat-live-turn-controls">
-              <button class="btn ghost" id="btn-combat-prev-turn-top" style="flex:1;" title="Sposta indietro il puntatore del turno di 1 posizione, senza ricalcolare l'ordine né toccare Azioni/Battery/Effetti — solo per correggere un errore di sequenza.">⏮ Turno Precedente</button>
-              <button class="btn amber" id="btn-combat-next-turn-top" style="flex:1;">Turno Successivo</button>
-              <button class="btn ghost" id="btn-combat-end-top" style="flex:1;">Termina</button>
-            </div>
-          </div>
-          <div class="hud-frame card" id="combat-turn-now-card">${combatCurrentTurnCardHTML(cachedCombat)}</div>
-          ${combatChronicleCardHTML()}
-          <div class="hud-frame card" id="combat-mgr-card"></div>
-          <div class="hud-frame card" id="combat-notif-center-card"></div>
-          <div class="hud-frame card" id="encounter-balance-card"></div>
-          </div>
-
-          <div class="mobile-section" data-mobile-tab="roster">
-          <div class="hud-frame card">
-            <div class="section-title">Roster Campagna</div>
-            <div id="roster-live">${players.length===0 ? '<div class="muted">Nessun giocatore ha ancora effettuato l\'accesso a questa campagna.</div>' : players.map((p,i)=>rosterItemHTML(p,i)).join('')}</div>
-          </div>
-          <div class="hud-frame card">
-            <div class="section-title">Richiedi un Tiro</div>
-            <div class="muted" style="font-size:11px;margin-bottom:4px;">A chi (una o più persone):</div>
-            <div style="margin-bottom:8px;">
-              ${players.map(p=>`<div class="checkbox-row"><input type="checkbox" class="req-player-chk" value="${escapeAttr(p.username)}" /><label>${escapeHTML(displayName(p))}</label></div>`).join('')}
-            </div>
-            <div class="field"><label>Skill o Stat</label>
-              <select id="req-skill">
-                ${SKILL_DEFS.map(d=>`<option value="${d.key}">${escapeHTML(d.label)}</option>`).join('')}
-                <option value="baseAccuracy">Accuracy (Pool - Digimon)</option>
-                <option value="baseDodge">Dodge (Pool - Digimon)</option>
-                <option value="baseHealth">Health (Pool - Digimon)</option>
-              </select>
-            </div>
-            <div class="field" id="req-attr-field"><label>Caratteristica da abbinare</label>
-              <select id="req-attr">
-                <option value="agility">Agility</option>
-                <option value="body">Body</option>
-                <option value="charisma">Charisma</option>
-                <option value="intelligence">Intelligence</option>
-                <option value="willpower">Willpower</option>
-              </select>
-              <div class="muted" style="font-size:10px;margin-top:2px;">Precompilata con una delle due Caratteristiche standard della Skill scelta — per regolamento (2.05b) il Master può comunque richiedere una combinazione insolita quando la situazione lo giustifica (es. "Agility + Decipher Intent").</div>
-            </div>
-            <div class="field"><label>TN (opzionale, solo per Skill)</label><input type="number" id="req-tn" placeholder="es. 15" /></div>
-            <div class="muted" style="margin:2px 0 6px;font-size:11px;">Dove mostrare la richiesta (almeno una):</div>
-            <div class="checkbox-row">
-              <input type="checkbox" id="req-chan-general" checked />
-              <label for="req-chan-general">📣 Chat Generale (visibile a tutti)</label>
-            </div>
-            <div class="checkbox-row">
-              <input type="checkbox" id="req-chan-private" />
-              <label for="req-chan-private">✉️ Chat Privata (una per ciascun giocatore selezionato sopra, invisibile agli altri)</label>
-            </div>
-            <div class="checkbox-row">
-              <input type="checkbox" id="req-chan-subgroup" />
-              <label for="req-chan-subgroup">👥 Sottogruppo</label>
-            </div>
-            <div class="field" id="req-subgroup-field" style="display:none;"><label>Quale sottogruppo</label>
-              <select id="req-subgroup-select"><option value="">Caricamento...</option></select>
-            </div>
-            <button class="btn amber" id="btn-request-roll" style="width:100%;">Richiedi Tiro</button>
-            <div class="muted" id="req-roll-status" style="margin-top:6px;"></div>
-          </div>
-          </div>
-
-          <div class="mobile-section" data-mobile-tab="strumenti">
-          <!-- BUGFIX (Rocco, 2026-09-11): "Richiedi Torment Check" viveva nel tab mobile "Roster"
-               insieme a "Roster Campagna"/"Richiedi un Tiro" — su desktop non si notava (grid2
-               mostra tutto insieme), ma su mobile chi cerca uno strumento del Master lo cerca
-               sotto "Strumenti" (🔧) e non lo trova sotto "Roster" (👥): da lì il "non è presente".
-               Spostato qui, nessun'altra modifica (stessi id, stesso markup). -->
-          <div class="hud-frame card">
-            <div class="section-title">Richiedi Torment Check</div>
-            <div class="muted" style="font-size:11px;margin-bottom:4px;">Richiesta mirata a UN giocatore, su UNO dei suoi Torment già registrati (a differenza di "Richiedi un Tiro" nel tab Roster, qui il Master sceglie anche quale Torment specifico).</div>
-            <div class="field"><label>A chi</label>
-              <select id="torment-req-player">
-                <option value="">— scegli un giocatore —</option>
-                ${players.map(p=>`<option value="${escapeAttr(p.username)}">${escapeHTML(displayName(p))}</option>`).join('')}
-              </select>
-            </div>
-            <div class="field"><label>Quale Torment</label>
-              <select id="torment-req-torment"><option value="">— scegli prima un giocatore —</option></select>
-            </div>
-            <div class="muted" style="margin:2px 0 6px;font-size:11px;">Dove mostrare la richiesta (almeno una):</div>
-            <div class="checkbox-row">
-              <input type="checkbox" id="torment-req-chan-general" checked />
-              <label for="torment-req-chan-general">📣 Chat Generale (visibile a tutti)</label>
-            </div>
-            <div class="checkbox-row">
-              <input type="checkbox" id="torment-req-chan-private" />
-              <label for="torment-req-chan-private">✉️ Chat Privata (solo per il giocatore scelto sopra)</label>
-            </div>
-            <div class="checkbox-row">
-              <input type="checkbox" id="torment-req-chan-subgroup" />
-              <label for="torment-req-chan-subgroup">👥 Sottogruppo</label>
-            </div>
-            <div class="field" id="torment-req-subgroup-field" style="display:none;"><label>Quale sottogruppo</label>
-              <select id="torment-req-subgroup-select"><option value="">Caricamento...</option></select>
-            </div>
-            <button class="btn amber" id="btn-request-torment" style="width:100%;">Richiedi Torment Check</button>
-            <div class="muted" id="torment-req-status" style="margin-top:6px;"></div>
-          </div>
-          <!-- Loot in chat (richiesta Rocco 2026-09-25): il Master pubblica un bottino in UNA chat,
-               chi ci clicca se lo aggiunge all'Inventario. Logica di presa/anti-doppioni lato
-               server (api/log.js, resource=loot-claim), rendering in js/chat-log-engine.js
-               (lootCardHTML). Handler: btn-send-loot più sotto, in renderMaster. -->
-          <div class="hud-frame card" id="loot-card">
-            <div class="section-title">🎁 Loot in chat</div>
-            <div class="row">
-              <div class="field"><label>Oggetto</label><input type="text" id="loot-name" placeholder="es. Carne di Meat Farm" /></div>
-              <div class="field" style="max-width:80px;"><label>Q.tà</label><input type="number" id="loot-qty" value="1" min="1" /></div>
-            </div>
-            <div class="field"><label>Categoria</label>
-              <select id="loot-category">${(typeof INVENTORY_CATEGORIES!=='undefined' ? INVENTORY_CATEGORIES : [{value:'altro',label:'Altro'}]).map(c=>`<option value="${c.value}" ${c.value==='altro'?'selected':''}>${escapeHTML(c.label)}</option>`).join('')}</select>
-            </div>
-            <div class="field"><label>Descrizione (opz.)</label><input type="text" id="loot-desc" placeholder="cosa fa..." /></div>
-            <div class="field"><label>Come si divide</label>
-              <select id="loot-mode">
-                <option value="each">Stessa quantità a ciascuno (ognuno prende la Q.tà indicata)</option>
-                <option value="pool">Quantità totale da spartire (ognuno prende quanto vuole finché ce n'è)</option>
-                <option value="first">Tutto al primo che clicca</option>
-              </select>
-            </div>
-            <div class="muted" style="font-size:11px;margin-bottom:4px;">Chi può prenderlo:</div>
-            <div style="margin-bottom:8px;">
-              ${players.map(p=>`<div class="checkbox-row"><input type="checkbox" class="loot-player-chk" value="${escapeAttr(p.username)}" checked /><label>${escapeHTML(displayName(p))}</label></div>`).join('')}
-            </div>
-            <div class="field"><label>In quale chat</label>
-              <select id="loot-channel">
-                <option value="general">📣 Chat Generale</option>
-                <option value="subgroup">👥 Sottogruppo</option>
-                <option value="private">✉️ Chat Privata (una copia per ciascun giocatore spuntato)</option>
-              </select>
-            </div>
-            <div class="field" id="loot-subgroup-field" style="display:none;"><label>Quale sottogruppo</label>
-              <select id="loot-subgroup-select"><option value="">Caricamento...</option></select>
-            </div>
-            <div class="muted" style="font-size:10px;margin-bottom:6px;">Ognuno può prendere lo stesso bottino una volta sola; se ha già in Inventario un oggetto con lo stesso nome e Categoria, la quantità viene sommata invece di creare un doppione.</div>
-            <button class="btn amber" id="btn-send-loot" style="width:100%;">🎁 Pubblica bottino</button>
-            <div class="muted" id="loot-status" style="margin-top:6px;"></div>
-          </div>
-          <div class="hud-frame card" id="notice-mgr-card"></div>
-          <div class="hud-frame card" id="bugreports-card"></div>
-          <div class="hud-frame card" id="auto-msg-card"></div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;">
-            <div class="hud-frame card" id="progression-card"></div>
-            <div style="display:flex;flex-direction:column;gap:14px;">
-              <div class="hud-frame card" id="scan-log-card"></div>
-              <div class="hud-frame card">
-                <div class="flex-between" style="margin-bottom:6px;">
-                  <div class="section-title" style="margin:0;border:none;padding:0;">Digidex</div>
-                </div>
-                <div class="muted" style="margin-bottom:10px;">Registra rapidamente un Digimon incontrato dal bottone "+Dex" sugli Incontri della Scena. Per la gestione completa usa la pagina dedicata.</div>
-                <a href="dex.html" target="_blank" class="btn solid" style="display:inline-block;text-decoration:none;padding:10px 18px;">📖 Apri il Digidex Completo →</a>
-              </div>
-              <div class="hud-frame card">
-                <div class="flex-between" style="margin-bottom:6px;">
-                  <div class="section-title" style="margin:0;border:none;padding:0;">Mappa</div>
-                </div>
-                <div class="muted" style="margin-bottom:10px;">Gestisci Macroscene, Settori e Luoghi dal pannello Mappa. Per la vista esplorabile usa la pagina dedicata.</div>
-                <a href="map.html" target="_blank" class="btn solid" style="display:inline-block;text-decoration:none;padding:10px 18px;">🗺️ Apri la Mappa Completa →</a>
-              </div>
-              <div class="hud-frame card">
-                <div class="flex-between" style="margin-bottom:6px;">
-                  <div class="section-title" style="margin:0;border:none;padding:0;">NPC</div>
-                </div>
-                <div class="muted" style="margin-bottom:10px;">Crea e gestisci il registro degli NPC (nome, colore chat, ritratti). Poi richiamali al volo in chat da "Parla come".</div>
-                <a href="npc.html" target="_blank" class="btn solid" style="display:inline-block;text-decoration:none;padding:10px 18px;">🎭 Apri il Registro NPC →</a>
-              </div>
-            </div>
-            <div class="hud-frame card" id="mounting-tn-card" style="grid-column:1 / -1;"></div>
-            <div class="hud-frame card" id="gm-reference-card" style="grid-column:1 / -1;"></div>
-          </div>
-          </div>
-
-          </div>
-        </div>
       </div>
       ${masterMobileNavHTML()}
     `;
+    initMasterPanes(); // subito, prima di ogni binding: sezione/sottoschede scelte (js/ui-nav.js)
 
     document.getElementById('btn-combat-prev-turn-top').onclick = ()=> previousCombatTurn(code, players);
     document.getElementById('btn-combat-next-turn-top').onclick = ()=> advanceCombatTurn(code, players);
@@ -5229,11 +5398,12 @@ let editingScene = false;
         if(role==='npc'){
           rememberNpc(code, { name: who, color: chosenColor, avatar });
         }
-        gmPushRes = await pushLog(code, { who, role, text, meta: Object.keys(meta).length ? meta : null });
+        gmPushRes = await pushLog(code, { who, role, text: applyChatTone('gm', text), meta: Object.keys(meta).length ? meta : null });
       }
       await maybeApplyReplyMove(code, undefined, gmReplyMoveTarget, gmReplyMoveWanted, gmPushRes);
       advanceGameClock('general', 5);
       ta.value='';
+      resetChatTone('gm');
       pendingGmImageUrl = null;
       pendingGmReplyTo = null;
       renderReplyBanner('gm-reply-preview', null);
@@ -5514,6 +5684,7 @@ let editingScene = false;
     mountDungeonView(code);
 
     startPolling();
+    consumePendingChatDeepLink();
   }
 
   let openManageIdx = null;

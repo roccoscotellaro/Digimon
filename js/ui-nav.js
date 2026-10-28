@@ -57,6 +57,9 @@
 
   function switchMobileTab(tab){
     __currentMobileTab = tab;
+    // Le sezioni del Master su telefono sono le stesse del menu su PC: teniamo allineata la scelta,
+    // così passando da un dispositivo largo a uno stretto (o ruotando il tablet) si resta lì.
+    if(tab!=='chat' && typeof setMasterPane==='function' && document.querySelector('.master-pane')) setMasterPane(tab);
     // Aggiorna bottoni
     document.querySelectorAll('.mobile-nav-btn').forEach(b=>{
       b.classList.toggle('active', b.dataset.tab===tab);
@@ -85,10 +88,83 @@
       <button class="mobile-nav-btn active" data-tab="scena"><span class="nav-icon">🌐</span>Scena</button>
       <button class="mobile-nav-btn" data-tab="chat"><span class="nav-icon">💬</span>Chat</button>
       <button class="mobile-nav-btn" data-tab="combattimento"><span class="nav-icon">⚔️</span>Battle</button>
-      <button class="mobile-nav-btn" data-tab="roster"><span class="nav-icon">👥</span>Roster</button>
+      <button class="mobile-nav-btn" data-tab="roster"><span class="nav-icon">👥</span>Giocatori</button>
       <button class="mobile-nav-btn" data-tab="strumenti"><span class="nav-icon">🔧</span>Tools</button>
     </nav>`;
   }
+
+  // ---------- MENU DEL MASTER (PC) + SOTTOMENU ----------
+  // Richiesta Rocco 2026-10-28: "l'interfaccia del Master è diventata molto caotica e troppo
+  // piena, riusciamo a sistemarla in sottomenu?". Su PC la Vista Master mostrava ~20 schede tutte
+  // insieme su due colonne. Ora:
+  //   - a destra la Chat resta SEMPRE visibile (è lo strumento che si usa di continuo);
+  //   - a sinistra si vede UNA sezione alla volta, scelta dal menu in alto (stesse sezioni della
+  //     barra in basso su telefono: Scena · Battaglia · Giocatori · Strumenti);
+  //   - le sezioni lunghe (Giocatori, Strumenti) hanno a loro volta un sottomenu a schede, che
+  //     funziona uguale su PC e telefono.
+  // Nessuna scheda è stata tolta né modificata: stessi id, stesso markup, solo raggruppati e
+  // mostrati/nascosti (restano nel DOM, quindi tutto il codice che le riempie/legge funziona come
+  // prima). Le scelte (sezione e sottoscheda) sopravvivono ai ri-render e al ricaricamento.
+  const MASTER_PANES = [
+    { key:'scena', icon:'🌐', label:'Scena' },
+    { key:'combattimento', icon:'⚔️', label:'Battaglia' },
+    { key:'roster', icon:'👥', label:'Giocatori' },
+    { key:'strumenti', icon:'🔧', label:'Strumenti' }
+  ];
+  function __loadUiPref(key, fallback){ try{ return localStorage.getItem(key) || fallback; }catch(e){ return fallback; } }
+  function __saveUiPref(key, val){ try{ localStorage.setItem(key, val); }catch(e){} }
+  let __masterPane = __loadUiPref('dvos_master_pane', 'scena');
+  if(!MASTER_PANES.some(p=>p.key===__masterPane)) __masterPane = 'scena';
+
+  function masterDesktopMenuHTML(){
+    return `<nav class="master-menu" id="master-menu">${MASTER_PANES.map(p=>
+      `<button type="button" class="master-menu-btn${p.key===__masterPane?' active':''}" data-master-pane="${p.key}"><span class="mm-icon">${p.icon}</span>${p.label}<span class="mm-badge" id="master-menu-badge-${p.key}"></span></button>`
+    ).join('')}</nav>`;
+  }
+  // Sottomenu di una sezione: tabs = [{ key, label }]. Le schede da mostrare/nascondere stanno in
+  // <div class="master-sub" data-sub-group="<group>" data-sub="<key>">.
+  function masterSubnavHTML(group, tabs){
+    const current = __loadUiPref('dvos_master_sub_'+group, tabs[0].key);
+    const active = tabs.some(t=>t.key===current) ? current : tabs[0].key;
+    return `<div class="master-subnav" data-sub-nav="${group}">${tabs.map(t=>
+      `<button type="button" class="master-subnav-btn${t.key===active?' active':''}" data-sub-group="${group}" data-sub-key="${t.key}">${t.label}</button>`
+    ).join('')}</div>`;
+  }
+  function setMasterSub(group, key){
+    __saveUiPref('dvos_master_sub_'+group, key);
+    document.querySelectorAll(`.master-subnav-btn[data-sub-group="${group}"]`).forEach(b=>b.classList.toggle('active', b.dataset.subKey===key));
+    document.querySelectorAll(`.master-sub[data-sub-group="${group}"]`).forEach(el=>el.classList.toggle('sub-active', el.dataset.sub===key));
+  }
+  function setMasterPane(key){
+    if(!MASTER_PANES.some(p=>p.key===key)) return;
+    __masterPane = key;
+    __saveUiPref('dvos_master_pane', key);
+    document.querySelectorAll('.master-menu-btn').forEach(b=>b.classList.toggle('active', b.dataset.masterPane===key));
+    document.querySelectorAll('.master-pane').forEach(el=>el.classList.toggle('pane-active', el.dataset.mobileTab===key));
+  }
+  // Chiamata alla fine di renderMaster: riapplica sezione e sottoschede scelte.
+  function initMasterPanes(){
+    setMasterPane(__masterPane);
+    document.querySelectorAll('.master-subnav').forEach(nav=>{
+      const active = nav.querySelector('.master-subnav-btn.active');
+      if(active) setMasterSub(active.dataset.subGroup, active.dataset.subKey);
+    });
+  }
+  document.addEventListener('click', function(e){
+    // Chiude il menu a tendina "📂 Pagine" (topbar del Master) toccando fuori.
+    document.querySelectorAll('details.topbar-pages[open]').forEach(d=>{ if(!d.contains(e.target)) d.removeAttribute('open'); });
+    const paneBtn = e.target.closest && e.target.closest('[data-master-pane]');
+    if(paneBtn){ setMasterPane(paneBtn.dataset.masterPane); window.scrollTo({ top: 0 }); return; }
+    const subBtn = e.target.closest && e.target.closest('.master-subnav-btn');
+    if(subBtn) setMasterSub(subBtn.dataset.subGroup, subBtn.dataset.subKey);
+  });
+  // Pallino "combattimento in corso" sulla voce Battaglia del menu, così il Master non lo perde
+  // mentre sta lavorando in un'altra sezione. Richiamata dal polling (refreshLiveParts).
+  function setMasterMenuBadge(key, on){
+    const el = document.getElementById('master-menu-badge-'+key);
+    if(el) el.classList.toggle('on', !!on);
+  }
+  // ---------- fine MENU DEL MASTER ----------
   // ---------- fine MOBILE BOTTOM NAV ----------
 
   // ---------- schede pieghevoli su mobile ----------
@@ -178,7 +254,38 @@
     __collapseRefreshTimer = setTimeout(()=>{
       __collapseRefreshTimer = null;
       __refreshAllCollapsibleCards();
+      __watchChatLogsForReveal();
     }, 150);
   });
+
+  // ---------- chat sempre all'ultimo messaggio ----------
+  // Richiesta Rocco 2026-10-28: "che si apra sempre all'ultimo messaggio e non debbano scorrere".
+  // Il Registro veniva già portato in fondo dopo ogni disegno (scrollLogToBottomRobust in
+  // index.html), MA su telefono la scheda Chat parte nascosta (si apre su Scena): un elemento con
+  // display:none ha altezza 0, quindi "vai in fondo" non faceva nulla — e quando poi si toccava
+  // Chat, il Registro compariva fermo al messaggio più vecchio. Stessa cosa per Privata/Gruppi del
+  // Master, nascoste finché non le si sceglie. Ora ogni Registro chat è osservato: nel momento in
+  // cui passa da invisibile a visibile, viene portato in fondo.
+  const __logRevealObserver = (typeof ResizeObserver!=='undefined') ? new ResizeObserver(entries=>{
+    entries.forEach(entry=>{
+      const el = entry.target;
+      const h = el.clientHeight;
+      const was = Number(el.dataset.lastVisibleHeight || 0);
+      el.dataset.lastVisibleHeight = String(h);
+      if(was===0 && h>0){
+        el.scrollTop = el.scrollHeight;
+        requestAnimationFrame(()=>{ if(el.isConnected) el.scrollTop = el.scrollHeight; });
+      }
+    });
+  }) : null;
+  function __watchChatLogsForReveal(){
+    if(!__logRevealObserver) return;
+    document.querySelectorAll('.log').forEach(el=>{
+      if(el.id==='combat-chronicle' || el.dataset.revealWatched) return;
+      el.dataset.revealWatched = '1';
+      el.dataset.lastVisibleHeight = String(el.clientHeight);
+      __logRevealObserver.observe(el);
+    });
+  }
   __collapseObserver.observe(document.body, { childList:true, subtree:true });
   window.addEventListener('resize', __refreshAllCollapsibleCards);

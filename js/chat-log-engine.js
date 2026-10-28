@@ -390,6 +390,8 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
   // server non riceve affatto `text` e non lo patcha — vedi api/log.js).
   async function editLogEntry(code, id, text, thread, whoUpdate){
     const body = thread ? { code, thread, id, text } : { code, id, text };
+    // Chi sta modificando (vedi il controllo "solo i tuoi messaggi" nel PUT di api/log.js).
+    if(session && session.username) body.username = session.username;
     if(whoUpdate){ Object.assign(body, whoUpdate); }
     return apiPut('/api/log', body);
   }
@@ -1038,12 +1040,17 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
       // "Rispondi a un messaggio specifico": se questo messaggio è una risposta ad un altro,
       // mostra sopra il testo una citazione compatta di chi/cosa è stato citato (vedi
       // replySnippetFromEntry sopra) — solo lettura, nessun link/jump-to per restare semplice.
+      // "I giocatori possono modificare il proprio messaggio" (richiesta Rocco 2026-10-28): il ✎
+      // compare anche al giocatore, ma solo sui SUOI messaggi di testo (meta.author, salvato dal
+      // server da questa modifica in poi — vedi withAuthor in api/log.js) — non sui tiri di dado,
+      // sulle richieste del Master, sul bottino, ecc. Il controllo vero è comunque lato server.
+      const canEditOwn = !canModerate && !!(session && session.role==='player' && l.meta && l.meta.author===session.username && l.role==='player' && !(Array.isArray(l.meta.dice)));
       const replyQuoteHTML = (l.meta && l.meta.replyTo) ? `<div class="log-reply-quote" style="border-left:2px solid var(--cyan-dim);padding-left:6px;margin-bottom:4px;font-size:10.5px;opacity:0.82;">↩ <b>${escapeHTML(l.meta.replyTo.who)}</b>: ${escapeHTML(l.meta.replyTo.text)}</div>` : '';
       return `
       <div class="log-entry ${l.role}" data-entry-id="${l.id}">
         <div class="flex-between">
           <div>${(()=>{ const __av = resolveLogAvatar(l); return __av ? `<img class="who-avatar" src="${escapeAttr(__av)}" data-avatar-expand="${escapeAttr(__av)}" style="cursor:zoom-in;" onerror="this.style.display='none'" />` : ''; })()}<span class="who mono" ${l.meta && l.meta.color ? `style="color:${escapeAttr(l.meta.color)};"` : ''}>${escapeHTML(l.who)}</span><span class="meta">${new Date(l.ts).toLocaleTimeString('it-IT')}</span></div>
-          <div><button class="btn ghost small" data-log-reply="${l.id}" style="padding:2px 6px;touch-action:manipulation;" title="Rispondi">↩</button>${canModerate ? `<button class="btn ghost small" data-log-move-up="${l.id}" style="padding:2px 6px;touch-action:manipulation;" title="Sposta su (prima nel Registro)">▲</button><button class="btn ghost small" data-log-move-down="${l.id}" style="padding:2px 6px;touch-action:manipulation;" title="Sposta giù (dopo nel Registro)">▼</button><button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;touch-action:manipulation;">✎</button><button class="btn ghost small" data-log-del="${l.id}" style="padding:2px 6px;touch-action:manipulation;">✕</button>` : ''}</div>
+          <div><button class="btn ghost small" data-log-reply="${l.id}" style="padding:2px 6px;touch-action:manipulation;" title="Rispondi">↩</button>${canModerate ? `<button class="btn ghost small" data-log-move-up="${l.id}" style="padding:2px 6px;touch-action:manipulation;" title="Sposta su (prima nel Registro)">▲</button><button class="btn ghost small" data-log-move-down="${l.id}" style="padding:2px 6px;touch-action:manipulation;" title="Sposta giù (dopo nel Registro)">▼</button><button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;touch-action:manipulation;">✎</button><button class="btn ghost small" data-log-del="${l.id}" style="padding:2px 6px;touch-action:manipulation;">✕</button>` : ''}${canEditOwn ? `<button class="btn ghost small" data-log-edit="${l.id}" style="padding:2px 6px;touch-action:manipulation;" title="Modifica il tuo messaggio">✎</button>` : ''}</div>
         </div>
         ${replyQuoteHTML}
         <div class="txt${l.meta && l.meta.digimoji ? ' digimoji-text' : ''}" ${l.meta && l.meta.digimoji ? `title="${escapeAttr(displayText)}"` : ''}>${formatLogText(displayText)}</div>
@@ -1071,6 +1078,9 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
     modal.id = 'edit-log-modal';
     modal.className = 'enc-modal-backdrop';
     const currentAvatar = entry ? resolveLogAvatar(entry) : '';
+    // Un giocatore che modifica il proprio messaggio può cambiare solo il testo (vedi canEditOwn
+    // in logHTML): "Cambia chi ha parlato" resta riservato al Master.
+    const isMasterEditor = !!(session && session.role==='master');
     modal.innerHTML = `
       <div class="enc-modal-card hud-frame" style="max-width:520px;">
         <button class="btn ghost small" id="edit-log-modal-close" style="position:absolute;top:8px;right:8px;">✕</button>
@@ -1080,7 +1090,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
           ${currentAvatar?`<img src="${escapeAttr(currentAvatar)}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;" onerror="this.style.display='none'" />`:''}
           Attualmente: <b>${escapeHTML(entry ? entry.who : '')}</b>
         </div>
-        <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;">
+        <label style="display:${isMasterEditor?'flex':'none'};align-items:center;gap:6px;margin-top:8px;font-size:12px;">
           <input type="checkbox" id="edit-log-modal-change-who" /> Cambia anche chi ha "parlato"
         </label>
         <div id="edit-log-modal-who-fields" style="display:none;margin-top:8px;">
@@ -1919,6 +1929,23 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
     // sotto, così un'eventuale "..." dentro la battuta viene comunque evidenziata al suo interno.
     // [^<)]+ (non "<" né ")") resta dentro una singola riga/battuta, senza attraversare eventuali
     // <br>/<div> già inseriti sopra o "mangiarsi" la parentesi di chiusura vera.
+    // Tastini 😄/📝/📌 sotto la chat (richiesta Rocco 2026-10-28, vedi toneButtonsHTML in
+    // js/chat-composer.js): avvolgono TUTTO il messaggio, es. "(scherzo: testo lungo, magari con
+    // a capo o una faccina :) dentro)". La regola "in linea" qui sotto non attraversa a capo/tag
+    // e si ferma alla prima ")" — quindi un messaggio intero va riconosciuto prima, come blocco
+    // unico: inizia col marcatore e finisce con l'ultima ")" del messaggio.
+    const wholeTone = html.match(/^\s*\(\s*(scherzo|nota|avviso)\s*[:,]\s*([\s\S]+)\)\s*$/i);
+    if(wholeTone){
+      const kind = wholeTone[1].toLowerCase();
+      const inner = wholeTone[2].trim();
+      // Se dentro c'è un ALTRO marcatore, era una frase con due marcatori in linea (es.
+      // "(nota: a) e poi (nota: b)"), non un messaggio avvolto: lasciamo fare alla regola in linea.
+      if(inner && !/\(\s*(scherzo|nota|avviso)\b/i.test(inner)){
+        const cls = kind==='scherzo' ? 'log-joke' : (kind==='nota' ? 'log-note' : 'log-warning');
+        const label = kind==='scherzo' ? '😄 scherzo' : (kind==='nota' ? '📝 nota' : '📌 avviso del Master');
+        html = `<details class="${cls}"><summary>${label}</summary><span class="${cls}-text">${inner}</span></details>`;
+      }
+    }
     html = html.replace(/\(\s*scherzo\s*[:,]?\s*([^<)]+)\)/gi, (m, joke)=>{
       const jokeText = joke.trim();
       if(!jokeText) return m; // "(scherzo)" da solo, senza nulla dentro: nulla da mostrare, lascialo com'è

@@ -96,6 +96,7 @@
           <input type="color" id="subgroup-speak-color" class="chat-color-swatch" value="#ff8a3d" />
         </div>
         <textarea id="subgroup-text" rows="2" placeholder="Scrivi nel sottogruppo..." style="margin-top:8px;"></textarea>
+        ${toneButtonsHTML('subgroup', true)}
         <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--text-mute);">
           <input type="checkbox" id="subgroup-digimoji-toggle" /> ✍️ Scrivi in Digimoji
         </label>
@@ -291,9 +292,10 @@
       // del gruppo intero — così un sottogruppo separato viene "riconosciuto" nel Settore giusto.
       meta.location = subgroupLocationKey(activeGroup);
       if(role==='npc') rememberNpc(code, { name: who, color: chosenColor, avatar });
-      const subPushRes = await pushPrivateLog(code, subThreadName, { who, role, text, meta });
+      const subPushRes = await pushPrivateLog(code, subThreadName, { who, role, text: applyChatTone('subgroup', text), meta });
       await maybeApplyReplyMove(code, subThreadName, subReplyMoveTarget, subReplyMoveWanted, subPushRes);
       ta.value='';
+      resetChatTone('subgroup');
       pendingSubgroupImageUrl = null;
       pendingSubgroupReplyTo = null;
       renderSubgroupChatMaster(code, players, onChanged);

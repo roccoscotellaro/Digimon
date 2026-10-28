@@ -170,6 +170,7 @@
         <input type="color" id="private-speak-color" class="chat-color-swatch" value="#ff8a3d" />
       </div>
       <textarea id="private-text-master" rows="2" placeholder="Scrivi in privato..." style="margin-top:8px;"></textarea>
+      ${toneButtonsHTML('private', true)}
       <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--text-mute);">
         <input type="checkbox" id="private-digimoji-toggle" /> ✍️ Scrivi in Digimoji
       </label>
@@ -330,9 +331,10 @@
       // giocatore destinatario, non quella del gruppo intero (vedi memberLocationKey sopra).
       meta.location = memberLocationKey(cachedRoster.find(m=>m.username===masterPrivateThread));
       if(role==='npc') rememberNpc(code, { name: who, color: chosenColor, avatar });
-      const privPushRes = await pushPrivateLog(code, masterPrivateThread, { who, role, text, meta });
+      const privPushRes = await pushPrivateLog(code, masterPrivateThread, { who, role, text: applyChatTone('private', text), meta });
       await maybeApplyReplyMove(code, masterPrivateThread, privReplyMoveTarget, privReplyMoveWanted, privPushRes);
       ta.value='';
+      resetChatTone('private');
       pendingPrivateImageUrl = null;
       pendingPrivateReplyTo = null;
       // renderPrivateChatMaster ricostruisce anche la select "Parla come" da loadSavedNpcs(code),

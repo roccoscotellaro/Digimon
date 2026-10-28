@@ -153,6 +153,59 @@
     };
   }
 
+  // ---------- TASTINI SCHERZO / NOTA / AVVISO ----------
+  // Richiesta Rocco 2026-10-28: "tastini che inseriscano direttamente la funzione di scherzo e nota
+  // ai giocatori e ulteriormente al Master anche avviso, con la possibilità di deselezionarlo".
+  // Ogni composer ha la sua riga di tastini (stesso prefix degli altri helper qui: 'action' per il
+  // giocatore, 'gm'/'private'/'subgroup' per il Master). Funzionano come interruttori: un tocco
+  // accende il tono (il bottone resta evidenziato), un secondo tocco lo spegne; se ne accendi un
+  // altro, il precedente si spegne. Al momento dell'invio applyChatTone avvolge il messaggio nel
+  // marcatore testuale già esistente — "(scherzo: ...)", "(nota: ...)", "(avviso: ...)", vedi
+  // formatLogText in js/chat-log-engine.js — e dopo l'invio il tastino si spegne da solo, così
+  // il messaggio successivo non parte per sbaglio come scherzo. Lo stato vive qui (non nel DOM)
+  // perché private-chat.js/subgroups.js ridisegnano il proprio composer a ogni invio.
+  const __chatTone = {};
+  const CHAT_TONES = [
+    { key:'scherzo', label:'😄 Scherzo', title:'Il messaggio compare come battuta fuori gioco, chiusa in un trafiletto' },
+    { key:'nota', label:'📝 Nota', title:'Il messaggio compare come nota a margine (OOC), chiusa in un trafiletto' },
+    { key:'avviso', label:'📌 Avviso', title:'Il messaggio compare come avviso del Master, evidenziato in rosso' }
+  ];
+  function toneButtonsHTML(prefix, allowWarning){
+    const active = __chatTone[prefix] || null;
+    return `<div class="chat-tone-row" id="${prefix}-tone-row">${CHAT_TONES.filter(t=>allowWarning || t.key!=='avviso').map(t=>
+      `<button type="button" class="btn ghost small chat-tone-btn tone-${t.key}${active===t.key?' tone-on':''}" data-chat-tone-prefix="${prefix}" data-chat-tone="${t.key}" aria-pressed="${active===t.key?'true':'false'}" title="${escapeAttr(t.title)}">${t.label}</button>`
+    ).join('')}</div>`;
+  }
+  function __renderToneRow(prefix){
+    const active = __chatTone[prefix] || null;
+    document.querySelectorAll(`[data-chat-tone-prefix="${prefix}"]`).forEach(b=>{
+      const on = b.getAttribute('data-chat-tone')===active;
+      b.classList.toggle('tone-on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+  // Un solo listener per tutta la pagina: i composer vengono ridisegnati spesso, i bottoni no.
+  document.addEventListener('click', (e)=>{
+    const btn = e.target.closest && e.target.closest('[data-chat-tone]');
+    if(!btn) return;
+    const prefix = btn.getAttribute('data-chat-tone-prefix');
+    const tone = btn.getAttribute('data-chat-tone');
+    __chatTone[prefix] = (__chatTone[prefix]===tone) ? null : tone;
+    __renderToneRow(prefix);
+  });
+  // Avvolge il testo nel marcatore del tono acceso (se c'è). Se il messaggio inizia già con un
+  // marcatore scritto a mano, lo lascia com'è per non creare "(scherzo: (scherzo: ...))".
+  function applyChatTone(prefix, text){
+    const tone = __chatTone[prefix];
+    if(!tone || !text) return text;
+    if(/^\s*\(\s*(scherzo|nota|avviso)\s*[:,]/i.test(text)) return text;
+    return `(${tone}: ${text})`;
+  }
+  function resetChatTone(prefix){
+    __chatTone[prefix] = null;
+    __renderToneRow(prefix);
+  }
+
   // Bottone "🔖 Menziona" accanto a un composer: apre il selezionatore e inserisce il token
   // scelto (Digidex o NPC salvato) al punto del cursore nella textarea indicata.
   function mentionButtonHTML(prefix){

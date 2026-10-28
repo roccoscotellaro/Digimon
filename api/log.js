@@ -36,8 +36,9 @@
 //
 // `username` nel body di POST identifica CHI sta scrivendo (a differenza di `who`, che e' il nome
 // mostrato in UI — puo' essere il characterName). Serve solo per sapere chi ESCLUDERE quando si
-// spedisce la Web Push del nuovo messaggio (non ha senso notificare a se stessi il proprio messaggio):
-// non viene salvato nella riga del log, e se manca semplicemente non si esclude nessuno.
+// spedisce la Web Push del nuovo messaggio (non ha senso notificare a se stessi il proprio messaggio),
+// e dal 2026-10-28 viene salvato anche in meta.author (vedi withAuthor) per permettere ai giocatori
+// di modificare i propri messaggi. Se manca, non si esclude nessuno e il messaggio resta senza autore.
 //
 // Serve a restare sotto il limite di 12 Serverless Functions del piano Vercel Hobby.
 const { supabase, cleanCode } = require('../lib/db');
@@ -301,6 +302,28 @@ function pushBodyFromText(text) {
   const idx = raw.indexOf('::');
   const shown = (idx >= 0 ? raw.slice(0, idx) : raw).trim();
   return (shown || raw).slice(0, 140);
+}
+
+// "I giocatori possono modificare il proprio messaggio" (richiesta Rocco 2026-10-28): l'autore
+// reale di un messaggio (lo `username` di chi ha premuto Invia, NON `who` che è solo il nome
+// mostrato e può essere un NPC/Digimon) viene salvato dentro meta.author al momento della
+// scrittura — nella colonna JSONB già esistente, nessuna migrazione. Serve al client per mostrare
+// il ✎ solo sui propri messaggi e al PUT qui sotto per rifiutare la modifica del testo di un
+// messaggio altrui. I messaggi scritti prima di questa modifica non hanno meta.author: restano
+// modificabili solo dal Master, come prima.
+function withAuthor(meta, username) {
+  if (!username) return meta || null;
+  return Object.assign({}, meta || {}, { author: String(username).slice(0, 60) });
+}
+
+// Dove deve portare il tocco sulla notifica (richiesta Rocco 2026-10-28: "cliccando sulla
+// notifica si apra direttamente la chat"): sw.js passa questo URL alla pagina già aperta (o ne
+// apre una nuova), e index.html (applyChatDeepLink) apre la scheda Chat sul thread giusto,
+// già scrollata all'ultimo messaggio.
+function chatDeepLink(params) {
+  const q = Object.keys(params).filter(k => params[k] != null && params[k] !== '')
+    .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k])).join('&');
+  return '/index.html' + (q ? '?' + q : '');
 }
 
 // ===== Loot in chat (resource=loot-claim) =====
@@ -575,7 +598,7 @@ module.exports = async (req, res) => {
       await sendPushToSubscriptions(recipientSubs, {
         title: String(title).slice(0, 60),
         body: String(body || '').slice(0, 140),
-        url: '/index.html',
+        url: chatDeepLink({ tab: 'combattimento' }),
         tag: 'dvos-push'
       }).catch(() => {});
       return res.status(200).json({ ok: true, sent: recipientSubs.length });
@@ -638,7 +661,7 @@ module.exports = async (req, res) => {
           who: String(who).slice(0, 60),
           role: role || 'player',
           text: String(text).slice(0, 8000),
-          meta: meta || null
+          meta: withAuthor(meta, username)
         }).select().single();
         if (error) return res.status(500).json({ error: error.message });
         // Il destinatario del push dipende dal tipo di thread:
@@ -653,10 +676,18 @@ module.exports = async (req, res) => {
           : (username && username === thread)
             ? await subsForMasters(campaignCode)
             : await subsForUsername(campaignCode, thread);
+        // Link della notifica: Sottogruppo -> quel gruppo (vale sia per i membri che per il Master);
+        // 1:1 scritto dal giocatore -> al Master serve sapere QUALE thread aprire; 1:1 scritto dal
+        // Master -> il giocatore ha una sola Chat Privata, basta aprire quella.
+        const pushUrl = isSubgroupThread
+          ? chatDeepLink({ chat: 'subgroup', group: String(thread).slice('subgroup:'.length) })
+          : (username && username === thread)
+            ? chatDeepLink({ chat: 'private', thread })
+            : chatDeepLink({ chat: 'private' });
         await sendPushToSubscriptions(recipientSubs, {
           title: isSubgroupThread ? `👥 ${String(who).slice(0, 60)} (gruppo)` : `✉️ ${String(who).slice(0, 60)} (privato)`,
           body: pushBodyFromText(text),
-          url: '/index.html',
+          url: pushUrl,
           tag: 'dvos-push'
         }).catch(() => {});
         return res.status(200).json({ entry: data });
@@ -683,14 +714,14 @@ module.exports = async (req, res) => {
         who: String(who).slice(0, 60),
         role: role || 'player',
         text: String(text).slice(0, 8000),
-        meta: meta || null
+        meta: withAuthor(meta, username)
       }).select().single();
       if (error) return res.status(500).json({ error: error.message });
       const recipientSubs = await subsForCampaign(campaignCode, username);
       await sendPushToSubscriptions(recipientSubs, {
         title: `💬 ${String(who).slice(0, 60)}`,
         body: pushBodyFromText(text),
-        url: '/index.html',
+        url: chatDeepLink({ chat: 'general' }),
         tag: 'dvos-push'
       }).catch(() => {});
       return res.status(200).json({ entry: data });
@@ -706,7 +737,7 @@ module.exports = async (req, res) => {
       // riga (non sovrascritto), così un update parziale (es. solo moveVotes) non cancella altre
       // chiavi già in meta (image, digimoji, location, replyTo, ecc.) — richiede una lettura in
       // più prima dell'update, accettabile per il volume di traffico di questa app.
-      const { code, thread, id, text, meta, who, role } = req.body || {};
+      const { code, thread, id, text, meta, who, role, username } = req.body || {};
       const campaignCode = cleanCode(code);
       if (!campaignCode || !id) return res.status(400).json({ error: 'missing code or id' });
       if (text === undefined && meta === undefined && who === undefined) {
@@ -719,11 +750,34 @@ module.exports = async (req, res) => {
       const { data: existing, error: fetchError } = await selectQuery.maybeSingle();
       if (fetchError) return res.status(500).json({ error: fetchError.message });
 
+      // "I giocatori possono modificare il proprio messaggio" (vedi withAuthor sopra): se chi
+      // modifica TESTO o MITTENTE si dichiara (username, mandato ora da editLogEntry) e non è un
+      // Master, deve essere l'autore del messaggio, e non può cambiare chi ha "parlato". Gli
+      // aggiornamenti di solo `meta` (voti di spostamento, riordino da "Rispondi") restano aperti a
+      // tutti come prima. Stesso modello di fiducia del resto dell'app (username autodichiarato).
+      if (username && (text !== undefined || who !== undefined || role !== undefined)) {
+        const { data: editor } = await supabase.from('members').select('role').eq('campaign_code', campaignCode).eq('username', username).maybeSingle();
+        if (!editor || editor.role !== 'master') {
+          const author = existing && existing.meta && existing.meta.author;
+          if (!author || author !== username) {
+            return res.status(403).json({ error: 'Puoi modificare solo i tuoi messaggi.' });
+          }
+          if (who !== undefined || role !== undefined) {
+            return res.status(403).json({ error: 'Solo il Master può cambiare chi ha parlato.' });
+          }
+        }
+      }
+
       const patch = {};
       if (text !== undefined) patch.text = String(text).slice(0, 8000);
       if (who !== undefined) patch.who = String(who).slice(0, 60);
       if (role !== undefined) patch.role = role;
-      if (meta !== undefined) patch.meta = Object.assign({}, (existing && existing.meta) || {}, meta);
+      if (meta !== undefined) {
+        patch.meta = Object.assign({}, (existing && existing.meta) || {}, meta);
+        // L'autore originale non si cambia mai con un PUT (né per errore né di proposito).
+        if (existing && existing.meta && existing.meta.author) patch.meta.author = existing.meta.author;
+        else delete patch.meta.author;
+      }
 
       let updateQuery = supabase.from(table).update(patch).eq('campaign_code', campaignCode).eq('id', id);
       if (thread) updateQuery = updateQuery.eq('thread_username', thread);
