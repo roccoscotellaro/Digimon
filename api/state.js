@@ -44,7 +44,7 @@
 //     mappa per i giocatori (nebbia) e POST accetta operazioni atomiche { op, username, ... }
 //     (saveDef, deleteDef, setActive, resetRun, refill, setLeader, vote, unlock, move). Tutta la
 //     logica e la migrazione SQL sono in lib/dungeon.js.
-const { supabase, cleanCode } = require('../lib/db');
+const { supabase, cleanCode, enableEtag } = require('../lib/db');
 const { handleDungeon } = require('../lib/dungeon');
 
 const TABLES = {
@@ -126,6 +126,7 @@ const SCENE_DEFAULT = {
 };
 
 module.exports = async (req, res) => {
+  enableEtag(req, res); // GET condizionali (304 se non è cambiato nulla) — vedi lib/db.js
   try {
     const body = req.body || {};
     const query = req.query || {};

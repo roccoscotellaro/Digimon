@@ -166,9 +166,9 @@
   // perché private-chat.js/subgroups.js ridisegnano il proprio composer a ogni invio.
   const __chatTone = {};
   const CHAT_TONES = [
-    { key:'scherzo', label:'😄 Scherzo', title:'Il messaggio compare come battuta fuori gioco, chiusa in un trafiletto' },
-    { key:'nota', label:'📝 Nota', title:'Il messaggio compare come nota a margine (OOC), chiusa in un trafiletto' },
-    { key:'avviso', label:'📌 Avviso', title:'Il messaggio compare come avviso del Master, evidenziato in rosso' }
+    { key:'scherzo', label:'😄 Scherzo', title:'Il messaggio compare come battuta fuori gioco, chiusa in un trafiletto (scorciatoia: Alt+S)' },
+    { key:'nota', label:'📝 Nota', title:'Il messaggio compare come nota a margine (OOC), chiusa in un trafiletto (scorciatoia: Alt+N)' },
+    { key:'avviso', label:'📌 Avviso', title:'Il messaggio compare come avviso del Master, evidenziato in rosso (scorciatoia: Alt+A)' }
   ];
   function toneButtonsHTML(prefix, allowWarning){
     const active = __chatTone[prefix] || null;
@@ -193,6 +193,23 @@
     __chatTone[prefix] = (__chatTone[prefix]===tone) ? null : tone;
     __renderToneRow(prefix);
   });
+  // Scorciatoie da tastiera (richiesta Rocco 2026-10-28, comodità sul PC): mentre si scrive in una
+  // chat, Alt+S accende/spegne 😄 Scherzo, Alt+N 📝 Nota, Alt+A 📌 Avviso (solo dove il tastino
+  // esiste, cioè per il Master). Si legge e.code (il tasto fisico) e non e.key, perché su Mac
+  // Alt+lettera produce un carattere speciale invece della lettera.
+  const __TONE_TEXTAREAS = { 'action-text':'action', 'gm-text':'gm', 'private-text-master':'private', 'subgroup-text':'subgroup' };
+  const __TONE_KEYS = { KeyS:'scherzo', KeyN:'nota', KeyA:'avviso' };
+  document.addEventListener('keydown', (e)=>{
+    if(!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const tone = __TONE_KEYS[e.code];
+    const prefix = e.target && __TONE_TEXTAREAS[e.target.id];
+    if(!tone || !prefix) return;
+    if(!document.querySelector(`[data-chat-tone-prefix="${prefix}"][data-chat-tone="${tone}"]`)) return;
+    e.preventDefault();
+    __chatTone[prefix] = (__chatTone[prefix]===tone) ? null : tone;
+    __renderToneRow(prefix);
+  });
+
   // Avvolge il testo nel marcatore del tono acceso (se c'è). Se il messaggio inizia già con un
   // marcatore scritto a mano, lo lascia com'è per non creare "(scherzo: (scherzo: ...))".
   function applyChatTone(prefix, text){

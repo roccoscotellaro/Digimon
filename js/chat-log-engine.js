@@ -393,14 +393,61 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
     // Chi sta modificando (vedi il controllo "solo i tuoi messaggi" nel PUT di api/log.js).
     if(session && session.username) body.username = session.username;
     if(whoUpdate){ Object.assign(body, whoUpdate); }
-    return apiPut('/api/log', body);
+    const putRes = await apiPut('/api/log', body);
+    invalidateLogSync(); // la prossima lettura è completa: vede subito la modifica
+    return putRes;
   }
 
-  async function deleteLogEntry(code, id, thread){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id) + (thread ? '&thread=' + encodeURIComponent(thread) : '')); }
+  async function deleteLogEntry(code, id, thread){ const r = await apiDelete('/api/log?code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id) + (thread ? '&thread=' + encodeURIComponent(thread) : '')); invalidateLogSync(); return r; }
 
-  async function clearLog(code){ return apiDelete('/api/log?code=' + encodeURIComponent(code) + '&clearAll=1'); }
+  async function clearLog(code){ const r = await apiDelete('/api/log?code=' + encodeURIComponent(code) + '&clearAll=1'); invalidateLogSync(); return r; }
 
-  async function getPrivateLog(code, thread){ const d = await apiGet('/api/log?code=' + encodeURIComponent(code) + '&thread=' + encodeURIComponent(thread)); return d ? (d.log||[]) : []; }
+  // ===== Lettura incrementale dei Registri chat =====
+  // Richiesta Rocco 2026-10-28 ("leggerezza e velocità"). Prima ogni lettura di un Registro (la
+  // Chat Generale a ogni giro di polling, la Chat Privata, i Sottogruppi, e il controllo "non letti"
+  // del Master su TUTTI i thread privati) riscaricava l'intero storico, fino a 2000 messaggi. Ora
+  // ogni Registro ha una copia locale: si chiedono al server solo i messaggi più nuovi dell'ultimo
+  // già visto (?since=<id>, vedi api/log.js), e una volta al minuto si rifà una lettura completa per
+  // raccogliere modifiche, cancellazioni e riordini fatti da altri. Chi modifica/cancella qualcosa
+  // da QUESTO dispositivo invalida subito la copia (invalidateLogSync), quindi vede il risultato
+  // al giro successivo come prima. Se il server non risponde, si mostra l'ultima copia nota invece
+  // di svuotare la chat.
+  const __logSync = {};
+  const LOG_FULL_SYNC_MS = 60000;
+  const LOG_LOCAL_LIMIT = 2000; // stessa finestra della lettura completa lato server
+  // __logGen: se una lettura era già in viaggio mentre questo dispositivo modificava qualcosa, il suo
+  // risultato (precedente alla modifica) non va salvato come copia buona.
+  let __logGen = 0;
+  function invalidateLogSync(){ __logGen++; Object.keys(__logSync).forEach(k=>{ delete __logSync[k]; }); }
+  async function syncedLogFetch(key, url){
+    const c = __logSync[key];
+    const now = Date.now();
+    const gen = __logGen;
+    if(c && c.maxId>0 && (now - c.fullAt) < LOG_FULL_SYNC_MS){
+      const d = await apiGet(url + '&since=' + encodeURIComponent(c.maxId));
+      if(!d) return c.rows.slice();
+      if(d.incremental && !d.truncated && Array.isArray(d.log)){
+        if(gen!==__logGen || __logSync[key]!==c) return c.rows.concat(d.log);
+        if(d.log.length){
+          const known = new Set(c.rows.map(r=>String(r.id)));
+          d.log.forEach(r=>{ if(!known.has(String(r.id))) c.rows.push(r); });
+          c.rows.sort((a,b)=>Number(a.id)-Number(b.id));
+          if(c.rows.length > LOG_LOCAL_LIMIT) c.rows = c.rows.slice(-LOG_LOCAL_LIMIT);
+          c.maxId = Math.max(c.maxId, ...d.log.map(r=>Number(r.id)||0));
+        }
+        return c.rows.slice();
+      }
+      // Troppi messaggi nuovi in un colpo solo: ripieghiamo sulla lettura completa qui sotto.
+    }
+    const d = await apiGet(url);
+    if(!d) return c ? c.rows.slice() : [];
+    const rows = Array.isArray(d.log) ? d.log : [];
+    if(gen!==__logGen) return rows.slice();
+    __logSync[key] = { rows: rows.slice(), maxId: rows.reduce((m,r)=>Math.max(m, Number(r.id)||0), 0), fullAt: now };
+    return rows.slice();
+  }
+
+  async function getPrivateLog(code, thread){ return syncedLogFetch('priv|'+code+'|'+thread, '/api/log?code=' + encodeURIComponent(code) + '&thread=' + encodeURIComponent(thread)); }
 
   async function pushPrivateLog(code, thread, entry){
     // Stesso tag di location della Chat Generale (vedi pushLog sopra) — prima lo storico per
@@ -1735,6 +1782,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         const reqQty = qtySel ? Math.max(1, Number(qtySel.value)||1) : 1;
         lootClaimBtn.disabled = true;
         const res = await apiPost('/api/log?resource=loot-claim', { code, thread: thread || undefined, id: msgId, username: session.username, qty: reqQty });
+        invalidateLogSync();
         if(!res || !res.ok){
           window.alert('⚠ ' + (lastApiError || 'Non è stato possibile prendere il bottino.'));
           lootClaimBtn.disabled = false;
@@ -1825,6 +1873,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
           // (solo i campi di posizione della Scheda, niente salvataggio dell'intera Scheda).
           moveVoteBtn.disabled = true;
           const res = await apiPost('/api/log?resource=move-vote', { code, thread: thread || undefined, id: msgId, username: session.username });
+          invalidateLogSync();
           if(!res || !res.ok){
             moveVoteBtn.disabled = false;
             window.alert('⚠ ' + (lastApiError || 'Voto non registrato, riprova.'));

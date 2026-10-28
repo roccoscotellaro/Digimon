@@ -82,6 +82,26 @@
     const badge = document.getElementById('mchat-unread-badge');
     const count = Object.keys(masterPrivateUnread).length;
     if(badge) badge.innerHTML = count>0 ? `<span style="background:var(--danger);color:#fff;border-radius:8px;padding:1px 6px;font-size:10px;">${count}</span>` : '';
+    // Comodità per il Master (richiesta Rocco 2026-10-28): oltre al numero sul bottone "Privata",
+    // una riga con i NOMI di chi ti ha scritto in privato e aspetta risposta — un tocco apre
+    // direttamente quel thread, da qualunque chat tu stia guardando.
+    const unreadList = document.getElementById('mchat-unread-list');
+    if(unreadList){
+      const names = players.filter(p=>masterPrivateUnread[p.username]);
+      unreadList.innerHTML = names.length
+        ? `<span class="muted" style="font-size:11px;">✉️ Da leggere:</span> ${names.map(p=>`<button type="button" class="btn ghost small mchat-unread-chip" data-open-private-thread="${escapeAttr(p.username)}">🔴 ${escapeHTML(displayName(p))}</button>`).join(' ')}`
+        : '';
+      unreadList.style.display = names.length ? 'flex' : 'none';
+      unreadList.onclick = async (e)=>{
+        const b = e.target.closest('[data-open-private-thread]');
+        if(!b) return;
+        masterPrivateThread = b.getAttribute('data-open-private-thread');
+        const privBtn = document.getElementById('mchatmode-private');
+        if(privBtn && privBtn.onclick) await privBtn.onclick();
+        b.remove();
+        if(!unreadList.querySelector('[data-open-private-thread]')){ unreadList.innerHTML = ''; unreadList.style.display = 'none'; }
+      };
+    }
   }
   function updateMasterChatModeUI(){
     const genBlock = document.getElementById('mchat-general-block');

@@ -24,7 +24,7 @@
 // del progetto — la versione precedente si creava un client a sé con SUPABASE_SERVICE_ROLE_KEY,
 // una variabile d'ambiente mai configurata su Vercel, che faceva crashare la funzione al
 // caricamento del modulo (prima ancora del try/catch, da qui l'errore HTML invece di JSON).
-const { supabase } = require('../lib/db');
+const { supabase, enableEtag } = require('../lib/db');
 
 // ---------------- AVVISI (comportamento originale + targeting) ----------------
 async function handleNoticeGet(req, res) {
@@ -440,6 +440,7 @@ async function handleNpcDelete(req, res) {
 
 // ---------------- ROUTER ----------------
 module.exports = async (req, res) => {
+  enableEtag(req, res); // GET condizionali (304 se non è cambiato nulla) — vedi lib/db.js
   try {
     const resource = req.method === 'GET' || req.method === 'DELETE'
       ? req.query.resource

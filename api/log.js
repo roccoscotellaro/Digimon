@@ -41,7 +41,7 @@
 // di modificare i propri messaggi. Se manca, non si esclude nessuno e il messaggio resta senza autore.
 //
 // Serve a restare sotto il limite di 12 Serverless Functions del piano Vercel Hobby.
-const { supabase, cleanCode } = require('../lib/db');
+const { supabase, cleanCode, enableEtag } = require('../lib/db');
 const webpush = require('web-push');
 
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
@@ -65,7 +65,10 @@ async function sendPushToSubscriptions(subs, payload) {
     console.log('[push] nessuna sottoscrizione da notificare per questo messaggio.');
     return;
   }
-  const body = JSON.stringify(payload);
+  // sentAt: quando il server ha spedito la notifica — sw.js lo usa come orario della notifica e,
+  // se arriva in ritardo di oltre 2 minuti, lo scrive nel testo ("inviato alle 10:29"). Così un
+  // ritardo si vede subito ed è chiaro che è stato trattenuto dal telefono, non dal server.
+  const body = JSON.stringify(Object.assign({ sentAt: Date.now() }, payload));
   const staleIds = [];
   await Promise.allSettled(subs.map(async (s) => {
     try {
@@ -531,6 +534,7 @@ async function handleMoveVote(req, res) {
 }
 
 module.exports = async (req, res) => {
+  enableEtag(req, res); // GET condizionali (304 se non è cambiato nulla) — vedi lib/db.js
   try {
     // ===== Sottoscrizioni Web Push (risorsa separata, stesso file per restare sotto il limite
     // di Serverless Functions) =====
@@ -599,7 +603,7 @@ module.exports = async (req, res) => {
         title: String(title).slice(0, 60),
         body: String(body || '').slice(0, 140),
         url: chatDeepLink({ tab: 'combattimento' }),
-        tag: 'dvos-push'
+        tag: 'dvos-turn'
       }).catch(() => {});
       return res.status(200).json({ ok: true, sent: recipientSubs.length });
     }
@@ -619,6 +623,27 @@ module.exports = async (req, res) => {
       // vengono cancellati (clearLog/deleteLogEntry): la finestra segue il conteggio reale delle
       // righe rimaste, non un cursore fisso sui primi N mai scritti.
       const LOG_FETCH_LIMIT = 2000; // 10x il precedente limite di 200
+
+      // ===== Lettura incrementale (?since=<id>) =====
+      // Richiesta Rocco 2026-10-28 ("leggerezza e velocità"): prima OGNI client riscaricava a ogni
+      // giro di polling (15s) l'intero Registro — fino a 2000 messaggi — anche se non era cambiato
+      // nulla. Ora il client (syncedLogFetch in js/chat-log-engine.js) tiene i messaggi già visti e
+      // chiede solo quelli con id maggiore dell'ultimo che ha: di solito 0-2 righe. Una volta al
+      // minuto rifà comunque una lettura completa, per accorgersi di modifiche/cancellazioni/riordini
+      // fatti da altri. Se i nuovi sono troppi (SINCE_LIMIT), il client ripiega da solo sulla lettura
+      // completa. `incremental:true` nella risposta dice al client che è una risposta parziale.
+      const since = Number(req.query.since) || 0;
+      const SINCE_LIMIT = 300;
+      if (since > 0) {
+        let q = supabase.from(threadUsername ? 'private_logs' : 'logs').select('*')
+          .eq('campaign_code', code).gt('id', since).order('id', { ascending: true }).limit(SINCE_LIMIT);
+        if (threadUsername) q = q.eq('thread_username', threadUsername);
+        const { data, error } = await q;
+        if (error) return res.status(500).json({ error: error.message });
+        const rows = data || [];
+        const visible = threadUsername ? rows : await filterLogForRequester(code, rows, req.query.username);
+        return res.status(200).json({ log: visible, incremental: true, truncated: rows.length >= SINCE_LIMIT });
+      }
 
       if (threadUsername) {
         const { data, error } = await supabase
@@ -688,7 +713,9 @@ module.exports = async (req, res) => {
           title: isSubgroupThread ? `👥 ${String(who).slice(0, 60)} (gruppo)` : `✉️ ${String(who).slice(0, 60)} (privato)`,
           body: pushBodyFromText(text),
           url: pushUrl,
-          tag: 'dvos-push'
+          // Un'etichetta per chat (non più una sola per tutto): due messaggi da due chat diverse
+          // restano due notifiche distinte, invece che la seconda cancelli la prima.
+          tag: isSubgroupThread ? ('dvos-sub-' + String(thread).slice('subgroup:'.length)) : ('dvos-priv-' + String(thread))
         }).catch(() => {});
         return res.status(200).json({ entry: data });
       }
@@ -722,7 +749,7 @@ module.exports = async (req, res) => {
         title: `💬 ${String(who).slice(0, 60)}`,
         body: pushBodyFromText(text),
         url: chatDeepLink({ chat: 'general' }),
-        tag: 'dvos-push'
+        tag: 'dvos-general'
       }).catch(() => {});
       return res.status(200).json({ entry: data });
     }

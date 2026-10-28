@@ -25,11 +25,23 @@ self.addEventListener('push', (event) => {
     // Se per qualche motivo il payload non è JSON valido, teniamo i valori di default sopra
     // invece di far fallire silenziosamente la notifica.
   }
+  // Orario di invio (sentAt, vedi sendPushToSubscriptions in api/log.js): diventa l'orario della
+  // notifica e, se è arrivata con più di 2 minuti di ritardo, compare anche nel testo — così chi
+  // segnala "mi è arrivata tardi" vede subito quando era partita davvero dal server.
+  let body = payload.body;
+  const sentAt = Number(payload.sentAt) || 0;
+  if (sentAt && Date.now() - sentAt > 2 * 60 * 1000) {
+    try {
+      const hhmm = new Date(sentAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+      body = `${body}\n(inviato alle ${hhmm})`;
+    } catch (e) {}
+  }
   const options = {
-    body: payload.body,
+    body,
     tag: payload.tag || 'dvos-push',
     renotify: true,
     icon: payload.icon || undefined,
+    timestamp: sentAt || undefined,
     data: { url: payload.url || '/index.html' }
   };
   event.waitUntil(self.registration.showNotification(payload.title, options));

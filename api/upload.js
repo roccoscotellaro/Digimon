@@ -1,4 +1,4 @@
-const { supabase, cleanCode } = require('../lib/db');
+const { supabase, cleanCode, enableEtag } = require('../lib/db');
 
 const MAX_BYTES = 3 * 1024 * 1024; // 3MB decoded (~4MB come base64) — resta sotto i limiti tipici del body delle funzioni serverless
 
@@ -229,6 +229,7 @@ async function handleAudioUpload(req, res) {
 
 // ---------- ROUTER ----------
 module.exports = async (req, res) => {
+  enableEtag(req, res); // GET condizionali (304 se non è cambiato nulla) — vedi lib/db.js
   try {
     const resourceGet = req.method === 'POST' ? (req.body && req.body.resource) : (req.query && req.query.resource);
 

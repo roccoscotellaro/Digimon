@@ -2,7 +2,7 @@
 // Accorpa il vecchio /api/heartbeat: POST con { resource:'heartbeat', code, username }
 // aggiorna solo last_seen del membro, senza toccare tamer/digimon.
 // Serve a restare sotto il limite di 12 Serverless Functions del piano Vercel Hobby.
-const { supabase, cleanCode } = require('../lib/db');
+const { supabase, cleanCode, enableEtag } = require('../lib/db');
 
 // ===== Inventario: operazioni atomiche lato server (richiesta Rocco 2026-09-26) =====
 // "Quando aggiungo un oggetto dalla scheda di un giocatore, a volte devo aggiungerlo due volte":
@@ -81,6 +81,7 @@ function applyInventoryOp(inventory, body) {
 }
 
 module.exports = async (req, res) => {
+  enableEtag(req, res); // GET condizionali (304 se non è cambiato nulla) — vedi lib/db.js
   try {
     if (req.method === 'GET') {
       const code = cleanCode(req.query.code);

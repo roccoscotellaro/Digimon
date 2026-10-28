@@ -1,6 +1,7 @@
-const { supabase, cleanCode } = require('../lib/db');
+const { supabase, cleanCode, enableEtag } = require('../lib/db');
 
 module.exports = async (req, res) => {
+  enableEtag(req, res); // GET condizionali (304 se non è cambiato nulla) — vedi lib/db.js
   try {
     if (req.method === 'GET') {
       const code = cleanCode(req.query.code);
