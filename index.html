@@ -661,6 +661,18 @@
   .digivoice-timer select{font-size:11px;padding:2px 4px;width:auto;}
   .digivoice-card.has-items{border-color:#c896ff;box-shadow:0 0 12px rgba(200,150,255,0.18);}
   .digivoice-count{display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;background:#c896ff;color:#0e141b;font-size:11px;text-align:center;}
+  .digivoice-icons{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;}
+  .digivoice-icon{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;width:58px;padding:0;border:none;background:none;color:var(--text);cursor:pointer;font:inherit;}
+  .digivoice-icon-pic{width:46px;height:46px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:22px;background:var(--panel-2);border:2px solid var(--amber);transition:transform .15s, box-shadow .15s;}
+  .digivoice-icon.ask .digivoice-icon-pic{border-color:#c896ff;box-shadow:0 0 0 0 rgba(200,150,255,0.6);animation:dvPulse 1.8s ease-out infinite;}
+  .digivoice-icon-pic img{width:100%;height:100%;object-fit:cover;}
+  .digivoice-icon:hover .digivoice-icon-pic{transform:scale(1.06);}
+  .digivoice-icon.open .digivoice-icon-pic{box-shadow:0 0 0 3px var(--cyan);}
+  .digivoice-icon-badge{position:absolute;top:-4px;right:2px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--amber);color:#0e141b;font-size:10px;font-weight:bold;line-height:18px;text-align:center;}
+  .digivoice-icon.ask .digivoice-icon-badge{background:#c896ff;}
+  .digivoice-icon-name{font-size:9.5px;max-width:58px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-mute);}
+  .digivoice-icon.open .digivoice-icon-name{color:var(--cyan);}
+  @keyframes dvPulse{0%{box-shadow:0 0 0 0 rgba(200,150,255,0.6)}70%{box-shadow:0 0 0 8px rgba(200,150,255,0)}100%{box-shadow:0 0 0 0 rgba(200,150,255,0)}}
   .digivoice-item{margin-top:10px;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--panel-2);}
   .digivoice-item.ask{border-color:rgba(200,150,255,0.55);}
   .digivoice-head{display:flex;gap:8px;align-items:flex-start;font-size:12px;}

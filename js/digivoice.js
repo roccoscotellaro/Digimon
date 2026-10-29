@@ -259,6 +259,9 @@ function __dvDestOptions(member, dest){
 }
 
 let __dvRenderedSig = '';
+// Quale Digimon è aperto nella fila di icone (richiesta Rocco 2026-10-29: "c'è lo scorrimento e
+// non si vedono subito: metti i Digimon in icona e cliccandoci si apre"). null = tutti chiusi.
+let __dvOpenKey = null;
 function __dvRender(fromPoll){
   const card = document.getElementById('digivoice-card');
   if(!card) return;
@@ -269,7 +272,8 @@ function __dvRender(fromPoll){
   }
   const items = Array.from(__dvItems.values()).sort((a,b)=> a.kind!==b.kind ? (a.kind==='ask' ? -1 : 1) : (a.kind==='idle' ? (b.silentMessages||0)-(a.silentMessages||0) : a.createdAt-b.createdAt));
   // Dal polling: non ridisegnare mentre il Master sta scrivendo/scegliendo dentro la scheda.
-  const sig = items.map(i=>i.key+(i.loading?'L':'')+(i.lines?i.lines.length:0)+i.error+(i.question||'')+'/'+(i.silentMessages||0)).join('|') + '#' + digivoiceIdleMessages();
+  if(__dvOpenKey && !__dvItems.has(__dvOpenKey)) __dvOpenKey = null;
+  const sig = items.map(i=>i.key+(i.loading?'L':'')+(i.lines?i.lines.length:0)+i.error+(i.question||'')+'/'+(i.silentMessages||0)).join('|') + '#' + digivoiceIdleMessages() + '@' + (__dvOpenKey||'');
   if(fromPoll){
     const ae = document.activeElement;
     if(sig===__dvRenderedSig || (ae && card.contains(ae) && /^(TEXTAREA|SELECT|INPUT)$/.test(ae.tagName))) return;
@@ -288,16 +292,29 @@ function __dvRender(fromPoll){
     // Niente in attesa: resta una riga sola, per non togliere spazio alla Chat.
     card.innerHTML = header;
   } else {
-    card.innerHTML = header + items.map(item=>{
+    // Fila di icone: un ritratto per ogni Digimon in attesa (💭 = richiesta del giocatore, numero =
+    // messaggi di silenzio). Un tocco apre sotto il suo pannello, un altro tocco lo richiude.
+    const icons = items.map(item=>{
       const m = (cachedRoster||[]).find(x=>x.username===item.username);
       if(!m) return '';
       const dn = digivoiceName(m);
-      const avatar = m.digimon.imageUrl ? `<img src="${escapeAttr(m.digimon.imageUrl)}" class="digivoice-avatar" onerror="this.style.display='none'" />` : '<span class="digivoice-avatar">👾</span>';
+      const tip = item.kind==='ask' ? `${displayName(m)} chiede il parere di ${dn}` : `${dn} non parla da ${item.silentMessages||0} messaggi`;
+      const pic = m.digimon.imageUrl ? `<img src="${escapeAttr(m.digimon.imageUrl)}" alt="" onerror="this.replaceWith(document.createTextNode('👾'))" />` : '👾';
+      const badge = item.kind==='ask' ? '💭' : (item.silentMessages>99 ? '99+' : String(item.silentMessages||0));
+      return `<button type="button" class="digivoice-icon ${item.kind}${item.key===__dvOpenKey?' open':''}${item.lines&&!item.loading?' ready':''}" data-dv-open="${escapeAttr(item.key)}" title="${escapeAttr(tip)}" aria-label="${escapeAttr(tip)}">
+        <span class="digivoice-icon-pic">${pic}</span><span class="digivoice-icon-badge">${escapeHTML(badge)}</span><span class="digivoice-icon-name">${escapeHTML(dn)}</span>
+      </button>`;
+    }).join('');
+    const openItem = __dvOpenKey ? __dvItems.get(__dvOpenKey) : null;
+    const om = openItem ? (cachedRoster||[]).find(x=>x.username===openItem.username) : null;
+    let panel = '';
+    if(openItem && om){
+      const item = openItem, m = om, dn = digivoiceName(m);
       const title = item.kind==='ask'
         ? `<b>${escapeHTML(displayName(m))}</b> chiede il parere di <b>${escapeHTML(dn)}</b>`
         : `<b>${escapeHTML(dn)}</b> non parla da ${item.silentMessages||digivoiceIdleMessages()} messaggi`;
-      return `<div class="digivoice-item ${item.kind}" data-dv-key="${escapeAttr(item.key)}">
-        <div class="digivoice-head">${avatar}<div style="flex:1;min-width:0;">${title}${item.question?`<div class="digivoice-q">“${escapeHTML(item.question)}”</div>`:''}</div></div>
+      panel = `<div class="digivoice-item ${item.kind}" data-dv-key="${escapeAttr(item.key)}">
+        <div class="digivoice-head"><div style="flex:1;min-width:0;">${title}${item.question?`<div class="digivoice-q">“${escapeHTML(item.question)}”</div>`:''}</div></div>
         ${item.loading ? `<div class="muted" style="font-size:11px;margin:6px 0;">✨ ${escapeHTML(dn)} ci sta pensando...${__dvQueue.indexOf(item)>0 ? ' (in coda)' : ''}</div>` : ''}
         ${item.error ? `<div class="muted" style="font-size:11px;margin:6px 0;color:var(--amber);">${escapeHTML(item.error)}</div>` : ''}
         ${item.lines ? `<div class="digivoice-lines">${item.lines.map((l,i)=>`<button type="button" class="digivoice-line${i===item.selected?' on':''}" data-dv-line="${i}">${escapeHTML(l)}</button>`).join('')}</div>` : ''}
@@ -309,7 +326,11 @@ function __dvRender(fromPoll){
           <button type="button" class="btn ghost small" data-dv-dismiss title="${item.kind==='ask'?'Chiudi la richiesta senza rispondere':'Salta: il conteggio dei messaggi riparte da zero'}">✕</button>
         </div>
       </div>`;
-    }).join('');
+    }
+    card.innerHTML = header + `<div class="digivoice-icons">${icons}</div>` + panel;
+    card.querySelectorAll('[data-dv-open]').forEach(b=>{
+      b.onclick = ()=>{ const k = b.getAttribute('data-dv-open'); __dvOpenKey = (__dvOpenKey===k) ? null : k; __dvRender(); };
+    });
   }
   const idleSel = document.getElementById('digivoice-idle');
   if(idleSel) idleSel.onchange = ()=>{ __dvSetIdleMessages(Number(idleSel.value)); idleSel.blur(); __dvIdleCheck(); __dvRender(); };
