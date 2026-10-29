@@ -7,14 +7,16 @@
 //
 // MASTER — scheda "💭 Voci dei Digimon" in cima alla Chat, visibile solo quando c'è qualcosa:
 //   - le richieste dei giocatori;
-//   - le proposte automatiche del timer: se il Digimon di un giocatore non parla da N minuti mentre
-//     la partita è attiva (messaggi recenti in chat), il sistema propone una battuta spontanea.
+//   - i promemoria a messaggi: se il Digimon di un giocatore non parla da N messaggi della Chat
+//     Generale (nel luogo dove si trova il giocatore), il sistema propone una sua battuta spontanea —
+//     così il Master si ricorda di far parlare TUTTI i Digimon (richiesta Rocco 2026-10-29: "dopo un
+//     tot di messaggi, in modo tale da ricordarmi di far parlare tutti i digimon").
 //   Per ognuna l'IA (api/ai.js, mode 'voce-digimon') prepara 3 battute coerenti con personalità e
 //   Stage del Digimon e con gli ultimi messaggi della chat giusta. Il Master ne sceglie una, la può
 //   ritoccare o scriverne una sua, sceglie la chat e pubblica: il messaggio esce a nome del Digimon
 //   (stesso role 'digimon', colore e ritratto del "Parla come" già esistente).
-//   Il timer si regola dalla scheda (Spento / 10 / 15 / 20 / 30 minuti) ed è salvato su questo
-//   dispositivo. Le proposte del timer vivono solo sul dispositivo del Master (non sul server).
+//   La soglia si regola dalla scheda (mai / 10 / 15 / 20 / 30 / 50 messaggi) ed è salvata su questo
+//   dispositivo. I promemoria vivono solo sul dispositivo del Master (non sul server).
 //
 // Script classico caricato prima del blocco principale di index.html. Usa i globali di js/store.js
 // (session, cachedRoster, cachedLog, cachedSubgroups, cachedCombat), js/api.js (apiPost, lastApiError),
@@ -22,7 +24,8 @@
 // getPrivateLog, deleteLogEntry, memberLocationKey, subgroupLocationKey, normalizeLocationKey).
 
 const DIGIVOICE_THREAD = '__digivoice'; // stesso valore di api/log.js
-const DIGIVOICE_IDLE_KEY = 'dvos_digivoice_idle_min';
+const DIGIVOICE_IDLE_KEY = 'dvos_digivoice_after_msgs';
+const DIGIVOICE_IDLE_OPTIONS = [0,10,15,20,30,50];
 
 // ---------- utilità comuni ----------
 function digivoiceCanSpeak(member){
@@ -77,21 +80,23 @@ function bindDigivoiceAsk(code, getMe, getChat){
 // MASTER
 // =====================================================================
 const __dvItems = new Map();      // key -> proposta (vedi __dvNewItem)
-const __dvLastSpoke = {};         // username -> ms dell'ultima battuta pubblicata da qui
-const __dvSnooze = {};            // username -> ms fino a cui il timer non propone nulla
-let __dvTimerSince = Date.now();  // il timer conta il silenzio solo da quando la pagina è aperta
-let __dvLastIdleCreated = 0;
+// username -> id dell'ultimo messaggio di Chat Generale al momento in cui il Master ha fatto parlare
+// quel Digimon da qui (anche in Privata/Gruppo) o ha scartato il promemoria: il conteggio riparte da lì.
+const __dvMark = {};
 let __dvCode = null;
 let __dvOnChanged = null;      // refreshLiveParts di index.html (passata da digivoiceTick)
 
-function digivoiceIdleMinutes(){
+function digivoiceIdleMessages(){
   let v = 15;
   try{ const s = localStorage.getItem(DIGIVOICE_IDLE_KEY); if(s!==null) v = Number(s); }catch(e){}
-  return [0,10,15,20,30].includes(v) ? v : 15;
+  return DIGIVOICE_IDLE_OPTIONS.includes(v) ? v : 15;
 }
-function __dvSetIdleMinutes(v){
+function __dvSetIdleMessages(v){
   try{ localStorage.setItem(DIGIVOICE_IDLE_KEY, String(v)); }catch(e){}
-  __dvTimerSince = Date.now();
+}
+function __dvLastGeneralId(){
+  const log = cachedLog || [];
+  return log.length ? Number(log[log.length-1].id) || 0 : 0;
 }
 
 function __dvNewItem(fields){
@@ -141,44 +146,43 @@ async function __dvGenerate(item){
   __dvRender(true);
 }
 
-// Quando ha parlato per l'ultima volta il Digimon di questo giocatore (Chat Generale + ciò che è
-// stato pubblicato da questo dispositivo, che copre anche Privata/Gruppi).
-function __dvLastSpokeAt(member){
-  let last = __dvLastSpoke[member.username] || 0;
-  const name = digivoiceName(member);
+// Quanti messaggi della Chat Generale sono passati dall'ultima volta che il Digimon di questo
+// giocatore ha parlato. Contano solo i messaggi del luogo in cui si trova il giocatore (chi è
+// altrove non li vive), esclusi gli avvisi di Sistema, la Cronaca del Combattimento, gli inviti di
+// spostamento, il bottino e le battute degli altri Digimon.
+function __dvMessagesSince(member){
   const log = cachedLog || [];
+  const name = digivoiceName(member);
+  const key = normalizeLocationKey(memberLocationKey(member));
+  const fromId = __dvMark[member.username] || 0;
+  let count = 0;
   for(let i=log.length-1; i>=0; i--){
     const l = log[i];
-    if(l.role==='digimon' && ((l.meta && l.meta.digimonOf===member.username) || l.who===name)){ last = Math.max(last, __dvTs(l)); break; }
+    if(Number(l.id) <= fromId) break;
+    if(l.role==='digimon' && ((l.meta && l.meta.digimonOf===member.username) || l.who===name)) break;
+    if(l.role==='digimon' || l.who==='Sistema' || l.role==='moverequest' || l.role==='loot') continue;
+    if(typeof isCombatLogEntry==='function' && isCombatLogEntry(l)) continue;
+    if(l.meta && l.meta.location && normalizeLocationKey(l.meta.location)!==key) continue;
+    count++;
   }
-  return last;
+  return count;
 }
 
-// Timer: propone una battuta spontanea per il Digimon rimasto in silenzio più a lungo, ma solo se
-// la partita è attiva (almeno 3 messaggi negli ultimi N minuti, l'ultimo da meno di 5 minuti), fuori
-// dai combattimenti, al massimo una nuova proposta ogni 2 minuti e due in attesa alla volta.
+// Promemoria: propone una battuta per il Digimon rimasto zitto per più messaggi (oltre la soglia).
+// Fuori dai combattimenti, al massimo due promemoria in attesa alla volta.
 function __dvIdleCheck(){
-  const mins = digivoiceIdleMinutes();
-  if(!mins) return;
+  const threshold = digivoiceIdleMessages();
+  if(!threshold) return;
   if(cachedCombat && cachedCombat.active) return;
-  const now = Date.now();
-  const windowMs = mins*60000;
-  if(now - __dvLastIdleCreated < 2*60000) return;
-  const pendingIdle = Array.from(__dvItems.values()).filter(i=>i.kind==='idle');
-  if(pendingIdle.length>=2) return;
-  const recent = (cachedLog||[]).filter(l=>l.role!=='digimon' && l.who!=='Sistema' && now-__dvTs(l) < windowMs);
-  if(recent.length<3 || now-Math.max(...recent.map(__dvTs)) > 5*60000) return;
-  let pick = null, pickSilence = 0;
+  if(Array.from(__dvItems.values()).filter(i=>i.kind==='idle').length>=2) return;
+  let pick = null, pickCount = 0;
   (cachedRoster||[]).filter(digivoiceCanSpeak).forEach(m=>{
     if(__dvItems.has('idle:'+m.username) || Array.from(__dvItems.values()).some(i=>i.kind==='ask' && i.username===m.username)) return;
-    if((__dvSnooze[m.username]||0) > now) return;
-    const silentSince = Math.max(__dvLastSpokeAt(m), __dvTimerSince);
-    const silence = now - silentSince;
-    if(silence >= windowMs && silence > pickSilence){ pick = m; pickSilence = silence; }
+    const n = __dvMessagesSince(m);
+    if(n >= threshold && n > pickCount){ pick = m; pickCount = n; }
   });
   if(!pick) return;
-  __dvLastIdleCreated = now;
-  const item = __dvNewItem({ key:'idle:'+pick.username, kind:'idle', username:pick.username, silenceMin: Math.round(pickSilence/60000), dest:{ chat:'general', group:null } });
+  const item = __dvNewItem({ key:'idle:'+pick.username, kind:'idle', username:pick.username, silentMessages: pickCount, dest:{ chat:'general', group:null } });
   __dvItems.set(item.key, item);
   __dvGenerate(item);
 }
@@ -237,20 +241,20 @@ function __dvRender(fromPoll){
   }
   const items = Array.from(__dvItems.values()).sort((a,b)=> (a.kind===b.kind ? a.createdAt-b.createdAt : (a.kind==='ask' ? -1 : 1)));
   // Dal polling: non ridisegnare mentre il Master sta scrivendo/scegliendo dentro la scheda.
-  const sig = items.map(i=>i.key+(i.loading?'L':'')+(i.lines?i.lines.length:0)+i.error+(i.question||'')).join('|') + '#' + digivoiceIdleMinutes();
+  const sig = items.map(i=>i.key+(i.loading?'L':'')+(i.lines?i.lines.length:0)+i.error+(i.question||'')).join('|') + '#' + digivoiceIdleMessages();
   if(fromPoll){
     const ae = document.activeElement;
     if(sig===__dvRenderedSig || (ae && card.contains(ae) && /^(TEXTAREA|SELECT|INPUT)$/.test(ae.tagName))) return;
   }
   __dvRenderedSig = sig;
-  const mins = digivoiceIdleMinutes();
+  const threshold = digivoiceIdleMessages();
   const hasPlayers = (cachedRoster||[]).some(digivoiceCanSpeak);
   card.style.display = hasPlayers ? '' : 'none';
   card.classList.toggle('has-items', items.length>0);
   const header = `<div class="flex-between" style="align-items:center;gap:8px;flex-wrap:wrap;">
       <div class="section-title" style="margin:0;border:none;padding:0;">💭 Voci dei Digimon${items.length?` <span class="digivoice-count">${items.length}</span>`:''}</div>
-      <label class="muted digivoice-timer" title="Se il Digimon di un giocatore resta in silenzio per questo tempo mentre state giocando, qui compare una sua battuta da proporre">⏱️ battuta dopo
-        <select id="digivoice-idle">${[0,10,15,20,30].map(v=>`<option value="${v}" ${v===mins?'selected':''}>${v?v+' min di silenzio':'mai (spento)'}</option>`).join('')}</select></label>
+      <label class="muted digivoice-timer" title="Promemoria: se il Digimon di un giocatore non parla per questo numero di messaggi in Chat Generale, qui compare una sua battuta da proporre">🔔 ricordami dopo
+        <select id="digivoice-idle">${DIGIVOICE_IDLE_OPTIONS.map(v=>`<option value="${v}" ${v===threshold?'selected':''}>${v?v+' messaggi':'mai (spento)'}</option>`).join('')}</select></label>
     </div>`;
   if(!items.length){
     // Niente in attesa: resta una riga sola, per non togliere spazio alla Chat.
@@ -263,7 +267,7 @@ function __dvRender(fromPoll){
       const avatar = m.digimon.imageUrl ? `<img src="${escapeAttr(m.digimon.imageUrl)}" class="digivoice-avatar" onerror="this.style.display='none'" />` : '<span class="digivoice-avatar">👾</span>';
       const title = item.kind==='ask'
         ? `<b>${escapeHTML(displayName(m))}</b> chiede il parere di <b>${escapeHTML(dn)}</b>`
-        : `<b>${escapeHTML(dn)}</b> non parla da ${item.silenceMin||digivoiceIdleMinutes()} min`;
+        : `<b>${escapeHTML(dn)}</b> non parla da ${item.silentMessages||digivoiceIdleMessages()} messaggi`;
       return `<div class="digivoice-item ${item.kind}" data-dv-key="${escapeAttr(item.key)}">
         <div class="digivoice-head">${avatar}<div style="flex:1;min-width:0;">${title}${item.question?`<div class="digivoice-q">“${escapeHTML(item.question)}”</div>`:''}</div></div>
         ${item.loading ? `<div class="muted" style="font-size:11px;margin:6px 0;">✨ ${escapeHTML(dn)} ci sta pensando...</div>` : ''}
@@ -274,13 +278,13 @@ function __dvRender(fromPoll){
           <select class="digivoice-dest" title="Dove pubblicare">${__dvDestOptions(m, item.dest)}</select>
           <button type="button" class="btn amber small" data-dv-publish>📣 Pubblica</button>
           <button type="button" class="btn ghost small" data-dv-regen ${item.loading?'disabled':''} title="Altre 3 proposte">🔄</button>
-          <button type="button" class="btn ghost small" data-dv-dismiss title="${item.kind==='ask'?'Chiudi la richiesta senza rispondere':'Non proporre battute per questo Digimon per un po\''}">✕</button>
+          <button type="button" class="btn ghost small" data-dv-dismiss title="${item.kind==='ask'?'Chiudi la richiesta senza rispondere':'Salta: il conteggio dei messaggi riparte da zero'}">✕</button>
         </div>
       </div>`;
     }).join('');
   }
   const idleSel = document.getElementById('digivoice-idle');
-  if(idleSel) idleSel.onchange = ()=>{ __dvSetIdleMinutes(Number(idleSel.value)); idleSel.blur(); __dvRender(); };
+  if(idleSel) idleSel.onchange = ()=>{ __dvSetIdleMessages(Number(idleSel.value)); idleSel.blur(); __dvIdleCheck(); __dvRender(); };
   card.querySelectorAll('.digivoice-item').forEach(row=>{
     const item = __dvItems.get(row.getAttribute('data-dv-key'));
     if(!item) return;
@@ -303,7 +307,7 @@ function __dvRender(fromPoll){
     row.querySelector('[data-dv-dismiss]').onclick = async ()=>{
       __dvItems.delete(item.key);
       if(item.kind==='ask') await deleteLogEntry(__dvCode, item.rowId, DIGIVOICE_THREAD);
-      else __dvSnooze[item.username] = Date.now() + Math.max(digivoiceIdleMinutes(),10)*60000;
+      else __dvMark[item.username] = __dvLastGeneralId(); // il conteggio riparte da qui
       __dvRender();
     };
     row.querySelector('[data-dv-publish]').onclick = async (ev)=>{
@@ -342,7 +346,7 @@ async function digivoicePublish(item, text){
     res = await pushLog(__dvCode, Object.assign(entry, { meta }));
   }
   if(!res) return false;
-  __dvLastSpoke[m.username] = Date.now();
+  __dvMark[m.username] = __dvLastGeneralId(); // il conteggio dei messaggi riparte da qui
   if(item.kind==='ask') await deleteLogEntry(__dvCode, item.rowId, DIGIVOICE_THREAD);
   return true;
 }
