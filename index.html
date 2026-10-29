@@ -55,7 +55,12 @@
       radial-gradient(circle at 15% 10%, rgba(53,232,201,0.06), transparent 40%),
       radial-gradient(circle at 85% 90%, rgba(255,138,61,0.05), transparent 45%),
       var(--bg);
-      padding:20px; position:relative; overflow-x:hidden;}
+      padding:20px; position:relative; overflow-x:hidden;
+      /* "clip" taglia l'eccedenza orizzontale come "hidden" ma SENZA trasformare .app in un contenitore
+         scorrevole: con "hidden" gli elementi position:sticky (colonna Chat del Master, selettore
+         Generale/Privata/Gruppi su telefono) non restavano agganciati allo schermo. Chi non supporta
+         "clip" usa la riga sopra. */
+      overflow-x:clip;}
   .scanline{position:fixed;inset:0;pointer-events:none;z-index:50;
     background:repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
     mix-blend-mode:overlay;}
@@ -620,8 +625,37 @@
     .master-layout{grid-template-columns:minmax(0,1.1fr) minmax(380px,1fr);align-items:start;}
     .master-layout .master-pane{display:none !important;}
     .master-layout .master-pane.pane-active{display:block !important;}
-    .master-side{position:sticky;top:58px;max-height:calc(100vh - 66px);overflow-y:auto;}
-    .master-side #log-live{height:calc(100vh - 430px);min-height:240px;}
+    /* Colonna Chat (2026-10-29, "il menu chat è tutto a scorrimento, e anche la chat scorre"): la
+       colonna sta ESATTAMENTE nello schermo, senza una sua barra di scorrimento. In alto le Voci dei
+       Digimon (altezza naturale), sotto la Chat che prende tutto lo spazio rimasto: il Registro si
+       allunga/accorcia da solo, mentre campo di scrittura e strumenti restano sempre visibili in
+       fondo. Vale per Generale, Privata e Gruppi. */
+    .master-side{position:sticky;top:58px;height:calc(100vh - 66px);display:flex;flex-direction:column;} /* altezza esatta calcolata da fitMasterSide (js/ui-nav.js) */
+    .master-side > .mobile-section{display:flex !important;flex-direction:column;gap:12px;flex:1;min-height:0;}
+    .master-side > .mobile-section > .hud-frame.card{margin-bottom:0;}
+    .master-side #digivoice-card{flex:0 0 auto;max-height:46vh;overflow-y:auto;}
+    .master-side .master-chat-card{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow-y:auto;}
+    .master-chat-card > #mchat-general-block,
+    .master-chat-card > #mchat-private-slot,
+    .master-chat-card > #mchat-subgroup-slot{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;}
+    .master-chat-card > *,
+    .master-chat-card > #mchat-general-block > *,
+    .master-chat-card > #mchat-private-slot > *,
+    .master-chat-card > #mchat-subgroup-slot > *{flex-shrink:0;}
+    .master-chat-card #log-live,
+    .master-chat-card #private-log-live-master,
+    .master-chat-card #subgroup-log-live{flex:1 1 auto !important;min-height:140px;height:auto !important;}
+    .master-chat-card > #mchat-general-block,
+    .master-chat-card > #mchat-private-slot,
+    .master-chat-card > #mchat-subgroup-slot{flex-shrink:1 !important;}
+    .master-chat-card .mobile-send-bar{display:flex;gap:6px;align-items:flex-end;margin-top:6px;}
+    .master-chat-card .mobile-send-bar textarea{flex:1;min-height:38px;max-height:120px;resize:vertical;margin:0 !important;}
+    .master-chat-card .mobile-send-bar .btn{flex-shrink:0;height:38px;}
+    .master-chat-card .mchat-thread-field{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+    .master-chat-card .mchat-thread-field label{margin:0;white-space:nowrap;}
+    .master-chat-card .mchat-thread-field select{flex:1;}
+    .master-chat-card .gm-speak-controls{margin-top:6px !important;}
+    .master-chat-card .gm-speak-controls > summary{font-size:11.5px;color:var(--text-mute);cursor:pointer;}
   }
 
   /* Pannello "🧭 Spostamenti" della Vista Master (vedi renderSectorMap in js/scene-encounters.js) */
@@ -692,6 +726,14 @@
   .topbar-pages > summary::-webkit-details-marker{display:none;}
   .topbar-pages-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:9600;display:flex;flex-direction:column;gap:4px;padding:8px;min-width:170px;background:var(--panel);}
   .topbar-pages-menu .btn{text-align:left;}
+
+  /* Riga unica di strumenti sotto il campo di scrittura del Master: tastini tono, dadi, allegati,
+     menziona, uno accanto all'altro invece che su 4 righe. */
+  .composer-tools{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px;}
+  .composer-tools > *{margin-top:0 !important;}
+  .composer-tools .chat-tone-row{margin:0;}
+  .composer-tools [id$="-img-link-row"]{flex-basis:100%;}
+  .composer-tools [id$="-img-status"]:empty, .composer-tools [id$="-img-preview"]:empty{display:none;}
 
   /* Tastini 😄 Scherzo / 📝 Nota / 📌 Avviso sotto le chat (vedi toneButtonsHTML in js/chat-composer.js) */
   .chat-tone-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
@@ -5063,7 +5105,7 @@ let editingScene = false;
         <div class="master-side">
           <div class="mobile-section" data-mobile-tab="chat">
           <div class="hud-frame card digivoice-card" id="digivoice-card" style="display:none;"></div>
-          <div class="hud-frame card">
+          <div class="hud-frame card master-chat-card">
             <div class="flex-between" style="margin-bottom:8px;">
               <div class="section-title" style="margin-bottom:0;">Chat</div>
               <button class="btn ghost small" id="btn-clear-chat" title="Cancella per sempre tutta la chat generale (non tocca le chat private)">🗑️ Pulisci Chat Generale</button>
@@ -5113,10 +5155,12 @@ let editingScene = false;
               <textarea id="gm-text" rows="1" placeholder="Narrazione del Master..."></textarea>
               <button class="btn amber" id="btn-gm-post">Pubblica</button>
             </div>
+            <div class="composer-tools">
             ${toneButtonsHTML('gm', true)}
-            <div id="dice-panel-master" class="dice-panel" style="margin-top:6px;"></div>
+            <div id="dice-panel-master" class="dice-panel"></div>
             ${chatAttachHTML('gm')}
             ${mentionButtonHTML('gm')}
+            </div>
             </div>
             <div id="mchat-private-slot" style="display:none;"></div>
             <div id="mchat-subgroup-slot" style="display:none;"></div>

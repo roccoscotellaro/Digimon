@@ -65,9 +65,7 @@
     cachedSubgroupLog = log;
 
     cardEl.innerHTML = `
-      <div class="section-title" style="margin-top:0;">👥 Sottogruppi di Chat</div>
-      <div class="muted" style="font-size:11px;margin-bottom:10px;">Crea gruppi di giocatori che possono chattare tra loro. Solo i membri del gruppo (e il Master) vedono i messaggi.</div>
-      <div class="row" style="margin-bottom:10px;flex-wrap:wrap;gap:4px;">
+      <div class="row" style="margin-bottom:8px;flex-wrap:wrap;gap:4px;" title="Gruppi di giocatori che chattano tra loro: solo i membri (e il Master) vedono i messaggi.">
         ${groups.map(g=>`<button class="btn small ${g.id===activeSubgroupId?'active':''}" data-subgroup-select="${escapeAttr(g.id)}" style="${g.id===activeSubgroupId?'background:rgba(53,232,201,0.12);border-color:var(--cyan);color:var(--cyan);':''}">${escapeHTML(g.name)} (${g.members.length})</button>`).join('')}
         <button class="btn small ghost" id="btn-create-subgroup">＋ Nuovo</button>
       </div>
@@ -82,7 +80,10 @@
           <button class="btn ghost small" id="btn-subgroup-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
         </div>
         <div id="subgroup-reply-preview"></div>
-        <div style="margin-top:10px;">${speakAsFieldHTML('subgroup-speak-as', 'subgroup-speak-as-btn')}</div>
+        <details class="gm-speak-controls">
+          <summary>🎭 Parla come... · 🎨 Colore · ✍️ Digimoji · Correggi</summary>
+          <div style="margin-top:8px;">
+        <div>${speakAsFieldHTML('subgroup-speak-as', 'subgroup-speak-as-btn')}</div>
         <div class="row" id="subgroup-enemy-fields" style="display:none;margin-bottom:8px;">
           <input type="text" id="subgroup-enemy-speak-name" placeholder="Nome nemico" style="flex:2;" />
           <input type="text" id="subgroup-enemy-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
@@ -95,8 +96,6 @@
           <label class="muted">🎨 Colore scritta in chat</label>
           <input type="color" id="subgroup-speak-color" class="chat-color-swatch" value="#ff8a3d" />
         </div>
-        <textarea id="subgroup-text" rows="2" placeholder="Scrivi nel sottogruppo..." style="margin-top:8px;"></textarea>
-        ${toneButtonsHTML('subgroup', true)}
         <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--text-mute);">
           <input type="checkbox" id="subgroup-digimoji-toggle" /> ✍️ Scrivi in Digimoji
         </label>
@@ -104,10 +103,18 @@
           <button class="btn ghost small" id="subgroup-btn-correct">Correggi Italiano</button>
         </div>
         <div class="muted" id="subgroup-correct-status" style="margin-top:2px;font-size:10.5px;"></div>
-        <div id="dice-panel-master-subgroup" class="dice-panel" style="margin-top:6px;"></div>
+          </div>
+        </details>
+        <div class="mobile-send-bar">
+          <textarea id="subgroup-text" rows="1" placeholder="Scrivi nel sottogruppo..."></textarea>
+          <button class="btn amber" id="btn-subgroup-send">Invia</button>
+        </div>
+        <div class="composer-tools">
+        ${toneButtonsHTML('subgroup', true)}
+        <div id="dice-panel-master-subgroup" class="dice-panel"></div>
         ${chatAttachHTML('subgroup')}
         ${mentionButtonHTML('subgroup')}
-        <button class="btn amber" id="btn-subgroup-send" style="width:100%;margin-top:6px;">Invia</button>
+        </div>
       ` : `<div class="muted">Nessun sottogruppo creato. Clicca "＋ Nuovo" per creare il primo.</div>`}
     `;
 

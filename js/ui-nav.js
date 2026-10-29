@@ -145,6 +145,7 @@
   // Chiamata alla fine di renderMaster: riapplica sezione e sottoschede scelte.
   function initMasterPanes(){
     setMasterPane(__masterPane);
+    scheduleFitMasterSide();
     document.querySelectorAll('.master-subnav').forEach(nav=>{
       const active = nav.querySelector('.master-subnav-btn.active');
       if(active) setMasterSub(active.dataset.subGroup, active.dataset.subKey);
@@ -164,6 +165,22 @@
     const el = document.getElementById('master-menu-badge-'+key);
     if(el) el.classList.toggle('on', !!on);
   }
+  // Colonna Chat del Master su PC: deve stare tutta nello schermo (campo di scrittura sempre visibile
+  // in fondo, senza una barra di scorrimento sua). L'altezza dipende da dove inizia la colonna: in
+  // cima alla pagina c'è ancora testata/menu sopra, scorrendo la colonna resta agganciata in alto
+  // (sticky) e può usare quasi tutto lo schermo. Ricalcolata a ogni scorrimento/ridimensionamento.
+  let __masterSideRaf = null;
+  function fitMasterSide(){
+    __masterSideRaf = null;
+    const side = document.querySelector('.master-side');
+    if(!side) return;
+    if(window.innerWidth <= 760){ side.style.height = ''; return; }
+    const top = Math.max(side.getBoundingClientRect().top, 58);
+    side.style.height = Math.max(420, Math.floor(window.innerHeight - top - 10)) + 'px';
+  }
+  function scheduleFitMasterSide(){ if(!__masterSideRaf) __masterSideRaf = requestAnimationFrame(fitMasterSide); }
+  window.addEventListener('scroll', scheduleFitMasterSide, { passive:true });
+  window.addEventListener('resize', scheduleFitMasterSide);
   // ---------- fine MENU DEL MASTER ----------
   // ---------- fine MOBILE BOTTOM NAV ----------
 

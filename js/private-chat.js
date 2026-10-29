@@ -167,7 +167,7 @@
     // giocatore del thread aperto, non quella del gruppo intero (currentLocationKey).
     const privKey = memberLocationKey(players.find(p=>p.username===masterPrivateThread));
     cardEl.innerHTML = `
-      <div class="field"><label>Con chi</label>
+      <div class="field mchat-thread-field"><label>Con chi</label>
         <select id="private-thread-select">${players.map(p=>`<option value="${escapeAttr(p.username)}" ${p.username===masterPrivateThread?'selected':''}>${masterPrivateUnread[p.username]?'🔴 ':''}${escapeHTML(displayName(p))}</option>`).join('')}</select>
       </div>
       <div class="log" id="private-log-live-master" style="height:220px;">${logHTML(filterByLocation(log, masterPrivateLocationFilter[masterPrivateThread], privKey), true)}</div>
@@ -176,7 +176,10 @@
         <button class="btn ghost small" id="btn-private-export-chat" style="padding:2px 8px;">⬇️ Esporta</button>
       </div>
       <div id="private-reply-preview"></div>
-      <div style="margin-top:10px;">${speakAsFieldHTML('private-speak-as', 'private-speak-as-btn')}</div>
+      <details class="gm-speak-controls">
+        <summary>🎭 Parla come... · 🎨 Colore · ✍️ Digimoji · Correggi</summary>
+        <div style="margin-top:8px;">
+      <div>${speakAsFieldHTML('private-speak-as', 'private-speak-as-btn')}</div>
       <div class="row" id="private-enemy-fields" style="display:none;margin-bottom:8px;">
         <input type="text" id="private-enemy-speak-name" placeholder="Nome nemico" style="flex:2;" />
         <input type="text" id="private-enemy-speak-img" placeholder="URL immagine (opz.)" style="flex:2;" />
@@ -189,8 +192,6 @@
         <label class="muted">🎨 Colore scritta in chat</label>
         <input type="color" id="private-speak-color" class="chat-color-swatch" value="#ff8a3d" />
       </div>
-      <textarea id="private-text-master" rows="2" placeholder="Scrivi in privato..." style="margin-top:8px;"></textarea>
-      ${toneButtonsHTML('private', true)}
       <label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--text-mute);">
         <input type="checkbox" id="private-digimoji-toggle" /> ✍️ Scrivi in Digimoji
       </label>
@@ -198,10 +199,18 @@
         <button class="btn ghost small" id="private-btn-correct">Correggi Italiano</button>
       </div>
       <div class="muted" id="private-correct-status" style="margin-top:2px;font-size:10.5px;"></div>
-      <div id="dice-panel-master-private" class="dice-panel" style="margin-top:6px;"></div>
+        </div>
+      </details>
+      <div class="mobile-send-bar">
+        <textarea id="private-text-master" rows="1" placeholder="Scrivi in privato..."></textarea>
+        <button class="btn amber" id="btn-private-send-master">Invia</button>
+      </div>
+      <div class="composer-tools">
+      ${toneButtonsHTML('private', true)}
+      <div id="dice-panel-master-private" class="dice-panel"></div>
       ${chatAttachHTML('private')}
       ${mentionButtonHTML('private')}
-      <button class="btn amber" id="btn-private-send-master" style="width:100%;margin-top:6px;">Invia</button>
+      </div>
     `;
     if(masterChatMode==='private') markPrivateThreadRead(code, masterPrivateThread, log);
     document.getElementById('mchat-unread-badge') && checkMasterPrivateUnread(code, players, notify);
