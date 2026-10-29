@@ -314,6 +314,8 @@ function pushBodyFromText(text) {
 // il ✎ solo sui propri messaggi e al PUT qui sotto per rifiutare la modifica del testo di un
 // messaggio altrui. I messaggi scritti prima di questa modifica non hanno meta.author: restano
 // modificabili solo dal Master, come prima.
+const DIGIVOICE_THREAD = '__digivoice';
+
 function withAuthor(meta, username) {
   if (!username) return meta || null;
   return Object.assign({}, meta || {}, { author: String(username).slice(0, 60) });
@@ -578,6 +580,57 @@ module.exports = async (req, res) => {
     // Loot in chat — vedi handleLootClaim più sopra.
     if (req.query && req.query.resource === 'loot-claim') {
       return await handleLootClaim(req, res);
+    }
+
+    // ===== "💭 Chiedi parere al tuo Digimon" (richiesta Rocco 2026-10-29) =====
+    // Il giocatore NON pubblica nulla in chat: la richiesta va al Master, che sceglie fra 2-3 battute
+    // proposte dall'IA (o ne scrive una sua) e la pubblica a nome del Digimon — vedi js/digivoice.js.
+    // Le richieste stanno in private_logs, thread fisso DIGIVOICE_THREAD (nessuna migrazione): il
+    // Master le legge come un normale thread privato e le chiude cancellando la riga. Una sola
+    // richiesta aperta per giocatore: se ne esiste già una, si aggiorna la domanda invece di
+    // crearne un'altra (niente raffiche di notifiche al Master).
+    if (req.query && req.query.resource === 'digivoice') {
+      if (req.method !== 'POST') {
+        res.setHeader('Allow', 'POST');
+        return res.status(405).json({ error: 'method not allowed' });
+      }
+      const { code, username, who, digimonName, chat, group, question } = req.body || {};
+      const campaignCode = cleanCode(code);
+      if (!campaignCode || !username) return res.status(400).json({ error: 'missing code or username' });
+      const meta = {
+        kind: 'ask',
+        username: String(username).slice(0, 60),
+        digimonName: String(digimonName || '').slice(0, 60),
+        chat: ['general', 'private', 'subgroup'].includes(chat) ? chat : 'general',
+        group: group ? String(group).slice(0, 80) : null,
+        question: String(question || '').trim().slice(0, 500),
+        askedAt: Date.now()
+      };
+      const { data: open } = await supabase.from('private_logs').select('id, meta')
+        .eq('campaign_code', campaignCode).eq('thread_username', DIGIVOICE_THREAD);
+      const mine = (open || []).find(r => r.meta && r.meta.username === meta.username);
+      if (mine) {
+        await supabase.from('private_logs').update({ meta: Object.assign({}, mine.meta, { question: meta.question || mine.meta.question, chat: meta.chat, group: meta.group, askedAt: meta.askedAt }) })
+          .eq('campaign_code', campaignCode).eq('id', mine.id);
+        return res.status(200).json({ ok: true, already: true });
+      }
+      const { error } = await supabase.from('private_logs').insert({
+        campaign_code: campaignCode,
+        thread_username: DIGIVOICE_THREAD,
+        who: String(who || username).slice(0, 60),
+        role: 'digivoice',
+        text: `💭 chiede il parere di ${meta.digimonName || 'del suo Digimon'}`,
+        meta
+      });
+      if (error) return res.status(500).json({ error: error.message });
+      const masterSubs = await subsForMasters(campaignCode);
+      await sendPushToSubscriptions(masterSubs, {
+        title: `💭 ${String(who || username).slice(0, 40)} chiede il parere di ${meta.digimonName || 'del suo Digimon'}`,
+        body: meta.question || 'Scegli cosa risponde il Digimon.',
+        url: chatDeepLink({ chat: 'general', digivoice: '1' }),
+        tag: 'dvos-digivoice'
+      }).catch(() => {});
+      return res.status(200).json({ ok: true });
     }
 
     if (req.query && req.query.resource === 'turn-ping') {

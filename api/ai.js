@@ -4,6 +4,8 @@
 //   mode: 'correzione'          -> ex /api/ai-correct   -> risponde { corrected }
 //   mode: 'narrazione-attacco'  -> 1 frase narrativa    -> risponde { lines }
 //   mode: 'narrazione-movimento'-> 1 frase narrativa    -> risponde { lines }
+//   mode: 'voce-digimon'        -> 3 battute del Digimon partner (parere chiesto dal giocatore o
+//                                  battuta spontanea dopo un silenzio) -> risponde { lines }
 //   (default / assente)         -> 3 battute suggerite  -> risponde { lines }
 //
 // Le risposte mantengono la stessa forma di prima, quindi lato client cambia solo l'URL.
@@ -106,6 +108,60 @@ async function handleSuggest(req, res, narrationType) {
   return res.status(200).json({ lines: lines.slice(0, wantedLines) });
 }
 
+// ---------------- VOCE DEL DIGIMON PARTNER ----------------
+// Richiesta Rocco 2026-10-29 (vedi js/digivoice.js): 3 battute fra cui il Master sceglie.
+//   kind 'ask'   -> il giocatore ha chiesto il parere del suo Digimon (question = cosa ha chiesto,
+//                   può essere vuota: allora è un "che ne pensi?" sulla situazione attuale);
+//   kind 'idle'  -> il Digimon non parla da un po': una battuta spontanea su quanto sta succedendo.
+async function handleDigimonVoice(req, res) {
+  const b = req.body || {};
+  const str = (v, n) => String(v || '').trim().slice(0, n);
+  const digimonName = str(b.digimonName, 60) || 'Digimon';
+  const kind = b.kind === 'idle' ? 'idle' : 'ask';
+  const varietyNonce = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const system =
+    "Sei la voce di un Digimon partner in un gioco di ruolo testuale ambientato nel mondo di Digimon (stile anime Digimon Adventure: avventura, amicizia, un pizzico di umorismo). " +
+    "Il Digimon parla in prima persona al proprio Tamer e al gruppo. Rispetta RIGOROSAMENTE la personalità indicata, il suo modo di parlare e il suo livello (Stage): un Digimon Baby o In-Training è infantile e semplice, un Rookie è vivace, uno Champion o superiore è più maturo. " +
+    "Se la personalità non è indicata, usa un tono da compagno leale e curioso. " +
+    (kind === 'ask'
+      ? "Il Tamer ha appena chiesto il suo parere: rispondi alla domanda (se c'è) o dai la tua opinione su cosa fare adesso, usando SOLO le informazioni del contesto recente. Dai un consiglio o un punto di vista utile, non risolvere la scena al posto dei giocatori e non inventare fatti, luoghi o personaggi che non compaiono nel contesto. "
+      : "Il Digimon non parla da un po': genera una battuta spontanea e naturale su quanto sta accadendo ora nel contesto recente (una reazione, un'osservazione, una preoccupazione, una battuta, un'emozione). Non inventare fatti, luoghi o personaggi che non compaiono nel contesto e non far avanzare la trama. ") +
+    "Genera ESATTAMENTE 3 alternative diverse tra loro per tono (es. una più seria, una più emotiva, una più leggera), ognuna di massimo 30 parole, in italiano, SENZA il nome del Digimon davanti e senza virgolette. " +
+    "Puoi includere un brevissimo gesto fra asterischi (es. *agita la coda*) solo se aggiunge carattere. " +
+    "Rispondi SOLO con un array JSON di 3 stringhe, senza markdown, senza altro testo.";
+  const userText =
+    `Digimon: ${digimonName}` +
+    (b.species && str(b.species, 60) !== digimonName ? ` (specie: ${str(b.species, 60)})` : '') +
+    `\nStage: ${str(b.stage, 30) || 'non indicato'}` +
+    `\nPersonalità: ${str(b.personality, 800) || 'non specificata'}` +
+    `\nTamer: ${str(b.tamerName, 60) || 'il suo Tamer'}` +
+    (kind === 'ask' ? `\nDomanda del Tamer: ${str(b.question, 500) || '(nessuna domanda precisa: "che ne pensi?")'}` : '') +
+    `\nContesto recente (dal più vecchio al più nuovo):\n${str(b.context, 3500) || '(nessun messaggio recente)'}` +
+    `\n\n[variazione interna, non citare: ${varietyNonce}]`;
+  const r = await fetch(geminiUrl(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: system }] },
+      contents: [{ parts: [{ text: userText }] }],
+      generationConfig: { responseMimeType: 'application/json', temperature: 1.0, topP: 0.95, topK: 64 }
+    })
+  });
+  const data = await r.json();
+  if (!r.ok) return res.status(502).json({ error: data.error ? data.error.message : 'errore Gemini API' });
+  const raw = extractText(data);
+  let lines;
+  try {
+    lines = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    if (!Array.isArray(lines)) lines = [raw];
+  } catch (e) {
+    lines = raw ? [raw] : [];
+  }
+  lines = lines.filter(l => typeof l === 'string' && l.trim()).map(l => l.trim().replace(/^["«“]|["»”]$/g, '')).slice(0, 3);
+  if (!lines.length) return res.status(502).json({ error: 'nessuna battuta generata, riprova' });
+  return res.status(200).json({ lines });
+}
+
 // ---------------- ROUTER ----------------
 module.exports = async (req, res) => {
   try {
@@ -122,6 +178,7 @@ module.exports = async (req, res) => {
     if (mode === 'correzione' || mode === 'correct') return await handleCorrect(req, res);
     if (mode === 'narrazione-attacco') return await handleSuggest(req, res, 'attacco');
     if (mode === 'narrazione-movimento') return await handleSuggest(req, res, 'movimento');
+    if (mode === 'voce-digimon') return await handleDigimonVoice(req, res);
     return await handleSuggest(req, res, null);
   } catch (e) {
     return res.status(500).json({ error: e.message || String(e) });

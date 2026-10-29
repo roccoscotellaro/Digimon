@@ -635,6 +635,45 @@
   .travel-invite{margin-top:8px;padding:8px;border:1px dashed var(--line);border-radius:6px;}
   @media (max-width: 760px){ .travel-grid{grid-template-columns:1fr;} }
 
+  /* Locandina: testata cliccabile + vista a tutto schermo (js/poster.js) */
+  .poster-banner{display:flex;align-items:center;justify-content:center;gap:4%;width:100%;height:84px;margin:-6px 0 14px;padding:0 12px;border:1px solid var(--line);border-radius:4px;overflow:hidden;cursor:zoom-in;
+    background:#2a6fb0 url('img/locandina-cielo.jpg') center 30%/cover no-repeat;position:relative;}
+  .poster-banner::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(8,11,16,0.35),rgba(8,11,16,0) 30%,rgba(8,11,16,0) 70%,rgba(8,11,16,0.35));pointer-events:none;}
+  .poster-banner:hover{border-color:var(--cyan-dim);}
+  .poster-banner img{height:100%;width:auto;object-fit:contain;position:relative;z-index:1;}
+  .poster-banner-logo{padding:6px 0;-webkit-mask-image:radial-gradient(ellipse 72% 70% at 50% 50%,#000 60%,transparent 100%);mask-image:radial-gradient(ellipse 72% 70% at 50% 50%,#000 60%,transparent 100%);}
+  .poster-banner-group{-webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent),linear-gradient(0deg,#000 70%,transparent);-webkit-mask-composite:source-in;mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);}
+  @media (max-width: 760px){ .poster-banner{height:58px;margin:-4px 0 10px;} .poster-banner-group{display:none;} }
+  .poster-viewer{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(4,6,10,0.92);cursor:zoom-out;animation:posterIn .35s ease-out;}
+  .poster-viewer img{max-width:94vw;max-height:88vh;object-fit:contain;border-radius:6px;box-shadow:0 0 40px rgba(53,232,201,0.25);opacity:0;transition:opacity .3s;}
+  .poster-viewer.ready img{opacity:1;}
+  .poster-viewer-hint{position:absolute;bottom:calc(16px + env(safe-area-inset-bottom,0px));left:0;right:0;text-align:center;font-family:'Share Tech Mono',monospace;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-mute);}
+  .poster-viewer.splash{background:#05080c;}
+  .poster-viewer.splash.ready img{animation:posterZoom 3s ease-out both;}
+  .poster-viewer.closing{opacity:0;transition:opacity .35s;}
+  @keyframes posterIn{from{opacity:0}to{opacity:1}}
+  @keyframes posterZoom{from{transform:scale(1.04)}to{transform:scale(1)}}
+
+  /* "💭 Voci dei Digimon" (js/digivoice.js) */
+  .digivoice-ask-btn{margin-top:6px;border-color:rgba(200,150,255,0.5) !important;color:#c896ff !important;}
+  .digivoice-card{border-color:rgba(200,150,255,0.35);padding-top:10px !important;padding-bottom:10px !important;}
+  .digivoice-timer{font-size:10.5px;display:flex;align-items:center;gap:4px;white-space:nowrap;}
+  .digivoice-timer select{font-size:11px;padding:2px 4px;width:auto;}
+  .digivoice-card.has-items{border-color:#c896ff;box-shadow:0 0 12px rgba(200,150,255,0.18);}
+  .digivoice-count{display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;background:#c896ff;color:#0e141b;font-size:11px;text-align:center;}
+  .digivoice-item{margin-top:10px;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--panel-2);}
+  .digivoice-item.ask{border-color:rgba(200,150,255,0.55);}
+  .digivoice-head{display:flex;gap:8px;align-items:flex-start;font-size:12px;}
+  .digivoice-avatar{width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:var(--panel);}
+  .digivoice-q{margin-top:3px;font-style:italic;color:var(--text-mute);font-size:11.5px;}
+  .digivoice-lines{display:flex;flex-direction:column;gap:4px;margin:8px 0 6px;}
+  .digivoice-line{text-align:left;font:inherit;font-size:12px;line-height:1.35;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);cursor:pointer;}
+  .digivoice-line:hover{border-color:#c896ff;}
+  .digivoice-line.on{border-color:#c896ff;background:rgba(200,150,255,0.12);}
+  .digivoice-draft{width:100%;margin-top:4px;font-size:12px;}
+  .digivoice-actions{display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap;}
+  .digivoice-dest{flex:1;min-width:140px;font-size:11px;}
+
   /* Menu a tendina "📂 Pagine" della barra in alto del Master */
   .topbar-pages{position:relative;display:inline-block;}
   .topbar-pages > summary{list-style:none;cursor:pointer;}
@@ -729,6 +768,8 @@
 <script src="js/chat-log-engine.js"></script>
 <script src="js/subgroups.js"></script>
 <script src="js/private-chat.js"></script>
+<script src="js/digivoice.js"></script>
+<script src="js/poster.js"></script>
 <script src="js/notices.js"></script>
 <script src="js/ui-helpers.js"></script>
 <script src="js/digimon-card.js"></script>
@@ -3463,6 +3504,7 @@ let editingScene = false;
         ${session ? `<button class="btn ghost small" id="btn-logout">Esci</button>` : ''}
       </div>
     </div>
+    ${session && typeof posterBannerHTML==='function' ? posterBannerHTML() : ''}
     ${lastApiError ? `<div class="hud-frame" style="border-color:var(--danger);padding:8px 14px;margin-bottom:16px;color:var(--danger);font-size:12px;">⚠ ${escapeHTML(lastApiError)}</div>` : ''}`;
   }
   // Da chiamare dopo ogni render che include topbar(): il pulsante "💬 Registro" porta al Registro
@@ -3732,7 +3774,7 @@ let editingScene = false;
     try{
       const u = new URL(url, location.origin);
       const p = u.searchParams;
-      const link = { chat: p.get('chat') || null, thread: p.get('thread') || null, group: p.get('group') || null, tab: p.get('tab') || null };
+      const link = { chat: p.get('chat') || null, thread: p.get('thread') || null, group: p.get('group') || null, tab: p.get('tab') || null, digivoice: p.get('digivoice')==='1' };
       return (link.chat || link.tab) ? link : null;
     }catch(e){ return null; }
   }
@@ -3780,6 +3822,12 @@ let editingScene = false;
       }
     }
     scrollVisibleChatLogsToBottom();
+    // Notifica "💭 X chiede il parere di Y": porta in vista la scheda Voci dei Digimon.
+    if(link.digivoice && session.role==='master'){
+      if(typeof digivoiceTick==='function') await digivoiceTick(session.code, refreshLiveParts);
+      const dv = document.getElementById('digivoice-card');
+      if(dv) dv.scrollIntoView({ block:'start', behavior:'smooth' });
+    }
   }
   // Porta in fondo tutti i Registri chat attualmente visibili (non la Cronaca del Combattimento,
   // che ha il suo comportamento).
@@ -4155,6 +4203,8 @@ let editingScene = false;
     if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, isMasterRole);
     if(isMasterRole) refreshCombatTurnNowCard();
     if(isMasterRole && typeof setMasterMenuBadge==='function') setMasterMenuBadge('combattimento', !!(cachedCombat && cachedCombat.active));
+    // "💭 Voci dei Digimon" (js/digivoice.js): richieste dei giocatori + proposte del timer di silenzio.
+    if(isMasterRole && typeof digivoiceTick==='function') digivoiceTick(session.code, refreshLiveParts);
     // Pannello "🧭 Spostamenti": aggiorna le posizioni dei giocatori (es. dopo un "Sì, andiamo!" in
     // chat), ma non mentre il Master sta usando un menu o un campo al suo interno.
     if(isMasterRole){
@@ -4473,6 +4523,7 @@ let editingScene = false;
               <button class="btn solid" id="btn-send-action">Invia</button>
             </div>
             ${toneButtonsHTML('action', false)}
+            ${digivoiceAskButtonHTML(me)}
             <div id="dice-panel-player" class="dice-panel" style="margin-top:6px;"></div>
             <div class="muted" id="action-hint" style="margin-top:4px;font-size:11px;">${ACTION_HINT_DEFAULT_TEXT}</div>
             <div id="action-roll-result" style="margin-top:6px;"></div>
@@ -4527,6 +4578,8 @@ let editingScene = false;
     document.getElementById('btn-open-missions').onclick = openMissionsModal;
     bindChatAttach('action', code, 'chat', ()=>pendingActionImageUrl, (url)=>{ pendingActionImageUrl = url; });
     bindMentionButton('action', code, 'action-text');
+    // "💭 Chiedi parere al tuo Digimon" (js/digivoice.js): manda la richiesta al Master con la chat aperta.
+    bindDigivoiceAsk(code, liveMe, ()=>({ chat: playerChatMode==='public' ? 'general' : playerChatMode, group: playerChatMode==='subgroup' ? playerActiveSubgroupId : null }));
     bindTalentButton('action', 'action-text', me);
     renderDicePanel('dice-panel-player');
     renderChatArea(code, me, { forceScrollBottom:true }); // riempie il selettore location + il Registro (vedi sopra)
@@ -4997,6 +5050,7 @@ let editingScene = false;
 
         <div class="master-side">
           <div class="mobile-section" data-mobile-tab="chat">
+          <div class="hud-frame card digivoice-card" id="digivoice-card" style="display:none;"></div>
           <div class="hud-frame card">
             <div class="flex-between" style="margin-bottom:8px;">
               <div class="section-title" style="margin-bottom:0;">Chat</div>
