@@ -138,17 +138,33 @@ async function handleDigimonVoice(req, res) {
     (kind === 'ask' ? `\nDomanda del Tamer: ${str(b.question, 500) || '(nessuna domanda precisa: "che ne pensi?")'}` : '') +
     `\nContesto recente (dal più vecchio al più nuovo):\n${str(b.context, 3500) || '(nessun messaggio recente)'}` +
     `\n\n[variazione interna, non citare: ${varietyNonce}]`;
-  const r = await fetch(geminiUrl(), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: system }] },
-      contents: [{ parts: [{ text: userText }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 1.0, topP: 0.95, topK: 64 }
-    })
-  });
+  // Tempo massimo per Gemini: se non risponde entro 25 s rispondiamo con un errore chiaro invece di
+  // lasciare il Master ad aspettare (il client ha comunque un suo limite, vedi js/digivoice.js).
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 25000);
+  let r;
+  try {
+    r = await fetch(geminiUrl(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: ctrl.signal,
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: system }] },
+        contents: [{ parts: [{ text: userText }] }],
+        generationConfig: { responseMimeType: 'application/json', temperature: 1.0, topP: 0.95, topK: 64 }
+      })
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    console.error('[voce-digimon] Gemini non ha risposto:', e && e.name, e && e.message);
+    return res.status(504).json({ error: 'l\'IA non ha risposto in tempo' });
+  }
+  clearTimeout(timer);
   const data = await r.json();
-  if (!r.ok) return res.status(502).json({ error: data.error ? data.error.message : 'errore Gemini API' });
+  if (!r.ok) {
+    console.error('[voce-digimon] errore Gemini', r.status, data.error && data.error.message);
+    return res.status(502).json({ error: data.error ? data.error.message : 'errore Gemini API' });
+  }
   const raw = extractText(data);
   let lines;
   try {

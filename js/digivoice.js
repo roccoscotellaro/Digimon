@@ -124,26 +124,51 @@ async function __dvContext(member, dest){
     .join('\n');
 }
 
-async function __dvGenerate(item){
-  const member = (cachedRoster||[]).find(m=>m.username===item.username);
-  if(!member){ item.error = 'Giocatore non trovato.'; return; }
+// Le proposte si generano UNA alla volta (coda): con molti Digimon in attesa, chiamate tutte insieme
+// rischiavano di rallentarsi a vicenda o di superare i limiti dell'IA. Ogni richiesta ha un tempo
+// massimo: se l'IA non risponde, compare l'avviso e si può riprovare con 🔄 o scrivere a mano.
+const DV_AI_TIMEOUT_MS = 35000;
+const __dvQueue = [];
+let __dvBusy = false;
+function __dvGenerate(item){
+  if(!__dvQueue.includes(item)) __dvQueue.push(item);
   item.loading = true; item.error = '';
   __dvRender(true);
+  __dvPump();
+}
+async function __dvPump(){
+  if(__dvBusy) return;
+  __dvBusy = true;
+  try{
+    while(__dvQueue.length){
+      const item = __dvQueue.shift();
+      if(!__dvItems.has(item.key)) continue; // scartata nel frattempo
+      try{ await __dvGenerateNow(item); }
+      catch(e){ item.loading = false; item.error = 'Errore: ' + (e && e.message || e) + ' — scrivi la battuta a mano o riprova con 🔄.'; }
+      __dvRender(true);
+    }
+  } finally { __dvBusy = false; }
+}
+async function __dvGenerateNow(item){
+  const member = (cachedRoster||[]).find(m=>m.username===item.username);
+  if(!member){ item.loading = false; item.error = 'Giocatore non trovato.'; return; }
   const context = await __dvContext(member, item.dest);
-  const d = await apiPost('/api/ai', {
+  const timeout = new Promise(resolve=>setTimeout(()=>resolve('__timeout'), DV_AI_TIMEOUT_MS));
+  const d = await Promise.race([apiPost('/api/ai', {
     mode:'voce-digimon', kind:item.kind,
     digimonName: digivoiceName(member), species: member.digimon.species || '', stage: member.digimon.stage || '',
     personality: member.digimon.personality || '', tamerName: displayName(member),
     question: item.question || '', context
-  });
+  }), timeout]);
   item.loading = false;
-  if(d && Array.isArray(d.lines) && d.lines.length){
+  if(d && d!=='__timeout' && Array.isArray(d.lines) && d.lines.length){
     item.lines = d.lines;
     if(item.selected<0 && !item.draft){ item.selected = 0; item.draft = d.lines[0]; }
+  } else if(d==='__timeout'){
+    item.error = 'L\'IA ci sta mettendo troppo: riprova con 🔄 o scrivi la battuta a mano.';
   } else {
-    item.error = 'IA non disponibile (' + (lastApiError || 'nessuna risposta') + '): scrivi la battuta a mano.';
+    item.error = 'IA non disponibile (' + (lastApiError || 'nessuna risposta') + '): riprova con 🔄 o scrivi la battuta a mano.';
   }
-  __dvRender(true);
 }
 
 // Quanti messaggi della Chat Generale sono passati dall'ultima volta che il Digimon di questo
@@ -169,22 +194,25 @@ function __dvMessagesSince(member){
 }
 
 // Promemoria: propone una battuta per il Digimon rimasto zitto per più messaggi (oltre la soglia).
-// Fuori dai combattimenti, al massimo due promemoria in attesa alla volta.
+// Fuori dai combattimenti. Compaiono TUTTI i Digimon oltre la soglia (richiesta Rocco 2026-10-29).
 function __dvIdleCheck(){
   const threshold = digivoiceIdleMessages();
   if(!threshold) return;
   if(cachedCombat && cachedCombat.active) return;
-  if(Array.from(__dvItems.values()).filter(i=>i.kind==='idle').length>=2) return;
-  let pick = null, pickCount = 0;
+  const due = [];
   (cachedRoster||[]).filter(digivoiceCanSpeak).forEach(m=>{
-    if(__dvItems.has('idle:'+m.username) || Array.from(__dvItems.values()).some(i=>i.kind==='ask' && i.username===m.username)) return;
+    if(Array.from(__dvItems.values()).some(i=>i.kind==='ask' && i.username===m.username)) return;
     const n = __dvMessagesSince(m);
-    if(n >= threshold && n > pickCount){ pick = m; pickCount = n; }
+    const existing = __dvItems.get('idle:'+m.username);
+    if(existing){ existing.silentMessages = n; return; } // aggiorna il contatore mostrato
+    if(n >= threshold) due.push({ m, n });
   });
-  if(!pick) return;
-  const item = __dvNewItem({ key:'idle:'+pick.username, kind:'idle', username:pick.username, silentMessages: pickCount, dest:{ chat:'general', group:null } });
-  __dvItems.set(item.key, item);
-  __dvGenerate(item);
+  // Chi tace da più messaggi va per primo (anche nella coda dell'IA).
+  due.sort((a,b)=>b.n-a.n).forEach(({ m, n })=>{
+    const item = __dvNewItem({ key:'idle:'+m.username, kind:'idle', username:m.username, silentMessages: n, dest:{ chat:'general', group:null } });
+    __dvItems.set(item.key, item);
+    __dvGenerate(item);
+  });
 }
 
 // Chiamata dal polling del Master (refreshLiveParts in index.html) e all'apertura della pagina.
@@ -239,9 +267,9 @@ function __dvRender(fromPoll){
     card.dataset.dvFocusBound = '1';
     card.addEventListener('focusout', ()=> setTimeout(()=>{ if(!card.contains(document.activeElement)) __dvRender(true); }, 0));
   }
-  const items = Array.from(__dvItems.values()).sort((a,b)=> (a.kind===b.kind ? a.createdAt-b.createdAt : (a.kind==='ask' ? -1 : 1)));
+  const items = Array.from(__dvItems.values()).sort((a,b)=> a.kind!==b.kind ? (a.kind==='ask' ? -1 : 1) : (a.kind==='idle' ? (b.silentMessages||0)-(a.silentMessages||0) : a.createdAt-b.createdAt));
   // Dal polling: non ridisegnare mentre il Master sta scrivendo/scegliendo dentro la scheda.
-  const sig = items.map(i=>i.key+(i.loading?'L':'')+(i.lines?i.lines.length:0)+i.error+(i.question||'')).join('|') + '#' + digivoiceIdleMessages();
+  const sig = items.map(i=>i.key+(i.loading?'L':'')+(i.lines?i.lines.length:0)+i.error+(i.question||'')+'/'+(i.silentMessages||0)).join('|') + '#' + digivoiceIdleMessages();
   if(fromPoll){
     const ae = document.activeElement;
     if(sig===__dvRenderedSig || (ae && card.contains(ae) && /^(TEXTAREA|SELECT|INPUT)$/.test(ae.tagName))) return;
@@ -270,7 +298,7 @@ function __dvRender(fromPoll){
         : `<b>${escapeHTML(dn)}</b> non parla da ${item.silentMessages||digivoiceIdleMessages()} messaggi`;
       return `<div class="digivoice-item ${item.kind}" data-dv-key="${escapeAttr(item.key)}">
         <div class="digivoice-head">${avatar}<div style="flex:1;min-width:0;">${title}${item.question?`<div class="digivoice-q">“${escapeHTML(item.question)}”</div>`:''}</div></div>
-        ${item.loading ? `<div class="muted" style="font-size:11px;margin:6px 0;">✨ ${escapeHTML(dn)} ci sta pensando...</div>` : ''}
+        ${item.loading ? `<div class="muted" style="font-size:11px;margin:6px 0;">✨ ${escapeHTML(dn)} ci sta pensando...${__dvQueue.indexOf(item)>0 ? ' (in coda)' : ''}</div>` : ''}
         ${item.error ? `<div class="muted" style="font-size:11px;margin:6px 0;color:var(--amber);">${escapeHTML(item.error)}</div>` : ''}
         ${item.lines ? `<div class="digivoice-lines">${item.lines.map((l,i)=>`<button type="button" class="digivoice-line${i===item.selected?' on':''}" data-dv-line="${i}">${escapeHTML(l)}</button>`).join('')}</div>` : ''}
         <textarea class="digivoice-draft" rows="2" placeholder="Scegli una proposta o scrivi tu cosa dice ${escapeAttr(dn)}...">${escapeHTML(item.draft||'')}</textarea>
