@@ -170,3 +170,83 @@
     return cachedCombat.participants.some(p=>p.isPC && p.username===username && p.evolutionLocked);
   }
   const EVOLUTION_LOCKED_MSG = '🔒 Il Master ha bloccato le evoluzioni per questo combattimento.';
+
+  // ===== Forme alternative per lo stesso Stage =====
+  // Richiesta Rocco 2026-11-02 ("dare a Nox e Gammamon la possibilità di evolvere in un altro tipo
+  // di Gammamon, quello triceratopo"): un Digimon può avere PIÙ forme per lo stesso Stage (es.
+  // Champion: BetelGammamon o WezenGammamon), ognuna con Stat, Qualities e Attacchi propri.
+  // Modello dati, nella colonna JSONB `digimon` già esistente (nessuna migrazione):
+  //   d.stageStats[stage]          -> la forma ATTIVA dello Stage (come sempre: tutto il resto del
+  //                                   sito continua a leggere solo questa);
+  //   d.altForms[stage] = [ { stats, qualities, freeBonus }, ... ] -> le altre forme, in attesa.
+  // Cambiare forma = scambiare la forma attiva con una di quelle in attesa. Le forme si costruiscono
+  // e si scelgono in Scheda Digimon (digimon.html, che ha una copia di queste funzioni); qui servono
+  // al Tavolo, dove al momento di evolvere si sceglie in quale forma (pickStageForm).
+  function stageAltForms(d, stage){
+    return (d && d.altForms && Array.isArray(d.altForms[stage])) ? d.altForms[stage].filter(f=>f && f.stats && f.stats.name) : [];
+  }
+  // Rende attiva la forma alternativa n° idx dello Stage indicato. Se il Digimon si trova proprio su
+  // quello Stage, aggiorna anche le Stat "dal vivo" (nome, immagine, stat, attacchi, Qualities).
+  function switchStageForm(d, stage, idx){
+    const alts = (d.altForms && d.altForms[stage]) || [];
+    const chosen = alts[idx];
+    if(!chosen || !chosen.stats) return false;
+    const live = d.stage === stage && typeof applyStageChange === 'function';
+    if(live && typeof snapshotCurrentStatsToStage === 'function') snapshotCurrentStatsToStage(d, stage);
+    if(!d.stageStats) d.stageStats = {};
+    if(!d.stageQualities) d.stageQualities = {};
+    if(!d.stageFreeBonusApplied) d.stageFreeBonusApplied = {};
+    const current = d.stageStats[stage] ? { stats: d.stageStats[stage], qualities: d.stageQualities[stage] || [], freeBonus: d.stageFreeBonusApplied[stage] || {} } : null;
+    alts.splice(idx, 1);
+    if(current) alts.push(current);
+    d.altForms[stage] = alts;
+    d.stageStats[stage] = chosen.stats;
+    d.stageQualities[stage] = Array.isArray(chosen.qualities) ? chosen.qualities : [];
+    d.stageFreeBonusApplied[stage] = chosen.freeBonus || {};
+    if(live){
+      // Ricarica la forma appena attivata usando lo stesso caricatore dell'Evoluzione: passiamo da
+      // uno Stage segnaposto per non risalvare sopra la forma nuova la forma vecchia.
+      const wounds = d.currentWounds;
+      d.stage = '__forma__';
+      applyStageChange(d, '__forma__', stage);
+      ['stageStats','stageQualities','stageFreeBonusApplied'].forEach(k=>{ if(d[k]) delete d[k]['__forma__']; });
+      d.currentWounds = Math.min(wounds, d.maxWounds);
+    }
+    return true;
+  }
+  // Prima di evolvere verso uno Stage con più forme: chiede quale usare. Risolve true per procedere
+  // (eventualmente dopo aver cambiato forma), false se si annulla. Senza forme alternative risolve
+  // subito true, senza mostrare nulla.
+  function pickStageForm(d, stage){
+    const alts = stageAltForms(d, stage);
+    if(!alts.length || !d.stageStats || !d.stageStats[stage]) return Promise.resolve(true);
+    return new Promise(resolve=>{
+      const old = document.getElementById('stage-form-picker');
+      if(old) old.remove();
+      const forms = [{ idx:-1, f:{ stats:d.stageStats[stage] } }].concat(alts.map((f,i)=>({ idx:(d.altForms[stage]||[]).indexOf(f), f })));
+      const modal = document.createElement('div');
+      modal.id = 'stage-form-picker';
+      modal.className = 'enc-modal-backdrop';
+      modal.innerHTML = `<div class="enc-modal-card hud-frame" style="max-width:520px;">
+        <div class="section-title" style="margin-top:0;">🧬 In quale forma evolve ${escapeHTML(d.name||'il Digimon')}? (${escapeHTML(stage)})</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:8px 0;">
+          ${forms.map(o=>`<button type="button" class="btn ghost" data-stage-form-pick="${o.idx}" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px;min-width:130px;">
+            ${o.f.stats.imageUrl ? `<img src="${escapeAttr(o.f.stats.imageUrl)}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;" onerror="this.style.display='none'" />` : '<span style="font-size:40px;">🥚</span>'}
+            <b>${escapeHTML(o.f.stats.name)}</b>
+            <span class="muted" style="font-size:10px;">ACC ${o.f.stats.baseAccuracy} · DMG ${o.f.stats.baseDamage} · DOD ${o.f.stats.baseDodge} · ARM ${o.f.stats.baseArmor} · HP ${o.f.stats.baseHealth}</span>
+          </button>`).join('')}
+        </div>
+        <button type="button" class="btn ghost small" data-stage-form-cancel style="width:100%;">Annulla</button>
+      </div>`;
+      document.body.appendChild(modal);
+      const done = (v)=>{ modal.remove(); resolve(v); };
+      modal.onclick = (e)=>{
+        if(e.target===modal || e.target.closest('[data-stage-form-cancel]')) return done(false);
+        const b = e.target.closest('[data-stage-form-pick]');
+        if(!b) return;
+        const idx = Number(b.getAttribute('data-stage-form-pick'));
+        if(idx>=0) switchStageForm(d, stage, idx);
+        done(true);
+      };
+    });
+  }

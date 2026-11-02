@@ -2530,6 +2530,8 @@ let editingScene = false;
           if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `Lo Stage ${target} non è mai stato costruito -- vai su "Scheda Digimon" per assegnare i punti (è come creare un Digimon nuovo, regola 3.19) prima di potervi evolvere normalmente.`; }
           return;
         }
+        // Forme alternative (js/rules.js): se lo Stage ha più forme, qui si sceglie in quale evolvere.
+        if(!(await pickStageForm(d, target))) return;
         const cost = evolutionCost(d, target);
         if(cost > Number(d.evolutionPoints||0)){
           if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `Servono ${cost} Evolution Points (ne hai ${d.evolutionPoints||0}).`; }
@@ -7657,6 +7659,8 @@ let editingScene = false;
           if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `Lo Stage ${target} non è mai stato costruito -- vai su "Scheda Digimon" per assegnare i punti (è come creare un Digimon nuovo, regola 3.19) prima di potervi evolvere normalmente.`; }
           return;
         }
+        // Forme alternative (js/rules.js): se lo Stage ha più forme, qui si sceglie in quale evolvere.
+        if(!(await pickStageForm(d, target))) return;
         const cost = evolutionCost(d, target);
         if(cost > Number(d.evolutionPoints||0)){
           if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = `Servono ${cost} Evolution Points (ne ha ${d.evolutionPoints||0}).`; }

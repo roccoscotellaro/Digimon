@@ -1031,6 +1031,8 @@
             statusEl.textContent = `Lo Stage ${target} non è mai stato costruito — vai su "Scheda Digimon" per assegnare i punti (è come creare un Digimon nuovo, regola 3.19) prima di potervi evolvere normalmente.`;
             return;
           }
+          // Forme alternative (js/rules.js): se lo Stage ha più forme, qui si sceglie in quale evolvere.
+          if(!(await pickStageForm(me.digimon, target))) return;
           const cost = evolutionCost(me.digimon, target);
           if(cost > Number(me.digimon.evolutionPoints||0)){
             statusEl.style.color='var(--danger)';

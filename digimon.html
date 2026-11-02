@@ -110,6 +110,10 @@
     .hud-frame.card.collapsed > .section-title .fold-icon{transform:rotate(-90deg);}
     .hud-frame.card.collapsed > *:not(.section-title){display:none;}
   }
+  .stage-form-chip{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;flex-wrap:wrap;}
+  .stage-form-chip.active{border-color:var(--dchroma);background:rgba(200,150,255,0.08);}
+  .stage-form-chip img{width:40px;height:40px;object-fit:cover;border-radius:6px;}
+  .stage-form-chip > div{flex:1;}
 </style>
 </head>
 <body>
@@ -2280,6 +2284,87 @@
     if(!allowedSizes(newStage).includes(d.size)) d.size = allowedSizes(newStage)[0] || 'Medium';
   }
 
+  // ===== Forme alternative per lo stesso Stage (copia di js/rules.js, questa pagina non lo carica) =====
+  // Richiesta Rocco 2026-11-02: più forme per lo stesso Stage (es. Champion: BetelGammamon o
+  // WezenGammamon). d.stageStats[stage] resta la forma ATTIVA; le altre aspettano in
+  // d.altForms[stage] = [ { stats, qualities, freeBonus } ]. Cambiare forma = scambio.
+  function stageAltForms(d, stage){
+    return (d && d.altForms && Array.isArray(d.altForms[stage])) ? d.altForms[stage].filter(f=>f && f.stats && f.stats.name) : [];
+  }
+  function switchStageForm(d, stage, idx){
+    const alts = (d.altForms && d.altForms[stage]) || [];
+    const chosen = alts[idx];
+    if(!chosen || !chosen.stats) return false;
+    const live = d.stage === stage;
+    if(live) snapshotCurrentStatsToStage(d, stage);
+    if(!d.stageStats) d.stageStats = {};
+    if(!d.stageQualities) d.stageQualities = {};
+    if(!d.stageFreeBonusApplied) d.stageFreeBonusApplied = {};
+    const current = d.stageStats[stage] ? { stats: d.stageStats[stage], qualities: d.stageQualities[stage] || [], freeBonus: d.stageFreeBonusApplied[stage] || {} } : null;
+    alts.splice(idx, 1);
+    if(current) alts.push(current);
+    d.altForms[stage] = alts;
+    d.stageStats[stage] = chosen.stats;
+    d.stageQualities[stage] = Array.isArray(chosen.qualities) ? chosen.qualities : [];
+    d.stageFreeBonusApplied[stage] = chosen.freeBonus || {};
+    if(live){
+      const wounds = d.currentWounds;
+      d.stage = '__forma__';
+      applyStageChange(d, '__forma__', stage);
+      ['stageStats','stageQualities','stageFreeBonusApplied'].forEach(k=>{ if(d[k]) delete d[k]['__forma__']; });
+      d.currentWounds = Math.min(wounds, d.maxWounds);
+    }
+    return true;
+  }
+  // Nome della forma attiva allo Stage precedente: è da lì che si leggono nel Digidex le
+  // evoluzioni possibili (es. Champion -> si guarda il Rookie Gammamon).
+  function prevStageFormName(d, stage){
+    const i = STAGES.indexOf(stage);
+    if(i<=0) return '';
+    const prev = STAGES[i-1];
+    if(d.stage===prev) return d.name || '';
+    return (d.stageStats && d.stageStats[prev] && d.stageStats[prev].name) || '';
+  }
+  function evoSuggestionsFrom(fromName){
+    const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===String(fromName||'').toLowerCase());
+    const evoObjs = dexEntry && Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean) : [];
+    return evoObjs.map(ev=>({ name: evoName(ev), imageUrl: (ev && ev.imageUrl) || '' })).filter(x=>x.name);
+  }
+  // Riquadro "🧬 Forme": per ogni Stage costruito che ha (o può avere) più forme, mostra la forma
+  // attiva, quelle alternative (con "Usa questa forma") e "➕ Nuova forma" se nel Digidex esistono
+  // altre evoluzioni sbloccate e non ancora costruite.
+  function stageFormsBlockHTML(m, isMaster){
+    const d = m.digimon;
+    if(!d || !d.stageStats) return '';
+    const rows = STAGES.filter(st=>d.stageStats[st] && d.stageStats[st].name).map(st=>{
+      const active = d.stageStats[st];
+      const alts = stageAltForms(d, st);
+      const built = [active.name].concat(alts.map(f=>f.stats.name)).map(n=>String(n).toLowerCase());
+      const sugg = evoSuggestionsFrom(prevStageFormName(d, st)).filter(x=>!built.includes(x.name.toLowerCase()));
+      const canAdd = sugg.filter(x=>isMaster || (d.unlockedEvolutions||[]).includes(x.name));
+      if(!alts.length && !canAdd.length) return '';
+      const chip = (f, idx)=>`<div class="stage-form-chip${idx<0?' active':''}">
+          ${f.imageUrl ? `<img src="${escapeAttr(f.imageUrl)}" onerror="this.style.display='none'" />` : '<span style="font-size:22px;">🥚</span>'}
+          <div style="min-width:0;"><b>${escapeHTML(f.name)}</b><div class="muted" style="font-size:10px;">ACC ${f.baseAccuracy} · DMG ${f.baseDamage} · DOD ${f.baseDodge} · ARM ${f.baseArmor} · HP ${f.baseHealth}</div></div>
+          ${idx<0 ? '<span class="tag" style="color:var(--dchroma);border-color:var(--dchroma);">✅ attiva</span>' : `<button class="btn ghost small" data-form-use="${escapeAttr(st)}|${idx}">Usa questa forma</button>${isMaster?`<button class="btn ghost small" data-form-delete="${escapeAttr(st)}|${idx}" title="Elimina questa forma alternativa" style="color:var(--danger);border-color:var(--danger);padding:2px 6px;">🗑️</button>`:''}`}
+        </div>`;
+      return `<div style="margin-bottom:10px;">
+        <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">${escapeHTML(st)}</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          ${chip(active, -1)}
+          ${((d.altForms && d.altForms[st])||[]).map((f,i)=> f && f.stats && f.stats.name ? chip(f.stats, i) : '').join('')}
+        </div>
+        ${canAdd.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">${canAdd.map(x=>`<button class="btn ghost small" data-form-new="${escapeAttr(st)}" data-form-new-name="${escapeAttr(x.name)}" data-form-new-img="${escapeAttr(x.imageUrl)}">➕ Nuova forma: ${escapeHTML(x.name)}</button>`).join('')}</div>` : ''}
+      </div>`;
+    }).filter(Boolean);
+    if(!rows.length) return '';
+    return `<div class="hud-frame card">
+      <div class="section-title"><span>🧬 Forme</span></div>
+      <div class="muted" style="margin-bottom:10px;">Lo stesso Stage può avere più forme, ognuna con Stat, Qualities e Attacchi propri. Evolvendo si usa la forma <b>attiva</b>; al Tavolo, se ce n'è più d'una, si sceglie al momento di evolvere.${isMaster ? ' Come Master puoi aggiungere qualunque evoluzione del Digidex; il giocatore solo quelle che hai sbloccato.' : ''}</div>
+      ${rows.join('')}
+    </div>`;
+  }
+
   // Regola 3.0: "All'inizio della partita, ci si aspetta un Digimon costruito almeno fino a
   // Champion" — quindi Fresh/Baby/Rookie/Champion sono sempre costruibili liberamente. Ultimate e
   // Mega invece richiedono che il Master abbia alzato il Default Range fin lì (è lui a decidere
@@ -2306,7 +2391,7 @@
       if(dpRemaining<0) errors.push(`Hai speso troppi DP sulle Stat (sforo di ${-dpRemaining}).`);
       // Se il Digimon di partenza (o lo Stage precedente) esiste già nel Digidex, suggerisce le sue
       // evoluzioni già registrate — utile soprattutto per chi è stato assegnato via Bio-Resonance Scan.
-      const fromName = d.name || '';
+      const fromName = draft.fromName || d.name || '';
       const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===fromName.toLowerCase());
       const evoObjs = dexEntry && Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean) : [];
       const suggestions = evoObjs.map(evoName).filter(Boolean);
@@ -2315,13 +2400,17 @@
       const evoImageByName = {};
       evoObjs.forEach(ev=>{ const n = evoName(ev); if(n && ev && ev.imageUrl) evoImageByName[n] = ev.imageUrl; });
       const hasKnownLine = suggestions.length > 0;
-      const unlockedSuggestions = suggestions.filter(s=>(d.unlockedEvolutions||[]).includes(s));
+      // Forma alternativa (vedi stageFormsBlockHTML): il Master può costruire qualunque evoluzione del
+      // Digidex, il giocatore solo quelle sbloccate; mai una forma già costruita per questo Stage.
+      const builtHere = draft.altForm ? [d.stageStats[draft.stage] && d.stageStats[draft.stage].name].concat(stageAltForms(d, draft.stage).map(f=>f.stats.name)).filter(Boolean).map(n=>n.toLowerCase()) : [];
+      const unlockedSuggestions = suggestions.filter(s=>(draft.altForm && isMaster) || (d.unlockedEvolutions||[]).includes(s)).filter(s=>!builtHere.includes(s.toLowerCase()));
       const lineLocked = hasKnownLine && unlockedSuggestions.length===0;
       if(lineLocked && !isMaster) errors.push(`Il Master non ha ancora sbloccato nessuna linea evolutiva per ${fromName}.`);
       else if(hasKnownLine && draft.name && !unlockedSuggestions.includes(draft.name)) errors.push('Puoi scegliere solo una delle evoluzioni sbloccate dal Master.');
       return `
       <div class="hud-frame card">
-        <div class="section-title"><span>🛠️ Costruisci Stage: ${escapeHTML(draft.stage)}</span></div>
+        <div class="section-title"><span>🛠️ ${draft.altForm ? `Nuova forma ${escapeHTML(draft.stage)}` : `Costruisci Stage: ${escapeHTML(draft.stage)}`}</span></div>
+        ${draft.altForm ? `<div class="muted" style="margin-bottom:6px;">Forma alternativa: non sostituisce <b>${escapeHTML((d.stageStats[draft.stage]||{}).name||'')}</b>, si aggiunge accanto. Potrai scegliere quale usare dal riquadro 🧬 Forme o al momento di evolvere.</div>` : ''}
         <div class="muted" style="margin-bottom:6px;">DP di partenza per ${escapeHTML(draft.stage)}: <b>${cfg.dp}</b> · Stat base: <b>${cfg.startStat}</b> ciascuna prima di spendere DP.</div>
         ${hasKnownLine && isMaster ? `
         <div class="hud-frame" style="border-color:var(--dchroma);padding:10px;margin-bottom:10px;">
@@ -2442,6 +2531,29 @@
           // davvero (data-stage-switch/Evolvi) — evolvere cambia anche le mosse, non solo le Stat.
           const stageDexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===draft.name.trim().toLowerCase());
           const stageDexAttacks = buildAttacksFromDexEntry(stageDexEntry);
+          if(draft.altForm){
+            const formStats = {
+              name: draft.name.trim(), imageUrl: draft.imageUrl || '',
+              baseAccuracy: draft.baseAccuracy, baseDamage: draft.baseDamage, baseDodge: draft.baseDodge,
+              baseArmor: draft.baseArmor, baseHealth: draft.baseHealth,
+              maxWounds: stageIndex(draft.stage) + Number(draft.baseHealth)*2,
+              maxMp: target.digimon.maxMp, size: draft.size
+            };
+            if(stageDexAttacks.length) formStats.attacks = stageDexAttacks;
+            if(!target.digimon.altForms) target.digimon.altForms = {};
+            if(!Array.isArray(target.digimon.altForms[draft.stage])) target.digimon.altForms[draft.stage] = [];
+            target.digimon.altForms[draft.stage].push({ stats: formStats, qualities: [], freeBonus: {} });
+            const st2 = document.getElementById('sb-status');
+            st2.textContent = 'Salvataggio...';
+            const ok2 = await saveMember(session.code, target);
+            if(ok2){
+              await pushLog(session.code, { who: displayName(target), role:'player', text: `🧬 ${displayName(target)} ha costruito una nuova forma ${draft.stage}: ${formStats.name}.` });
+              stageBuildDraft = null;
+              cachedRoster = await getRoster(session.code);
+              renderPage();
+            } else { st2.style.color='var(--danger)'; st2.textContent = 'Errore: ' + (lastApiError||'sconosciuto'); }
+            return;
+          }
           target.digimon.stageStats[draft.stage] = {
             name: draft.name.trim(), imageUrl: draft.imageUrl || '',
             baseAccuracy: draft.baseAccuracy, baseDamage: draft.baseDamage, baseDodge: draft.baseDodge,
@@ -2465,6 +2577,48 @@
       }
       return;
     }
+    // Riquadro 🧬 Forme (vedi stageFormsBlockHTML)
+    root.querySelectorAll('[data-form-new]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const stage = btn.getAttribute('data-form-new');
+        const cfg = STAGE_CREATION[stage];
+        stageBuildDraft = {
+          stage, altForm: true, fromName: prevStageFormName(target.digimon, stage),
+          size: allowedSizes(stage)[0] || 'Medium', name: btn.getAttribute('data-form-new-name') || '', imageUrl: btn.getAttribute('data-form-new-img') || '',
+          baseAccuracy: cfg.startStat, baseDamage: cfg.startStat, baseDodge: cfg.startStat,
+          baseArmor: cfg.startStat, baseHealth: cfg.startStat
+        };
+        renderPage();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+    });
+    root.querySelectorAll('[data-form-use]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const [stage, idxStr] = btn.getAttribute('data-form-use').split('|');
+        const d = target.digimon;
+        const oldName = (d.stageStats[stage]||{}).name || '';
+        if(!switchStageForm(d, stage, Number(idxStr))) return;
+        btn.disabled = true;
+        const ok = await saveMember(session.code, target);
+        if(ok){
+          await pushLog(session.code, { who: displayName(target), role:'player', text: `🧬 ${displayName(target)}: la forma ${stage} attiva ora è ${(d.stageStats[stage]||{}).name}${oldName?` (al posto di ${oldName})`:''}.` });
+          cachedRoster = await getRoster(session.code);
+        }
+        renderPage();
+      };
+    });
+    root.querySelectorAll('[data-form-delete]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const [stage, idxStr] = btn.getAttribute('data-form-delete').split('|');
+        const alts = (target.digimon.altForms||{})[stage] || [];
+        const f = alts[Number(idxStr)];
+        if(!f || !window.confirm(`Eliminare la forma alternativa ${f.stats.name} (${stage})?`)) return;
+        alts.splice(Number(idxStr), 1);
+        await saveMember(session.code, target);
+        cachedRoster = await getRoster(session.code);
+        renderPage();
+      };
+    });
     root.querySelectorAll('[data-sb-start]').forEach(btn=>{
       btn.onclick = ()=>{
         const stage = btn.getAttribute('data-sb-start');
@@ -2551,6 +2705,10 @@
             d.stageStats[stage][key] = Number(d.stageStats[stage][key]||0) + 1;
           });
         }
+        // ...comprese le forme alternative di ogni Stage (vedi stageFormsBlockHTML).
+        Object.keys(d.altForms||{}).forEach(stage=>{
+          (d.altForms[stage]||[]).forEach(f=>{ if(f && f.stats) f.stats[key] = Number(f.stats[key]||0) + 1; });
+        });
         if(!d.stageStats) d.stageStats = {};
         if(d.stageStats[d.stage]) d.stageStats[d.stage][key] = d[key];
         d.unspentBonusDP = Math.max(0, Number(d.unspentBonusDP||0) - 1);
@@ -2695,6 +2853,7 @@
         </div>
         ${bonusDpBlockHTML(target, isMaster)}
         ${stageBuilderHTML(target, isMaster)}
+        ${stageFormsBlockHTML(target, isMaster)}
         <div class="hud-frame card">
           <div class="section-title"><span>Punteggi Base</span></div>
           <div class="grid-stats">
@@ -2941,6 +3100,11 @@
               const cap = statHardCap(stage);
               const cur = Number(target.digimon.stageStats[stage][d.key]||0) + delta;
               target.digimon.stageStats[stage][d.key] = Math.max(0, Math.min(cap, cur));
+            });
+            Object.keys(target.digimon.altForms||{}).forEach(stage=>{
+              if(stage==='Fresh') return;
+              const cap = statHardCap(stage);
+              (target.digimon.altForms[stage]||[]).forEach(f=>{ if(f && f.stats) f.stats[d.key] = Math.max(0, Math.min(cap, Number(f.stats[d.key]||0) + delta)); });
             });
           }
         });
