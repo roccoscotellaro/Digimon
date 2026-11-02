@@ -1756,8 +1756,12 @@
     // hint.rank non è già stato passato esplicitamente.
     const rankMatch = hint.name.match(/\(Rank\s*(\d+)\)\s*$/i);
     const cleanName = hint.name.replace(/\s*\(Rank\s*\d+\)\s*$/i, '').replace(/\s*\[.*?\]\s*$/,'').trim();
-    const q = QUALITY_CATALOG.find(c=>c.name===cleanName) || QUALITY_CATALOG.find(c=>c.name===hint.name);
+    // Nomi del tipo "Area Attack: T:BLAST" (Quality + dettaglio dopo i due punti): se il nome intero
+    // non è nel catalogo, si prova con la parte prima dei due punti e il dettaglio resta nel nome.
+    const baseName = cleanName.includes(':') ? cleanName.split(':')[0].trim() : cleanName;
+    const q = QUALITY_CATALOG.find(c=>c.name===cleanName) || QUALITY_CATALOG.find(c=>c.name===hint.name) || (baseName!==cleanName ? QUALITY_CATALOG.find(c=>c.name===baseName) : null);
     if(!q) return null;
+    const detail = (q.name===baseName && baseName!==cleanName) ? cleanName.slice(baseName.length).replace(/^\s*:\s*/,'') : '';
     const rank = hint.rank!=null ? Number(hint.rank) : (rankMatch ? Number(rankMatch[1]) : 1);
     const cost = hint.cost!=null ? Number(hint.cost) : q.dpPerRank*rank;
     const statKeyToTarget = { baseAccuracy:'accuracy', baseDamage:'damage', baseDodge:'dodge', baseArmor:'armor', baseHealth:'health' };
@@ -1768,7 +1772,7 @@
     // sempre senza: la si chiede esplicitamente al momento di accettare il suggerimento, stessa
     // logica già usata per la Stat di Naturewalk.
     const skillTarget = (q.mechanic==='prodigiousSkill' && hint.skillTarget) ? hint.skillTarget : null;
-    const name = `${q.name}${q.maxRank>1?` (Rank ${rank})`:''}${statTarget?` [+1 ${statLabels[statTarget]}]`:''}${skillTarget?` [${skillTarget}]`:''}`;
+    const name = `${q.name}${detail?`: ${detail}`:''}${q.maxRank>1?` (Rank ${rank})`:''}${statTarget?` [+1 ${statLabels[statTarget]}]`:''}${skillTarget?` [${skillTarget}]`:''}`;
     const entry = { name, cost, category:q.category, description:q.desc, mechanic:q.mechanic, rank };
     if(statTarget) entry.statTarget = statTarget;
     if(skillTarget) entry.skillTarget = skillTarget;
@@ -2288,6 +2292,25 @@
   // Richiesta Rocco 2026-11-02: più forme per lo stesso Stage (es. Champion: BetelGammamon o
   // WezenGammamon). d.stageStats[stage] resta la forma ATTIVA; le altre aspettano in
   // d.altForms[stage] = [ { stats, qualities, freeBonus } ]. Cambiare forma = scambio.
+  // Precompila una bozza del costruttore di Stage dalla voce del Digidex con quel nome (richiesta
+  // Rocco 2026-11-02: "non si prende in automatico le cose dal dex"): immagine, Stat di base
+  // (limitate al massimo dello Stage) e Qualities suggerite. Il giocatore/Master può comunque
+  // ritoccare tutto prima di salvare; gli Attacchi arrivano dal Digidex al salvataggio come prima.
+  function prefillDraftFromDex(draft){
+    const entry = cachedDex.find(e=>(e.name||'').toLowerCase()===String(draft.name||'').trim().toLowerCase());
+    if(!entry) return false;
+    if(entry.image_url) draft.imageUrl = entry.image_url;
+    const cfg = STAGE_CREATION[draft.stage] || { startStat:1 };
+    const bs = entry.base_stats || {};
+    ['baseAccuracy','baseDamage','baseDodge','baseArmor','baseHealth'].forEach(k=>{
+      const v = Number(bs[k]);
+      if(v>0) draft[k] = Math.min(statHardCap(draft.stage), Math.max(cfg.startStat, v));
+    });
+    draft.dexQualities = Array.isArray(entry.qualities) ? entry.qualities.map(buildQualityEntryFromDexHint).filter(Boolean) : [];
+    draft.dexPrefilled = entry.name;
+    return true;
+  }
+
   function stageAltForms(d, stage){
     return (d && d.altForms && Array.isArray(d.altForms[stage])) ? d.altForms[stage].filter(f=>f && f.stats && f.stats.name) : [];
   }
@@ -2446,6 +2469,11 @@
           `).join('')}
         </div>
         <div class="muted" style="margin-top:6px;">DP non spesi in Stat verranno riservati come budget Qualities aggiuntivo per questo Stage (${Math.max(0,dpRemaining)} DP).</div>
+        ${draft.dexPrefilled ? `<div class="hud-frame" style="padding:8px 10px;margin-top:8px;border-color:var(--dchroma);">
+          <div class="muted" style="font-size:11px;margin-bottom:4px;">📖 Precompilato dal Digidex (<b>${escapeHTML(draft.dexPrefilled)}</b>): immagine, Stat${(draft.dexQualities||[]).length?', Qualities':''} e Attacchi.</div>
+          ${(draft.dexQualities||[]).length ? `<label style="display:flex;align-items:center;gap:6px;font-size:12px;"><input type="checkbox" id="sb-use-dex-qualities" ${draft.useDexQualities!==false?'checked':''} /> Aggiungi le Qualities del Digidex: ${draft.dexQualities.map(q=>escapeHTML(q.name)+' ('+q.cost+' DP)').join(', ')}</label>
+          ${(()=>{ const qc = draft.dexQualities.reduce((a,q)=>a+Number(q.cost||0),0); return draft.useDexQualities!==false && qc>Math.max(0,dpRemaining) ? `<div style="color:var(--amber);font-size:11px;margin-top:4px;">⚠ Le Qualities costano ${qc} DP ma ne restano ${Math.max(0,dpRemaining)}: abbassa qualche Stat o togline qualcuna dopo dalla scheda.</div>` : ''; })()}` : ''}
+        </div>` : ''}
         ${errors.length ? `<div class="err">${errors.map(e=>escapeHTML(e)).join('<br/>')}</div>` : '<div class="ok-msg">Tutto valido, puoi salvare.</div>'}
         <div class="row" style="margin-top:10px;">
           <button class="btn ghost" id="btn-sb-cancel" style="flex:1;">Annulla</button>
@@ -2485,18 +2513,21 @@
           renderPage();
         };
       });
+      const useDexQ = document.getElementById('sb-use-dex-qualities');
+      if(useDexQ) useDexQ.onchange = ()=>{ draft.useDexQualities = useDexQ.checked; renderPage(); };
       const sizeSel = document.getElementById('sb-size');
       if(sizeSel) sizeSel.onchange = (e)=>{ draft.size = e.target.value; };
       const imgInp = document.getElementById('sb-imageUrl');
       if(imgInp) imgInp.onchange = (e)=>{ draft.imageUrl = e.target.value.trim(); };
       const nameInp = document.getElementById('sb-name');
-      if(nameInp) nameInp.onchange = (e)=>{ draft.name = e.target.value; renderPage(); };
+      if(nameInp) nameInp.onchange = (e)=>{ draft.name = e.target.value; if(draft.dexPrefilled!==draft.name) prefillDraftFromDex(draft); renderPage(); };
       root.querySelectorAll('[data-sb-name-suggest]').forEach(btn=>{
         btn.onclick = ()=>{
           draft.name = btn.getAttribute('data-sb-name-suggest');
           // Aggancia anche l'immagine nota dal Digidex per questa evoluzione, se presente.
           const img = btn.getAttribute('data-sb-name-suggest-img');
           if(img) draft.imageUrl = img;
+          prefillDraftFromDex(draft); // immagine, Stat e Qualities dalla voce del Digidex
           renderPage();
         };
       });
@@ -2542,7 +2573,8 @@
             if(stageDexAttacks.length) formStats.attacks = stageDexAttacks;
             if(!target.digimon.altForms) target.digimon.altForms = {};
             if(!Array.isArray(target.digimon.altForms[draft.stage])) target.digimon.altForms[draft.stage] = [];
-            target.digimon.altForms[draft.stage].push({ stats: formStats, qualities: [], freeBonus: {} });
+            const formQualities = (draft.useDexQualities!==false && Array.isArray(draft.dexQualities)) ? draft.dexQualities : [];
+            target.digimon.altForms[draft.stage].push({ stats: formStats, qualities: formQualities, freeBonus: {} });
             const st2 = document.getElementById('sb-status');
             st2.textContent = 'Salvataggio...';
             const ok2 = await saveMember(session.code, target);
@@ -2562,6 +2594,12 @@
             maxMp: target.digimon.maxMp, size: draft.size
           };
           if(stageDexAttacks.length) target.digimon.stageStats[draft.stage].attacks = stageDexAttacks;
+          // Qualities del Digidex (se accettate nel costruttore): diventano quelle di questo Stage.
+          if(draft.useDexQualities!==false && Array.isArray(draft.dexQualities) && draft.dexQualities.length){
+            if(!target.digimon.stageQualities) target.digimon.stageQualities = {};
+            target.digimon.stageQualities[draft.stage] = draft.dexQualities;
+            if(target.digimon.stage===draft.stage) target.digimon.qualities = draft.dexQualities;
+          }
           const st = document.getElementById('sb-status');
           st.textContent = 'Salvataggio...';
           const ok = await saveMember(session.code, target);
@@ -2588,6 +2626,7 @@
           baseAccuracy: cfg.startStat, baseDamage: cfg.startStat, baseDodge: cfg.startStat,
           baseArmor: cfg.startStat, baseHealth: cfg.startStat
         };
+        prefillDraftFromDex(stageBuildDraft);
         renderPage();
         window.scrollTo({ top: 0, behavior: 'smooth' });
       };
