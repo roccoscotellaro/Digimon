@@ -35,6 +35,56 @@
     return { active:false, round:1, currentIndex:0, participants:[], order:[], startZoneAlly:'Molto Corto', startZoneEnemy:'Molto Lungo' };
   }
   // ---------- turn gating helpers (self-service player actions) ----------
+  // ===== Ordine dei turni sempre coerente con i partecipanti =====
+  // BUGFIX (Rocco 2026-11-02: "Logar non riesce a fare niente durante il suo turno, è tutto
+  // bloccato"). Togliere un partecipante a combattimento iniziato (❌ nella Gestione Combattimento,
+  // "Richiudi nell'Uovo" di un Nemico, scioglimento di una Jogress) lo toglieva da
+  // combat.participants ma NON da combat.order: il turno poteva quindi fermarsi su un id che non
+  // esisteva più — "turno di nessuno": il giocatore successivo vedeva "Non è il tuo turno" e tutti i
+  // bottoni rifiutavano l'azione. Allo stesso modo un partecipante aggiunto a combattimento in corso
+  // non entrava mai nell'ordine (non aveva mai un turno). Questa funzione ripara l'ordine:
+  //   - toglie gli id che non esistono più, tenendo il turno su chi era di turno o, se era proprio
+  //     lui ad essere stato tolto, sul partecipante successivo;
+  //   - inserisce i nuovi arrivati nel punto giusto secondo l'iniziativa (buildInitiativeOrder),
+  //     senza spostare il turno di chi sta giocando.
+  // Restituisce true se ha cambiato qualcosa. Chiamata da saveCombat (index.html) prima di ogni
+  // salvataggio, e dal polling del Master per riparare un combattimento già rotto.
+  function sanitizeCombatOrder(combat){
+    if(!combat || !combat.active || !Array.isArray(combat.order) || !combat.order.length) return false;
+    const parts = combat.participants || [];
+    const ids = new Set(parts.map(p=>p.id));
+    const oldOrder = combat.order.slice();
+    let idx = Math.min(Math.max(Number(combat.currentIndex)||0, 0), oldOrder.length-1);
+    // Chi deve essere di turno dopo la riparazione: quello attuale se esiste ancora, altrimenti il
+    // primo esistente dopo di lui (girando in cima alla lista se serve).
+    let currentId = null;
+    for(let k=0; k<oldOrder.length; k++){
+      const cand = oldOrder[(idx+k) % oldOrder.length];
+      if(ids.has(cand)){ currentId = cand; break; }
+    }
+    let order = [];
+    oldOrder.forEach(id=>{ if(ids.has(id) && !order.includes(id)) order.push(id); });
+    // Nuovi arrivati: posizione dettata dall'ordine di iniziativa completo.
+    const missing = parts.filter(p=>!order.includes(p.id));
+    if(missing.length){
+      const full = buildInitiativeOrder(parts);
+      missing.forEach(p=>{
+        const pos = full.indexOf(p.id);
+        let insertAt = order.length;
+        for(let j=pos+1; j<full.length; j++){
+          const at = order.indexOf(full[j]);
+          if(at>=0){ insertAt = at; break; }
+        }
+        order.splice(insertAt, 0, p.id);
+      });
+    }
+    const changed = order.length!==oldOrder.length || order.some((id,i)=>id!==oldOrder[i]);
+    if(!changed && ids.has(oldOrder[idx])) return false;
+    combat.order = order;
+    combat.currentIndex = currentId ? Math.max(0, order.indexOf(currentId)) : 0;
+    return true;
+  }
+
   function currentTurnParticipant(combat){
     if(!combat || !combat.active || !combat.order || combat.order.length===0) return null;
     const id = combat.order[combat.currentIndex];

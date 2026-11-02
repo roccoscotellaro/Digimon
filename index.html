@@ -966,6 +966,8 @@ let editingScene = false;
   // bindCombatSelfActions), che rifiutano un secondo click mentre un salvataggio è già in corso.
   let combatActionPending = false;
   async function saveCombat(code, data){
+    // Ordine dei turni sempre allineato ai partecipanti (vedi sanitizeCombatOrder in js/combat-engine.js).
+    if(data && typeof sanitizeCombatOrder==='function') sanitizeCombatOrder(data);
     combatActionPending = true;
     try {
       return await apiPost('/api/state', { resource:'combat', code, data });
@@ -2030,7 +2032,7 @@ let editingScene = false;
         advanceGameClock(combatClockKey, 1);
       }
       skipped++;
-    } while(isParticipantDefeated(combat.participants.find(p=>p.id===combat.order[combat.currentIndex])) && skipped < combat.order.length);
+    } while(((p)=>!p || isParticipantDefeated(p))(combat.participants.find(p=>p.id===combat.order[combat.currentIndex])) && skipped < combat.order.length);
     const starting = combat.participants.find(p=>p.id===combat.order[combat.currentIndex]);
     // Timer 24h (richiesta utente): riparte da zero ad ogni cambio di turno, non solo al primo —
     // vedi combatTurnTimerLabel/combatDisplayHTML.
@@ -2111,7 +2113,7 @@ let editingScene = false;
         combat.round = Math.max(1, combat.round-1);
       }
       skipped++;
-    } while(isParticipantDefeated(combat.participants.find(p=>p.id===combat.order[combat.currentIndex])) && skipped < combat.order.length);
+    } while(((p)=>!p || isParticipantDefeated(p))(combat.participants.find(p=>p.id===combat.order[combat.currentIndex])) && skipped < combat.order.length);
     combat.turnStartedAt = new Date().toISOString();
     await saveCombat(code, combat);
     renderCombatManager(code, players);
@@ -4257,6 +4259,18 @@ let editingScene = false;
     if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, isMasterRole);
     if(isMasterRole) refreshCombatTurnNowCard();
     if(isMasterRole && typeof setMasterMenuBadge==='function') setMasterMenuBadge('combattimento', !!(cachedCombat && cachedCombat.active));
+    // Combattimento con l'ordine dei turni rotto (turno fermo su un partecipante tolto): il Master lo
+    // ripara e lo salva da solo — vedi sanitizeCombatOrder in js/combat-engine.js.
+    if(isMasterRole && cachedCombat && cachedCombat.active && !combatActionPending && typeof sanitizeCombatOrder==='function'){
+      const probe = JSON.parse(JSON.stringify(cachedCombat));
+      if(sanitizeCombatOrder(probe)){
+        sanitizeCombatOrder(cachedCombat);
+        await saveCombat(session.code, cachedCombat);
+        const healed = currentTurnParticipant(cachedCombat);
+        if(healed && healed.isPC && healed.username) notifyTurnPush(session.code, healed.username, '⚔️ È il tuo turno!', `${combatDisplayName(healed, false)}, tocca a te in combattimento.`);
+        if(combatLive) combatLive.innerHTML = combatDisplayHTML(cachedCombat, isMasterRole);
+      }
+    }
     // "💭 Voci dei Digimon" (js/digivoice.js): richieste dei giocatori + proposte del timer di silenzio.
     if(isMasterRole && typeof digivoiceTick==='function') digivoiceTick(session.code, refreshLiveParts);
     // Pannello "🧭 Spostamenti": aggiorna le posizioni dei giocatori (es. dopo un "Sì, andiamo!" in
