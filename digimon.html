@@ -2311,6 +2311,28 @@
     return true;
   }
 
+  // Auto-riparazione (2026-11-02): Stage e forme costruiti senza immagine (es. WezenGammamon di
+  // Nox, costruito prima che il costruttore la prendesse dal Digidex) la ricevono dalla voce del
+  // Digidex con lo stesso nome. Non tocca mai un'immagine già presente. true se ha cambiato qualcosa.
+  function fillMissingImagesFromDex(d){
+    if(!d || !Array.isArray(cachedDex) || !cachedDex.length) return false;
+    const img = (name)=>{ const e = cachedDex.find(x=>(x.name||'').toLowerCase()===String(name||'').trim().toLowerCase()); return e && e.image_url ? e.image_url : ''; };
+    let changed = false;
+    Object.keys(d.stageStats||{}).forEach(st=>{
+      const f = d.stageStats[st];
+      if(f && f.name && !f.imageUrl){ const u = img(f.name); if(u){ f.imageUrl = u; changed = true; } }
+    });
+    Object.keys(d.altForms||{}).forEach(st=>{
+      (d.altForms[st]||[]).forEach(f=>{ if(f && f.stats && f.stats.name && !f.stats.imageUrl){ const u = img(f.stats.name); if(u){ f.stats.imageUrl = u; changed = true; } } });
+    });
+    if(!d.imageUrl && d.stageStats && d.stageStats[d.stage] && d.stageStats[d.stage].imageUrl){ d.imageUrl = d.stageStats[d.stage].imageUrl; changed = true; }
+    return changed;
+  }
+  function dexQualitiesFor(name){
+    const e = cachedDex.find(x=>(x.name||'').toLowerCase()===String(name||'').trim().toLowerCase());
+    return e && Array.isArray(e.qualities) ? e.qualities.map(buildQualityEntryFromDexHint).filter(Boolean) : [];
+  }
+
   function stageAltForms(d, stage){
     return (d && d.altForms && Array.isArray(d.altForms[stage])) ? d.altForms[stage].filter(f=>f && f.stats && f.stats.name) : [];
   }
@@ -2366,11 +2388,17 @@
       const sugg = evoSuggestionsFrom(prevStageFormName(d, st)).filter(x=>!built.includes(x.name.toLowerCase()));
       const canAdd = sugg.filter(x=>isMaster || (d.unlockedEvolutions||[]).includes(x.name));
       if(!alts.length && !canAdd.length) return '';
-      const chip = (f, idx)=>`<div class="stage-form-chip${idx<0?' active':''}">
+      const chip = (f, idx)=>{
+        const quals = idx<0 ? ((d.stageQualities||{})[st]||[]) : ((((d.altForms||{})[st]||[])[idx]||{}).qualities||[]);
+        const dexQ = !quals.length ? dexQualitiesFor(f.name) : [];
+        return `<div class="stage-form-chip${idx<0?' active':''}">
           ${f.imageUrl ? `<img src="${escapeAttr(f.imageUrl)}" onerror="this.style.display='none'" />` : '<span style="font-size:22px;">🥚</span>'}
-          <div style="min-width:0;"><b>${escapeHTML(f.name)}</b><div class="muted" style="font-size:10px;">ACC ${f.baseAccuracy} · DMG ${f.baseDamage} · DOD ${f.baseDodge} · ARM ${f.baseArmor} · HP ${f.baseHealth}</div></div>
+          <div style="min-width:0;"><b>${escapeHTML(f.name)}</b><div class="muted" style="font-size:10px;">ACC ${f.baseAccuracy} · DMG ${f.baseDamage} · DOD ${f.baseDodge} · ARM ${f.baseArmor} · HP ${f.baseHealth}</div>
+            <div class="muted" style="font-size:10px;">Qualities: ${quals.length ? quals.map(q=>escapeHTML(q.name)).join(', ') : 'nessuna'}</div>
+            ${isMaster && dexQ.length ? `<button class="btn ghost small" data-form-dexq="${escapeAttr(st)}|${idx}" style="margin-top:4px;" title="Le Qualities costano DP: controlla che ne restino dopo le Stat">📖 Prendi Qualities dal Digidex (${dexQ.map(q=>escapeHTML(q.name)+' '+q.cost+' DP').join(', ')})</button>` : ''}</div>
           ${idx<0 ? '<span class="tag" style="color:var(--dchroma);border-color:var(--dchroma);">✅ attiva</span>' : `<button class="btn ghost small" data-form-use="${escapeAttr(st)}|${idx}">Usa questa forma</button>${isMaster?`<button class="btn ghost small" data-form-delete="${escapeAttr(st)}|${idx}" title="Elimina questa forma alternativa" style="color:var(--danger);border-color:var(--danger);padding:2px 6px;">🗑️</button>`:''}`}
         </div>`;
+      };
       return `<div style="margin-bottom:10px;">
         <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">${escapeHTML(st)}</div>
         <div style="display:flex;flex-direction:column;gap:6px;">
@@ -2646,6 +2674,27 @@
         renderPage();
       };
     });
+    root.querySelectorAll('[data-form-dexq]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        const [stage, idxStr] = btn.getAttribute('data-form-dexq').split('|');
+        const idx = Number(idxStr);
+        const d = target.digimon;
+        const form = idx<0 ? d.stageStats[stage] : ((d.altForms[stage]||[])[idx]||{}).stats;
+        const list = dexQualitiesFor(form && form.name);
+        if(!list.length) return;
+        if(idx<0){
+          if(!d.stageQualities) d.stageQualities = {};
+          d.stageQualities[stage] = list;
+          if(d.stage===stage) d.qualities = list;
+        } else {
+          d.altForms[stage][idx].qualities = list;
+        }
+        btn.disabled = true;
+        await saveMember(session.code, target);
+        cachedRoster = await getRoster(session.code);
+        renderPage();
+      };
+    });
     root.querySelectorAll('[data-form-delete]').forEach(btn=>{
       btn.onclick = async ()=>{
         const [stage, idxStr] = btn.getAttribute('data-form-delete').split('|');
@@ -2823,7 +2872,8 @@
     // già tutto a posto non fa nulla e non salva nulla.
     if(target && target.digimon && target.digimon.approved){
       const healed = syncFreeBonusEverywhere(target.digimon);
-      if(healed) saveMember(session.code, target).catch(()=>{});
+      const healedImg = fillMissingImagesFromDex(target.digimon);
+      if(healed || healedImg) saveMember(session.code, target).catch(()=>{});
     }
 
     const editable = digimonEditMode===null ? isMaster : digimonEditMode;
