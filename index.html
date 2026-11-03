@@ -3727,6 +3727,7 @@ let editingScene = false;
       if(subWrap) subWrap.style.display = playerChatMode==='subgroup' ? '' : 'none';
       ensurePlayerSubgroupPicker(session.code);
     }
+    applyPlayerChatLockUI(); // blocco della chat del combattimento: aggiornato subito al cambio di chat
   }
 
   // Crea/aggiorna il selettore "quale sottogruppo sto guardando" e mantiene playerActiveSubgroupId
@@ -4079,6 +4080,41 @@ let editingScene = false;
   // (getRoster/getScene...) quando si esce/rientra (logout() azzera session): alla ripresa la riga
   // successiva legge session.code su null. L'involucro ignora SOLO l'errore di quel giro orfano
   // (session sparita nel frattempo); ogni altro errore continua a comparire in console come prima.
+  // ===== Blocco della chat del giocatore durante un combattimento =====
+  // Richiesta Rocco 2026-11-03: "se c'è un fight in corso che blocca una determinata chat, le altre
+  // sono sbloccate". Resta bloccata SOLO la chat scelta dal Master come chat del combattimento
+  // (chatLock: Generale o un Sottogruppo), e solo fuori dal proprio turno; tutte le altre chat
+  // (Privata, altri Sottogruppi, Generale se il fight è altrove) restano sempre utilizzabili.
+  // Prima esisteva in più una regola che bloccava SEMPRE la Chat Generale a chi non era di turno,
+  // anche con il combattimento agganciato altrove; e il blocco veniva ricalcolato solo dal polling
+  // (~15s), quindi passando da una chat bloccata alla Privata il campo restava disattivato.
+  // Ora è richiamata anche ad ogni cambio di chat (updateChatModeButtons), quindi è immediata.
+  function applyPlayerChatLockUI(){
+    if(!session || session.role!=='player') return;
+    const myTurnNow = isMyCombatTurn(cachedCombat, session.username);
+    const chatLocked = combatChatLockLocationMatches(playerChatMode, playerActiveSubgroupId, myTurnNow);
+    // Solo per il messaggio "è il tuo turno" nella chat del combattimento.
+    const isCombatLockChat = combatChatLockLocationMatches(playerChatMode, playerActiveSubgroupId, false);
+    // Blocco manuale TOTALE della Chat Generale deciso dal Master per questo giocatore
+    // (generalChatLocked, vedi js/tamer-card.js/log.js) — non tocca Privata/Sottogruppi.
+    const generalManuallyLocked = playerChatMode!=='private' && playerChatMode!=='subgroup' && !!(cachedMe && cachedMe.tamer && cachedMe.tamer.generalChatLocked);
+    const lockThisChat = chatLocked || generalManuallyLocked;
+    ['action-text','btn-send-action','btn-correct','action-img-btn'].forEach(id=>{
+      const el = document.getElementById(id);
+      if(el) el.disabled = lockThisChat;
+    });
+    const actionHintEl = document.getElementById('action-hint');
+    if(actionHintEl){
+      actionHintEl.innerHTML = generalManuallyLocked
+        ? '<span style="color:var(--danger);">🔒 Il Master ha bloccato la Chat Generale per te. Puoi comunque scrivere in privato al Master.</span>'
+        : chatLocked
+        ? '<span style="color:var(--danger);">🔒 Questa chat è bloccata finché non è il tuo turno: è in corso un combattimento. Le altre chat restano libere.</span>'
+        : (isCombatLockChat && myTurnNow)
+          ? `<span style="color:var(--cyan);">⚔️ È il tuo turno, ${escapeHTML(displayNameFor(session.username))}! Ora puoi parlare e fare azioni.</span>`
+          : ACTION_HINT_DEFAULT_TEXT;
+    }
+  }
+
   async function refreshLiveParts(tick){
     try{
       return await refreshLivePartsInner(tick);
@@ -4401,43 +4437,7 @@ let editingScene = false;
         }
       }
     }
-    // Blocca la chat pubblica (non quella privata col Master) fuori dal proprio turno, se in combattimento.
-    // Blocca inoltre, per TUTTI (indipendentemente dal turno), la chat scelta dal Master come
-    // "chat di combattimento" (chatLock) finché il Master non conclude lo scontro.
-    if(session.role==='player'){
-      const myTurnNow = isMyCombatTurn(cachedCombat, session.username);
-      const turnLockPublicChat = !!(cachedCombat && cachedCombat.active) && playerChatMode!=='private' && playerChatMode!=='subgroup' && !myTurnNow;
-      const chatLocked = combatChatLockLocationMatches(playerChatMode, playerActiveSubgroupId, myTurnNow);
-      // Serve solo per sapere se QUESTA è la chat scelta dal Master come "chat di combattimento",
-      // a prescindere dal turno — usato per mostrare il messaggio "è il tuo turno" proprio lì, dove
-      // prima compariva il lucchetto 🔒 (ora sbloccato per il turno di myTurnNow, vedi sopra).
-      const isCombatLockChat = combatChatLockLocationMatches(playerChatMode, playerActiveSubgroupId, false);
-      // Richiesta utente (Rocco): blocco manuale TOTALE della Chat Generale (generalChatLocked,
-      // vedi js/tamer-card.js/log.js) — indipendente dal combattimento, non tocca Privata/Sottogruppo.
-      // BUGFIX 2026-09-25 (console dei giocatori: "ReferenceError: me is not defined at
-      // refreshLiveParts"): dentro refreshLiveParts non esiste nessuna variabile `me` (esiste solo
-      // in renderPlayer/renderChatArea) — la riga lanciava ad OGNI giro di polling per ogni
-      // giocatore, interrompendo il resto del refresh (blocco chat/hint/banner errori). Usa
-      // cachedMe, aggiornato più sopra dallo stesso giro di polling.
-      const generalManuallyLocked = playerChatMode!=='private' && playerChatMode!=='subgroup' && !!(cachedMe && cachedMe.tamer && cachedMe.tamer.generalChatLocked);
-      const lockPublicChat = turnLockPublicChat || chatLocked || generalManuallyLocked;
-      ['action-text','btn-send-action','btn-correct','action-img-btn'].forEach(id=>{
-        const el = document.getElementById(id);
-        if(el) el.disabled = lockPublicChat;
-      });
-      const actionHintEl = document.getElementById('action-hint');
-      if(actionHintEl){
-        actionHintEl.innerHTML = generalManuallyLocked
-          ? '<span style="color:var(--danger);">🔒 Il Master ha bloccato la Chat Generale per te. Puoi comunque scrivere in privato al Master.</span>'
-          : chatLocked
-          ? '<span style="color:var(--danger);">🔒 Questa chat è bloccata: è in corso un combattimento. Puoi comunque scrivere in privato al Master.</span>'
-          : (isCombatLockChat && myTurnNow)
-            ? `<span style="color:var(--cyan);">⚔️ È il tuo turno, ${escapeHTML(displayNameFor(session.username))}! Ora puoi parlare e fare azioni.</span>`
-            : turnLockPublicChat
-              ? '<span style="color:var(--danger);">⛔ Sei in combattimento: la chat pubblica è bloccata fuori dal tuo turno. Puoi comunque scrivere in privato al Master.</span>'
-              : ACTION_HINT_DEFAULT_TEXT;
-      }
-    }
+    applyPlayerChatLockUI();
     const privateLogLiveMaster = document.getElementById('private-log-live-master');
     if(privateLogLiveMaster && session.role==='master' && masterPrivateThread){
       const plog = await getPrivateLog(session.code, masterPrivateThread);
