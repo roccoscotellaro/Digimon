@@ -1568,7 +1568,7 @@ let editingScene = false;
     { key:'holdback', label:'Trattieni Colpo', cost:1, pool:'digimon', desc:'Attacco non letale: se ridurrebbe il bersaglio a 0 Ferite, resta a 1 ma incapacitato per il resto dello scontro. Non disponibile in Stance Offensiva/Fierce o con Attacchi [HAZARD].' },
     { key:'skill_tamer', label:'Skill Check (Tamer)', cost:1, pool:'tamer', desc:'Il Tamer tenta una Prova di Abilità a sua scelta (es. persuadere, cercare indizi).' },
     { key:'skill_digimon', label:'Skill Check (Digimon)', cost:2, pool:'digimon', desc:'Il Digimon tenta una Prova di Abilità a sua scelta (costa 2 Azioni Digimon).' },
-    { key:'stance', label:'Cambio Stance', cost:1, pool:'digimon', desc:'Il Digimon cambia Stance di combattimento (Neutrale/Offensiva/Difensiva). Una volta a turno.' },
+    { key:'stance', label:'Cambio Stance', cost:1, pool:'digimon', onceKey:'stance', desc:'Il Digimon cambia Stance di combattimento (Neutrale/Offensiva/Difensiva). Una volta a turno.' },
     { key:'clash', label:'Clash', cost:1, pool:'digimon', desc:'Avvia un Clash (contrasto diretto) contro un bersaglio. Una volta a turno contro lo stesso bersaglio.' },
     // FEATURE (Rocco 2026-09-21: "fra le azioni dovrebbe esserci quella di digievolversi durante il
     // turno" -- risposta utente: "Nuova voce nel pannello, separata dal resto"): 'evolve'/
@@ -1583,14 +1583,14 @@ let editingScene = false;
     // Azione spesa") che la Scheda Digimon si limita a scrivere in chat.
     { key:'evolve', label:'Evolvi (Azione)', cost:1, pool:'digimon', desc:'Il Digimon evolve a uno Stage già raggiunto/nel Default Range, spendendo gli Evolution Points necessari (regola 8.05a).' },
     { key:'force_evolve', label:'Forza Evoluzione (2 Azioni)', cost:2, pool:'digimon', desc:'Il Tamer tenta di forzare l\'Evoluzione con un Check di Willpower, TN 18 + Evolution Points normalmente richiesti (regola 8.05c). Le 2 Azioni si spendono comunque, anche in caso di fallimento.' },
-    { key:'bolster_tamer', label:'Bolster (Tamer, +2)', cost:1, pool:'tamer', desc:'Trasforma 1 Azione con Pool Check in 2 Azioni: +2 dadi al tuo prossimo Pool Check (Attacco/Dodge, o in aggiunta a un Guard). Per potenziare un Direct/Aid appena dato, scegli come bersaglio l\'alleato che lo ha ricevuto.' },
-    { key:'bolster_digimon', label:'Bolster (Digimon, +SV)', cost:1, pool:'digimon', desc:'Come sopra, ma per il Digimon: il bonus è pari al suo SV più alto nel Default Range (Rookie +2, Champion +3...) invece di +2.' },
-    { key:'aid', label:'Aid', cost:1, pool:'digimon', desc:'Il Digimon tenta di aiutare un alleato entro il proprio Reach: su questo tavolo si tira un vero Pool Check (Nd6 = Stage) e, se riesce almeno 1 successo, l\'alleato ottiene il bonus prima del suo prossimo turno (variante rispetto al bonus garantito da regolamento). Una volta a turno.' },
-    { key:'guard', label:'Guard', cost:1, pool:'digimon', desc:'Il Digimon si prepara: ottiene un bonus pari al proprio SV al prossimo Dodge Pool prima del suo prossimo turno (non conta ai fini delle penalità da Dodge ripetuto). Una volta a turno.' },
+    { key:'bolster_tamer', label:'Bolster (Tamer, +2)', cost:1, pool:'tamer', desc:'Regola 9.06a: potenzia un\'Azione del TAMER con Pool Check (+2). Se in questo turno il Tamer ha già dato un Direct ancora non usato, gli aggiunge +2; altrimenti il +2 vale per il prossimo Direct, Reinforce o Reposition del Tamer in questo turno. Non aggiunge mai dadi direttamente all\'Attacco o al Dodge del Digimon.' },
+    { key:'bolster_digimon', label:'Bolster (Digimon, +SV)', cost:1, pool:'digimon', desc:'Regola 9.06a: +SV più alto nel Default Range (Rookie +2, Champion +3...) al prossimo Pool Check di Accuracy/Dodge del Digimon (anche in aggiunta al suo Guard), oppure al bonus di un Aid che ha appena dato a un alleato (scegli quell\'alleato come bersaglio).' },
+    { key:'aid', label:'Aid', cost:1, pool:'digimon', onceKey:'aid', desc:'Il Digimon tenta di aiutare un alleato entro il proprio Reach: su questo tavolo si tira un vero Pool Check (Nd6 = Stage) e, se riesce almeno 1 successo, l\'alleato ottiene il bonus prima del suo prossimo turno (variante rispetto al bonus garantito da regolamento). Una volta a turno.' },
+    { key:'guard', label:'Guard', cost:1, pool:'digimon', onceKey:'guard', desc:'Il Digimon si prepara: ottiene un bonus pari al proprio SV al prossimo Dodge Pool prima del suo prossimo turno (non conta ai fini delle penalità da Dodge ripetuto). Una volta a turno.' },
     { key:'resist1', label:'Resist (1 Az.)', cost:1, pool:'digimon', desc:'Riduce di 1 la Potenza di tutti gli Effetti attivi sul Digimon (a 0 l\'Effetto termina).' },
     { key:'resist2', label:'Resist (2 Az.)', cost:2, pool:'digimon', desc:'Come sopra, ma riduce la Potenza di 2 (2 Azioni spese).' },
-    { key:'direct1', label:'Direct (1 Az. — Charisma)', cost:1, pool:'tamer', desc:'Il Tamer incita un Digimon: aggiunge dadi pari a Charisma al suo prossimo Accuracy/Dodge Pool (-2 se non è il proprio partner). Dura finché non viene usato o il Tamer ripete l\'Azione. Una volta a turno.' },
-    { key:'direct2', label:'Direct (2 Az. — Highest Attribute)', cost:2, pool:'tamer', desc:'Come Direct (1 Az.), ma il bonus è pari all\'Attributo più alto del Tamer invece di Charisma.' },
+    { key:'direct1', label:'Direct (1 Az. — Charisma)', cost:1, pool:'tamer', onceKey:'direct', desc:'Il Tamer incita un Digimon: aggiunge dadi pari a Charisma al suo prossimo Accuracy/Dodge Pool (-2 se non è il proprio partner). Dura finché non viene usato o il Tamer ripete l\'Azione. Una volta a turno.' },
+    { key:'direct2', label:'Direct (2 Az. — Highest Attribute)', cost:2, pool:'tamer', onceKey:'direct', desc:'Come Direct (1 Az.), ma il bonus è pari all\'Attributo più alto del Tamer invece di Charisma.' },
     { key:'reinforce1', label:'Reinforce (1 Az. — Body)', cost:1, pool:'tamer', reinforceOnce:true, desc:'Il Tamer tira un Pool Check di Body: il Digimon ottiene Wound Box Temporanee pari ai successi, fino al prossimo turno del Tamer. Una volta a turno.' },
     { key:'reinforce2', label:'Reinforce (2 Az. — Highest Attribute)', cost:2, pool:'tamer', reinforceOnce:true, desc:'Come Reinforce (1 Az.), ma il Pool Check usa l\'Attributo più alto del Tamer invece di Body.' },
     { key:'reposition1', label:'Reposition (1 Az. — Agility)', cost:1, pool:'tamer', desc:'Il Tamer aiuta il Digimon a riposizionarsi sulla linea delle distanze con un Pool Check di Agility.' },
@@ -1656,6 +1656,12 @@ let editingScene = false;
     if(def.reinforceOnce && participant.usedReinforceThisTurn){
       return { ok:false, msg:'Il Tamer ha già usato Reinforce questo turno.' };
     }
+    // "This Action can only be used Once per Turn" (9.06a/9.06b) per Direct, Aid, Guard e Cambio
+    // Stance: prima solo Reinforce era limitato, le altre si potevano ripetere sommando i bonus
+    // (es. due Direct = doppio Charisma sullo stesso tiro). Azzerato in applyEndOfTurnEffects.
+    if(def.onceKey && participant.usedOnceThisTurn && participant.usedOnceThisTurn[def.onceKey]){
+      return { ok:false, msg:`${def.label.replace(/ \(.*$/,'')} si può usare una sola volta per turno.` };
+    }
     const current = participant[poolKey]===undefined ? 2 : participant[poolKey];
     if(current < def.cost) return { ok:false, msg: poolKey==='tamerActions' ? 'Azioni del Tamer insufficienti.' : 'Azioni insufficienti.' };
     participant[poolKey] = current - def.cost;
@@ -1671,6 +1677,9 @@ let editingScene = false;
     }
     if(def.reinforceOnce){
       participant.usedReinforceThisTurn = true;
+    }
+    if(def.onceKey){
+      participant.usedOnceThisTurn = Object.assign({}, participant.usedOnceThisTurn||{}, { [def.onceKey]: true });
     }
     // Passa turno automatico dopo 5 minuti (richiesta utente, solo per PC -- mai per un Nemico
     // creato dal Master): timbra il momento in cui ENTRAMBI i pool di Azioni (Digimon e Tamer) si
@@ -1706,7 +1715,10 @@ let editingScene = false;
   function participantSV(p){
     if(p.isPC){
       const member = cachedRoster.find(m=>m.username===p.username);
-      return member ? stageIndex(member.digimon.stage)+1 : 1;
+      // SV = indice di Stage (Rookie 2, Champion 3...), come negli esempi del manuale per Bolster
+      // ("di solito +2 per i Giocatori", "resta Champion -> +3") e in stanceModifiers. Prima era
+      // indice+1: Guard e Aid davano un dado in più del dovuto (Rookie +3, Champion +4).
+      return member ? Math.max(1, stageIndex(member.digimon.stage)) : 1;
     }
     return 1;
   }
@@ -1741,9 +1753,12 @@ let editingScene = false;
       if(!target) return { ok:false, note:'nessun bersaglio scelto: nessun bonus accodato.' };
       const base = actionKey==='direct1' ? ownerAttr(actor,'charisma') : highestAttribute(actor);
       const own = target.id===actor.id;
-      const amount = Math.max(0, base - (own?0:2));
-      queuePendingRollBonus(target, amount, 'Direct', 'either');
-      return { ok:true, note: `+${amount} Accuracy/Dodge in coda sul prossimo Pool Check di ${narratorName(target)}${own?'':' (-2: non è il proprio Digimon)'}.` };
+      const bolstered = !!actor.tamerBolsterReady;
+      actor.tamerBolsterReady = false;
+      const amount = Math.max(0, base - (own?0:2)) + (bolstered?2:0);
+      queuePendingRollBonus(target, amount, bolstered ? 'Direct + Bolster (Tamer)' : 'Direct', 'either');
+      actor.directTargetThisTurn = target.id;
+      return { ok:true, note: `+${amount} Accuracy/Dodge in coda sul prossimo Pool Check di ${narratorName(target)}${own?'':' (-2: non è il proprio Digimon)'}${bolstered?' (incluso +2 dal Bolster del Tamer)':''}.` };
     }
     if(actionKey==='guard'){
       const sv = participantSV(actor);
@@ -1756,23 +1771,34 @@ let editingScene = false;
       const roll = rollPool(sv);
       if(roll.successes>=1){
         queuePendingRollBonus(target, sv, 'Aid', 'either');
+        actor.aidTargetThisTurn = target.id;
         return { ok:true, note: `Tiro di Aid ${sv}d6[${roll.dice.join(',')}]=${roll.successes} succ. → RIUSCITO: +${sv} Accuracy/Dodge in coda sul prossimo Pool Check di ${narratorName(target)}.` };
       }
       return { ok:true, note: `Tiro di Aid ${sv}d6[${roll.dice.join(',')}]=${roll.successes} succ. → NON RIUSCITO: nessun bonus accodato.` };
     }
-    if(actionKey==='bolster_tamer' || actionKey==='bolster_digimon'){
-      // BUGFIX (Rocco 2026-10-09: "il Bolster sembra non funzionare"): il bersaglio veniva preso dal
-      // menu BERSAGLIO degli Attacchi, che di solito punta a un NEMICO -- così il +bonus finiva sul
-      // prossimo Dodge del nemico invece che sul proprio tiro, oppure "nessun bersaglio scelto".
-      // Regola 9.06a: Bolster potenzia il PROPRIO Pool Check (Attacco/Dodge/Guard) o il bonus di un
-      // proprio Direct/Aid già dato. Quindi: va su se stesso, a meno che il bersaglio scelto sia un
-      // ALLEATO che ha già un bonus in coda (Direct/Aid appena dato) -- in quel caso lo potenzia.
-      const boostAlly = !!(target && target.id!==actor.id && target.side===actor.side && target.pendingRollBonus);
+    // Bolster (regola 9.06a): potenzia un'Azione CON Pool Check di chi lo usa. Prima il Bolster del
+    // Tamer finiva direttamente sul prossimo Attacco/Dodge del Digimon (il partecipante è la coppia
+    // Tamer+Digimon) e si sommava al Bolster del Digimon: un +2 extra a 1 sola Azione che il manuale
+    // non prevede (segnalato da Rocco 2026-11-03). Ora:
+    //  - Tamer: +2 al Direct che ha dato in questo turno (se il bonus è ancora in coda), altrimenti
+    //    "pronto" per il prossimo Direct/Reinforce/Reposition del Tamer entro fine turno.
+    //  - Digimon: +SV più alto nel Default Range al proprio prossimo Accuracy/Dodge (anche sopra a un
+    //    Guard o a un Direct ricevuto, che restano tiri suoi), oppure al bonus di un Aid che ha dato
+    //    lui stesso in questo turno, se quell'alleato è il bersaglio scelto.
+    if(actionKey==='bolster_tamer'){
+      const dTarget = actor.directTargetThisTurn ? (cachedCombat && cachedCombat.participants || []).find(x=>x.id===actor.directTargetThisTurn) : null;
+      if(dTarget && dTarget.pendingRollBonus && /Direct/.test(dTarget.pendingRollBonus.source||'') && !/Bolster \(Tamer\)/.test(dTarget.pendingRollBonus.source||'')){
+        queuePendingRollBonus(dTarget, 2, 'Bolster (Tamer)', dTarget.pendingRollBonus.stat);
+        return { ok:true, note: `+2 al Direct già dato a ${narratorName(dTarget)} — totale in coda: +${dTarget.pendingRollBonus.amount}.` };
+      }
+      actor.tamerBolsterReady = true;
+      return { ok:true, note: `+2 pronto per il prossimo Direct, Reinforce o Reposition del Tamer in questo turno (si perde se non usato).` };
+    }
+    if(actionKey==='bolster_digimon'){
+      const boostAlly = !!(target && target.id!==actor.id && target.id===actor.aidTargetThisTurn && target.pendingRollBonus && /Aid/.test(target.pendingRollBonus.source||''));
       const dest = boostAlly ? target : actor;
-      // Digimon: SV più alto nel Default Range (regola 9.06a, es. "resta Champion -> +3"), con SV =
-      // indice di Stage come in stanceModifiers (Rookie 2, Champion 3). Tamer e NPC: +2 fisso.
       let amount = 2;
-      if(actionKey==='bolster_digimon' && actor.isPC){
+      if(actor.isPC){
         const member = cachedRoster.find(m=>m.username===actor.username);
         if(member){
           const d = member.digimon;
@@ -1783,7 +1809,7 @@ let editingScene = false;
       const hadExisting = !!dest.pendingRollBonus;
       const existingStat = hadExisting ? dest.pendingRollBonus.stat : 'either';
       queuePendingRollBonus(dest, amount, 'Bolster', existingStat);
-      return { ok:true, note: `+${amount} dadi in coda sul prossimo Pool Check ${existingStat==='dodge'?'di Dodge':'(Accuracy/Dodge)'} di ${narratorName(dest)}${hadExisting?' (potenzia un bonus già in coda)':''} — totale in coda: +${dest.pendingRollBonus.amount}.` };
+      return { ok:true, note: `+${amount} dadi in coda sul prossimo Pool Check ${existingStat==='dodge'?'di Dodge':'(Accuracy/Dodge)'} di ${narratorName(dest)}${boostAlly?' (potenzia il suo Aid)':(hadExisting?' (in aggiunta al bonus già in coda)':'')} — totale in coda: +${dest.pendingRollBonus.amount}.` };
     }
     return { ok:false, note:'' };
   }
@@ -1814,7 +1840,8 @@ let editingScene = false;
     // `code` è un parametro di questa funzione (già disponibile in entrambi i call site) e il ramo PC
     // persiste subito la modifica, esattamente come fa il resto del codice.
     if(actionKey==='reinforce1' || actionKey==='reinforce2'){
-      const pool = actionKey==='reinforce1' ? ownerAttr(actor,'body') : highestAttribute(actor);
+      const bolstered = !!actor.tamerBolsterReady; actor.tamerBolsterReady = false;
+      const pool = (actionKey==='reinforce1' ? ownerAttr(actor,'body') : highestAttribute(actor)) + (bolstered?2:0);
       const roll = rollPool(pool);
       // FIX (segnalato dall'utente: "i pf temporanei si accumulano a ogni Reinforce?"): il
       // regolamento dice esplicitamente "fino al prossimo turno del Tamer" -- una scadenza che qui
@@ -1843,7 +1870,8 @@ let editingScene = false;
     // tramite gli strumenti già esistenti (frecce linea/Avvicina/Allontana/Imposta zona) -- vedi
     // trySpendAction più sopra, che consuma p.repositionFree al posto di una vera Azione Digimon.
     if(actionKey==='reposition1' || actionKey==='reposition2'){
-      const pool = actionKey==='reposition1' ? ownerAttr(actor,'agility') : highestAttribute(actor);
+      const bolstered = !!actor.tamerBolsterReady; actor.tamerBolsterReady = false;
+      const pool = (actionKey==='reposition1' ? ownerAttr(actor,'agility') : highestAttribute(actor)) + (bolstered?2:0);
       const roll = rollPool(pool);
       if(roll.successes>=1){
         actor.repositionFree = Number(actor.repositionFree||0) + 1;
@@ -1929,6 +1957,11 @@ let editingScene = false;
     finishing.attackedThisRoundTamer = false;
     // Reinforce (9.06b, "Una volta a turno") -- vedi flag dedicato in trySpendAction.
     finishing.usedReinforceThisTurn = false;
+    // Limiti "una volta per turno" e stato del Bolster (vedi trySpendAction/applySupportActionEffect).
+    finishing.usedOnceThisTurn = {};
+    finishing.tamerBolsterReady = false;
+    finishing.directTargetThisTurn = null;
+    finishing.aidTargetThisTurn = null;
     // Vedi trySpendAction: azzera il conto alla rovescia del "Passa turno automatico dopo 5
     // minuti" -- chi lascia il turno riparte con Azioni piene, quindi non è più "esaurito".
     finishing.actionsExhaustedAt = null;
