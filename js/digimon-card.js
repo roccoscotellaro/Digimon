@@ -366,8 +366,49 @@
       </div>
     `;
   }
-  // Pannello "Sblocca evoluzione…" aperto/chiuso per scheda (containerId) — vedi renderDigimonCard.
-  const evoUnlockPanelOpen = {};
+  // Finestra di conferma per sblocco/blocco dell'evoluzione (richiesta Rocco 2026-11-03: "prima di
+  // sbloccarlo e mandare il messaggio in chat lo chiedesse e io possa cambiarlo"). Mostra cosa sta per
+  // succedere, il testo dell'avviso già pronto ma modificabile e la chat di destinazione; niente
+  // viene salvato né inviato finché non si preme Conferma. opts: { title, evoOptions?, evoSelected?,
+  // makeText(evo), chats:[{value,label}], chatDefault, confirmLabel }. Risolve {evo,text,chat} o null.
+  function evoConfirmModal(opts){
+    return new Promise(resolve=>{
+      const old = document.getElementById('evo-confirm-modal'); if(old) old.remove();
+      const modal = document.createElement('div');
+      modal.id = 'evo-confirm-modal';
+      modal.className = 'enc-modal-backdrop';
+      const evos = opts.evoOptions || null;
+      modal.innerHTML = `<div class="enc-modal-card hud-frame" style="max-width:520px;">
+        <div class="section-title" style="margin-top:0;">${escapeHTML(opts.title)}</div>
+        ${evos ? `<div class="field" style="margin-bottom:8px;"><label>Quale evoluzione</label>
+          <select data-evo-c-pick>${evos.map(n=>`<option value="${escapeAttr(n)}" ${n===opts.evoSelected?'selected':''}>${escapeHTML(n)}</option>`).join('')}</select></div>` : ''}
+        <div class="field" style="margin-bottom:8px;"><label>Messaggio in chat — puoi modificarlo</label>
+          <textarea data-evo-c-text rows="4" style="width:100%;"></textarea></div>
+        <div class="field" style="margin-bottom:10px;"><label>Dove mandarlo</label>
+          <select data-evo-c-chat>${opts.chats.map(c=>`<option value="${escapeAttr(c.value)}" ${c.value===opts.chatDefault?'selected':''}>${escapeHTML(c.label)}</option>`).join('')}</select></div>
+        <div class="row" style="gap:8px;">
+          <button type="button" class="btn amber" data-evo-c-ok style="flex:1;">${escapeHTML(opts.confirmLabel||'Conferma')}</button>
+          <button type="button" class="btn ghost" data-evo-c-cancel style="flex:1;">Annulla</button>
+        </div>
+      </div>`;
+      document.body.appendChild(modal);
+      const pick = modal.querySelector('[data-evo-c-pick]');
+      const text = modal.querySelector('[data-evo-c-text]');
+      const chat = modal.querySelector('[data-evo-c-chat]');
+      let edited = false;
+      text.addEventListener('input', ()=>{ edited = true; });
+      const fill = ()=>{ text.value = opts.makeText(pick ? pick.value : ''); };
+      fill();
+      // Cambiando evoluzione il testo si aggiorna, ma solo se non l'hai già riscritto a mano.
+      if(pick) pick.onchange = ()=>{ if(!edited || window.confirm('Hai modificato il messaggio: vuoi rigenerarlo per la nuova evoluzione?')){ fill(); edited = false; } };
+      const done = (v)=>{ modal.remove(); resolve(v); };
+      modal.onclick = (e)=>{
+        if(e.target===modal || e.target.closest('[data-evo-c-cancel]')) return done(null);
+        if(e.target.closest('[data-evo-c-ok]')) return done({ evo: pick ? pick.value : '', text: text.value.trim(), chat: chat.value });
+      };
+      setTimeout(()=>{ try{ text.focus(); text.setSelectionRange(text.value.length, text.value.length); }catch(e){} }, 30);
+    });
+  }
 
   function applyStageChange(d, oldStage, newStage){
     if(oldStage === newStage) return;
@@ -816,46 +857,24 @@
           // Pannello unico "Evoluzione" del Master (richiesta Rocco 2026-11-03: il vecchio bottone
           // 🔓/🔒 partiva già su "Sbloccata", un clic la BLOCCAVA, mandava sempre lo stesso testo e non
           // diceva quale evoluzione). Ora: elenco delle evoluzioni del Digidex con lo stato di
-          // ciascuna; "🧬 Sblocca…" apre la scelta di QUALE evoluzione, il testo dell'avviso
-          // (modificabile, precompilato dal modello in Messaggi Automatici) e la chat; il blocco dei
-          // controlli di evoluzione è un bottone separato, con conferma.
+          // ciascuna; "🧬 Sblocca…" e "🔒 Blocca" aprono evoConfirmModal: scelta di QUALE evoluzione,
+          // anteprima dell'avviso modificabile (precompilato dal modello in Messaggi Automatici) e
+          // chat; nulla viene salvato né inviato prima della conferma.
           const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===(d.name||'').toLowerCase());
           const options = dexEntry && Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean).map(evoName).filter(Boolean) : [];
           const unlocked = d.unlockedEvolutions||[];
-          const lockedOpts = options.filter(n=>!unlocked.includes(n));
-          const open = evoUnlockPanelOpen[containerId];
           return `
           <div class="flex-between" style="margin-bottom:6px;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="muted">Evoluzione — controlli per il giocatore: ${d.evolveUnlocked ? '<b style="color:var(--cyan);">attivi</b>' : '<b style="color:var(--danger);">bloccati</b>'}</span>
             <span style="display:flex;gap:6px;">
-              <button class="btn small" id="btn-evo-unlock-open-${containerId}" ${open?'style="border-color:var(--cyan);color:var(--cyan);"':''}>🧬 Sblocca evoluzione…</button>
+              <button class="btn small" id="btn-evo-unlock-open-${containerId}">🧬 Sblocca evoluzione…</button>
               ${d.evolveUnlocked ? `<button class="btn ghost small" id="btn-evo-lock-${containerId}" style="color:var(--danger);border-color:var(--danger);" title="Il giocatore non vedrà più i controlli per evolvere finché non sblocchi di nuovo">🔒 Blocca</button>` : ''}
             </span>
           </div>
           ${options.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">${options.map(n=>{
             const on = unlocked.includes(n);
             return `<button class="btn ghost small" data-evo-line-toggle="${escapeAttr(n)}" data-evo-line-container="${containerId}" title="${on?'Sbloccata: clic per toglierla dalle scelte del giocatore':'Non sbloccata: usa “Sblocca evoluzione…” per sbloccarla con l\'avviso'}" style="${on?'color:var(--cyan);border-color:var(--cyan-dim);':'opacity:0.6;'}">${on?'✅':'🔒'} ${escapeHTML(n)}</button>`;
-          }).join('')}</div>` : `<div class="sub" style="margin-bottom:6px;">Nel Digidex non risultano evoluzioni per ${escapeHTML(d.name||'questo Digimon')}: con “Sblocca evoluzione…” attivi comunque i controlli per evolvere.</div>`}
-          ${open ? `
-          <div class="hud-frame" style="padding:10px;margin-bottom:8px;border-color:var(--cyan-dim);">
-            ${options.length ? `<div class="field" style="margin-bottom:6px;"><label>Quale evoluzione sbloccare</label>
-              <select id="evo-unlock-pick-${containerId}">
-                ${lockedOpts.map(n=>`<option value="${escapeAttr(n)}">${escapeHTML(n)}</option>`).join('')}
-                ${lockedOpts.length ? '' : '<option value="">(tutte già sbloccate — riattiva solo i controlli)</option>'}
-              </select></div>` : ''}
-            <div class="field" style="margin-bottom:6px;"><label>Avviso in chat (modificabile)</label>
-              <textarea id="evo-unlock-text-${containerId}" rows="2" style="width:100%;"></textarea></div>
-            <div class="row" style="align-items:center;gap:6px;">
-              <select id="evo-unlock-chat-${containerId}" style="flex:1;font-size:11px;">
-                <option value="general">📣 Chat Generale</option>
-                <option value="private">✉️ Privata con ${escapeHTML(displayName(me))}</option>
-                ${(cachedSubgroups||[]).filter(g=>Array.isArray(g.members) && g.members.includes(me.username)).map(g=>`<option value="sub:${escapeAttr(g.id)}">👥 ${escapeHTML(g.name)}</option>`).join('')}
-                <option value="none">🤫 Nessun avviso</option>
-              </select>
-              <button class="btn amber small" id="btn-evo-unlock-confirm-${containerId}">✨ Sblocca</button>
-              <button class="btn ghost small" id="btn-evo-unlock-cancel-${containerId}">Annulla</button>
-            </div>
-          </div>` : ''}`;
+          }).join('')}</div>` : `<div class="sub" style="margin-bottom:6px;">Nel Digidex non risultano evoluzioni per ${escapeHTML(d.name||'questo Digimon')}: con “Sblocca evoluzione…” attivi comunque i controlli per evolvere.</div>`}`;
         })() : ''}
         ${!isMasterCtx && !d.evolveUnlocked ? `
         <div class="sub" style="margin-bottom:6px;">Il Master non ha ancora sbloccato l'Evoluzione (né normale né forzata) — quando lo farà, qui compariranno i controlli per evolvere.</div>
@@ -1164,41 +1183,50 @@
         return (t!=null && t!=='') ? t : fallback;
       };
       const evoVars = (evo)=>({ digimon: me.digimon.name||'Il Digimon', tamer: displayName(me), evo: evo||'' });
-      const openBtn = document.getElementById('btn-evo-unlock-open-'+containerId);
-      if(openBtn) openBtn.onclick = ()=>{ evoUnlockPanelOpen[containerId] = !evoUnlockPanelOpen[containerId]; renderDigimonCard(me, containerId, onChanged, renderTamerCardFn); };
-      const pickSel = document.getElementById('evo-unlock-pick-'+containerId);
-      const textEl = document.getElementById('evo-unlock-text-'+containerId);
-      const fillText = ()=>{
-        if(!textEl) return;
-        const evo = pickSel ? pickSel.value : '';
-        textEl.value = evoMsg('evo_line_unlock', `✨ ${me.digimon.name||'Il Digimon'} di ${displayName(me)} sente una strana energia provenire dall'interno... qualcosa sta cambiando${evo?`: ${evo}`:''}!`, evoVars(evo));
-      };
-      if(textEl && !textEl.value) fillText();
-      if(pickSel) pickSel.onchange = fillText;
-      const cancelBtn = document.getElementById('btn-evo-unlock-cancel-'+containerId);
-      if(cancelBtn) cancelBtn.onclick = ()=>{ evoUnlockPanelOpen[containerId] = false; renderDigimonCard(me, containerId, onChanged, renderTamerCardFn); };
-      const confirmBtn = document.getElementById('btn-evo-unlock-confirm-'+containerId);
-      if(confirmBtn) confirmBtn.onclick = async ()=>{
-        confirmBtn.disabled = true;
-        const evo = pickSel ? pickSel.value : '';
+      const evoChats = (withNone)=>[
+        { value:'general', label:'📣 Chat Generale' },
+        { value:'private', label:'✉️ Privata con '+displayName(me) },
+        ...((cachedSubgroups||[]).filter(g=>Array.isArray(g.members) && g.members.includes(me.username)).map(g=>({ value:'sub:'+g.id, label:'👥 '+g.name }))),
+        ...(withNone ? [{ value:'none', label:'🤫 Nessun avviso' }] : [])
+      ];
+      const unlockText = (evo)=> evoMsg('evo_line_unlock', `✨ ${me.digimon.name||'Il Digimon'} di ${displayName(me)} sente una strana energia provenire dall'interno... qualcosa sta cambiando${evo?`: ${evo}`:''}!`, evoVars(evo));
+      const openUnlock = async (preselect)=>{
+        const dexEntry = cachedDex.find(e=>(e.name||'').toLowerCase()===(me.digimon.name||'').toLowerCase());
+        const all = dexEntry && Array.isArray(dexEntry.evolutions) ? dexEntry.evolutions.filter(Boolean).map(evoName).filter(Boolean) : [];
+        const already = me.digimon.unlockedEvolutions||[];
+        const choices = all.filter(n=>!already.includes(n));
+        const r = await evoConfirmModal({
+          title: `🧬 Sbloccare un'evoluzione per ${me.digimon.name||'il Digimon'} di ${displayName(me)}?`,
+          evoOptions: choices.length ? choices : null,
+          evoSelected: preselect || choices[0],
+          makeText: unlockText,
+          chats: evoChats(true), chatDefault: 'private',
+          confirmLabel: '✨ Sblocca e invia'
+        });
+        if(!r) return;
         if(!Array.isArray(me.digimon.unlockedEvolutions)) me.digimon.unlockedEvolutions = [];
-        if(evo && !me.digimon.unlockedEvolutions.includes(evo)) me.digimon.unlockedEvolutions.push(evo);
+        if(r.evo && !me.digimon.unlockedEvolutions.includes(r.evo)) me.digimon.unlockedEvolutions.push(r.evo);
         me.digimon.evolveUnlocked = true;
         const ok = await saveMember(session.code, me);
-        if(!ok){ confirmBtn.disabled = false; return; }
-        const chatSel = document.getElementById('evo-unlock-chat-'+containerId);
-        await evoSendNotice((textEl && textEl.value.trim()) || '', chatSel ? chatSel.value : 'general', true);
-        evoUnlockPanelOpen[containerId] = false;
+        if(!ok) return;
+        await evoSendNotice(r.text, r.chat, true);
         renderDigimonCard(me, containerId, onChanged, renderTamerCardFn);
         if(onChanged) onChanged();
       };
+      const openBtn = document.getElementById('btn-evo-unlock-open-'+containerId);
+      if(openBtn) openBtn.onclick = ()=> openUnlock();
       const lockBtn = document.getElementById('btn-evo-lock-'+containerId);
       if(lockBtn) lockBtn.onclick = async ()=>{
-        if(!window.confirm(`Bloccare i controlli di evoluzione per ${displayName(me)}? Le evoluzioni già sbloccate restano nell'elenco.`)) return;
+        const r = await evoConfirmModal({
+          title: `🔒 Bloccare i controlli di evoluzione per ${displayName(me)}? (le evoluzioni già sbloccate restano nell'elenco)`,
+          makeText: ()=> evoMsg('evo_line_lock', `${me.digimon.name||'Il Digimon'} di ${displayName(me)} non sente più quella strana energia.`, evoVars('')),
+          chats: evoChats(true), chatDefault: 'private',
+          confirmLabel: '🔒 Blocca'
+        });
+        if(!r) return;
         me.digimon.evolveUnlocked = false;
         await saveMember(session.code, me);
-        const chatSel = document.getElementById('evo-unlock-chat-'+containerId);
-        await evoSendNotice(evoMsg('evo_line_lock', `${me.digimon.name||'Il Digimon'} di ${displayName(me)} non sente più quella strana energia.`, evoVars('')), chatSel ? chatSel.value : 'private', false);
+        await evoSendNotice(r.text, r.chat, false);
         renderDigimonCard(me, containerId, onChanged, renderTamerCardFn);
         if(onChanged) onChanged();
       };
@@ -1215,10 +1243,7 @@
             renderDigimonCard(me, containerId, onChanged, renderTamerCardFn);
             if(onChanged) onChanged();
           } else {
-            evoUnlockPanelOpen[containerId] = true;
-            renderDigimonCard(me, containerId, onChanged, renderTamerCardFn);
-            const sel = document.getElementById('evo-unlock-pick-'+containerId);
-            if(sel){ sel.value = name; sel.dispatchEvent(new Event('change')); }
+            openUnlock(name);
           }
         };
       });
