@@ -609,6 +609,18 @@
   .master-subnav-btn{background:var(--panel-2);border:1px solid var(--line);color:var(--text-mute);border-radius:16px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent;}
   .master-subnav-btn:hover{border-color:var(--cyan-dim);color:var(--text);}
   .master-subnav-btn.active{border-color:var(--cyan);color:var(--cyan);background:rgba(53,232,201,0.08);}
+  .turnbar{display:flex;align-items:flex-end;gap:6px;overflow-x:auto;padding:4px 2px 8px;margin-bottom:6px;scrollbar-width:thin;}
+  .turnbar-item{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);cursor:pointer;color:var(--text);max-width:76px;}
+  .turnbar-item.is-current{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan),0 0 12px rgba(53,232,201,.25);}
+  .turnbar-item.is-focus:not(.is-current){border-color:var(--amber);box-shadow:0 0 0 1px var(--amber);}
+  .turnbar-portrait{position:relative;display:block;border-radius:6px;overflow:hidden;border:2px solid var(--side);}
+  .turnbar-badge{position:absolute;right:-2px;top:-2px;font-size:12px;}
+  .turnbar-hp{display:block;width:100%;height:4px;border-radius:2px;background:rgba(255,255,255,.08);overflow:hidden;}
+  .turnbar-hp > span{display:block;height:100%;}
+  .turnbar-name{font-size:9px;max-width:68px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--side);}
+  .turnbar-item.is-current .turnbar-name{font-size:11px;font-weight:bold;}
+  .turnbar-acts{font-size:9px;color:var(--cyan);letter-spacing:1px;}
+  .turnbar-sep{flex:0 0 auto;align-self:center;color:var(--text-mute);font-size:14px;padding:0 2px;opacity:.7;}
   .cm-sec{margin:6px 0;border:1px solid var(--line);border-radius:6px;background:rgba(255,255,255,0.015);}
   .cm-sec > summary{cursor:pointer;padding:6px 8px;font-size:11px;letter-spacing:.04em;color:var(--text-mute);list-style:none;user-select:none;}
   .cm-sec > summary::-webkit-details-marker{display:none;}
@@ -978,7 +990,13 @@ let editingScene = false;
     if(data && typeof sanitizeCombatOrder==='function') sanitizeCombatOrder(data);
     combatActionPending = true;
     try {
-      return await apiPost('/api/state', { resource:'combat', code, data });
+      const r = await apiPost('/api/state', { resource:'combat', code, data });
+      // Ferite dei Nemici presi dalla Scena -> Incontri della Scena (vedi syncSceneHpFromCombat in
+      // js/scene-encounters.js). Solo il Master salva la Scena.
+      if(session && session.role==='master' && typeof syncSceneHpFromCombat==='function'){
+        try{ await syncSceneHpFromCombat(code); }catch(e){ console.warn('sync HP scena', e); }
+      }
+      return r;
     } finally {
       combatActionPending = false;
     }
@@ -4240,6 +4258,11 @@ let editingScene = false;
       } else {
         cachedCombat = freshCombat;
       }
+      // Danni fatti dai giocatori (dal loro client) ai Nemici della Scena: il Master li riporta
+      // sugli Incontri al primo giro di polling.
+      if(session.role==='master' && cachedCombat && cachedCombat.active && typeof syncSceneHpFromCombat==='function'){
+        try{ await syncSceneHpFromCombat(session.code); }catch(e){ console.warn('sync HP scena', e); }
+      }
     }
     // Passa turno automatico dopo 5 minuti (richiesta utente): solo per un PC (mai per un Nemico
     // creato dal Master) che ha esaurito ENTRAMBI i pool di Azioni -- vedi trySpendAction, che
@@ -4958,13 +4981,11 @@ let editingScene = false;
           <div class="mobile-section master-pane" data-mobile-tab="scena">
           <div class="hud-frame card">
             <div class="section-title">Composizione Scena</div>
-            <div style="margin-bottom:12px;">
-              <div style="font-size:10px;text-transform:uppercase;color:var(--text-mute);letter-spacing:0.06em;margin-bottom:6px;">🕐 Orologio di Gioco</div>
-              ${gameClockMasterPanelHTML()}
-            </div>
+            ${cmSec('scene-clock', '🕐 Orologio di gioco <span class="muted">(ora, canali, reset)</span>', gameClockMasterPanelHTML(), false)}
             <div id="scene-live">${sceneHTML(cachedScene)}</div>
             <div id="dungeon-live"></div>
-            <div class="field" style="margin-top:10px;"><label>Titolo Scena</label><input type="text" id="scene-title" value="${escapeAttr(cachedScene.title)}" placeholder="es. Foresta di File" /></div>
+            ${cmSec('scene-media', `🎵 Titolo, sfondo e musica <span class="muted">— ${escapeHTML(cachedScene.title||'senza titolo')}</span>`, `
+            <div class="field"><label>Titolo Scena</label><input type="text" id="scene-title" value="${escapeAttr(cachedScene.title)}" placeholder="es. Foresta di File" /></div>
             <div class="field"><label>URL Immagine di Sfondo</label><input type="text" id="scene-bg" value="${escapeAttr(cachedScene.background)}" placeholder="https://..." /></div>
             <div class="field"><label>URL Musica (mp3 diretto)</label><input type="text" id="scene-music" value="${escapeAttr(cachedScene.music)}" placeholder="https://.../traccia.mp3" /></div>
             <div class="muted" style="margin-top:-6px;margin-bottom:8px;font-size:11px;">Se vuota, parte in automatico la musica del Settore attuale (o della Macroscena, se il Settore non ne ha una) — impostabili nella Mappa (🗺️ map.html). Se compilata, questa vince sempre.</div>
@@ -4980,6 +5001,7 @@ let editingScene = false;
               <button type="button" class="btn ghost small" id="scene-combat-audio-upload-btn">🗡️ Carica Traccia Combattimento (mp3, max 3MB)</button>
               <span class="muted" id="scene-combat-audio-upload-status" style="font-size:11px;"></span>
             </div>
+            `, false)}
             <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;margin-top:10px;">Luoghi nel Settore attuale</div>
             <div id="scene-luoghi-live" style="margin-top:6px;">${sceneCurrentSectorLuoghiHTML()}</div>
             <div class="divider"></div>
@@ -4997,9 +5019,8 @@ let editingScene = false;
             <div class="divider"></div>
             <div class="row">
               <button class="btn solid" id="btn-save-scene" style="flex:2;">Aggiorna Scena</button>
-              <button class="btn ghost" id="btn-new-scene" style="flex:1;">🆕 Nuova Scena (chat pulita)</button>
+              <button class="btn ghost" id="btn-new-scene" style="flex:1;" title="&quot;Nuova Scena&quot; azzera Titolo/Sfondo/Musica/Incontri/Settori e apre una chat vuota per questa Scena — la chat delle Scene precedenti resta salvata ma non più visibile qui.">🆕 Nuova Scena (chat pulita)</button>
             </div>
-            <div class="muted" style="margin-top:4px;font-size:11px;">"Nuova Scena" azzera Titolo/Sfondo/Musica/Incontri/Settori e apre una chat vuota per questa Scena — la chat delle Scene precedenti resta salvata ma non più visibile qui.</div>
             <div class="muted" id="scene-status" style="margin-top:6px;"></div>
             ${cachedScene.music ? `<audio controls src="${escapeAttr(cachedScene.music)}" style="width:100%;margin-top:10px;"></audio>` : ''}
             ${sceneAudioWidgetHTML()}
@@ -6287,17 +6308,61 @@ let editingScene = false;
   try{ combatSecOpen = JSON.parse(localStorage.getItem(COMBAT_SEC_KEY)||'{}') || {}; }catch(e){ combatSecOpen = {}; }
   // Partecipanti nell'ordine dei turni (chi non è ancora nell'ordine va in fondo): la lista della
   // Gestione Combattimento fa ora anche da elenco dei turni (unificate il 2026-11-04).
+  // Un solo ascoltatore per tutta la pagina: vale anche per le sezioni a scomparsa della Scena.
+  bindCombatSections(document);
   function combatParticipantsInTurnOrder(combat){
     const order = combat.order || [];
     const pos = (p)=>{ const i = order.indexOf(p.id); return i<0 ? 1e6 : i; };
     return (combat.participants||[]).slice().sort((a,b)=> pos(a)-pos(b));
+  }
+  // ===== Barra dei turni "alla BG3" (richiesta Rocco 2026-11-04) =====
+  // In cima alla Gestione Combattimento: i ritratti di tutti i partecipanti in ordine di turno, a
+  // partire da chi è di turno (più grande, a sinistra); chi ha già agito in questo round "scivola
+  // in fondo" dopo il separatore ↻ (agirà nel prossimo round). Sotto la barra si vede UN SOLO
+  // partecipante per esteso: di default chi è di turno, oppure quello toccato nella barra (per
+  // correggere qualcosa a un altro). Al cambio di turno torna da solo su chi è di turno.
+  let combatFocus = { key:null, id:null };
+  function combatFocusedParticipantId(combat){
+    const key = (combat.round||1)+':'+(combat.currentIndex||0)+':'+((combat.order||[])[combat.currentIndex||0]||'');
+    if(combatFocus.key!==key) combatFocus = { key, id:null };
+    if(combatFocus.id && (combat.participants||[]).some(p=>p.id===combatFocus.id)) return combatFocus.id;
+    const cur = currentTurnParticipant(combat);
+    return cur ? cur.id : ((combat.participants||[])[0]||{}).id;
+  }
+  function combatTurnBarHTML(combat){
+    const list = combatParticipantsInTurnOrder(combat);
+    if(!list.length) return '';
+    const cur = currentTurnParticipant(combat);
+    const curIdx = cur ? Math.max(0, list.findIndex(p=>p.id===cur.id)) : 0;
+    const rotated = list.slice(curIdx).concat(list.slice(0, curIdx));
+    const wrapAt = list.length - curIdx; // da qui in poi: hanno già agito, toccherà al prossimo round
+    const focusId = combatFocusedParticipantId(combat);
+    const item = (p, isCur)=>{
+      const w = getParticipantWounds(p);
+      const pct = Math.max(0, Math.min(100, Math.round(100*(Number(w.current)||0)/Math.max(1, Number(w.max)||1))));
+      const color = participantSideColor(p);
+      const defeated = isParticipantDefeated(p);
+      const pending = p.isPC ? !!((cachedRoster.find(m=>m.username===p.username)||{digimon:{}}).digimon.defeatPending) : (!!p.defeated && p.defeatPending !== false);
+      const size = isCur ? 58 : 40;
+      const acts = p.actions===undefined?2:p.actions, tActs = p.tamerActions===undefined?2:p.tamerActions;
+      const dup = duplicateNameSuffix(combat, p, true);
+      return `<button type="button" class="turnbar-item${isCur?' is-current':''}${p.id===focusId?' is-focus':''}" data-turnbar-focus="${p.id}" title="${escapeAttr(p.name+dup)} — Iniz. ${p.initiative} — ${w.current}/${w.max} Ferite${isCur?' — DI TURNO':''}" style="--side:${color};${defeated?'filter:grayscale(1);opacity:.55;':''}">
+        <span class="turnbar-portrait" style="width:${size}px;height:${size}px;">${portraitHTML(resolveParticipantImage(p), p.name, 'sm', 'width:100%;height:100%;object-fit:contain;background:transparent;')}${pending?'<span class="turnbar-badge">🏳️</span>':''}</span>
+        <span class="turnbar-hp"><span style="width:${pct}%;background:${pct<=25?'var(--danger)':color};"></span></span>
+        <span class="turnbar-name">${escapeHTML(p.name)}${dup?`<b style="color:var(--amber);">${escapeHTML(dup)}</b>`:''}</span>
+        ${isCur ? `<span class="turnbar-acts">${'●'.repeat(acts)}${'○'.repeat(Math.max(0,2-acts))} <span style="color:var(--amber);">${'●'.repeat(tActs)}${'○'.repeat(Math.max(0,2-tActs))}</span></span>` : ''}
+      </button>`;
+    };
+    return `<div class="turnbar">${rotated.map((p,i)=> (i===wrapAt && i>0 ? '<span class="turnbar-sep" title="Hanno già agito: toccherà a loro nel prossimo round">↻</span>' : '') + item(p, i===0 && !!cur)).join('')}</div>
+      ${focusId && cur && focusId!==cur.id ? `<div class="muted" style="font-size:11px;margin:-2px 0 6px;">Stai guardando <b>${escapeHTML((combat.participants.find(x=>x.id===focusId)||{}).name||'')}</b> — <a href="#" data-turnbar-focus="${cur.id}" style="color:var(--cyan);">torna a chi è di turno</a></div>` : ''}`;
   }
   function cmSec(key, summary, inner, defaultOpen){
     const open = (key in combatSecOpen) ? !!combatSecOpen[key] : !!defaultOpen;
     return `<details class="cm-sec" data-cm-sec="${key}" ${open?'open':''}><summary>${summary}</summary><div class="cm-sec-body">${inner}</div></details>`;
   }
   function bindCombatSections(root){
-    if(!root || root.__cmSecBound) return;
+    root = root || document;
+    if(root.__cmSecBound) return;
     root.__cmSecBound = true;
     // 'toggle' non risale nel DOM: ascoltato in fase di cattura sul contenitore.
     root.addEventListener('toggle', (e)=>{
@@ -6479,15 +6544,17 @@ let editingScene = false;
         <select id="combat-startzone-enemy-live" style="flex:1;">${ZONES.map(z=>`<option value="${z}" ${(combat.startZoneEnemy||'Molto Lungo')===z?'selected':''}>${zoneLabel(z)}</option>`).join('')}</select>
       </div>
       `, false)}
-      <div class="muted" style="font-size:10px;letter-spacing:.08em;margin-bottom:4px;">PARTECIPANTI — IN ORDINE DI TURNO</div>
+      <div class="muted" style="font-size:10px;letter-spacing:.08em;margin-bottom:4px;">ORDINE DI TURNO — tocca un ritratto per gestirlo</div>
       <div id="combat-participants-list">
+        ${combatTurnBarHTML(combat)}
         ${combat.participants.length===0 ? '<div class="muted" style="margin-bottom:8px;">Nessun partecipante ancora aggiunto.</div>' : combatParticipantsInTurnOrder(combat).map((p,i)=>{
           const w = getParticipantWounds(p);
           const acts = p.actions===undefined?2:p.actions;
           const tamerActs = p.tamerActions===undefined?2:p.tamerActions;
           const isCurrentTurn = !!(combat.order && combat.order.length && combat.order[combat.currentIndex]===p.id);
           const defeated = isParticipantDefeated(p);
-          const expanded = isCurrentTurn || combatExpandedIds.has(p.id);
+          // Barra turni: per esteso solo il partecipante "in primo piano" (vedi combatTurnBarHTML).
+          const expanded = p.id===combatFocusedParticipantId(combat);
           // FEATURE (richiesta utente sulla Sconfitta, vedi applyDefeatIfNeeded): finché
           // member.digimon.defeatPending resta true, la Sconfitta di questo PC non è ancora stata
           // risolta -- pCanRegress/pDefaultStage servono solo a mostrare il suggerimento da regola
@@ -6547,7 +6614,7 @@ let editingScene = false;
                 ${defeated ? `<button class="btn ghost small" data-part-reenter="${p.id}" title="Rientra a proprio rischio (a discrezione del Master)">↩️</button>` : ''}
                 ${p.isPC ? `<button class="btn ghost small" data-part-evolock="${p.id}" title="${p.evolutionLocked?'Evoluzioni BLOCCATE per questo combattimento — clicca per sbloccarle':'Clicca per bloccare le evoluzioni di questo giocatore per questo combattimento'}" style="${p.evolutionLocked?'color:var(--danger);border-color:var(--danger);':''}">${p.evolutionLocked?'🔒':'🧬'}</button>` : ''}
                 ${p.isPC ? `<button class="btn ghost small" data-part-sync="${p.id}" title="Se questo Digimon si è evoluto/regredito durante questo combattimento e il nome/immagine qui sono rimasti quelli vecchi (può succedere se l'evoluzione è avvenuta prima di un aggiornamento del sito), clicca per risincronizzarli subito con la Scheda attuale.">🔄</button>` : ''}
-                ${isCurrentTurn ? '' : `<button class="btn ghost small" data-part-toggle="${p.id}">${expanded?'▲':'▼'}</button>`}
+
                 <button class="btn ghost small" data-part-remove="${p.id}">✕</button>
               </span>
             </div>`;
@@ -6583,6 +6650,8 @@ let editingScene = false;
             ${p.clashWith ? `<div class="muted" style="margin-top:3px;font-size:11px;">🤼 In Clash con ${escapeHTML((combat.participants.find(o=>o.id===p.clashWith)||{}).name||'?')}</div>` : ''}`;
           const rowFrame = `margin-bottom:6px;padding:6px 8px;border-radius:6px;border:1px solid ${isCurrentTurn?'var(--cyan)':'var(--line)'};border-left:3px solid ${p.side==='ally'?'var(--cyan)':'var(--danger)'};background:${isCurrentTurn?'rgba(53,232,201,0.08)':'var(--panel-2)'};${defeated?'opacity:.6;':''}`;
           if(!expanded){
+            // Gli altri stanno nella barra dei turni; resta in vista solo chi ha una Sconfitta da risolvere.
+            if(!pDefeatPending) return '';
             return `<div style="${rowFrame}">${header}${statusLine}${defeatResolutionHTML}${(p.effects&&p.effects.length)?`<div style="margin-top:4px;">${effectTagsHTML(p)}</div>`:''}</div>`;
           }
           return `
@@ -6801,7 +6870,6 @@ let editingScene = false;
       <div class="muted" id="combat-mgr-status" style="margin-top:6px;"></div>
     `;
 
-    bindCombatSections(cardEl);
     const persistAndRefresh = async ()=>{
       await saveCombat(code, cachedCombat);
       renderCombatManager(code, players);
@@ -7406,6 +7474,14 @@ let editingScene = false;
         const id = btn.getAttribute('data-part-remove');
         combat.participants = combat.participants.filter(x=>x.id!==id);
         await persistAndRefresh();
+      };
+    });
+    cardEl.querySelectorAll('[data-turnbar-focus]').forEach(btn=>{
+      btn.onclick = (ev)=>{
+        ev.preventDefault();
+        combatFocusedParticipantId(combat);
+        combatFocus.id = btn.getAttribute('data-turnbar-focus');
+        renderCombatManager(code, players);
       };
     });
     cardEl.querySelectorAll('[data-part-toggle]').forEach(btn=>{

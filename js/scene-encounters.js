@@ -1054,7 +1054,44 @@
     bindEncountersInnerActions(code, username, onChanged);
   }
 
+  // ===== HP Incontri <-> Combattimento (richiesta Rocco 2026-11-04) =====
+  // Un Nemico aggiunto al combattimento dalla Scena ("Digimon presenti in scena") è un partecipante
+  // con sourceEncounterId: le sue Ferite in battaglia ora si riportano da sole sull'Incontro della
+  // Scena (e viceversa, se il Master le corregge con −/+ dalla Scena durante il fight), così le due
+  // barre HP non vanno più fuori sincrono.
+  let __encLiveBind = null;
+  async function syncSceneHpFromCombat(code){
+    if(typeof cachedCombat==='undefined' || !cachedCombat || !cachedScene || !Array.isArray(cachedScene.encounters)) return false;
+    let changed = false;
+    (cachedCombat.participants||[]).forEach(p=>{
+      if(!p || p.isPC || !p.sourceEncounterId) return;
+      const e = cachedScene.encounters.find(x=>x.id===p.sourceEncounterId);
+      if(!e) return;
+      const cur = Math.max(0, Math.min(encounterMaxWounds(e), Number(p.currentWounds)||0));
+      if(encounterCurrentWounds(e)!==cur){ e.currentWounds = cur; changed = true; }
+    });
+    if(!changed) return false;
+    await saveScene(code, cachedScene);
+    const live = document.getElementById('encounters-live');
+    if(live && __encLiveBind && !live.contains(document.activeElement)){
+      live.innerHTML = encountersEditableHTML(cachedScene.encounters);
+      bindEncountersInnerActions(__encLiveBind.code, __encLiveBind.username, __encLiveBind.onChanged);
+    }
+    return true;
+  }
+  async function syncEncounterHpToCombat(code, e){
+    if(typeof cachedCombat==='undefined' || !cachedCombat || !cachedCombat.active || !e) return;
+    let changed = false;
+    (cachedCombat.participants||[]).forEach(p=>{
+      if(p.sourceEncounterId!==e.id) return;
+      const cur = encounterCurrentWounds(e);
+      if(Number(p.currentWounds)!==cur){ p.currentWounds = cur; changed = true; }
+    });
+    // Stessa scelta già fatta per nameHidden più sotto: saveCombat vive nella IIFE di index.html.
+    if(changed) await apiPost('/api/state', { resource:'combat', code, data: cachedCombat });
+  }
   function bindEncountersInnerActions(code, username, onChanged){
+    __encLiveBind = { code, username, onChanged };
     const live = document.getElementById('encounters-live');
     if(!live) return;
     live.querySelectorAll('[data-rmenc]').forEach(btn=>{
@@ -1243,6 +1280,7 @@
         if(!e) return;
         e.currentWounds = Math.max(0, encounterCurrentWounds(e)-1);
         await saveScene(code, cachedScene);
+        await syncEncounterHpToCombat(code, e);
         live.innerHTML = encountersEditableHTML(cachedScene.encounters);
         bindEncountersInnerActions(code, username, onChanged);
         if(onChanged) onChanged();
@@ -1255,6 +1293,7 @@
         if(!e) return;
         e.currentWounds = Math.min(encounterMaxWounds(e), encounterCurrentWounds(e)+1);
         await saveScene(code, cachedScene);
+        await syncEncounterHpToCombat(code, e);
         live.innerHTML = encountersEditableHTML(cachedScene.encounters);
         bindEncountersInnerActions(code, username, onChanged);
         if(onChanged) onChanged();
