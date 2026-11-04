@@ -1603,6 +1603,45 @@ let editingScene = false;
     { key:'other2_tamer', label:'Altro (2 Azioni, Tamer)', cost:2, pool:'tamer', desc:'Come sopra, ma da 2 Azioni Tamer.' }
   ];
 
+  // Chi compie l'Azione, per la narrazione: le Azioni del pool Tamer le fa il TAMER (nome del
+  // personaggio, es. "Rie"), non il Digimon (richiesta Rocco 2026-11-04). Per i Nemici, che non
+  // hanno un Tamer separato, resta il nome del partecipante.
+  function actionActorName(p, def){
+    if(def && def.pool==='tamer' && p && p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      if(member) return displayName(member);
+    }
+    return narratorName(p);
+  }
+  function actionActorAvatar(p, def){
+    if(def && def.pool==='tamer' && p && p.isPC){
+      const member = cachedRoster.find(m=>m.username===p.username);
+      const t = member && member.tamer;
+      const src = t && (t.imageThumbUrl || t.imageUrl);
+      if(src) return src;
+    }
+    return resolveParticipantImage(p);
+  }
+  // Sblocca di nuovo le Azioni "una volta per turno" quando il Master restituisce Azioni (↺ 2+2 o
+  // +1 Azione): segnalato da Rocco 2026-11-04, un giocatore aveva usato Direct/Bolster per sbaglio,
+  // il Master gli aveva ridato le Azioni ma il Direct restava bloccato ("una sola volta per turno").
+  // pool: 'tamer' | 'digimon' | undefined (= entrambi).
+  function resetOncePerTurnFlags(p, pool){
+    const used = Object.assign({}, p.usedOnceThisTurn||{});
+    const tamerKeys = ['direct'], digimonKeys = ['aid','guard','stance'];
+    if(!pool || pool==='tamer'){
+      tamerKeys.forEach(k=>{ delete used[k]; });
+      p.usedReinforceThisTurn = false;
+      p.tamerBolsterReady = false;
+      p.directTargetThisTurn = null;
+    }
+    if(!pool || pool==='digimon'){
+      digimonKeys.forEach(k=>{ delete used[k]; });
+      p.aidTargetThisTurn = null;
+    }
+    p.usedOnceThisTurn = used;
+  }
+
   function trySpendAction(participant, actionKey){
     const def = ACTION_DEFS.find(a=>a.key===actionKey);
     if(!def) return { ok:false, msg:'Azione non valida' };
@@ -2523,7 +2562,7 @@ let editingScene = false;
       await saveCombat(code, cachedCombat);
       const usedPoolLabel = result.def.pool==='tamer' ? 'Tamer' : 'Digimon';
       const usedPoolLeft = result.def.pool==='tamer' ? p.tamerActions : p.actions;
-      await pushCombatNarration(cachedCombat, { who: narratorName(p), role:'player', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabel}) — restano ${usedPoolLeft}/2 Azioni (${usedPoolLabel}).${supportNote}`, meta:{avatar: resolveParticipantImage(p)} });
+      await pushCombatNarration(cachedCombat, { who: actionActorName(p, result.def), role:'player', text: `${actionActorName(p, result.def)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabel}) — restano ${usedPoolLeft}/2 Azioni (${usedPoolLabel}).${supportNote}`, meta:{avatar: actionActorAvatar(p, result.def)} });
       if(statusEl){ statusEl.style.color=''; statusEl.textContent=''; }
       refreshLiveParts();
     };
@@ -7464,7 +7503,7 @@ let editingScene = false;
           }
           const usedPoolLabelGM = result.def.pool==='tamer' ? 'Tamer' : 'Digimon';
           const usedPoolLeftGM = result.def.pool==='tamer' ? p.tamerActions : p.actions;
-          await pushCombatNarration(combat, { who: narratorName(p), role:'gm', text: `${narratorName(p)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabelGM}) — restano ${usedPoolLeftGM}/2 Azioni (${usedPoolLabelGM}).${supportNote}`, meta:{avatar: resolveParticipantImage(p)} });
+          await pushCombatNarration(combat, { who: actionActorName(p, result.def), role:'gm', text: `${actionActorName(p, result.def)} usa ${result.def.label} (${result.def.cost} Azione/i, ${usedPoolLabelGM}) — restano ${usedPoolLeftGM}/2 Azioni (${usedPoolLabelGM}).${supportNote}`, meta:{avatar: actionActorAvatar(p, result.def)} });
           // Clash: preseleziona l'Attaccante nel pannello "⚔ Risolvi Attacco" (Inizia/Contesa), stesso
           // comportamento già esistente per 'attack' più sopra -- qui il costo va comunque spesato
           // normalmente (a differenza di 'attack', il cui costo è dedotto più tardi nella risoluzione).
@@ -7493,6 +7532,7 @@ let editingScene = false;
           // Pool separato del Tamer (Indice Regole 9.01) -- vedi commento su ACTION_DEFS/trySpendAction.
           p.tamerActions = 2;
           p.attackedThisRoundTamer = false;
+          resetOncePerTurnFlags(p);
           // Vedi trySpendAction: chi riottiene Azioni non è più "esaurito" -- azzera il conto alla
           // rovescia del "Passa turno automatico dopo 5 minuti".
           p.actionsExhaustedAt = null;
@@ -7508,6 +7548,7 @@ let editingScene = false;
         const max = (p.isPC && (cachedRoster.find(m=>m.username===p.username)||{}).digimon||{}).hybridMode ? 3 : 2;
         const before = p.actions===undefined?2:p.actions;
         p.actions = Math.min(max, before+1);
+        resetOncePerTurnFlags(p, 'digimon');
         p.actionsExhaustedAt = null;
         const refundText = autoMsgText('action_refund', { name: narratorName(p), current: p.actions });
         if(refundText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: refundText });
@@ -7525,8 +7566,9 @@ let editingScene = false;
         if(!p) return;
         const before = p.tamerActions===undefined?2:p.tamerActions;
         p.tamerActions = Math.min(2, before+1);
+        resetOncePerTurnFlags(p, 'tamer');
         p.actionsExhaustedAt = null;
-        const refundTamerText = autoMsgText('action_refund_tamer', { name: narratorName(p), current: p.tamerActions });
+        const refundTamerText = autoMsgText('action_refund_tamer', { name: actionActorName(p, { pool:'tamer' }), current: p.tamerActions });
         if(refundTamerText) await pushCombatNarration(combat, { who:'Sistema', role:'gm', text: refundTamerText });
         await persistAndRefresh();
       };
