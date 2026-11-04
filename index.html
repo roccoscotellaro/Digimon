@@ -3203,7 +3203,7 @@ let editingScene = false;
       ${combat.chatLock ? `<div class="muted" style="margin-bottom:6px;font-size:11px;">🔒 Chat bloccata per i giocatori: <b>${escapeHTML(combatChatLockLabel(combat.chatLock.location))}</b> — si sblocca da sola a fine combattimento.</div>` : ''}
       ${timer && activeP ? `<div class="muted" style="margin-bottom:8px;font-size:11px;${timer.expired?'color:var(--danger);':''}">⏳ Turno di <b>${escapeHTML(combatDisplayName(activeP, isMaster))}</b>: ${timer.expired ? `scaduto da ${escapeHTML(timer.overText)} — ${isMaster?'puoi agire tu al posto suo dalla Gestione Combattimento qui sotto':'il Master può ormai agire al posto tuo'}.` : `${escapeHTML(timer.text)} rimasti prima che il Master possa agire al posto suo.`}</div>` : ''}
       ${zoneLineHTML(combat, !!isMaster)}
-      ${orderList.length===0 ? '<div class="muted">Ordine non ancora calcolato.</div>' : orderList.map((p,i)=>{
+      ${isMaster ? '' : orderList.length===0 ? '<div class="muted">Ordine non ancora calcolato.</div>' : orderList.map((p,i)=>{
         // Richiesta utente: gli NPC Sconfitti spariscono dalla fase di Battaglia, ma SOLO lato
         // Giocatore -- il Master deve continuare a vederli (es. per "Ripristina Sconfitta" più sotto
         // nella Gestione Combattimento, o per gestirli a mano). Il ritorno di stringa vuota (invece
@@ -5019,10 +5019,12 @@ let editingScene = false;
               <button class="btn amber" id="btn-combat-next-turn-top" style="flex:1;">Turno Successivo</button>
               <button class="btn ghost" id="btn-combat-end-top" style="flex:1;">Termina</button>
             </div>
+            <!-- Gestione Combattimento dentro la stessa card (unificate il 2026-11-04): l'elenco dei
+                 partecipanti qui sotto è anche l'ordine dei turni. -->
+            <div id="combat-mgr-card" style="margin-top:10px;"></div>
           </div>
           <!-- La card "Turno Attuale" (#combat-turn-now-card) è stata tolta dalla vista Master: ripeteva
                chi è di turno, già evidenziato con ▶ nella card Combattimento qui sopra (2026-11-04). -->
-          <div class="hud-frame card" id="combat-mgr-card"></div>
             </div>
             <div class="master-sub" data-sub-group="battaglia" data-sub="cronaca">
           ${combatChronicleCardHTML()}
@@ -6283,6 +6285,13 @@ let editingScene = false;
   const COMBAT_SEC_KEY = 'dvos_combat_sections';
   let combatSecOpen = {};
   try{ combatSecOpen = JSON.parse(localStorage.getItem(COMBAT_SEC_KEY)||'{}') || {}; }catch(e){ combatSecOpen = {}; }
+  // Partecipanti nell'ordine dei turni (chi non è ancora nell'ordine va in fondo): la lista della
+  // Gestione Combattimento fa ora anche da elenco dei turni (unificate il 2026-11-04).
+  function combatParticipantsInTurnOrder(combat){
+    const order = combat.order || [];
+    const pos = (p)=>{ const i = order.indexOf(p.id); return i<0 ? 1e6 : i; };
+    return (combat.participants||[]).slice().sort((a,b)=> pos(a)-pos(b));
+  }
   function cmSec(key, summary, inner, defaultOpen){
     const open = (key in combatSecOpen) ? !!combatSecOpen[key] : !!defaultOpen;
     return `<details class="cm-sec" data-cm-sec="${key}" ${open?'open':''}><summary>${summary}</summary><div class="cm-sec-body">${inner}</div></details>`;
@@ -6382,7 +6391,7 @@ let editingScene = false;
 
     if(!combat.active){
       cardEl.innerHTML = `
-        <div class="section-title">Gestione Combattimento</div>
+        <div class="section-title">⚔️ Nuovo combattimento</div>
         <div class="muted" style="margin-bottom:10px;">Nessun combattimento attivo.</div>
         <div class="field"><label>Zona di partenza Alleati</label>
           <select id="combat-start-zone-ally">${ZONES.map(z=>`<option value="${z}" ${z==='Molto Corto'?'selected':''}>${zoneLabel(z)}</option>`).join('')}</select>
@@ -6460,7 +6469,6 @@ let editingScene = false;
     }
 
     cardEl.innerHTML = `
-      <div class="section-title">Gestione Combattimento</div>
       ${cmSec('zones', '⚙️ Zone di partenza', `
       <div class="row" style="margin-bottom:4px;align-items:center;">
         <span class="muted" style="flex:1;">Zona di partenza Alleati</span>
@@ -6471,8 +6479,9 @@ let editingScene = false;
         <select id="combat-startzone-enemy-live" style="flex:1;">${ZONES.map(z=>`<option value="${z}" ${(combat.startZoneEnemy||'Molto Lungo')===z?'selected':''}>${zoneLabel(z)}</option>`).join('')}</select>
       </div>
       `, false)}
+      <div class="muted" style="font-size:10px;letter-spacing:.08em;margin-bottom:4px;">PARTECIPANTI — IN ORDINE DI TURNO</div>
       <div id="combat-participants-list">
-        ${combat.participants.length===0 ? '<div class="muted" style="margin-bottom:8px;">Nessun partecipante ancora aggiunto.</div>' : combat.participants.map((p,i)=>{
+        ${combat.participants.length===0 ? '<div class="muted" style="margin-bottom:8px;">Nessun partecipante ancora aggiunto.</div>' : combatParticipantsInTurnOrder(combat).map((p,i)=>{
           const w = getParticipantWounds(p);
           const acts = p.actions===undefined?2:p.actions;
           const tamerActs = p.tamerActions===undefined?2:p.tamerActions;
@@ -6530,7 +6539,7 @@ let editingScene = false;
           const dupSuffix = duplicateNameSuffix(combat, p, true);
           const header = `
             <div class="flex-between">
-              <span>${isCurrentTurn?'▶ ':''}${escapeHTML(p.name)}${dupSuffix?`<b style="color:var(--amber);">${escapeHTML(dupSuffix)}</b>`:''} <button class="tag" data-toggle-side="${p.id}" style="cursor:pointer;background:none;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};" title="Clicca per cambiare Alleato/Nemico">${p.side==='ally'?'Alleato':'Nemico'}</button> ${defeated?'<span class="tag" style="margin-left:4px;color:var(--danger);border-color:rgba(255,93,93,0.4);">🏳️ Sconfitto</span>':''} <span class="muted" style="margin-left:4px;font-size:10px;">${w.current}/${w.max} Ferite</span> <span style="margin-left:6px;font-size:12px;" title="Azioni Digimon rimaste: ${acts}/2">Dig ${Array.from({length:2}).map((_,i)=>i<acts?'<span style="color:var(--cyan);">●</span>':'<span style="color:var(--line);">○</span>').join('')}</span> <span style="margin-left:4px;font-size:12px;" title="Azioni Tamer rimaste: ${tamerActs}/2">Tam ${Array.from({length:2}).map((_,i)=>i<tamerActs?'<span style="color:var(--amber);">●</span>':'<span style="color:var(--line);">○</span>').join('')}</span></span>
+              <span>${isCurrentTurn?'▶ ':''}${escapeHTML(p.name)}${dupSuffix?`<b style="color:var(--amber);">${escapeHTML(dupSuffix)}</b>`:''} <button class="tag" data-toggle-side="${p.id}" style="cursor:pointer;background:none;color:${p.side==='ally'?'var(--cyan)':'var(--danger)'};border-color:${p.side==='ally'?'var(--cyan-dim)':'rgba(255,93,93,0.4)'};" title="Clicca per cambiare Alleato/Nemico">${p.side==='ally'?'Alleato':'Nemico'}</button> ${defeated?'<span class="tag" style="margin-left:4px;color:var(--danger);border-color:rgba(255,93,93,0.4);">🏳️ Sconfitto</span>':''} <span style="margin-left:6px;font-size:12px;" title="Azioni Digimon rimaste: ${acts}/2">Dig ${Array.from({length:2}).map((_,i)=>i<acts?'<span style="color:var(--cyan);">●</span>':'<span style="color:var(--line);">○</span>').join('')}</span> <span style="margin-left:4px;font-size:12px;" title="Azioni Tamer rimaste: ${tamerActs}/2">Tam ${Array.from({length:2}).map((_,i)=>i<tamerActs?'<span style="color:var(--amber);">●</span>':'<span style="color:var(--line);">○</span>').join('')}</span></span>
               <span style="display:flex;align-items:center;gap:6px;">
                 <input type="number" data-part-init="${p.id}" value="${p.initiative}" style="width:60px;padding:4px;" />
                 ${defeated ? `<button class="btn ghost small" data-part-reenter="${p.id}" title="Rientra a proprio rischio (a discrezione del Master)">↩️</button>` : ''}
@@ -6561,12 +6570,23 @@ let editingScene = false;
                 <button class="btn ghost small" data-defeat-enemy-egg="${p.id}" style="flex:1;">🥚 Richiudi nell'Uovo</button>
               </div>
             </div>`);
+          // Riga di stato (prima stava nell'elenco turni della card sopra): Ferite, Battery, zona, Clash.
+          const pBattery = getParticipantBattery(p);
+          const statusLine = `
+            <div style="display:flex;align-items:center;gap:8px;margin-top:3px;">
+              <div style="flex:1;min-width:0;">${miniHpBarHTML(w.current, w.max, w.temp, 'HP')}</div>
+              ${pBattery ? `<span style="display:flex;align-items:center;gap:4px;flex:0 0 auto;"><span class="hp-mini-label">⚡</span>${batteryCellsHTML(pBattery.current, pBattery.max, true)}</span>` : ''}
+              <span class="mono" style="color:var(--amber);font-size:11px;flex:0 0 auto;">${zoneLabel(p.zone||'Medio')}</span>
+            </div>
+            ${p.clashWith ? `<div class="muted" style="margin-top:3px;font-size:11px;">🤼 In Clash con ${escapeHTML((combat.participants.find(o=>o.id===p.clashWith)||{}).name||'?')}</div>` : ''}`;
+          const rowFrame = `margin-bottom:6px;padding:6px 8px;border-radius:6px;border:1px solid ${isCurrentTurn?'var(--cyan)':'var(--line)'};border-left:3px solid ${p.side==='ally'?'var(--cyan)':'var(--danger)'};background:${isCurrentTurn?'rgba(53,232,201,0.08)':'var(--panel-2)'};${defeated?'opacity:.6;':''}`;
           if(!expanded){
-            return `<div style="margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--line);">${header}${defeatResolutionHTML}${(p.effects&&p.effects.length)?`<div style="margin-top:4px;">${effectTagsHTML(p)}</div>`:''}</div>`;
+            return `<div style="${rowFrame}">${header}${statusLine}${defeatResolutionHTML}${(p.effects&&p.effects.length)?`<div style="margin-top:4px;">${effectTagsHTML(p)}</div>`:''}</div>`;
           }
           return `
-          <div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line);${isCurrentTurn?'background:rgba(53,232,201,0.06);border-radius:6px;padding:8px;':''}">
+          <div style="${rowFrame}">
             ${header}
+            ${statusLine}
             ${defeatResolutionHTML}
             <div class="muted" style="font-size:11px;margin-top:6px;margin-bottom:2px;color:var(--cyan);">Azione Digimon</div>
             <div class="row">
