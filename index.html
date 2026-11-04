@@ -2456,6 +2456,16 @@ let editingScene = false;
     };
   }
 
+  // Bersaglio di Direct/Aid scelto con un menu dedicato (Rocco 2026-11-04): prima si usava il menu
+  // BERSAGLIO degli Attacchi, che di solito punta a un NEMICO o al primo della lista -- il Direct di
+  // Nox è finito su Vorvomon con -2 (= 0 dadi) e, essendo "una volta per turno", non si poteva più
+  // rifare. Ora: solo alleati non sconfitti, il proprio Digimon per primo (Direct senza -2).
+  function supportTargetOptionsHTML(combat, actor, includeSelf){
+    const allies = (combat.participants||[]).filter(o=>o.side===actor.side && !isParticipantDefeated(o) && (includeSelf || o.id!==actor.id));
+    allies.sort((a,b)=> (a.id===actor.id?-1:0) - (b.id===actor.id?-1:0));
+    if(!allies.length) return '<option value="">(nessun alleato disponibile)</option>';
+    return allies.map(o=>`<option value="${escapeAttr(o.id)}">${escapeHTML(o.name)}${o.id===actor.id?' (il tuo Digimon)':''}</option>`).join('');
+  }
   function combatSelfActionHTML(combat, username){
     if(!combat || !combat.active) return '';
     const p = (combat.participants||[]).find(x=>x.username===username);
@@ -2505,6 +2515,7 @@ let editingScene = false;
         ${actionInfoIconHTML('self-d')}
       </div>
       <select id="self-stance-pick" style="display:none;margin-top:4px;width:100%;">${STANCE_OPTIONS.map(s=>`<option value="${s}">${s}</option>`).join('')}</select>
+      ${p ? `<select id="self-aid-pick" style="display:none;margin-top:4px;width:100%;" title="Alleato da aiutare">${supportTargetOptionsHTML(combat, p, false)}</select>` : ''}
       <div class="muted" id="self-daction-desc" style="margin:2px 0 6px;font-size:11px;">${escapeHTML((SELF_DIGIMON_ACTION_DEFS[0]&&SELF_DIGIMON_ACTION_DEFS[0].desc)||'')}</div>
       <div class="muted" style="font-size:11px;margin-bottom:2px;color:var(--amber);">Azione Tamer</div>
       <div class="row">
@@ -2513,6 +2524,7 @@ let editingScene = false;
         ${actionInfoIconHTML('self-t')}
       </div>
       <select id="self-skill-pick" style="display:none;margin-top:4px;width:100%;">${SKILL_DEFS.map(s=>`<option value="${s.key}">${escapeHTML(s.label)}</option>`).join('')}</select>
+      ${p ? `<select id="self-direct-pick" style="display:none;margin-top:4px;width:100%;" title="Su quale Digimon dare il Direct">${supportTargetOptionsHTML(combat, p, true)}</select>` : ''}
       <div class="muted" id="self-taction-desc" style="margin:2px 0 4px;font-size:11px;">${escapeHTML((TAMER_ACTION_DEFS[0]&&TAMER_ACTION_DEFS[0].desc)||'')}</div>
       <div class="muted" id="self-action-status" style="margin-top:4px;">${myTurn?'':'Disponibile solo durante il tuo turno.'}</div>
     `;
@@ -2539,6 +2551,15 @@ let editingScene = false;
     };
     const dSel = bindDesc('self-daction-select', 'self-daction-desc', SELF_DIGIMON_ACTION_DEFS, 'self-stance-pick', 'stance');
     const tSel = bindDesc('self-taction-select', 'self-taction-desc', TAMER_ACTION_DEFS, 'self-skill-pick', 'skill_tamer');
+    // Menu "su chi" per Direct (Tamer) e Aid (Digimon), visibili solo quando servono.
+    const showPick = (selEl, pickId, keys)=>{
+      const pick = document.getElementById(pickId);
+      if(!selEl || !pick) return;
+      const upd = ()=>{ pick.style.display = keys.includes(selEl.value) ? '' : 'none'; };
+      selEl.addEventListener('change', upd); upd();
+    };
+    showPick(dSel, 'self-aid-pick', ['aid']);
+    showPick(tSel, 'self-direct-pick', ['direct1','direct2']);
     bindActionInfoIcon(document.querySelector('[data-action-info="self-d"]'), dSel, SELF_DIGIMON_ACTION_DEFS);
     bindActionInfoIcon(document.querySelector('[data-action-info="self-t"]'), tSel, TAMER_ACTION_DEFS);
 
@@ -2559,6 +2580,12 @@ let editingScene = false;
       }
       const sel = document.getElementById(selectId);
       if(!sel) return;
+      const pickedSupport = (sel.value==='direct1'||sel.value==='direct2') ? document.getElementById('self-direct-pick') : (sel.value==='aid' ? document.getElementById('self-aid-pick') : null);
+      const pickedSupportTarget = pickedSupport && pickedSupport.value ? cachedCombat.participants.find(x=>x.id===pickedSupport.value) : null;
+      if(pickedSupport && !pickedSupportTarget){
+        if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Scegli prima su chi usarla (nessuna Azione spesa).'; }
+        return;
+      }
       const result = trySpendAction(p, sel.value);
       if(!result.ok){
         if(statusEl){ statusEl.style.color = 'var(--danger)'; statusEl.textContent = result.msg; }
@@ -2569,7 +2596,7 @@ let editingScene = false;
       let supportNote = '';
       if(SUPPORT_ACTION_KEYS.includes(sel.value)){
         const targetSel = document.getElementById('self-target-select');
-        const supportTarget = sel.value==='guard' ? p : (targetSel && targetSel.value ? cachedCombat.participants.find(x=>x.id===targetSel.value) : null);
+        const supportTarget = sel.value==='guard' ? p : (pickedSupportTarget || (targetSel && targetSel.value ? cachedCombat.participants.find(x=>x.id===targetSel.value) : null));
         const effect = await applySupportActionEffect(sel.value, p, supportTarget);
         supportNote = ' ' + effect.note;
       } else if(MECHANIC_ACTION_KEYS.includes(sel.value)){
@@ -6669,6 +6696,7 @@ let editingScene = false;
             </div>
             <div class="muted" data-daction-desc="${p.id}" style="margin:2px 0;font-size:11px;">${escapeHTML((DIGIMON_ACTION_DEFS[0]&&DIGIMON_ACTION_DEFS[0].desc)||'')}</div>
             <select data-stance-pick="${p.id}" style="display:none;margin-bottom:4px;width:100%;">${STANCE_OPTIONS.map(s=>`<option value="${s}">${s}</option>`).join('')}</select>
+            <select data-aid-pick="${p.id}" style="display:none;margin-bottom:4px;width:100%;" title="Alleato da aiutare">${supportTargetOptionsHTML(combat, p, false)}</select>
             <div class="muted" style="font-size:11px;margin-top:4px;margin-bottom:2px;color:var(--amber);">Azione Tamer</div>
             <div class="row">
               <select data-taction-select="${p.id}" style="flex:2;">${TAMER_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az.)</option>`).join('')}</select>
@@ -6677,6 +6705,7 @@ let editingScene = false;
             </div>
             <div class="muted" data-taction-desc="${p.id}" style="margin:2px 0;font-size:11px;">${escapeHTML((TAMER_ACTION_DEFS[0]&&TAMER_ACTION_DEFS[0].desc)||'')}</div>
             <select data-skill-pick="${p.id}" style="display:none;margin-bottom:4px;width:100%;">${SKILL_DEFS.map(s=>`<option value="${s.key}">${escapeHTML(s.label)}</option>`).join('')}</select>
+            <select data-direct-pick="${p.id}" style="display:none;margin-bottom:4px;width:100%;" title="Su quale Digimon dare il Direct">${supportTargetOptionsHTML(combat, p, true)}</select>
             <div class="muted" style="font-size:11px;margin-top:8px;margin-bottom:2px;">🏃 Movimento <span style="opacity:.7;">(rispetto a un altro partecipante, o zona precisa)</span></div>
             <div class="row" style="margin-top:6px;">
               <!-- Richiesta utente: "non possono selezionare se stessi per potenziarsi" -- questo
@@ -7598,6 +7627,14 @@ let editingScene = false;
     };
     bindActionDesc('data-daction-select', 'data-daction-desc', DIGIMON_ACTION_DEFS, 'data-stance-pick', 'stance');
     bindActionDesc('data-taction-select', 'data-taction-desc', TAMER_ACTION_DEFS, 'data-skill-pick', 'skill_tamer');
+    [['data-daction-select','data-aid-pick',['aid']],['data-taction-select','data-direct-pick',['direct1','direct2']]].forEach(([selAttr, pickAttr, keys])=>{
+      cardEl.querySelectorAll(`[${selAttr}]`).forEach(selEl=>{
+        const pick = cardEl.querySelector(`[${pickAttr}="${selEl.getAttribute(selAttr)}"]`);
+        if(!pick) return;
+        const upd = ()=>{ pick.style.display = keys.includes(selEl.value) ? '' : 'none'; };
+        selEl.addEventListener('change', upd); upd();
+      });
+    });
     cardEl.querySelectorAll('[data-action-info]').forEach(btn=>{
       const infoId = btn.getAttribute('data-action-info');
       const isDigimon = infoId.startsWith('d-');
@@ -7623,8 +7660,15 @@ let editingScene = false;
             renderCombatManager(code, players);
             return;
           }
-          const result = trySpendAction(p, sel.value);
           const statusEl = document.getElementById('combat-mgr-status');
+          const gmPickAttr = (sel.value==='direct1'||sel.value==='direct2') ? 'data-direct-pick' : (sel.value==='aid' ? 'data-aid-pick' : null);
+          const gmPick = gmPickAttr ? cardEl.querySelector(`[${gmPickAttr}="${id}"]`) : null;
+          const gmPickTarget = gmPick && gmPick.value ? combat.participants.find(x=>x.id===gmPick.value) : null;
+          if(gmPickAttr && !gmPickTarget){
+            if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Scegli prima su chi usarla (nessuna Azione spesa).'; }
+            return;
+          }
+          const result = trySpendAction(p, sel.value);
           if(!result.ok){
             if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; }
             return;
@@ -7635,7 +7679,7 @@ let editingScene = false;
           let presetAttacker = false;
           if(SUPPORT_ACTION_KEYS.includes(sel.value)){
             const zoneRefSel = cardEl.querySelector(`[data-zone-ref="${id}"]`);
-            const supportTarget = sel.value==='guard' ? p : (zoneRefSel && zoneRefSel.value ? combat.participants.find(x=>x.id===zoneRefSel.value) : null);
+            const supportTarget = sel.value==='guard' ? p : (gmPickTarget || (zoneRefSel && zoneRefSel.value ? combat.participants.find(x=>x.id===zoneRefSel.value) : null));
             const effect = await applySupportActionEffect(sel.value, p, supportTarget);
             supportNote = ' ' + effect.note;
           } else if(MECHANIC_ACTION_KEYS.includes(sel.value)){
