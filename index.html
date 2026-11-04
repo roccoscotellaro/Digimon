@@ -992,6 +992,7 @@ let editingScene = false;
     combatActionPending = true;
     try {
       const r = await apiPost('/api/state', { resource:'combat', code, data });
+      if(data && typeof evoWatchCombat==='function'){ try{ evoWatchCombat(data); }catch(e){} }
       // Ferite dei Nemici presi dalla Scena -> Incontri della Scena (vedi syncSceneHpFromCombat in
       // js/scene-encounters.js). Solo il Master salva la Scena.
       if(session && session.role==='master' && typeof syncSceneHpFromCombat==='function'){
@@ -4289,6 +4290,7 @@ let editingScene = false;
       }
       // Danni fatti dai giocatori (dal loro client) ai Nemici della Scena: il Master li riporta
       // sugli Incontri al primo giro di polling.
+      if(cachedCombat && typeof evoWatchCombat==='function'){ try{ evoWatchCombat(cachedCombat); }catch(e){} }
       if(session.role==='master' && cachedCombat && cachedCombat.active && typeof syncSceneHpFromCombat==='function'){
         try{ await syncSceneHpFromCombat(session.code); }catch(e){ console.warn('sync HP scena', e); }
       }
@@ -7470,6 +7472,16 @@ let editingScene = false;
           actions: 2, attackedThisRound:false, effects:[], zone: a.zone||'Medio',
           jogressOf: [a.username, b.username], jogressStage: newStage
         };
+        // Animazione Jogress per tutti (js/evo-animation.js, evoWatchCombat): istantanee dei due
+        // Digimon e della fusione, con la GIF/immagine del Digidex se il nome fuso c'è.
+        fused.imageUrl = (typeof bestDigimonImage==='function') ? bestDigimonImage(null, fusionName, '') : '';
+        if(typeof evoSnapshot==='function'){
+          fused.jogressAnim = {
+            at: Date.now(), from: evoSnapshot(aMember.digimon), from2: evoSnapshot(bMember.digimon),
+            to: { name: fusionName, stage: newStage, img: fused.imageUrl, forced:false,
+                  stats: { ACC:fused.accuracy, DMG:fused.damage, DOD:fused.dodge, ARM:fused.armor, HP:Number(aMember.digimon.baseHealth||0)+Number(bMember.digimon.baseHealth||0) } }
+          };
+        }
         combat.participants = combat.participants.filter(p=>p.id!==a.id && p.id!==b.id);
         combat.participants.push(fused);
         const jogressFriendly = `🤝 Successo! ${aMember.digimon.name} e ${bMember.digimon.name} si fondono in ${fusionName} (${newStage}).`;

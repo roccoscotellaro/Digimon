@@ -22,8 +22,18 @@
   const MODES = {
     normal:  { accent:'#35e8c9', verb:'DIGIVOLVE A…' },
     forced:  { accent:'#ff5d5d', verb:'EVOLUZIONE FORZATA…' },
-    regress: { accent:'#8fa3ad', verb:'REGREDISCE A…' }
+    regress: { accent:'#8fa3ad', verb:'REGREDISCE A…' },
+    jogress: { accent:'#b48cff', verb:'DNA DIGIVOLVE A…' }
   };
+  // "Livello" dell'evoluzione in base allo Stage raggiunto (richiesta Rocco 2026-11-04: versioni
+  // apposta per Super e Mega): 0 = fino a Champion, 1 = Ultimate (oro, "SUPER DIGIVOLVE", onda
+  // d'urto), 2 = Mega (iridescente, "MEGA DIGIVOLVE", bozzolo più lungo, doppio lampo, onda d'urto
+  // e scossa). La Regressione resta sempre al livello 0.
+  const TIERS = [
+    null,
+    { accent:'#ffcf3d', verb:'SUPER DIGIVOLVE A…', extra:400 },
+    { accent:'#ff7bd8', verb:'MEGA DIGIVOLVE A…', extra:900 }
+  ];
   const esc = (s)=> String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const isGif = (u)=> /\.gif(\?|#|$)/i.test(String(u||''));
 
@@ -71,7 +81,11 @@
       @keyframes eaShake{0%{transform:translate(0,0);}25%{transform:translate(3px,-2px);}50%{transform:translate(-3px,2px);}75%{transform:translate(2px,3px);}100%{transform:translate(0,0);}}
       .evoanim .ea-glitch img{animation:eaGlitch .35s steps(3) infinite;}
       @keyframes eaGlitch{0%{transform:translate(0);filter:none;}33%{transform:translate(-4px,1px);filter:hue-rotate(90deg) saturate(3);}66%{transform:translate(3px,-2px);filter:invert(.2);}}
-      @media (prefers-reduced-motion: reduce){ .evoanim .ea-shake,.evoanim .ea-glitch img{animation:none;} }
+      .evoanim .ea-shock{position:absolute;left:50%;top:50%;width:120px;height:120px;margin:-180px 0 0 -60px;border-radius:50%;border:4px solid var(--accent);box-shadow:0 0 30px var(--accent);opacity:0;pointer-events:none;}
+      .evoanim.ea-prism .ea-cocoon,.evoanim.ea-prism .ea-ring,.evoanim.ea-prism .ea-shock,.evoanim.ea-prism .ea-big{animation:eaPrism 1.2s linear infinite;}
+      @keyframes eaPrism{from{filter:hue-rotate(0deg);}to{filter:hue-rotate(360deg);}}
+      .evoanim .ea-ring.r4{inset:-52%;border-style:dashed;border-width:1px;}
+      @media (prefers-reduced-motion: reduce){ .evoanim .ea-shake,.evoanim .ea-glitch img,.evoanim.ea-prism *{animation:none;} }
     `;
     document.head.appendChild(st);
   }
@@ -102,11 +116,16 @@
     if(running){ queue.push(opts); return; }
     injectCss();
     const mode = opts.mode || modeFor(opts.from, opts.to);
-    const M = MODES[mode] || MODES.normal;
-    const A = opts.from, B = opts.to;
-    const forced = mode==='forced';
+    const A = opts.from, B = opts.to, A2 = opts.from2 || null;
+    const forced = mode==='forced', jog = mode==='jogress' && !!A2;
+    const tierIdx = mode==='regress' ? 0 : (stageIdx(B.stage)>=5 ? 2 : stageIdx(B.stage)>=4 ? 1 : 0);
+    const T = TIERS[tierIdx];
+    const base = MODES[mode] || MODES.normal;
+    // Forzata e Jogress tengono il loro colore; per le altre il livello cambia colore e scritta.
+    const M = { accent: (T && mode==='normal') ? T.accent : base.accent, verb: (T && mode!=='jogress') ? (forced ? T.verb.replace('DIGIVOLVE','DIGIVOLVE FORZATA') : T.verb) : base.verb };
+    const X = T ? T.extra : 0; // ms aggiunti al bozzolo
     const root = document.createElement('div');
-    root.className = 'evoanim';
+    root.className = 'evoanim' + (tierIdx===2 ? ' ea-prism' : '');
     root.style.setProperty('--accent', M.accent);
     const statsHTML = Object.keys(B.stats||{}).map(k=>{
       const a = Number((A.stats||{})[k]||0), b = Number(B.stats[k]||0), d = b-a;
@@ -118,18 +137,19 @@
       ${opts.who ? `<div class="ea-who">${esc(opts.who)}</div>` : ''}
       <div class="ea-stage">
         <div class="ea-center">
-          <div class="ea-ring r2"></div><div class="ea-ring r1"></div>
+          ${T ? '<div class="ea-ring r4"></div>' : ''}<div class="ea-ring r2"></div><div class="ea-ring r1"></div>
           <div class="ea-cocoon"></div><div class="ea-ring r3"></div>
-          ${portrait('ea-old', A)}
+          ${portrait('ea-old', A)}${jog ? portrait('ea-old2', A2) : ''}
           <div class="ea-sil ${isGif(B.img)?'gif':'jpg'}">${B.img?`<img src="${esc(B.img)}" alt="">`:''}</div>
           ${portrait('ea-new', B)}
         </div>
       </div>
       <div class="ea-dv"></div>
       <div class="ea-warn">⚠ WARNING ⚠</div>
+      <div class="ea-shock"></div>
       <div class="ea-flash"></div>
       <div class="ea-title">
-        <div class="ea-small ea-from">${esc((A.name||'').toUpperCase())}</div>
+        <div class="ea-small ea-from">${esc((A.name||'').toUpperCase())}${jog ? ' + '+esc((A2.name||'').toUpperCase()) : ''}</div>
         <div class="ea-small ea-verb" style="margin-top:4px;">${esc(M.verb)}</div>
         <div class="ea-big">${esc((B.name||B.stage||'?').toUpperCase())}${mode==='regress'?'':'!'}</div>
         ${B.stage ? `<div class="ea-stagelbl">${esc(String(B.stage).toUpperCase())}</div>` : ''}
@@ -142,6 +162,7 @@
       img.onerror = ()=>{ img.style.display='none'; img.parentNode.classList.add('fallback'); img.parentNode.classList.remove('solid'); };
     });
     if(!A.img) q('.ea-old').classList.add('fallback');
+    if(jog && !A2.img) q('.ea-old2').classList.add('fallback');
     if(!B.img) q('.ea-new').classList.add('fallback');
 
     // ----- canvas: pioggia di codice + particelle -----
@@ -190,28 +211,46 @@
     if(forced) at(200, ()=>{ q('.ea-stage').classList.add('ea-shake'); anim(q('.ea-warn'), [{opacity:0},{opacity:1,offset:.1},{opacity:.2,offset:.3},{opacity:1,offset:.5},{opacity:.2,offset:.7},{opacity:1,offset:.85},{opacity:0}], 2600); });
     at(900, ()=>{
       phase='dissolve';
+      if(jog){
+        // Jogress: i due Digimon arrivano dai lati e si fondono al centro.
+        anim(q('.ea-old'), [{opacity:0,transform:'translateX(-50%) scale(.55)'},{opacity:1,transform:'translateX(-36%) scale(.6)',offset:.3},{opacity:1,transform:'translateX(-36%) scale(.6)',offset:.55},{opacity:1,transform:'translateX(0) scale(.8)'}], 1200, 'ease-in-out');
+        anim(q('.ea-old2'), [{opacity:0,transform:'translateX(50%) scale(.55)'},{opacity:1,transform:'translateX(36%) scale(.6)',offset:.3},{opacity:1,transform:'translateX(36%) scale(.6)',offset:.55},{opacity:1,transform:'translateX(0) scale(.8)'}], 1200, 'ease-in-out');
+        anim(q('.ea-from'), [{opacity:0},{opacity:1}], 400);
+        return;
+      }
       anim(q('.ea-old'), [{opacity:0,transform:'scale(.9)'},{opacity:1,transform:'scale(1)'}], 350, 'ease-out');
       if(forced) q('.ea-old').classList.add('ea-glitch');
       anim(q('.ea-from'), [{opacity:0},{opacity:1}], 400);
     });
-    at(1500, ()=>{
+    at(jog ? 2100 : 1500, ()=>{
+      if(jog){
+        anim(q('.ea-flash'), [{opacity:0},{opacity:.7,offset:.3},{opacity:0}], 400, 'ease-out');
+        anim(q('.ea-old2'), [{opacity:1,filter:'blur(0) brightness(1)',transform:'translateX(0) scale(.8)'},{opacity:0,filter:'blur(6px) brightness(3)',transform:'translateX(0) scale(.9) translateY(-10px)'}], 600, 'ease-in');
+        anim(q('.ea-old'), [{opacity:1,filter:'blur(0) brightness(1)',transform:'translateX(0) scale(.8)'},{opacity:0,filter:'blur(6px) brightness(3)',transform:'translateX(0) scale(.9) translateY(-10px)'}], 600, 'ease-in');
+        for(let i=0;i<6;i++) at(i*70, ()=>emit(40,'burst'));
+        anim(q('.ea-verb'), [{opacity:0},{opacity:1}], 400);
+        return;
+      }
       anim(q('.ea-old'), [{opacity:1,filter:'blur(0) brightness(1)',transform:'scale(1)'},{opacity:0,filter:'blur(6px) brightness(3)',transform:'scale(1.08) translateY(-10px)'}], 1100, 'ease-in');
       for(let i=0;i<10;i++) at(i*90, ()=>emit(28,'rise'));
       anim(q('.ea-verb'), [{opacity:0},{opacity:1}], 400);
     });
     at(2500, ()=>{
       phase='cocoon';
-      anim(q('.ea-cocoon'), [{opacity:0,transform:'scale(.3)'},{opacity:1,transform:'scale(1)',offset:.25},{opacity:1,transform:'scale(1.06)',offset:.6},{opacity:1,transform:'scale(.95)'}], 2100, 'ease-in-out');
-      anim(q('.ea-ring.r1'), [{opacity:0,transform:'rotate(0) scale(.6)'},{opacity:1,transform:'rotate(240deg) scale(1)',offset:.3},{opacity:1,transform:'rotate(720deg) scale(1)'}], 2100, 'linear');
-      anim(q('.ea-ring.r2'), [{opacity:0,transform:'rotate(0) scale(.5)'},{opacity:.8,transform:'rotate(-200deg) scale(1)',offset:.3},{opacity:.8,transform:'rotate(-540deg) scale(.9)'}], 2100, 'linear');
-      anim(q('.ea-ring.r3'), [{opacity:0},{opacity:.9,offset:.3},{opacity:.9}], 2100);
-      anim(q('.ea-sil'), [{opacity:0,transform:'scale(.35)'},{opacity:.85,transform:'scale(.5)',offset:.2},{opacity:.85,transform:'scale(.5)',offset:.35},{opacity:.9,transform:'scale(.72)',offset:.45},{opacity:.9,transform:'scale(.72)',offset:.6},{opacity:.95,transform:'scale(.95)',offset:.7},{opacity:.95,transform:'scale(1)'}], 2100, 'steps(1,end)');
-      emit(160,'spiral');
+      const CD = 2100 + X;
+      anim(q('.ea-cocoon'), [{opacity:0,transform:'scale(.3)'},{opacity:1,transform:'scale(1)',offset:.25},{opacity:1,transform:'scale(1.06)',offset:.6},{opacity:1,transform:'scale(.95)'}], CD, 'ease-in-out');
+      anim(q('.ea-ring.r1'), [{opacity:0,transform:'rotate(0) scale(.6)'},{opacity:1,transform:'rotate(240deg) scale(1)',offset:.3},{opacity:1,transform:'rotate(720deg) scale(1)'}], CD, 'linear');
+      anim(q('.ea-ring.r2'), [{opacity:0,transform:'rotate(0) scale(.5)'},{opacity:.8,transform:'rotate(-200deg) scale(1)',offset:.3},{opacity:.8,transform:'rotate(-540deg) scale(.9)'}], CD, 'linear');
+      anim(q('.ea-ring.r3'), [{opacity:0},{opacity:.9,offset:.3},{opacity:.9}], CD);
+      if(T) anim(q('.ea-ring.r4'), [{opacity:0,transform:'rotate(0) scale(.4)'},{opacity:.7,transform:'rotate(120deg) scale(1)',offset:.3},{opacity:.7,transform:'rotate(480deg) scale(1.1)'}], CD, 'linear');
+      anim(q('.ea-sil'), [{opacity:0,transform:'scale(.35)'},{opacity:.85,transform:'scale(.5)',offset:.2},{opacity:.85,transform:'scale(.5)',offset:.35},{opacity:.9,transform:'scale(.72)',offset:.45},{opacity:.9,transform:'scale(.72)',offset:.6},{opacity:.95,transform:'scale(.95)',offset:.7},{opacity:.95,transform:'scale(1)'}], CD, 'steps(1,end)');
+      emit(160 + tierIdx*120,'spiral');
+      if(tierIdx===2) at(Math.round(CD*0.5), ()=>emit(200,'spiral'));
       q('.ea-old').classList.remove('ea-glitch');
     });
     const reveal = (instant)=>{
       phase='reveal';
-      ['.ea-cocoon','.ea-ring.r1','.ea-ring.r2','.ea-ring.r3','.ea-sil','.ea-old','.ea-dv','.ea-warn'].forEach(s=>{ const el=q(s); if(el){ el.getAnimations().forEach(a=>a.cancel()); el.style.opacity='0'; } });
+      ['.ea-cocoon','.ea-ring.r1','.ea-ring.r2','.ea-ring.r3','.ea-ring.r4','.ea-sil','.ea-old','.ea-old2','.ea-dv','.ea-warn'].forEach(s=>{ const el=q(s); if(el){ el.getAnimations().forEach(a=>a.cancel()); el.style.opacity='0'; } });
       q('.ea-stage').classList.remove('ea-shake');
       const d = instant ? 1 : 1;
       anim(q('.ea-new'), [{opacity:0,transform:'scale(1.25)',filter:'brightness(3)'},{opacity:1,transform:'scale(1)',filter:'brightness(1)'}], instant?d:700, 'cubic-bezier(.2,.9,.3,1.2)');
@@ -222,13 +261,22 @@
       instant ? anim(q('.ea-stats'),[{opacity:1}],1) : at(1000, ()=>anim(q('.ea-stats'), [{opacity:0,transform:'translateY(8px)'},{opacity:1,transform:'none'}], 500));
       q('.ea-skip').textContent = 'tocca per chiudere';
     };
-    at(4500, ()=>{ phase='flash'; anim(q('.ea-flash'), [{opacity:0},{opacity:1,offset:.25},{opacity:0}], 700, 'ease-out'); emit(220,'burst'); });
-    at(4700, ()=> reveal(false));
+    at(4500+X, ()=>{
+      phase='flash';
+      anim(q('.ea-flash'), [{opacity:0},{opacity:1,offset:.25},{opacity:0}], 700, 'ease-out');
+      emit(220 + tierIdx*150,'burst');
+      if(T) anim(q('.ea-shock'), [{opacity:1,transform:'scale(.2)'},{opacity:0,transform:'scale(7)'}], 900, 'ease-out');
+      if(tierIdx===2){
+        q('.ea-stage').classList.add('ea-shake');
+        at(450, ()=>{ anim(q('.ea-flash'), [{opacity:0},{opacity:.8,offset:.3},{opacity:0}], 500, 'ease-out'); q('.ea-stage').classList.remove('ea-shake'); });
+      }
+    });
+    at(4700+X, ()=> reveal(false));
     const close = ()=>{
       timers.forEach(clearTimeout); cancelAnimationFrame(raf); window.removeEventListener('resize', resize);
       root.animate([{opacity:1},{opacity:0}], { duration:300, fill:'forwards' }).onfinish = ()=>{ root.remove(); running=null; if(queue.length) playEvolutionAnimation(queue.shift()); };
     };
-    at(9500, close);
+    at(9500+X, close);
     root.addEventListener('click', ()=>{
       if(phase==='reveal'){ close(); return; }
       timers.forEach(clearTimeout); timers.length=0;
@@ -274,6 +322,22 @@
     playEvolutionAnimation({ from: fromSnap, to, mode });
   }
 
+  // ----- Jogress: il partecipante fuso porta con sé jogressAnim (vedi index.html, Tenta Jogress) -----
+  const seenJog = new Set(); let jogSeeded = false;
+  function evoWatchCombat(combat){
+    const parts = (combat && combat.active && Array.isArray(combat.participants)) ? combat.participants : [];
+    parts.forEach(p=>{
+      if(!p || !p.jogressAnim || seenJog.has(p.id)) return;
+      seenJog.add(p.id);
+      const ja = p.jogressAnim;
+      // Al primo caricamento della pagina non si rigiocano fusioni vecchie (> 2 minuti).
+      if(!jogSeeded && (Date.now() - Number(ja.at||0)) > 120000) return;
+      if(!ja.from || !ja.from2 || !ja.to) return;
+      playEvolutionAnimation({ from: ja.from, from2: ja.from2, to: ja.to, mode:'jogress' });
+    });
+    jogSeeded = true;
+  }
+  window.evoWatchCombat = evoWatchCombat;
   window.playEvolutionAnimation = playEvolutionAnimation;
   window.evoSnapshot = evoSnapshot;
   window.evoWatchRoster = evoWatchRoster;
