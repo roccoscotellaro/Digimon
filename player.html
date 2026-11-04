@@ -608,6 +608,19 @@
       ${editable
         ? `<div class="field" style="flex:1;margin:0;"><label>URL Immagine Digivice</label><input type="text" id="p-digiviceImageUrl" value="${escapeAttr(m.tamer.digiviceImageUrl||'')}" placeholder="https://..." /></div>`
         : `<div class="muted">Digivice</div>`}
+    </div>
+    <!-- Digimedaglione (richiesta Rocco 2026-11-04): il Crest del Tamer, mostrato nelle animazioni di
+         evoluzione Super/Mega e sull'Uovo Digimental delle Armor (js/evo-animation.js). -->
+    <div style="display:flex;align-items:center;gap:12px;margin-top:10px;">
+      ${(m.tamer.digimedaglione && m.tamer.digimedaglione.imageUrl)
+        ? `<img src="${escapeAttr(m.tamer.digimedaglione.imageUrl)}" data-lightbox-src="${escapeAttr(m.tamer.digimedaglione.imageUrl)}" onerror="this.style.visibility='hidden'" style="width:48px;height:48px;object-fit:contain;border:1px solid var(--amber);border-radius:50%;background:var(--panel-2);padding:4px;cursor:zoom-in;" title="${escapeAttr((m.tamer.digimedaglione && m.tamer.digimedaglione.name)||'Digimedaglione')}" />`
+        : `<div style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:50%;color:var(--text-mute);font-size:20px;">✦</div>`}
+      ${editable
+        ? `<div style="flex:1;display:flex;gap:8px;flex-wrap:wrap;">
+             <div class="field" style="flex:1;min-width:140px;margin:0;"><label>Digimedaglione — nome (es. Crest)</label><input type="text" id="p-digimedaglioneName" value="${escapeAttr((m.tamer.digimedaglione && m.tamer.digimedaglione.name)||'')}" placeholder="non ancora assegnato" /></div>
+             <div class="field" style="flex:2;min-width:180px;margin:0;"><label>Digimedaglione — URL immagine</label><input type="text" id="p-digimedaglioneImageUrl" value="${escapeAttr((m.tamer.digimedaglione && m.tamer.digimedaglione.imageUrl)||'')}" placeholder="https://..." /></div>
+           </div>`
+        : `<div class="muted">${escapeHTML((m.tamer.digimedaglione && m.tamer.digimedaglione.name) || 'Digimedaglione non ancora assegnato')}</div>`}
     </div>`;
   }
 
@@ -1234,6 +1247,14 @@
     if(imgThumbEl) target.tamer.imageThumbUrl = imgThumbEl.value.trim();
     const digiviceEl = document.getElementById('p-digiviceImageUrl');
     if(digiviceEl) target.tamer.digiviceImageUrl = digiviceEl.value.trim();
+    const medNameEl = document.getElementById('p-digimedaglioneName');
+    const medImgEl = document.getElementById('p-digimedaglioneImageUrl');
+    if(medNameEl || medImgEl){
+      target.tamer.digimedaglione = {
+        name: medNameEl ? medNameEl.value.trim() : ((target.tamer.digimedaglione||{}).name||''),
+        imageUrl: medImgEl ? medImgEl.value.trim() : ((target.tamer.digimedaglione||{}).imageUrl||'')
+      };
+    }
     const chatColorEl = document.getElementById('p-chatColor');
     if(chatColorEl) target.tamer.chatColor = chatColorEl.value;
     const woundsEl = document.getElementById('p-currentWounds');

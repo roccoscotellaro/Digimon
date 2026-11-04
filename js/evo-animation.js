@@ -94,6 +94,10 @@
       .evoanim .ea-beam{position:absolute;left:50%;top:50%;width:26px;height:200px;margin:-200px 0 0 -13px;opacity:0;transform-origin:top center;
         background:linear-gradient(#fff,color-mix(in srgb,var(--accent) 80%,transparent) 40%,transparent);filter:blur(3px);}
       .evoanim .ea-egg{position:absolute;left:50%;top:50%;width:110px;height:140px;margin:-130px 0 0 -55px;opacity:0;filter:drop-shadow(0 0 18px var(--accent));}
+      .evoanim .ea-egg-crest{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-24px 0 0 -27px;object-fit:contain;z-index:2;filter:drop-shadow(0 0 6px #fff);}
+      .evoanim .ea-dv.has-img{background:#000;}
+      .evoanim .ea-dv.has-img::after{display:none;}
+      .evoanim .ea-dv img{position:absolute;inset:10px;width:calc(100% - 20px);height:calc(100% - 20px);object-fit:contain;}
       .evoanim .ea-egg i{position:absolute;left:0;right:0;height:50%;overflow:hidden;}
       .evoanim .ea-egg i::before{content:"";position:absolute;left:0;right:0;height:140px;border-radius:50% 50% 46% 46%/60% 60% 40% 40%;
         background:radial-gradient(circle at 35% 30%,#fff9,transparent 35%),repeating-linear-gradient(45deg,#ffb066 0 10px,#ff8a3d 10px 20px);border:2px solid #ffe2b0;}
@@ -173,9 +177,9 @@
           ${portrait('ea-new', B)}
         </div>
       </div>
-      <div class="ea-dv"></div>
+      <div class="ea-dv${opts.digivice?' has-img':''}">${opts.digivice?`<img src="${esc(opts.digivice)}" alt="">`:''}</div>
       ${medal ? `<div class="ea-beam"></div><div class="ea-medal">${opts.medallion && opts.medallion.img ? `<img src="${esc(opts.medallion.img)}" alt="">` : '<span>✦</span>'}</div><div class="ea-medal-name">${esc(((opts.medallion && opts.medallion.name) || 'DIGIMEDAGLIONE').toUpperCase())}</div>` : ''}
-      ${armor ? `<div class="ea-egg"><i class="top"></i><i class="bot"></i></div><div class="ea-callout">DIGIMENTAL UP!</div>` : ''}
+      ${armor ? `<div class="ea-egg"><i class="top"></i><i class="bot"></i>${opts.medallion && opts.medallion.img ? `<img class="ea-egg-crest" src="${esc(opts.medallion.img)}" alt="">` : ''}</div><div class="ea-callout">DIGIMENTAL UP!</div>` : ''}
       <div class="ea-warn">⚠ WARNING ⚠</div>
       <div class="ea-shock"></div>
       <div class="ea-flash"></div>
@@ -259,6 +263,7 @@
       at(2100, ()=>{
         anim(q('.ea-egg i.top'), [{transform:'none',opacity:1},{transform:'translate(-30px,-60px) rotate(-35deg)',opacity:0}], 700, 'ease-out');
         anim(q('.ea-egg i.bot'), [{transform:'none',opacity:1},{transform:'translate(25px,50px) rotate(25deg)',opacity:0}], 700, 'ease-out');
+        const crest = q('.ea-egg-crest'); if(crest) anim(crest, [{opacity:1,transform:'scale(1)'},{opacity:0,transform:'scale(2.2)'}], 700, 'ease-out');
         anim(q('.ea-flash'), [{opacity:0},{opacity:.6,offset:.3},{opacity:0}], 500, 'ease-out');
         emit(140,'burst');
       });
@@ -383,6 +388,7 @@
     const out = {};
     const med = t.digimedaglione || t.medallion || null;
     if(med && (med.name || med.imageUrl)) out.medallion = { name: med.name || '', img: med.imageUrl || '' };
+    if(t.digiviceImageUrl) out.digivice = t.digiviceImageUrl;
     if(snap.armor && snap.armor!==prev.armor){
       out.mode = 'armor';
       const af = (d.armorForms||[]).find(a=>a && a.name===snap.armor);
