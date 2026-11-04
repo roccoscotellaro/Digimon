@@ -609,6 +609,13 @@
   .master-subnav-btn{background:var(--panel-2);border:1px solid var(--line);color:var(--text-mute);border-radius:16px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent;}
   .master-subnav-btn:hover{border-color:var(--cyan-dim);color:var(--text);}
   .master-subnav-btn.active{border-color:var(--cyan);color:var(--cyan);background:rgba(53,232,201,0.08);}
+  .cm-sec{margin:6px 0;border:1px solid var(--line);border-radius:6px;background:rgba(255,255,255,0.015);}
+  .cm-sec > summary{cursor:pointer;padding:6px 8px;font-size:11px;letter-spacing:.04em;color:var(--text-mute);list-style:none;user-select:none;}
+  .cm-sec > summary::-webkit-details-marker{display:none;}
+  .cm-sec > summary::before{content:'▸';display:inline-block;width:12px;transition:transform .15s;}
+  .cm-sec[open] > summary::before{transform:rotate(90deg);}
+  .cm-sec[open] > summary{color:var(--text);border-bottom:1px solid var(--line);}
+  .cm-sec-body{padding:6px 8px;}
   .master-sub{display:none;}
   .master-sub.sub-active{display:block;}
   .master-menu{display:none;}
@@ -5002,6 +5009,8 @@ let editingScene = false;
           </div>
 
           <div class="mobile-section master-pane" data-mobile-tab="combattimento">
+          ${masterSubnavHTML('battaglia', [{key:'fight',label:'⚔️ Combattimento'},{key:'cronaca',label:'📜 Cronaca'},{key:'tools',label:'🛠️ Notifiche e bilanciamento'}])}
+            <div class="master-sub" data-sub-group="battaglia" data-sub="fight">
           <div class="hud-frame card">
             <div class="section-title">Combattimento</div>
             <div id="combat-live">${combatDisplayHTML(cachedCombat, true)}</div>
@@ -5011,11 +5020,17 @@ let editingScene = false;
               <button class="btn ghost" id="btn-combat-end-top" style="flex:1;">Termina</button>
             </div>
           </div>
-          <div class="hud-frame card" id="combat-turn-now-card">${combatCurrentTurnCardHTML(cachedCombat)}</div>
-          ${combatChronicleCardHTML()}
+          <!-- La card "Turno Attuale" (#combat-turn-now-card) è stata tolta dalla vista Master: ripeteva
+               chi è di turno, già evidenziato con ▶ nella card Combattimento qui sopra (2026-11-04). -->
           <div class="hud-frame card" id="combat-mgr-card"></div>
+            </div>
+            <div class="master-sub" data-sub-group="battaglia" data-sub="cronaca">
+          ${combatChronicleCardHTML()}
+            </div>
+            <div class="master-sub" data-sub-group="battaglia" data-sub="tools">
           <div class="hud-frame card" id="combat-notif-center-card"></div>
           <div class="hud-frame card" id="encounter-balance-card"></div>
+            </div>
           </div>
 
           <div class="mobile-section master-pane" data-mobile-tab="roster">
@@ -6262,6 +6277,27 @@ let editingScene = false;
   // quali righe partecipante sono "espanse" (mostrano Azione/Muovi/Effetti), se il pannello
   // "Risolvi Attacco" è aperto, e quale partecipante è pre-selezionato come Attaccante.
   const combatExpandedIds = new Set();
+  // Sezioni a scomparsa della Gestione Combattimento (richiesta Rocco 2026-11-04: "troppo caotica
+  // per il master, troppo scorrimento"). Lo stato aperto/chiuso di ogni sezione sopravvive ai
+  // ri-render (che avvengono a ogni azione) e al ricaricamento della pagina.
+  const COMBAT_SEC_KEY = 'dvos_combat_sections';
+  let combatSecOpen = {};
+  try{ combatSecOpen = JSON.parse(localStorage.getItem(COMBAT_SEC_KEY)||'{}') || {}; }catch(e){ combatSecOpen = {}; }
+  function cmSec(key, summary, inner, defaultOpen){
+    const open = (key in combatSecOpen) ? !!combatSecOpen[key] : !!defaultOpen;
+    return `<details class="cm-sec" data-cm-sec="${key}" ${open?'open':''}><summary>${summary}</summary><div class="cm-sec-body">${inner}</div></details>`;
+  }
+  function bindCombatSections(root){
+    if(!root || root.__cmSecBound) return;
+    root.__cmSecBound = true;
+    // 'toggle' non risale nel DOM: ascoltato in fase di cattura sul contenitore.
+    root.addEventListener('toggle', (e)=>{
+      const d = e.target;
+      if(!d || !d.matches || !d.matches('details[data-cm-sec]')) return;
+      combatSecOpen[d.getAttribute('data-cm-sec')] = d.open;
+      try{ localStorage.setItem(COMBAT_SEC_KEY, JSON.stringify(combatSecOpen)); }catch(err){}
+    }, true);
+  }
   let combatAttackPanelOpen = false;
   let combatPresetAttackerId = null;
   let combatPresetTargetId = null;
@@ -6425,6 +6461,7 @@ let editingScene = false;
 
     cardEl.innerHTML = `
       <div class="section-title">Gestione Combattimento</div>
+      ${cmSec('zones', '⚙️ Zone di partenza', `
       <div class="row" style="margin-bottom:4px;align-items:center;">
         <span class="muted" style="flex:1;">Zona di partenza Alleati</span>
         <select id="combat-startzone-ally-live" style="flex:1;">${ZONES.map(z=>`<option value="${z}" ${(combat.startZoneAlly||'Molto Corto')===z?'selected':''}>${zoneLabel(z)}</option>`).join('')}</select>
@@ -6433,6 +6470,7 @@ let editingScene = false;
         <span class="muted" style="flex:1;">Zona di partenza Nemici</span>
         <select id="combat-startzone-enemy-live" style="flex:1;">${ZONES.map(z=>`<option value="${z}" ${(combat.startZoneEnemy||'Molto Lungo')===z?'selected':''}>${zoneLabel(z)}</option>`).join('')}</select>
       </div>
+      `, false)}
       <div id="combat-participants-list">
         ${combat.participants.length===0 ? '<div class="muted" style="margin-bottom:8px;">Nessun partecipante ancora aggiunto.</div>' : combat.participants.map((p,i)=>{
           const w = getParticipantWounds(p);
@@ -6530,39 +6568,6 @@ let editingScene = false;
           <div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line);${isCurrentTurn?'background:rgba(53,232,201,0.06);border-radius:6px;padding:8px;':''}">
             ${header}
             ${defeatResolutionHTML}
-            ${evolveBoxHTML}
-            <!-- Richiesta utente: "manca un modo per danneggiare manualmente i digimon nemici" --
-                 funziona su QUALSIASI partecipante (non solo Nemici: utile anche per correggere le
-                 Ferite di un Alleato/PC per un Effetto/Trappola/terreno non coperto da un'Azione
-                 automatizzata), riusando applyDamageToParticipant/applyDefeatIfNeeded -- stessa
-                 funzione già usata dalla risoluzione automatica degli Attacchi, quindi Shield/tempWounds
-                 assorbe per primo e il controllo Sconfitto scatta identico. -->
-            <div class="row" style="margin-top:2px;margin-bottom:6px;align-items:center;">
-              <input type="number" data-manual-wound-amt="${p.id}" value="1" min="1" style="width:56px;flex:0 0 auto;" />
-              <button class="btn ghost small" data-manual-damage="${p.id}" style="flex:1;" title="Applica Danno manuale (es. Effetto/Trappola/Terreno non coperto da un'Azione automatizzata)">🩸 Danno</button>
-              <button class="btn ghost small" data-manual-heal="${p.id}" style="flex:1;" title="Cura manuale (es. Regen/Cleanse non automatizzati)">💚 Cura</button>
-            </div>
-            <!-- Richiesta utente: PF Temporanei e "altri bonus" (bonus in coda al prossimo Pool
-                 Check, es. Direct/Aid/Guard/Bolster) modificabili a mano dal Master -- vedi
-                 getParticipantTempWounds/setParticipantTempWounds più sopra. Ricorda: si azzerano
-                 da soli a fine turno/quando consumati (Reinforce/pendingRollBonus), quindi questi
-                 controlli servono per correzioni a metà turno, non per uno stato persistente. -->
-            <div class="row" style="margin-top:2px;margin-bottom:2px;align-items:center;">
-              <input type="number" data-manual-tempwounds-amt="${p.id}" value="1" min="1" style="width:56px;flex:0 0 auto;" />
-              <button class="btn ghost small" data-manual-tempwounds-add="${p.id}" style="flex:1;" title="Aggiungi PF Temporanei (Shield) manualmente — es. Azione narrata a voce, non coperta da un bottone">🛡️ + PF Temp</button>
-              <button class="btn ghost small" data-manual-tempwounds-remove="${p.id}" style="flex:1;" title="Rimuovi PF Temporanei manualmente (es. prima che scadano da soli)">🛡️ − PF Temp</button>
-            </div>
-            <div class="muted" style="font-size:10px;margin-bottom:6px;">PF Temporanei attuali: <b>${getParticipantTempWounds(p)}</b> (assorbono il prossimo Danno prima delle Ferite vere)</div>
-            <div class="row" style="margin-bottom:2px;align-items:center;">
-              <input type="number" data-manual-bonus-amt="${p.id}" placeholder="es. 2" style="width:56px;flex:0 0 auto;" />
-              <select data-manual-bonus-stat="${p.id}" style="flex:1;">
-                <option value="either">Accuracy o Dodge</option>
-                <option value="accuracy">Solo Accuracy</option>
-                <option value="dodge">Solo Dodge</option>
-              </select>
-              <button class="btn ghost small" data-manual-bonus-set="${p.id}" style="flex:0 0 auto;padding:4px 8px;" title="Imposta manualmente il bonus in coda sul prossimo Pool Check (sostituisce quello attuale) — es. Direct/Aid/Guard/Bolster narrato a voce">🎯 Imposta</button>
-            </div>
-            <div class="muted" style="font-size:10px;margin-bottom:6px;">Bonus in coda: ${p.pendingRollBonus ? `<b>+${p.pendingRollBonus.amount}</b> (${p.pendingRollBonus.stat==='either'?'Accuracy/Dodge':p.pendingRollBonus.stat==='accuracy'?'solo Accuracy':'solo Dodge'}, da ${escapeHTML(p.pendingRollBonus.source)}) <button class="btn ghost small" data-manual-bonus-clear="${p.id}" style="padding:1px 6px;margin-left:4px;">✕ Rimuovi</button>` : 'nessuno'} — si consuma al primo Pool Check, altrimenti resta finché non lo tolgono da qui.</div>
             <div class="muted" style="font-size:11px;margin-top:6px;margin-bottom:2px;color:var(--cyan);">Azione Digimon</div>
             <div class="row">
               <select data-daction-select="${p.id}" style="flex:2;">${DIGIMON_ACTION_DEFS.map(a=>`<option value="${a.key}">${escapeHTML(a.label)} (${a.cost} Az.)</option>`).join('')}</select>
@@ -6579,14 +6584,7 @@ let editingScene = false;
             </div>
             <div class="muted" data-taction-desc="${p.id}" style="margin:2px 0;font-size:11px;">${escapeHTML((TAMER_ACTION_DEFS[0]&&TAMER_ACTION_DEFS[0].desc)||'')}</div>
             <select data-skill-pick="${p.id}" style="display:none;margin-bottom:4px;width:100%;">${SKILL_DEFS.map(s=>`<option value="${s.key}">${escapeHTML(s.label)}</option>`).join('')}</select>
-            <div class="row" style="margin-top:4px;">
-              <button class="btn ghost small" data-action-reset="${p.id}" style="flex:1;" title="Ripristina sia le Azioni Digimon che quelle Tamer a 2/2">↺ 2+2</button>
-              <button class="btn ghost small" data-action-refund="${p.id}" style="flex:1;" title="Es. Successo Critico su Reload/Battle Cry/Horde Duelist: 'riottieni l'Azione spesa' (Digimon)">+1 Azione (Digimon)</button>
-              <button class="btn ghost small" data-action-refund-tamer="${p.id}" style="flex:1;" title="Restituisci 1 Azione al pool del Tamer (es. Azione data per sbaglio, correzione manuale)">+1 Azione (Tamer)</button>
-            </div>
-            <div class="row" style="margin-top:4px;">
-              <button class="btn ghost small" data-action-refund-attack="${p.id}" style="flex:1;" ${!p.attackedThisRound?'disabled':''} title="Es. Reload riuscito: 'riottieni l'uso dell'Attacco [AMMO]', ignora il limite di 1 Attacco a round">🔄 Restituisci Attacco</button>
-            </div>
+            <div class="muted" style="font-size:11px;margin-top:8px;margin-bottom:2px;">🏃 Movimento <span style="opacity:.7;">(rispetto a un altro partecipante, o zona precisa)</span></div>
             <div class="row" style="margin-top:6px;">
               <!-- Richiesta utente: "non possono selezionare se stessi per potenziarsi" -- questo
                    select (di riferimento per Avvicina/Allontana) è riusato anche da bindActionUse
@@ -6619,6 +6617,8 @@ let editingScene = false;
                 <button class="btn amber small" data-order-use="${p.id}" style="flex:1;" title="I Special Order sono Tamer Talent: il costo si scala dalle Azioni del Tamer, non da quelle del Digimon">✦ Special Order</button>
               </div>`;
             })()}
+            ${evolveBoxHTML ? cmSec('evo', `🧬 Evoluzione <span class="muted">— ${escapeHTML((pcDigimonForEvolve&&pcDigimonForEvolve.stage)||'')}${p.evolutionLocked?' · 🔒 bloccata':''}</span>`, evolveBoxHTML, false) : ''}
+            ${cmSec('effects', `✨ Effetti <span class="muted">(${(p.effects||[]).length})</span>`, `
             <div style="margin-top:6px;">${effectTagsHTML(p)}${(p.effects||[]).map((e,ei)=>`<button class="btn ghost small" data-effect-remove="${p.id}|${ei}" style="padding:1px 6px;margin-left:2px;">✕</button>`).join('')}</div>
             <div class="row" style="margin-top:4px;">
               <select data-effect-select="${p.id}" style="flex:2;">${EFFECT_DEFS.map(e=>`<option value="${e.key}">${effectIcon(e.key)} ${escapeHTML(e.label)}</option>`).join('')}</select>
@@ -6626,6 +6626,49 @@ let editingScene = false;
               <input type="number" data-effect-duration="${p.id}" value="3" min="1" max="3" placeholder="Dur." style="flex:1;" />
               <button class="btn small" data-effect-apply="${p.id}" style="flex:1;">+Effetto</button>
             </div>
+            `, (p.effects||[]).length>0)}
+            ${cmSec('manual', '🛠️ Correzioni manuali <span class="muted">(danno, cura, PF temporanei, bonus, azioni)</span>', `
+            <!-- Richiesta utente: "manca un modo per danneggiare manualmente i digimon nemici" --
+                 funziona su QUALSIASI partecipante (non solo Nemici: utile anche per correggere le
+                 Ferite di un Alleato/PC per un Effetto/Trappola/terreno non coperto da un'Azione
+                 automatizzata), riusando applyDamageToParticipant/applyDefeatIfNeeded -- stessa
+                 funzione già usata dalla risoluzione automatica degli Attacchi, quindi Shield/tempWounds
+                 assorbe per primo e il controllo Sconfitto scatta identico. -->
+            <div class="row" style="margin-top:2px;margin-bottom:6px;align-items:center;">
+              <input type="number" data-manual-wound-amt="${p.id}" value="1" min="1" style="width:56px;flex:0 0 auto;" />
+              <button class="btn ghost small" data-manual-damage="${p.id}" style="flex:1;" title="Applica Danno manuale (es. Effetto/Trappola/Terreno non coperto da un'Azione automatizzata)">🩸 Danno</button>
+              <button class="btn ghost small" data-manual-heal="${p.id}" style="flex:1;" title="Cura manuale (es. Regen/Cleanse non automatizzati)">💚 Cura</button>
+            </div>
+            <!-- Richiesta utente: PF Temporanei e "altri bonus" (bonus in coda al prossimo Pool
+                 Check, es. Direct/Aid/Guard/Bolster) modificabili a mano dal Master -- vedi
+                 getParticipantTempWounds/setParticipantTempWounds più sopra. Ricorda: si azzerano
+                 da soli a fine turno/quando consumati (Reinforce/pendingRollBonus), quindi questi
+                 controlli servono per correzioni a metà turno, non per uno stato persistente. -->
+            <div class="row" style="margin-top:2px;margin-bottom:2px;align-items:center;">
+              <input type="number" data-manual-tempwounds-amt="${p.id}" value="1" min="1" style="width:56px;flex:0 0 auto;" />
+              <button class="btn ghost small" data-manual-tempwounds-add="${p.id}" style="flex:1;" title="Aggiungi PF Temporanei (Shield) manualmente — es. Azione narrata a voce, non coperta da un bottone">🛡️ + PF Temp</button>
+              <button class="btn ghost small" data-manual-tempwounds-remove="${p.id}" style="flex:1;" title="Rimuovi PF Temporanei manualmente (es. prima che scadano da soli)">🛡️ − PF Temp</button>
+            </div>
+            <div class="muted" style="font-size:10px;margin-bottom:6px;">PF Temporanei attuali: <b>${getParticipantTempWounds(p)}</b> (assorbono il prossimo Danno prima delle Ferite vere)</div>
+            <div class="row" style="margin-bottom:2px;align-items:center;">
+              <input type="number" data-manual-bonus-amt="${p.id}" placeholder="es. 2" style="width:56px;flex:0 0 auto;" />
+              <select data-manual-bonus-stat="${p.id}" style="flex:1;">
+                <option value="either">Accuracy o Dodge</option>
+                <option value="accuracy">Solo Accuracy</option>
+                <option value="dodge">Solo Dodge</option>
+              </select>
+              <button class="btn ghost small" data-manual-bonus-set="${p.id}" style="flex:0 0 auto;padding:4px 8px;" title="Imposta manualmente il bonus in coda sul prossimo Pool Check (sostituisce quello attuale) — es. Direct/Aid/Guard/Bolster narrato a voce">🎯 Imposta</button>
+            </div>
+            <div class="muted" style="font-size:10px;margin-bottom:6px;">Bonus in coda: ${p.pendingRollBonus ? `<b>+${p.pendingRollBonus.amount}</b> (${p.pendingRollBonus.stat==='either'?'Accuracy/Dodge':p.pendingRollBonus.stat==='accuracy'?'solo Accuracy':'solo Dodge'}, da ${escapeHTML(p.pendingRollBonus.source)}) <button class="btn ghost small" data-manual-bonus-clear="${p.id}" style="padding:1px 6px;margin-left:4px;">✕ Rimuovi</button>` : 'nessuno'} — si consuma al primo Pool Check, altrimenti resta finché non lo tolgono da qui.</div>
+            <div class="row" style="margin-top:4px;">
+              <button class="btn ghost small" data-action-reset="${p.id}" style="flex:1;" title="Ripristina sia le Azioni Digimon che quelle Tamer a 2/2">↺ 2+2</button>
+              <button class="btn ghost small" data-action-refund="${p.id}" style="flex:1;" title="Es. Successo Critico su Reload/Battle Cry/Horde Duelist: 'riottieni l'Azione spesa' (Digimon)">+1 Azione (Digimon)</button>
+              <button class="btn ghost small" data-action-refund-tamer="${p.id}" style="flex:1;" title="Restituisci 1 Azione al pool del Tamer (es. Azione data per sbaglio, correzione manuale)">+1 Azione (Tamer)</button>
+            </div>
+            <div class="row" style="margin-top:4px;">
+              <button class="btn ghost small" data-action-refund-attack="${p.id}" style="flex:1;" ${!p.attackedThisRound?'disabled':''} title="Es. Reload riuscito: 'riottieni l'uso dell'Attacco [AMMO]', ignora il limite di 1 Attacco a round">🔄 Restituisci Attacco</button>
+            </div>
+            `, false)}
           </div>
         `;}).join('')}
       </div>
@@ -6654,7 +6697,8 @@ let editingScene = false;
         <div id="combat-attack-result" style="margin-top:8px;"></div>
       </div>
       <div class="divider"></div>
-      <div class="section-title" style="font-size:11px;">🤼 Clash (usa Attaccante/Bersaglio sopra)</div>
+      ${cmSec('clash', '🤼 Clash e 🤝 Jogress <span class="muted">(usano Attaccante/Bersaglio sopra)</span>', `
+
       <div class="row">
         <button class="btn small" id="btn-combat-clash-start" style="flex:1;">Inizia/Contesa</button>
         <button class="btn ghost small" id="btn-combat-clash-end" style="flex:1;">Termina</button>
@@ -6673,6 +6717,8 @@ let editingScene = false;
       </div>
       <div id="jogress-result" style="margin-top:8px;"></div>
       <div class="divider"></div>` : ''}
+      `, false)}
+      ${cmSec('add', '➕ Aggiungi partecipanti', `
       <div class="row">
         <select id="combat-add-player" style="flex:2;">
           <option value="">Aggiungi giocatore...</option>
@@ -6719,7 +6765,8 @@ let editingScene = false;
         </select>
       </div>
       <button class="btn small" id="btn-combat-add-enemy" style="width:100%;margin-top:6px;">+ Aggiungi Nemico</button>
-      <div class="divider"></div>
+      `, combat.participants.length===0)}
+      ${cmSec('initiative', '🎲 Iniziativa e ordine dei turni', `
       <button class="btn" id="btn-combat-roll-all" style="width:100%;margin-bottom:8px;">🎲 Tira Iniziativa per Tutti</button>
       <button class="btn solid" id="btn-combat-calc-order" style="width:100%;margin-bottom:8px;">Calcola Ordine</button>
       ${(combat.order && combat.order.length>0) ? `
@@ -6728,10 +6775,11 @@ let editingScene = false;
         <button class="btn ghost small" id="btn-combat-jump-turn" style="flex:1;">➜ Vai al turno</button>
       </div>
       ` : ''}
-      <div class="muted" style="margin-bottom:6px;">I tasti "Turno Successivo" / "Turno Precedente" / "Termina" si trovano nella scheda "Combattimento" qui sopra.</div>
+      `, !(combat.order && combat.order.length))}
       <div class="muted" id="combat-mgr-status" style="margin-top:6px;"></div>
     `;
 
+    bindCombatSections(cardEl);
     const persistAndRefresh = async ()=>{
       await saveCombat(code, cachedCombat);
       renderCombatManager(code, players);
