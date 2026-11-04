@@ -1098,8 +1098,11 @@
           // ad applyStageChange, dato che il guard sopra garantisce che lo Stage sia già costruito.
           await pushPlayerNarration(session.code, me, { who: displayName(me), role:'player', text: `✨ ${oldName} è avvolto da un bagliore di dati... e digivolve in ${me.digimon.name||target}!${cost>0?` (spesi ${cost} Evolution Points)`:''} — Stat aggiornate automaticamente. Ricorda di segnare 1 Azione spesa.` });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = 'Evoluzione applicata, Stat aggiornate.';
-          try{ __playEvolutionSfx('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787073018875_mziu9s.mpeg'); }catch(e){}
-          showEvolutionTransition(__oldImg, bestDigimonImage(null, me.digimon.name, me.digimon.imageUrl), me.digimon.name);
+          // Animazione + suono: partono da saveMember (js/evo-animation.js), qui solo il ripiego.
+          if(typeof window.evoWatchRoster!=='function'){
+            try{ __playEvolutionSfx('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787073018875_mziu9s.mpeg'); }catch(e){}
+            showEvolutionTransition(__oldImg, bestDigimonImage(null, me.digimon.name, me.digimon.imageUrl), me.digimon.name);
+          }
           renderDigimonCard(me, containerId, onChanged, renderTamerCardFn);
           if(onChanged) onChanged();
         };
@@ -1153,7 +1156,7 @@
           await syncCombatParticipantName(me);
           await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: `⚡ Forza Evoluzione (TN ${tn}): 3d6[${dice.join(',')}] + Willpower ${willVal} = ${total} → ${outcomeText}`, meta:{ dice } });
           statusEl.style.color='var(--text-mute)'; statusEl.textContent = outcomeText;
-          if(verdict.cls==='crit-success' || verdict.cls==='success'){
+          if((verdict.cls==='crit-success' || verdict.cls==='success') && typeof window.evoWatchRoster!=='function'){
             try{ __playEvolutionSfx('https://gsquzfhxgyqrnkrqdivc.supabase.co/storage/v1/object/public/campaign-audio/FRONTIER1/1787073018875_mziu9s.mpeg'); }catch(e){}
             showEvolutionTransition(__oldImg, bestDigimonImage(null, me.digimon.name, me.digimon.imageUrl), me.digimon.name);
           }

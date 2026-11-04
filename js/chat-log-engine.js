@@ -115,7 +115,15 @@
 // opts.replaceInventory (2026-09-26): il salvataggio completo NON tocca più l'Inventario di un
 // membro esistente (vedi api/roster.js, "Inventario: operazioni atomiche") — passare true SOLO
 // quando l'Inventario va davvero sostituito (Azzera Scheda Tamer).
-async function saveMember(code, member, opts){ const d = await apiPost('/api/roster', { code, member, replaceInventory: !!(opts && opts.replaceInventory) }); return !!(d && d.ok); }
+async function saveMember(code, member, opts){
+  const d = await apiPost('/api/roster', { code, member, replaceInventory: !!(opts && opts.replaceInventory) });
+  // Animazione di evoluzione subito su questo dispositivo se lo Stage/la forma sono cambiati (vedi
+  // js/evo-animation.js); gli altri la vedono al successivo aggiornamento del Roster.
+  if(d && d.ok && typeof window!=='undefined' && typeof window.evoWatchRoster==='function'){
+    try{ window.evoWatchRoster([member], { isMaster: !!(session && session.role==='master'), me: session && session.username }); }catch(e){}
+  }
+  return !!(d && d.ok);
+}
 // Testi personalizzabili del Torment Check (richiesta Rocco 2026-10-02: "non vedo la possibilità
 // di cambiare i messaggi del torment check"). Le voci vivono in AUTO_MSG_DEFS (index.html,
 // categoria 'Torment Check', pannello Master "Messaggi Automatici"); autoMsgText è esposta su

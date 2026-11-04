@@ -846,6 +846,7 @@
 <script src="js/notices.js"></script>
 <script src="js/ui-helpers.js"></script>
 <script src="js/digimon-card.js"></script>
+<script src="js/evo-animation.js"></script>
 <script src="js/tamer-card.js"></script>
 <script src="js/progression.js"></script>
 <script src="js/scene-encounters.js"></script>
@@ -4255,6 +4256,7 @@ let editingScene = false;
     const slowCycle = (typeof tick!=='number') || (tick % 4 === 0); // sempre true al primo giro
     const dexCycle = (typeof tick!=='number') || (tick % 40 === 0); // ~10 minuti (era ogni 60s)
     cachedRoster = (await getRoster(session.code)).map(normalizeMember);
+    if(typeof evoWatchRoster==='function') evoWatchRoster(cachedRoster, { isMaster: !!(session && session.role==='master'), me: session && session.username });
     cachedScene = await getScene(session.code);
     cachedLog = await getLog(session.code);
     if(cachedLog.length){
@@ -4678,6 +4680,7 @@ let editingScene = false;
   async function renderPlayer(){
     const code = session.code;
     cachedRoster = (await getRoster(code)).map(normalizeMember);
+    if(typeof evoWatchRoster==='function') evoWatchRoster(cachedRoster, { isMaster: !!(session && session.role==='master'), me: session && session.username });
     const me = normalizeMember(cachedRoster.find(m=>m.username===session.username) || { username: session.username, role:'player' });
     cachedMe = me;
     // BUGFIX (Dungeon, 2026-09-30): `me` qui sotto resta la Scheda letta all'apertura della pagina,
@@ -4984,6 +4987,7 @@ let editingScene = false;
   async function renderMaster(){
     const code = session.code;
     cachedRoster = (await getRoster(code)).map(normalizeMember);
+    if(typeof evoWatchRoster==='function') evoWatchRoster(cachedRoster, { isMaster: !!(session && session.role==='master'), me: session && session.username });
     cachedScene = await getScene(code);
     cachedLog = await getLog(code);
     cachedDex = await getDex(code);
