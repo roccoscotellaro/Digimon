@@ -8476,7 +8476,7 @@ let editingScene = false;
             </div>
           </div>
           <div class="roster-item-right">
-            ${!isEgg ? epDigiviceHTML(p.digimon.evolutionPoints||0, cachedProgression ? Number(cachedProgression.milestone||0) : null, {mini:true}) : ''}
+            ${!isEgg ? epDigiviceHTML(p.digimon.evolutionPoints||0, cachedProgression ? Number(cachedProgression.milestone||0) : null, {mini:true, tamer:p.tamer}) : ''}
             <div class="roster-item-actions">
               <button class="btn ghost small" id="btn-manage-${i}">Gestisci Scheda</button>
               <button class="btn small" id="btn-suggest-${i}">Suggerisci Battuta</button>

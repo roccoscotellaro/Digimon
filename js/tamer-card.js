@@ -749,7 +749,9 @@
           if(el) me.tamer[k] = Number(el.value)||0;
         });
         me.tamer.imageUrl = document.getElementById('e-t-img').value.trim();
-        me.tamer.digiviceImageUrl = document.getElementById('e-t-digivice-img').value.trim();
+        const __newDv = document.getElementById('e-t-digivice-img').value.trim();
+        if(__newDv !== (me.tamer.digiviceImageUrl||'')) delete me.tamer.digiviceScreen; // display da risegnare (player.html)
+        me.tamer.digiviceImageUrl = __newDv;
         const tColorEl = document.getElementById('e-t-color');
         if(tColorEl) me.tamer.chatColor = tColorEl.value;
         me.tamer.majorAspect.text = document.getElementById('e-t-aspect-major').value.trim();

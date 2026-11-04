@@ -606,7 +606,14 @@
         ? `<img id="p-digivice-img" src="${escapeAttr(m.tamer.digiviceImageUrl)}" data-lightbox-src="${escapeAttr(m.tamer.digiviceImageUrl)}" onerror="this.style.visibility='hidden'" style="width:48px;height:48px;object-fit:contain;border:1px solid var(--cyan-dim);border-radius:var(--radius);background:var(--panel-2);padding:4px;cursor:zoom-in;" title="Clicca per ingrandire" />`
         : `<div id="p-digivice-img" style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:var(--radius);color:var(--text-mute);font-size:20px;">📟</div>`}
       ${editable
-        ? `<div class="field" style="flex:1;margin:0;"><label>URL Immagine Digivice</label><input type="text" id="p-digiviceImageUrl" value="${escapeAttr(m.tamer.digiviceImageUrl||'')}" placeholder="https://..." /></div>`
+        ? `<div style="flex:1;">
+             <div class="field" style="margin:0;"><label>URL Immagine Digivice</label><input type="text" id="p-digiviceImageUrl" value="${escapeAttr(m.tamer.digiviceImageUrl||'')}" placeholder="https://..." /></div>
+             <input type="hidden" id="p-digiviceScreen" value="${escapeAttr(m.tamer.digiviceScreen ? JSON.stringify(m.tamer.digiviceScreen) : '')}" />
+             <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
+               <button type="button" class="btn ghost small" id="p-digivice-calibrate">📐 Segna il display</button>
+               <span class="muted" id="p-digivice-cal-status" style="font-size:11px;">${m.tamer.digiviceScreen ? '✔ Display segnato: questo Digivice compare anche nel contatore degli Evolution Point.' : 'Segna dov\'è lo schermo del Digivice per usarlo anche nel contatore degli Evolution Point.'}</span>
+             </div>
+           </div>`
         : `<div class="muted">Digivice</div>`}
     </div>
     <!-- Digimedaglione (richiesta Rocco 2026-11-04): il Crest del Tamer, mostrato nelle animazioni di
@@ -1184,6 +1191,7 @@
       bindImageUpload(target);
       checkPortraitLoadable(target.tamer.imageThumbUrl || target.tamer.imageUrl);
       bindListEditors(target);
+      bindDigiviceCalibration();
       const bgCorrectBtn = document.getElementById('p-bg-correct');
       if(bgCorrectBtn) bgCorrectBtn.onclick = async ()=>{
         const ta = document.getElementById('p-bg-background');
@@ -1247,6 +1255,13 @@
     if(imgThumbEl) target.tamer.imageThumbUrl = imgThumbEl.value.trim();
     const digiviceEl = document.getElementById('p-digiviceImageUrl');
     if(digiviceEl) target.tamer.digiviceImageUrl = digiviceEl.value.trim();
+    const dvScreenEl = document.getElementById('p-digiviceScreen');
+    if(dvScreenEl){
+      let scr = null; try{ scr = dvScreenEl.value ? JSON.parse(dvScreenEl.value) : null; }catch(e){}
+      // Il riquadro vale solo per l'immagine su cui è stato segnato: se l'URL cambia, va risegnato.
+      if(scr && scr.url && scr.url !== target.tamer.digiviceImageUrl) scr = null;
+      if(scr) target.tamer.digiviceScreen = scr; else delete target.tamer.digiviceScreen;
+    }
     const medNameEl = document.getElementById('p-digimedaglioneName');
     const medImgEl = document.getElementById('p-digimedaglioneImageUrl');
     if(medNameEl || medImgEl){
@@ -1428,6 +1443,60 @@
   const MAX_UPLOAD_MB = 4;
   function fileTooBig(file){
     return file && file.size > MAX_UPLOAD_MB * 1024 * 1024;
+  }
+
+  // "📐 Segna il display" (Rocco 2026-11-04): sull'immagine del Digivice del Tamer si trascina un
+  // riquadro sopra lo schermo LCD; lì dentro il contatore degli Evolution Point disegna le barrette
+  // (epDigiviceHTML in js/digimon-card.js e digimon.html). Salvato in tamer.digiviceScreen come
+  // percentuali dell'immagine + proporzioni (ar), insieme agli altri campi con "Salva".
+  function bindDigiviceCalibration(){
+    const btn = document.getElementById('p-digivice-calibrate');
+    if(!btn) return;
+    btn.onclick = ()=>{
+      const url = (document.getElementById('p-digiviceImageUrl')||{}).value || '';
+      const statusEl = document.getElementById('p-digivice-cal-status');
+      if(!url.trim()){ if(statusEl) statusEl.textContent = 'Inserisci prima l\'URL dell\'immagine del Digivice.'; return; }
+      const hidden = document.getElementById('p-digiviceScreen');
+      let cur = null; try{ cur = hidden && hidden.value ? JSON.parse(hidden.value) : null; }catch(e){}
+      let rect = cur ? { x:cur.x, y:cur.y, w:cur.w, h:cur.h } : { x:37, y:36, w:25.8, h:28.3 };
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(5,7,10,.94);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;gap:12px;';
+      ov.innerHTML = `
+        <div class="muted" style="text-align:center;max-width:420px;font-size:12px;">Trascina un riquadro sopra lo <b>schermo</b> del Digivice: lì compariranno le barrette degli Evolution Point.</div>
+        <div id="dvcal-wrap" style="position:relative;touch-action:none;user-select:none;max-width:min(90vw,420px);">
+          <img id="dvcal-img" src="${escapeAttr(url.trim())}" style="display:block;max-width:100%;max-height:60vh;" draggable="false" />
+          <div id="dvcal-rect" style="position:absolute;border:2px solid var(--cyan);background:rgba(53,232,201,.25);box-shadow:0 0 8px var(--cyan);pointer-events:none;"></div>
+        </div>
+        <div class="muted" id="dvcal-err" style="color:var(--danger);font-size:12px;"></div>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="btn small" id="dvcal-ok">✔ Usa questo riquadro</button>
+          <button type="button" class="btn ghost small" id="dvcal-reset">Rimuovi</button>
+          <button type="button" class="btn ghost small" id="dvcal-cancel">Annulla</button>
+        </div>`;
+      document.body.appendChild(ov);
+      const img = ov.querySelector('#dvcal-img'), box = ov.querySelector('#dvcal-rect'), wrap = ov.querySelector('#dvcal-wrap');
+      const draw = ()=>{ box.style.left=rect.x+'%'; box.style.top=rect.y+'%'; box.style.width=rect.w+'%'; box.style.height=rect.h+'%'; };
+      draw();
+      img.onerror = ()=>{ ov.querySelector('#dvcal-err').textContent = 'Immagine non caricabile: controlla l\'URL.'; };
+      let start = null;
+      const pct = (ev)=>{ const r = img.getBoundingClientRect(); const pt = ev.touches ? ev.touches[0] : ev; return { x: Math.max(0,Math.min(100,(pt.clientX-r.left)/r.width*100)), y: Math.max(0,Math.min(100,(pt.clientY-r.top)/r.height*100)) }; };
+      const down = (ev)=>{ ev.preventDefault(); start = pct(ev); rect = { x:start.x, y:start.y, w:0, h:0 }; draw(); };
+      const move = (ev)=>{ if(!start) return; ev.preventDefault(); const p = pct(ev); rect = { x:Math.min(start.x,p.x), y:Math.min(start.y,p.y), w:Math.abs(p.x-start.x), h:Math.abs(p.y-start.y) }; draw(); };
+      const up = ()=>{ start = null; };
+      wrap.addEventListener('mousedown', down); window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+      wrap.addEventListener('touchstart', down, {passive:false}); window.addEventListener('touchmove', move, {passive:false}); window.addEventListener('touchend', up);
+      const close = ()=>{ window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); window.removeEventListener('touchmove', move); window.removeEventListener('touchend', up); ov.remove(); };
+      ov.querySelector('#dvcal-cancel').onclick = close;
+      ov.querySelector('#dvcal-reset').onclick = ()=>{ if(hidden) hidden.value=''; if(statusEl) statusEl.textContent='Display rimosso: nel contatore EP resta il Digivice comune. Premi Salva.'; close(); };
+      ov.querySelector('#dvcal-ok').onclick = ()=>{
+        if(rect.w < 3 || rect.h < 3){ ov.querySelector('#dvcal-err').textContent = 'Riquadro troppo piccolo: trascina sopra tutto lo schermo.'; return; }
+        const ar = (img.naturalWidth && img.naturalHeight) ? +(img.naturalWidth/img.naturalHeight).toFixed(4) : 1.1;
+        const r2 = (n)=> Math.round(n*10)/10;
+        if(hidden) hidden.value = JSON.stringify({ x:r2(rect.x), y:r2(rect.y), w:r2(rect.w), h:r2(rect.h), ar, url:url.trim() });
+        if(statusEl) statusEl.textContent = '✔ Display segnato — premi Salva per confermare.';
+        close();
+      };
+    };
   }
 
   function bindImageUpload(target){

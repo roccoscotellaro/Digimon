@@ -277,8 +277,15 @@
     for(let i=0;i<SLOTS;i++){
       bars += i<totalSlots ? `<span class="ep-dv-bar ${i<filledSlots?'filled':''}"></span>` : `<span class="ep-dv-bar dim"></span>`;
     }
+    // Digivice del Tamer (richiesta Rocco 2026-11-04): se il giocatore ha la sua immagine Digivice
+    // E ha segnato dov'è il display (tamer.digiviceScreen, vedi player.html "📐 Segna il display"),
+    // si usa quella; altrimenti resta il Digivice comune della campagna.
+    const tm = opts && opts.tamer;
+    const scr = tm && tm.digiviceImageUrl && tm.digiviceScreen && tm.digiviceScreen.w>0 && tm.digiviceScreen.h>0 ? tm.digiviceScreen : null;
+    const frameStyle = scr ? ` style="background-image:url('${String(tm.digiviceImageUrl).replace(/'/g,'%27').replace(/[<>"]/g,'')}');aspect-ratio:${Number(scr.ar)||1.1};"` : '';
+    const screenStyle = scr ? ` style="left:${Number(scr.x)}%;top:${Number(scr.y)}%;width:${Number(scr.w)}%;height:${Number(scr.h)}%;"` : '';
     return `<span class="ep-digivice${mini?' mini':''}" title="Evolution Points disponibili${hasMax?` (massimo ${max}, pari alle Milestone completate)`:''}">
-      <span class="ep-dv-frame"><span class="ep-dv-screen">${bars}</span></span>
+      <span class="ep-dv-frame"${frameStyle}><span class="ep-dv-screen"${screenStyle}>${bars}</span></span>
       <span class="ep-dv-label">EP <b>${cur}</b>${hasMax?`<span style="opacity:.6;">/${max}</span>`:''}</span>
     </span>`;
   }
@@ -881,7 +888,7 @@
         ` : `
         <div class="sub" style="margin-bottom:6px;">Il tuo Digimon riposa normalmente a <b>${escapeHTML(d.defaultStage)}</b> e può salire fino a <b>${STAGES[Math.min(5, stageIndex(d.defaultStage)+Number(d.defaultRange||0))]}</b> senza spendere Evolution Points (Default Range: ${d.defaultRange}).${d.forcedEvoRoundsLeft>0?` · <span style="color:var(--danger);">Evoluzione Forzata: ${d.forcedEvoRoundsLeft} round rimasti</span>`:''}</div>
         <div style="margin-bottom:10px;">
-          ${epDigiviceHTML(d.evolutionPoints||0, cachedProgression ? Number(cachedProgression.milestone||0) : null)}
+          ${epDigiviceHTML(d.evolutionPoints||0, cachedProgression ? Number(cachedProgression.milestone||0) : null, { tamer: me.tamer })}
         </div>
         ${d.hybridMode ? `<div class="muted" style="margin-bottom:6px;color:var(--cyan);">🔀 Hybrid/Bio-Merge attiva: 3 Azioni in combattimento invece di 2 (ancora 1 Attacco a round). Il Tamer non può Dirigere se stesso.</div>` : ''}
         <div class="row">
