@@ -6650,8 +6650,10 @@ let editingScene = false;
             ${p.clashWith ? `<div class="muted" style="margin-top:3px;font-size:11px;">🤼 In Clash con ${escapeHTML((combat.participants.find(o=>o.id===p.clashWith)||{}).name||'?')}</div>` : ''}`;
           const rowFrame = `margin-bottom:6px;padding:6px 8px;border-radius:6px;border:1px solid ${isCurrentTurn?'var(--cyan)':'var(--line)'};border-left:3px solid ${p.side==='ally'?'var(--cyan)':'var(--danger)'};background:${isCurrentTurn?'rgba(53,232,201,0.08)':'var(--panel-2)'};${defeated?'opacity:.6;':''}`;
           if(!expanded){
-            // Gli altri stanno nella barra dei turni; resta in vista solo chi ha una Sconfitta da risolvere.
-            if(!pDefeatPending) return '';
+            // Gli altri stanno solo nella barra dei turni (Rocco 2026-11-04: "lascia aperta solo di chi
+            // è in turno"). Una Sconfitta da risolvere si vede dal 🏳️ sul ritratto: toccandolo si apre
+            // la sua riga con i bottoni Regredisci/Uovo.
+            return '';
             return `<div style="${rowFrame}">${header}${statusLine}${defeatResolutionHTML}${(p.effects&&p.effects.length)?`<div style="margin-top:4px;">${effectTagsHTML(p)}</div>`:''}</div>`;
           }
           return `
