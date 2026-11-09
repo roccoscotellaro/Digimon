@@ -401,6 +401,7 @@
     };
     document.getElementById('btn-take-rest').onclick = async ()=>{
       const players = cachedRoster.filter(m=>m.role==='player');
+      const potentialGot = [];
       for(const p of players){
         p.tamer.currentWounds = 3 + Number(p.tamer.skills.endurance||0);
         p.digimon.currentWounds = p.digimon.maxWounds;
@@ -418,10 +419,23 @@
         if(!p.tamer.specialOrdersUsed) p.tamer.specialOrdersUsed = {};
         TALENT_DEFS.filter(t=>t.once==='rest').forEach(t=>{ p.tamer.specialOrdersUsed[t.order] = false; });
         (p.digimon.armorForms||[]).forEach(af=>{ af.usedThisRest = false; });
+        // Talent Potential (Willpower 3+, scelta di Rocco 2026-11-09: "puoi darlo a ogni riposo
+        // lungo"): +1 IP Temporaneo a ogni Rest. È temporaneo, quindi può superare il tetto
+        // 2+Willpower; se al Rest successivo non è stato usato (IP ancora sopra il tetto), quella
+        // eccedenza sparisce prima di darne uno nuovo.
+        if(p.tamer.potentialIP && Number(p.tamer.inspirationPoints||0) > ipCap(p.tamer)){
+          p.tamer.inspirationPoints = ipCap(p.tamer);
+        }
+        p.tamer.potentialIP = false;
+        if(tamerHasTalent(p.tamer, 'Potential')){
+          p.tamer.inspirationPoints = Number(p.tamer.inspirationPoints||0) + 1;
+          p.tamer.potentialIP = true;
+          potentialGot.push(displayName(p));
+        }
         clearStaleDefeat(p);
         await saveMember(code, p);
       }
-      await publishDowntimeMessage({ who:'Sistema', role:'gm', text: `😴 Il party fa un Rest: Ferite ed Evolution Points recuperati del tutto, penalità Torment rimosse, Torment Check di nuovo disponibili, Aspects ricaricati (Major 1, Minor 2).` });
+      await publishDowntimeMessage({ who:'Sistema', role:'gm', text: `😴 Il party fa un Rest: Ferite ed Evolution Points recuperati del tutto, penalità Torment rimosse, Torment Check di nuovo disponibili, Aspects ricaricati (Major 1, Minor 2).${potentialGot.length ? ` ✨ Potential: +1 IP Temporaneo a ${potentialGot.join(', ')}.` : ''}` });
       // Richiesta utente (Razioni): oltre al Rest ufficiale (8.04) sopra, invia ai giocatori un
       // prompt per consumare le razioni giornaliere (2, oggetti inventario categoria 'cibo' — vedi
       // js/tamer-card.js/renderInventoryCard e il marcatore ::RATIONREQ:: gestito in
