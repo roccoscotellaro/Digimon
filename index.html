@@ -1909,6 +1909,18 @@ let editingScene = false;
       const bolstered = !!actor.tamerBolsterReady; actor.tamerBolsterReady = false;
       const pool = (actionKey==='reinforce1' ? ownerAttr(actor,'body') : highestAttribute(actor)) + (bolstered?2:0);
       const roll = rollPool(pool);
+      // Talent Bulk Up (Body 3+, segnalato da un giocatore 2026-11-09: "il mio talent bulk up non
+      // funziona"): era solo descritto in TALENT_DEFS (js/tamer-card.js), mai applicato qui. Regola:
+      // "Quando prendi l'Azione Reinforce, guadagni +1 Successo al risultato finale" -- vale per
+      // entrambe le varianti (1 Az. Body / 2 Az. Highest Attribute), solo per i Tamer dei PC.
+      let bulkUp = false;
+      if(actor.isPC){
+        const owner = cachedRoster.find(m=>m.username===actor.username);
+        if(owner && owner.tamer && computeUnlockedTalents(owner.tamer).some(t=>t.name==='Bulk Up')){
+          bulkUp = true;
+          roll.successes += 1;
+        }
+      }
       // FIX (segnalato dall'utente: "i pf temporanei si accumulano a ogni Reinforce?"): il
       // regolamento dice esplicitamente "fino al prossimo turno del Tamer" -- una scadenza che qui
       // non era mai stata implementata, quindi i PF Temporanei da Reinforce restavano per sempre
@@ -1929,7 +1941,7 @@ let editingScene = false;
         actor.tempWounds = Number(actor.tempWounds||0) + roll.successes;
         actor.reinforceTempWounds = Number(actor.reinforceTempWounds||0) + roll.successes;
       }
-      return { ok:true, note: `Pool Check Reinforce ${pool}d6[${roll.dice.join(',')}]=${roll.successes} succ. → +${roll.successes} Wound Box Temporanee (fino al prossimo turno del Tamer).` };
+      return { ok:true, note: `Pool Check Reinforce ${pool}d6[${roll.dice.join(',')}]=${roll.successes} succ.${bulkUp?' (incl. +1 Bulk Up)':''} → +${roll.successes} Wound Box Temporanee (fino al prossimo turno del Tamer).` };
     }
     // ---- Reposition: Pool Check di Agility (1 Az.) o Attributo più alto (2 Az.) del TAMER -> se
     // riesce (≥1 successo, stessa convenzione di Aid), il Digimon ottiene 1 spostamento gratuito
