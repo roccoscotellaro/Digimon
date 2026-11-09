@@ -1628,7 +1628,7 @@ async function patchMember(code, username, digimonPatch, tamerPatch){
         const tormentName = fulfillTormentBtn.getAttribute('data-fulfill-torment');
         const tor = (me.tamer.torments||[]).find(t=>t.name===tormentName);
         if(tor && !tor.usedThisRest){
-          const result = rollTormentCheck(tor.boxes);
+          const result = rollTormentCheck(tor.boxes, breakTheChainBonus(me.tamer)); // Break the Chain (Bravery 3+)
           let outcomeText;
           if(result.outcome==='crit-success'){
             tor.boxes = Math.max(0, tor.boxes-1);

@@ -331,6 +331,18 @@
     });
   }
 
+  // Talenti passivi automatici (richiesta Rocco 2026-11-09: "controlla tutti i talenti dei miei
+  // player e rendili automatici"). Helper unico usato dai punti del codice che applicano davvero
+  // l'effetto (Reinforce/Reposition/Direct in index.html, Torment Check qui e in
+  // js/chat-log-engine.js, Iniziativa in index.html).
+  function tamerHasTalent(tamer, name){
+    return !!(tamer && computeUnlockedTalents(tamer).some(t=>t.name===name));
+  }
+  // Break the Chain (Bravery 3+): bonus ai Torment Check pari ai punti in Bravery.
+  function breakTheChainBonus(tamer){
+    return tamerHasTalent(tamer, 'Break the Chain') ? Number((tamer.skills && tamer.skills.bravery)||0) : 0;
+  }
+
   // STAGE_CREATION spostato in js/digimon-card.js
 
   function renderTamerCard(me, containerId, onChanged){
@@ -651,7 +663,7 @@
             const rerollBtn = resEl ? document.getElementById('torment-reroll-'+idx) : null;
             if(rerollBtn){
               rerollBtn.onclick = async ()=>{
-                const result2 = rollTormentCheck(preBoxes, 1);
+                const result2 = rollTormentCheck(preBoxes, 1 + breakTheChainBonus(me.tamer));
                 const keepNew = window.confirm(`Ri-tiro con Ispirazione (+1 bonus incluso, regola 2.05a): nuovo risultato ${result2.total} (dadi ${result2.dice.join(',')}) contro il vecchio ${curResult.total} (dadi ${curResult.dice.join(',')}).\n\nOK = tieni il NUOVO risultato. Annulla = tieni il VECCHIO.`);
                 const finalResult = keepNew ? result2 : curResult;
                 const newIpBaseline = ipBaselineForCur - 1;
@@ -661,7 +673,7 @@
                 // del Torment fuori dal payload ::TORMENTRESULT::.
                 // Testo personalizzabile dal Master (AUTO_MSG_DEFS 'torment_reroll', vedi tormentAutoMsg in
                 // js/chat-log-engine.js) -- il fallback è la frase storica, identica a prima.
-                const rerollLogText = `${tormentAutoMsg('torment_reroll', { dice: result2.dice.join(','), total: result2.total, tn: result2.tn, kept: keepNew?'il NUOVO':'il VECCHIO', finalTotal: finalResult.total, outcomeText: finalOutcomeText }, `Ispirazione (-1 IP): ri-tira Torment Check → 3d6[${result2.dice.join(',')}] +1 (regola 2.05a) = ${result2.total} vs TN ${result2.tn} — tenuto: ${keepNew?'il NUOVO':'il VECCHIO'} risultato (${finalResult.total}) → ${finalOutcomeText}`)}::TORMENTRESULT::${session.username}|${tor.name}`;
+                const rerollLogText = `${tormentAutoMsg('torment_reroll', { dice: result2.dice.join(','), total: result2.total, tn: result2.tn, kept: keepNew?'il NUOVO':'il VECCHIO', finalTotal: finalResult.total, outcomeText: finalOutcomeText }, `Ispirazione (-1 IP): ri-tira Torment Check → 3d6[${result2.dice.join(',')}] +1 (regola 2.05a)${breakTheChainBonus(me.tamer)?` +${breakTheChainBonus(me.tamer)} (Break the Chain)`:''} = ${result2.total} vs TN ${result2.tn} — tenuto: ${keepNew?'il NUOVO':'il VECCHIO'} risultato (${finalResult.total}) → ${finalOutcomeText}`)}::TORMENTRESULT::${session.username}|${tor.name}`;
                 await pushPlayerNarration(session.code, me, { who: displayName(me), role:'roll', text: rerollLogText, meta:{dice: finalResult.dice} });
                 if(tor.usedThisRest){ btn.disabled = true; btn.textContent = 'Già tentato (Rest)'; }
                 renderResult(finalResult, finalOutcomeText, newIpBaseline);
@@ -670,7 +682,7 @@
             }
           };
 
-          const result = rollTormentCheck(preBoxes);
+          const result = rollTormentCheck(preBoxes, breakTheChainBonus(me.tamer));
           const outcomeText = await applyOutcome(result, preIP);
           await saveMember(session.code, me);
           // BUGFIX (privacy, segnalato da Rocco): come per la richiesta (vedi index.html) e per il

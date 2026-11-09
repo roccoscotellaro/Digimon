@@ -1821,10 +1821,14 @@ let editingScene = false;
       const own = target.id===actor.id;
       const bolstered = !!actor.tamerBolsterReady;
       actor.tamerBolsterReady = false;
-      const amount = Math.max(0, base - (own?0:2)) + (bolstered?2:0);
+      // Talent Direct Team (Charisma 3+): la penalità per dirigere un Digimon altrui scende da -2 a -1.
+      const ownerMember = actor.isPC ? cachedRoster.find(m=>m.username===actor.username) : null;
+      const directTeam = !!(ownerMember && tamerHasTalent(ownerMember.tamer, 'Direct Team'));
+      const otherPenalty = own ? 0 : (directTeam ? 1 : 2);
+      const amount = Math.max(0, base - otherPenalty) + (bolstered?2:0);
       queuePendingRollBonus(target, amount, bolstered ? 'Direct + Bolster (Tamer)' : 'Direct', 'either');
       actor.directTargetThisTurn = target.id;
-      return { ok:true, note: `+${amount} Accuracy/Dodge in coda sul prossimo Pool Check di ${narratorName(target)}${own?'':' (-2: non è il proprio Digimon)'}${bolstered?' (incluso +2 dal Bolster del Tamer)':''}.` };
+      return { ok:true, note: `+${amount} Accuracy/Dodge in coda sul prossimo Pool Check di ${narratorName(target)}${own?'':(directTeam?' (-1: non è il proprio Digimon, ridotta da Direct Team)':' (-2: non è il proprio Digimon)')}${bolstered?' (incluso +2 dal Bolster del Tamer)':''}.` };
     }
     if(actionKey==='guard'){
       const sv = participantSV(actor);
@@ -1916,7 +1920,7 @@ let editingScene = false;
       let bulkUp = false;
       if(actor.isPC){
         const owner = cachedRoster.find(m=>m.username===actor.username);
-        if(owner && owner.tamer && computeUnlockedTalents(owner.tamer).some(t=>t.name==='Bulk Up')){
+        if(owner && tamerHasTalent(owner.tamer, 'Bulk Up')){
           bulkUp = true;
           roll.successes += 1;
         }
@@ -1951,11 +1955,18 @@ let editingScene = false;
       const bolstered = !!actor.tamerBolsterReady; actor.tamerBolsterReady = false;
       const pool = (actionKey==='reposition1' ? ownerAttr(actor,'agility') : highestAttribute(actor)) + (bolstered?2:0);
       const roll = rollPool(pool);
+      // Talent Quick Step (Agility 3+): +1 Successo al risultato finale di Reposition (entrambe le
+      // varianti). Experienced Step (Athletics 5+): +1 Successo in più sulla variante da 2 Azioni.
+      const repOwner = actor.isPC ? cachedRoster.find(m=>m.username===actor.username) : null;
+      const repTalents = [];
+      if(repOwner && tamerHasTalent(repOwner.tamer, 'Quick Step')){ roll.successes += 1; repTalents.push('+1 Quick Step'); }
+      if(repOwner && actionKey==='reposition2' && tamerHasTalent(repOwner.tamer, 'Experienced Step')){ roll.successes += 1; repTalents.push('+1 Experienced Step'); }
+      const repTalentNote = repTalents.length ? ` (incl. ${repTalents.join(', ')})` : '';
       if(roll.successes>=1){
         actor.repositionFree = Number(actor.repositionFree||0) + 1;
-        return { ok:true, note: `Pool Check Reposition ${pool}d6[${roll.dice.join(',')}]=${roll.successes} succ. → RIUSCITO: 1 spostamento gratuito disponibile (frecce linea/Avvicina/Allontana/Imposta zona).` };
+        return { ok:true, note: `Pool Check Reposition ${pool}d6[${roll.dice.join(',')}]=${roll.successes} succ.${repTalentNote} → RIUSCITO: 1 spostamento gratuito disponibile (frecce linea/Avvicina/Allontana/Imposta zona).` };
       }
-      return { ok:true, note: `Pool Check Reposition ${pool}d6[${roll.dice.join(',')}]=${roll.successes} succ. → NON RIUSCITO: nessuno spostamento gratuito.` };
+      return { ok:true, note: `Pool Check Reposition ${pool}d6[${roll.dice.join(',')}]=${roll.successes} succ.${repTalentNote} → NON RIUSCITO: nessuno spostamento gratuito.` };
     }
     // ---- Resist: riduce la Potenza di TUTTI gli Effetti attivi sul Digimon (1 Az. -1, 2 Az. -2);
     // a Potenza 0 l'Effetto termina — vedi EFFECT_DEFS/computeEffectModifiers (js/combat-engine.js).
@@ -8395,8 +8406,12 @@ let editingScene = false;
       if(combat.participants.length===0) return;
       const rollLines = combat.participants.map(p=>{
         const { dice, total } = rollSkillCheck(0, p.ram||0); // 3d6 + RAM (attrVal unused, pass 0)
-        p.initiative = total;
-        return `${escapeHTML(p.name)}: [${dice.join(', ')}] + RAM ${p.ram||0} = <b>${total}</b>`;
+        // Talent Hyper Alert (Awareness 3+): il Digimon del Tamer ottiene +1 all'Iniziativa per ogni
+        // punto in Awareness sopra 2.
+        const iniOwner = p.isPC ? cachedRoster.find(m=>m.username===p.username) : null;
+        const hyperAlert = (iniOwner && tamerHasTalent(iniOwner.tamer, 'Hyper Alert')) ? Math.max(0, Number((iniOwner.tamer.skills||{}).awareness||0) - 2) : 0;
+        p.initiative = total + hyperAlert;
+        return `${escapeHTML(p.name)}: [${dice.join(', ')}] + RAM ${p.ram||0}${hyperAlert?` + ${hyperAlert} Hyper Alert`:''} = <b>${p.initiative}</b>`;
       });
       await persistAndRefresh();
       const statusEl = document.getElementById('combat-mgr-status');
