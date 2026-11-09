@@ -207,6 +207,33 @@
   .gennai-reply-sent{ background:var(--panel-2); border:1px solid var(--line); border-radius:6px; padding:10px 12px; margin-top:8px; font-size:13px; }
   .gennai-absent{ position:relative; z-index:2; font-size:12px; text-align:center; }
 
+  /* ===== Schermata "DIGIVICE DISCONNESSO" (richiesta Rocco 2026-11-09): quello che vede un
+     giocatore finché il Master non sblocca la pagina. ===== */
+  .dv-disconnected{
+    position:relative; overflow:hidden; text-align:center; padding:64px 20px;
+    border:2px solid #ff2a2a !important; background:
+      repeating-linear-gradient(0deg, rgba(255,42,42,0.06) 0 2px, transparent 2px 4px),
+      radial-gradient(circle at 50% 40%, rgba(255,42,42,0.22), transparent 65%), #120406 !important;
+    box-shadow:0 0 28px rgba(255,42,42,0.35), inset 0 0 40px rgba(255,42,42,0.15);
+    animation: dvDiscFlicker 4s infinite;
+  }
+  .dv-disconnected::before, .dv-disconnected::after{ border-color:#ff2a2a !important; }
+  .dv-disconnected-icon{ font-size:44px; margin-bottom:14px; filter:drop-shadow(0 0 10px #ff2a2a); animation: pulse 1.2s infinite; }
+  .dv-disconnected-title{
+    font-family:'Press Start 2P','Share Tech Mono',monospace; color:#ff2a2a;
+    font-size:clamp(16px, 4.2vw, 28px); line-height:1.5; letter-spacing:0.06em;
+    text-shadow:0 0 6px #ff2a2a, 0 0 18px rgba(255,42,42,0.8), 2px 0 0 rgba(0,255,255,0.25), -2px 0 0 rgba(255,0,80,0.4);
+    animation: dvDiscGlitch 2.6s steps(1) infinite;
+  }
+  .dv-disconnected-sub{ font-family:'Share Tech Mono',monospace; color:#ff8080; font-size:12px; letter-spacing:0.12em; margin-top:16px; text-transform:uppercase; opacity:0.85; }
+  @keyframes dvDiscGlitch{
+    0%,88%,100%{ transform:translate(0,0); }
+    90%{ transform:translate(-3px,1px); }
+    92%{ transform:translate(3px,-1px); }
+    94%{ transform:translate(-1px,0); }
+  }
+  @keyframes dvDiscFlicker{ 0%,96%,100%{ opacity:1; } 97%{ opacity:0.75; } 98%{ opacity:1; } 99%{ opacity:0.85; } }
+
   /* ===== Registro completo di Gennai (battute + risposte, con avatar giocatore) ===== */
   .gennai-log-list{ display:flex; flex-direction:column; gap:10px; max-height:420px; overflow-y:auto; padding-right:4px; }
   .gennai-log-entry{ background:var(--panel-2); border:1px solid var(--line); border-radius:6px; padding:8px 10px; }
@@ -427,15 +454,16 @@
   function render(){
     if(!gennaiState){ return; }
     const master = isMaster();
-    // Un giocatore che apre il link prima che il Master abbia sbloccato la pagina vede solo un
-    // messaggio di attesa (il Master, invece, vede sempre tutto, per poter preparare la pagina).
+    // Un giocatore che apre il link prima che il Master abbia sbloccato la pagina vede solo la
+    // schermata rossa "DIGIVICE DISCONNESSO" (2026-11-09, prima era un messaggio di attesa grigio) (il Master, invece, vede sempre tutto, per poter preparare la pagina).
     if(!master && !gennaiState.unlocked){
       root.innerHTML = `
         <div style="max-width:760px;margin:0 auto;">
           ${topbarHTML()}
-          <div class="hud-frame card" style="text-align:center;padding:48px 20px;">
-            <div style="font-size:32px;margin-bottom:12px;">🔒</div>
-            <div class="muted">Questa pagina non è ancora disponibile. Il Master la aprirà quando sarà il momento.</div>
+          <div class="hud-frame card dv-disconnected">
+            <div class="dv-disconnected-icon">📡</div>
+            <div class="dv-disconnected-title">DIGIVICE<br>DISCONNESSO</div>
+            <div class="dv-disconnected-sub">// segnale assente — nessuna connessione //</div>
           </div>
         </div>
       `;
@@ -595,7 +623,7 @@
           <div class="muted" style="margin-bottom:8px;">✅ La pagina è disponibile: chi ha il link può già vederla ed entrare.</div>
           <button class="btn ghost small" id="btn-gennai-lock">🔒 Rendi di nuovo non disponibile</button>
         ` : `
-          <div class="muted" style="margin-bottom:8px;">🔒 La pagina NON è ancora disponibile: se un giocatore apre il link vede solo un messaggio di attesa. Preparala con calma (immagine, prima battuta) e sblocca quando sei pronto.</div>
+          <div class="muted" style="margin-bottom:8px;">🔒 La pagina NON è ancora disponibile: i giocatori (il link ora è visibile a tutti nel Tavolo) vedono solo la schermata rossa «DIGIVICE DISCONNESSO». Preparala con calma (immagine, prima battuta) e sblocca quando sei pronto.</div>
           <button class="btn solid small" id="btn-gennai-unlock">🔓 Rendi disponibile la pagina ai giocatori</button>
         `}
         <div class="err" id="gennai-unlock-status"></div>

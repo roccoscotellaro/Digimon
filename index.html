@@ -3662,7 +3662,9 @@ let editingScene = false;
       ['dex.html','📖 Digidex'], ['npc.html','🎭 NPC'], ['digivice-scan.html','📡 Scan Starter'],
       ['map.html','🗺️ Mappa'], ['player.html','👤 Giocatore'], ['digimon.html','👾 Digimon']
     ];
-    if(session && session.role==='master') links.push(['gennai.html','🔮 Gennai']);
+    // Gennai visibile a tutti (richiesta Rocco 2026-11-09): i giocatori vedono "DIGIVICE DISCONNESSO"
+    // finché il Master non sblocca la pagina da gennai.html.
+    links.push(['gennai.html','🔮 Gennai']);
     links.push(['DDA2E_Indice_Regole.html','📜 Regole']);
     const a = ([href,label])=>`<a href="${href}" target="_blank" class="btn ghost small" style="text-decoration:none;">${label}</a>`;
     if(!(session && session.role==='master')) return links.map(a).join('\n        ');
