@@ -1662,6 +1662,7 @@ let editingScene = false;
       p.tamerBolsterReady = false;
       p.directTargetThisTurn = null;
     }
+    if(!pool) p.calculatedUsedThisTurn = false;
     if(!pool || pool==='digimon'){
       digimonKeys.forEach(k=>{ delete used[k]; });
       p.aidTargetThisTurn = null;
@@ -1795,16 +1796,59 @@ let editingScene = false;
   // dicono "Accuracy/Dodge") o 'dodge' (Guard, che nel manuale è ristretto al solo Dodge). Se c'è
   // già un bonus in coda si sommano gli importi (Bolster "potenzia" Direct/Aid/Guard già in coda),
   // altrimenti quello nuovo sostituisce il tipo restando comunque la somma dei due importi.
-  function queuePendingRollBonus(target, amount, sourceLabel, stat){
+  // successes (opzionale, Talent Calculated 2026-11-09): Successi automatici in coda invece di
+  // dadi -- si sommano al risultato del Pool Check quando il bonus viene consumato (vedi Attacco).
+  function queuePendingRollBonus(target, amount, sourceLabel, stat, successes){
     stat = stat || 'either';
-    if(amount<=0) return;
+    successes = Number(successes)||0;
+    if(amount<=0 && successes<=0) return;
+    amount = Math.max(0, Number(amount)||0);
     if(target.pendingRollBonus){
       target.pendingRollBonus.amount += amount;
+      target.pendingRollBonus.successes = Number(target.pendingRollBonus.successes||0) + successes;
       target.pendingRollBonus.source += ' + ' + sourceLabel;
       if(target.pendingRollBonus.stat!=='either') target.pendingRollBonus.stat = stat;
     } else {
-      target.pendingRollBonus = { amount, source: sourceLabel, stat };
+      target.pendingRollBonus = { amount, successes, source: sourceLabel, stat };
     }
+  }
+  function pendingBonusLabel(b){
+    if(!b) return '';
+    const parts = [];
+    if(Number(b.amount||0)>0) parts.push(`+${b.amount}`);
+    if(Number(b.successes||0)>0) parts.push(`+${b.successes} Succ.`);
+    return parts.join(' ') || '+0';
+  }
+  // ---- Talent Calculated (Intelligence 5+, regola "I'VE CALCULATED THE ODDS"): quando il Tamer o
+  // il suo Digimon usano Bolster, invece di +2 dadi si può scegliere +1 Successo al risultato.
+  // Non riusabile fino alla fine del turno di Tamer e Digimon (participant.calculatedUsedThisTurn,
+  // azzerato a fine turno). Richiesta Rocco 2026-11-09: "quando sceglie bolster chi ha il talento
+  // apre un pop up dove scegliere e funziona di conseguenza".
+  function canUseCalculated(p){
+    if(!p || !p.isPC || p.calculatedUsedThisTurn) return false;
+    const m = cachedRoster.find(x=>x.username===p.username);
+    return !!(m && tamerHasTalent(m.tamer, 'Calculated'));
+  }
+  // Ritorna 'dice' | 'success' | 'cancel'. Se il Talento non si applica ritorna 'dice' senza popup.
+  function askCalculatedChoice(p, actionKey){
+    if(!(actionKey==='bolster_tamer' || actionKey==='bolster_digimon') || !canUseCalculated(p)) return Promise.resolve('dice');
+    const diceLabel = actionKey==='bolster_tamer' ? '+2 dadi' : 'Bolster normale (+dadi)';
+    return new Promise(resolve=>{
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.65);display:flex;align-items:center;justify-content:center;padding:16px;';
+      ov.innerHTML = `
+        <div class="hud-frame" style="max-width:380px;width:100%;padding:18px;background:var(--panel);">
+          <div class="section-title">🧮 Calculated — "I've calculated the odds"</div>
+          <div class="muted" style="margin-bottom:12px;">Come vuoi usare questo Bolster? (+1 Successo utilizzabile una volta per turno)</div>
+          <div class="row" style="gap:8px;flex-wrap:wrap;">
+            <button class="btn" data-calc="dice" style="flex:1;">${diceLabel}</button>
+            <button class="btn solid" data-calc="success" style="flex:1;">+1 Successo</button>
+          </div>
+          <button class="btn ghost small" data-calc="cancel" style="width:100%;margin-top:8px;">Annulla (nessuna Azione spesa)</button>
+        </div>`;
+      ov.querySelectorAll('[data-calc]').forEach(b=>{ b.onclick = ()=>{ ov.remove(); resolve(b.getAttribute('data-calc')); }; });
+      document.body.appendChild(ov);
+    });
   }
   // Effetto MECCANICO reale di Direct/Aid/Guard/Bolster (oltre a trySpendAction, che resta
   // responsabile solo del costo in Azioni). Ritorna { ok, note } da appendere alla narrazione.
@@ -1814,21 +1858,22 @@ let editingScene = false;
   // dall'utente ("si fa il tiro di Aid e se il tiro riesce si aggiunge il bonus... in automatico").
   // È una scelta di house-rule dichiarata per questa sola Azione: se non è quello che intendevi,
   // dimmelo e lo riporto a bonus flat garantito come le altre tre.
-  async function applySupportActionEffect(actionKey, actor, target){
+  async function applySupportActionEffect(actionKey, actor, target, calculated){
     if(actionKey==='direct1' || actionKey==='direct2'){
       if(!target) return { ok:false, note:'nessun bersaglio scelto: nessun bonus accodato.' };
       const base = actionKey==='direct1' ? ownerAttr(actor,'charisma') : highestAttribute(actor);
       const own = target.id===actor.id;
-      const bolstered = !!actor.tamerBolsterReady;
+      const bolsterCalc = actor.tamerBolsterReady==='success';
+      const bolstered = !!actor.tamerBolsterReady && !bolsterCalc;
       actor.tamerBolsterReady = false;
       // Talent Direct Team (Charisma 3+): la penalità per dirigere un Digimon altrui scende da -2 a -1.
       const ownerMember = actor.isPC ? cachedRoster.find(m=>m.username===actor.username) : null;
       const directTeam = !!(ownerMember && tamerHasTalent(ownerMember.tamer, 'Direct Team'));
       const otherPenalty = own ? 0 : (directTeam ? 1 : 2);
       const amount = Math.max(0, base - otherPenalty) + (bolstered?2:0);
-      queuePendingRollBonus(target, amount, bolstered ? 'Direct + Bolster (Tamer)' : 'Direct', 'either');
+      queuePendingRollBonus(target, amount, bolstered ? 'Direct + Bolster (Tamer)' : (bolsterCalc ? 'Direct + Bolster (Tamer, Calculated)' : 'Direct'), 'either', bolsterCalc ? 1 : 0);
       actor.directTargetThisTurn = target.id;
-      return { ok:true, note: `+${amount} Accuracy/Dodge in coda sul prossimo Pool Check di ${narratorName(target)}${own?'':(directTeam?' (-1: non è il proprio Digimon, ridotta da Direct Team)':' (-2: non è il proprio Digimon)')}${bolstered?' (incluso +2 dal Bolster del Tamer)':''}.` };
+      return { ok:true, note: `+${amount} Accuracy/Dodge in coda sul prossimo Pool Check di ${narratorName(target)}${own?'':(directTeam?' (-1: non è il proprio Digimon, ridotta da Direct Team)':' (-2: non è il proprio Digimon)')}${bolstered?' (incluso +2 dal Bolster del Tamer)':''}${bolsterCalc?' (+1 Successo dal Bolster del Tamer, Calculated)':''}.` };
     }
     if(actionKey==='guard'){
       const sv = participantSV(actor);
@@ -1856,8 +1901,18 @@ let editingScene = false;
     //    Guard o a un Direct ricevuto, che restano tiri suoi), oppure al bonus di un Aid che ha dato
     //    lui stesso in questo turno, se quell'alleato è il bersaglio scelto.
     if(actionKey==='bolster_tamer'){
+      if(calculated){
+        actor.calculatedUsedThisTurn = true;
+        const dT = actor.directTargetThisTurn ? (cachedCombat && cachedCombat.participants || []).find(x=>x.id===actor.directTargetThisTurn) : null;
+        if(dT && dT.pendingRollBonus && /Direct/.test(dT.pendingRollBonus.source||'') && !/Bolster \(Tamer/.test(dT.pendingRollBonus.source||'')){
+          queuePendingRollBonus(dT, 0, 'Bolster (Tamer, Calculated)', dT.pendingRollBonus.stat, 1);
+          return { ok:true, note: `Calculated: +1 Successo al Direct già dato a ${narratorName(dT)} — in coda: ${pendingBonusLabel(dT.pendingRollBonus)}.` };
+        }
+        actor.tamerBolsterReady = 'success';
+        return { ok:true, note: `Calculated: +1 Successo pronto per il prossimo Direct, Reinforce o Reposition del Tamer in questo turno (si perde se non usato).` };
+      }
       const dTarget = actor.directTargetThisTurn ? (cachedCombat && cachedCombat.participants || []).find(x=>x.id===actor.directTargetThisTurn) : null;
-      if(dTarget && dTarget.pendingRollBonus && /Direct/.test(dTarget.pendingRollBonus.source||'') && !/Bolster \(Tamer\)/.test(dTarget.pendingRollBonus.source||'')){
+      if(dTarget && dTarget.pendingRollBonus && /Direct/.test(dTarget.pendingRollBonus.source||'') && !/Bolster \(Tamer/.test(dTarget.pendingRollBonus.source||'')){
         queuePendingRollBonus(dTarget, 2, 'Bolster (Tamer)', dTarget.pendingRollBonus.stat);
         return { ok:true, note: `+2 al Direct già dato a ${narratorName(dTarget)} — totale in coda: +${dTarget.pendingRollBonus.amount}.` };
       }
@@ -1878,6 +1933,11 @@ let editingScene = false;
       }
       const hadExisting = !!dest.pendingRollBonus;
       const existingStat = hadExisting ? dest.pendingRollBonus.stat : 'either';
+      if(calculated){
+        actor.calculatedUsedThisTurn = true;
+        queuePendingRollBonus(dest, 0, 'Bolster (Calculated)', existingStat, 1);
+        return { ok:true, note: `Calculated: +1 Successo in coda sul prossimo Pool Check ${existingStat==='dodge'?'di Dodge':'(Accuracy/Dodge)'} di ${narratorName(dest)}${boostAlly?' (potenzia il suo Aid)':''} — in coda: ${pendingBonusLabel(dest.pendingRollBonus)}.` };
+      }
       queuePendingRollBonus(dest, amount, 'Bolster', existingStat);
       return { ok:true, note: `+${amount} dadi in coda sul prossimo Pool Check ${existingStat==='dodge'?'di Dodge':'(Accuracy/Dodge)'} di ${narratorName(dest)}${boostAlly?' (potenzia il suo Aid)':(hadExisting?' (in aggiunta al bonus già in coda)':'')} — totale in coda: +${dest.pendingRollBonus.amount}.` };
     }
@@ -1910,13 +1970,15 @@ let editingScene = false;
     // `code` è un parametro di questa funzione (già disponibile in entrambi i call site) e il ramo PC
     // persiste subito la modifica, esattamente come fa il resto del codice.
     if(actionKey==='reinforce1' || actionKey==='reinforce2'){
-      const bolstered = !!actor.tamerBolsterReady; actor.tamerBolsterReady = false;
+      const bolsterCalc = actor.tamerBolsterReady==='success';
+      const bolstered = !!actor.tamerBolsterReady && !bolsterCalc; actor.tamerBolsterReady = false;
       const pool = (actionKey==='reinforce1' ? ownerAttr(actor,'body') : highestAttribute(actor)) + (bolstered?2:0);
       const roll = rollPool(pool);
       // Talent Bulk Up (Body 3+, segnalato da un giocatore 2026-11-09: "il mio talent bulk up non
       // funziona"): era solo descritto in TALENT_DEFS (js/tamer-card.js), mai applicato qui. Regola:
       // "Quando prendi l'Azione Reinforce, guadagni +1 Successo al risultato finale" -- vale per
       // entrambe le varianti (1 Az. Body / 2 Az. Highest Attribute), solo per i Tamer dei PC.
+      if(bolsterCalc) roll.successes += 1; // Bolster del Tamer con Calculated
       let bulkUp = false;
       if(actor.isPC){
         const owner = cachedRoster.find(m=>m.username===actor.username);
@@ -1945,20 +2007,22 @@ let editingScene = false;
         actor.tempWounds = Number(actor.tempWounds||0) + roll.successes;
         actor.reinforceTempWounds = Number(actor.reinforceTempWounds||0) + roll.successes;
       }
-      return { ok:true, note: `Pool Check Reinforce ${pool}d6[${roll.dice.join(',')}]=${roll.successes} succ.${bulkUp?' (incl. +1 Bulk Up)':''} → +${roll.successes} Wound Box Temporanee (fino al prossimo turno del Tamer).` };
+      return { ok:true, note: `Pool Check Reinforce ${pool}d6[${roll.dice.join(',')}]=${roll.successes} succ.${bulkUp?' (incl. +1 Bulk Up)':''}${bolsterCalc?' (incl. +1 Bolster/Calculated)':''} → +${roll.successes} Wound Box Temporanee (fino al prossimo turno del Tamer).` };
     }
     // ---- Reposition: Pool Check di Agility (1 Az.) o Attributo più alto (2 Az.) del TAMER -> se
     // riesce (≥1 successo, stessa convenzione di Aid), il Digimon ottiene 1 spostamento gratuito
     // tramite gli strumenti già esistenti (frecce linea/Avvicina/Allontana/Imposta zona) -- vedi
     // trySpendAction più sopra, che consuma p.repositionFree al posto di una vera Azione Digimon.
     if(actionKey==='reposition1' || actionKey==='reposition2'){
-      const bolstered = !!actor.tamerBolsterReady; actor.tamerBolsterReady = false;
+      const bolsterCalc = actor.tamerBolsterReady==='success';
+      const bolstered = !!actor.tamerBolsterReady && !bolsterCalc; actor.tamerBolsterReady = false;
       const pool = (actionKey==='reposition1' ? ownerAttr(actor,'agility') : highestAttribute(actor)) + (bolstered?2:0);
       const roll = rollPool(pool);
       // Talent Quick Step (Agility 3+): +1 Successo al risultato finale di Reposition (entrambe le
       // varianti). Experienced Step (Athletics 5+): +1 Successo in più sulla variante da 2 Azioni.
       const repOwner = actor.isPC ? cachedRoster.find(m=>m.username===actor.username) : null;
       const repTalents = [];
+      if(bolsterCalc){ roll.successes += 1; repTalents.push('+1 Bolster/Calculated'); }
       if(repOwner && tamerHasTalent(repOwner.tamer, 'Quick Step')){ roll.successes += 1; repTalents.push('+1 Quick Step'); }
       if(repOwner && actionKey==='reposition2' && tamerHasTalent(repOwner.tamer, 'Experienced Step')){ roll.successes += 1; repTalents.push('+1 Experienced Step'); }
       const repTalentNote = repTalents.length ? ` (incl. ${repTalents.join(', ')})` : '';
@@ -2049,6 +2113,7 @@ let editingScene = false;
     // Limiti "una volta per turno" e stato del Bolster (vedi trySpendAction/applySupportActionEffect).
     finishing.usedOnceThisTurn = {};
     finishing.tamerBolsterReady = false;
+    finishing.calculatedUsedThisTurn = false;
     finishing.directTargetThisTurn = null;
     finishing.aidTargetThisTurn = null;
     // Vedi trySpendAction: azzera il conto alla rovescia del "Passa turno automatico dopo 5
@@ -2590,7 +2655,7 @@ let editingScene = false;
 
     const spendSelfAction = async (selectId)=>{
       if(!cachedCombat || !cachedCombat.active) return;
-      const p = cachedCombat.participants.find(x=>x.username===username);
+      let p = cachedCombat.participants.find(x=>x.username===username);
       if(!p) return;
       const statusEl = document.getElementById('self-action-status');
       // Guardia anti-doppio-click/doppio-tap: vedi combatActionPending presso saveCombat — evita di
@@ -2611,6 +2676,11 @@ let editingScene = false;
         if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Scegli prima su chi usarla (nessuna Azione spesa).'; }
         return;
       }
+      const calcChoice = await askCalculatedChoice(p, sel.value);
+      if(calcChoice==='cancel') return;
+      // Il popup può restare aperto mentre il polling sostituisce cachedCombat: rileggi i dati freschi.
+      p = cachedCombat && cachedCombat.participants.find(x=>x.username===username);
+      if(!p) return;
       const result = trySpendAction(p, sel.value);
       if(!result.ok){
         if(statusEl){ statusEl.style.color = 'var(--danger)'; statusEl.textContent = result.msg; }
@@ -2622,7 +2692,7 @@ let editingScene = false;
       if(SUPPORT_ACTION_KEYS.includes(sel.value)){
         const targetSel = document.getElementById('self-target-select');
         const supportTarget = sel.value==='guard' ? p : (pickedSupportTarget || (targetSel && targetSel.value ? cachedCombat.participants.find(x=>x.id===targetSel.value) : null));
-        const effect = await applySupportActionEffect(sel.value, p, supportTarget);
+        const effect = await applySupportActionEffect(sel.value, p, supportTarget, calcChoice==='success');
         supportNote = ' ' + effect.note;
       } else if(MECHANIC_ACTION_KEYS.includes(sel.value)){
         // Reinforce/Reposition/Resist/Stance/Skill Check: tutte azioni su se stessi (nessun
@@ -6246,16 +6316,18 @@ let editingScene = false;
     // Bonus reale in coda da Direct/Aid/Guard/Bolster (9.06a/9.06b) -- si consuma qui, sul primo
     // dei due tiri che arriva (Accuracy per l'Attaccante, Dodge per il Bersaglio) -- vedi
     // applySupportActionEffect/queuePendingRollBonus qui sopra.
-    let attackerBonus = 0, attackerBonusNote = '';
+    let attackerBonus = 0, attackerBonusNote = '', attackerBonusSucc = 0;
     if(attacker.pendingRollBonus && (attacker.pendingRollBonus.stat==='either' || attacker.pendingRollBonus.stat==='accuracy')){
-      attackerBonus = attacker.pendingRollBonus.amount;
-      attackerBonusNote = ` [+${attackerBonus} Accuracy da ${attacker.pendingRollBonus.source}]`;
+      attackerBonus = Number(attacker.pendingRollBonus.amount||0);
+      attackerBonusSucc = Number(attacker.pendingRollBonus.successes||0);
+      attackerBonusNote = ` [${pendingBonusLabel(attacker.pendingRollBonus)} Accuracy da ${attacker.pendingRollBonus.source}]`;
       attacker.pendingRollBonus = null;
     }
-    let targetBonus = 0, targetBonusNote = '';
+    let targetBonus = 0, targetBonusNote = '', targetBonusSucc = 0;
     if(target.pendingRollBonus && (target.pendingRollBonus.stat==='either' || target.pendingRollBonus.stat==='dodge')){
-      targetBonus = target.pendingRollBonus.amount;
-      targetBonusNote = ` [+${targetBonus} Dodge da ${target.pendingRollBonus.source}]`;
+      targetBonus = Number(target.pendingRollBonus.amount||0);
+      targetBonusSucc = Number(target.pendingRollBonus.successes||0);
+      targetBonusNote = ` [${pendingBonusLabel(target.pendingRollBonus)} Dodge da ${target.pendingRollBonus.source}]`;
       target.pendingRollBonus = null;
     }
     const effAccuracy = Math.max(0, aStats.accuracy + zPenalty + attackerBonus + batteryBonus);
@@ -6263,6 +6335,7 @@ let editingScene = false;
     const accRoll = rollPool(effAccuracy, overpowerUsed);
     if(overpowerUsed) attacker.overpowerActive = false;
     if(aStats.certainStrike>0) accRoll.successes += aStats.certainStrike;
+    if(attackerBonusSucc>0) accRoll.successes += attackerBonusSucc; // Calculated (Successi in coda)
     let attrAdvNote = '';
     const attrRule = cachedProgression && cachedProgression.attributeAdvantage;
     if(attrRule && hasAttributeAdvantage(getParticipantAttribute(attacker), getParticipantAttribute(target))){
@@ -6278,6 +6351,7 @@ let editingScene = false;
     }
     const dodgeRoll = rollPool(tStats.dodge + targetBonus);
     if(tStats.absoluteEvasion>0) dodgeRoll.successes += tStats.absoluteEvasion;
+    if(targetBonusSucc>0) dodgeRoll.successes += targetBonusSucc; // Calculated (Successi in coda)
     // BUGFIX (segnalato dal Master: "un giocatore aveva fatto Guard/dodge ma sembra non lo abbia
     // calcolato, solo scritto"): il bonus da Direct/Aid/Guard/Bolster al Dodge del bersaglio VIENE
     // già tirato correttamente qui sopra (dodgeRoll = rollPool(tStats.dodge + targetBonus)) -- il
@@ -6812,7 +6886,7 @@ let editingScene = false;
               </select>
               <button class="btn ghost small" data-manual-bonus-set="${p.id}" style="flex:0 0 auto;padding:4px 8px;" title="Imposta manualmente il bonus in coda sul prossimo Pool Check (sostituisce quello attuale) — es. Direct/Aid/Guard/Bolster narrato a voce">🎯 Imposta</button>
             </div>
-            <div class="muted" style="font-size:10px;margin-bottom:6px;">Bonus in coda: ${p.pendingRollBonus ? `<b>+${p.pendingRollBonus.amount}</b> (${p.pendingRollBonus.stat==='either'?'Accuracy/Dodge':p.pendingRollBonus.stat==='accuracy'?'solo Accuracy':'solo Dodge'}, da ${escapeHTML(p.pendingRollBonus.source)}) <button class="btn ghost small" data-manual-bonus-clear="${p.id}" style="padding:1px 6px;margin-left:4px;">✕ Rimuovi</button>` : 'nessuno'} — si consuma al primo Pool Check, altrimenti resta finché non lo tolgono da qui.</div>
+            <div class="muted" style="font-size:10px;margin-bottom:6px;">Bonus in coda: ${p.pendingRollBonus ? `<b>${pendingBonusLabel(p.pendingRollBonus)}</b> (${p.pendingRollBonus.stat==='either'?'Accuracy/Dodge':p.pendingRollBonus.stat==='accuracy'?'solo Accuracy':'solo Dodge'}, da ${escapeHTML(p.pendingRollBonus.source)}) <button class="btn ghost small" data-manual-bonus-clear="${p.id}" style="padding:1px 6px;margin-left:4px;">✕ Rimuovi</button>` : 'nessuno'} — si consuma al primo Pool Check, altrimenti resta finché non lo tolgono da qui.</div>
             <div class="row" style="margin-top:4px;">
               <button class="btn ghost small" data-action-reset="${p.id}" style="flex:1;" title="Ripristina sia le Azioni Digimon che quelle Tamer a 2/2">↺ 2+2</button>
               <button class="btn ghost small" data-action-refund="${p.id}" style="flex:1;" title="Es. Successo Critico su Reload/Battle Cry/Horde Duelist: 'riottieni l'Azione spesa' (Digimon)">+1 Azione (Digimon)</button>
@@ -7689,7 +7763,7 @@ let editingScene = false;
       cardEl.querySelectorAll(`[${useAttr}]`).forEach(btn=>{
         btn.onclick = async ()=>{
           const id = btn.getAttribute(useAttr);
-          const p = combat.participants.find(x=>x.id===id);
+          let p = combat.participants.find(x=>x.id===id);
           const sel = cardEl.querySelector(`[${selectAttr}="${id}"]`);
           if(!p || !sel) return;
           if(sel.value==='attack'){
@@ -7709,6 +7783,11 @@ let editingScene = false;
             if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent='Scegli prima su chi usarla (nessuna Azione spesa).'; }
             return;
           }
+          const calcChoiceGM = await askCalculatedChoice(p, sel.value);
+          if(calcChoiceGM==='cancel') return;
+          // Il popup può restare aperto mentre il polling sostituisce cachedCombat: rileggi i dati freschi.
+          p = cachedCombat && cachedCombat.participants.find(x=>x.id===id);
+          if(!p) return;
           const result = trySpendAction(p, sel.value);
           if(!result.ok){
             if(statusEl){ statusEl.style.color='var(--danger)'; statusEl.textContent = result.msg; }
@@ -7720,8 +7799,9 @@ let editingScene = false;
           let presetAttacker = false;
           if(SUPPORT_ACTION_KEYS.includes(sel.value)){
             const zoneRefSel = cardEl.querySelector(`[data-zone-ref="${id}"]`);
-            const supportTarget = sel.value==='guard' ? p : (gmPickTarget || (zoneRefSel && zoneRefSel.value ? combat.participants.find(x=>x.id===zoneRefSel.value) : null));
-            const effect = await applySupportActionEffect(sel.value, p, supportTarget);
+            const freshGmPick = gmPickTarget ? (cachedCombat.participants.find(x=>x.id===gmPickTarget.id) || null) : null;
+            const supportTarget = sel.value==='guard' ? p : (freshGmPick || (zoneRefSel && zoneRefSel.value ? cachedCombat.participants.find(x=>x.id===zoneRefSel.value) : null));
+            const effect = await applySupportActionEffect(sel.value, p, supportTarget, calcChoiceGM==='success');
             supportNote = ' ' + effect.note;
           } else if(MECHANIC_ACTION_KEYS.includes(sel.value)){
             // Reinforce/Reposition/Resist/Stance/Skill Check/Clash: tutte azioni su se stessi (nessun
