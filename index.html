@@ -822,6 +822,35 @@
   .field-static label{margin-bottom:2px;}
   .field-static .v{font-size:13px;color:var(--text);}
   .toggle-edit-btn{width:100%;margin-top:4px;}
+
+  /* ===== Composer chat estendibile (richiesta Rocco 2026-11-26: "lo spazio dove scriviamo in chat
+     si può estendere per leggere tutto il messaggio e correggerlo") =====
+     Vale per le 4 caselle di scrittura chat: Generale/Privata/Gruppo del Giocatore (#action-text),
+     Generale del Master (#gm-text), Privata del Master (#private-text-master), Sottogruppi del
+     Master (#subgroup-text). Due modi, insieme:
+       1) si allunga DA SOLA mentre scrivi, fino a un tetto (60% dello schermo su desktop, 40% su
+          mobile per lasciare spazio alla tastiera) — oltre il tetto compare la barra di scorrimento;
+       2) maniglia ◢ nell'angolo in basso a destra da trascinare (funziona anche col dito, dove la
+          maniglia nativa del browser non esiste).
+     Gli ID battono per specificità la regola mobile .mobile-send-bar textarea{max-height:100px;
+     resize:none} qui sopra, che era proprio il motivo per cui il testo lungo restava "tagliato".
+     Logica in fondo al file (script "Composer chat estendibile"). */
+  #action-text, #gm-text, #private-text-master, #subgroup-text{
+    resize:none; max-height:60vh; overflow-y:auto; line-height:1.4; padding-right:24px;
+  }
+  .ta-grow-wrap{position:relative;flex:1;min-width:0;display:block;}
+  .ta-grow-wrap > textarea{width:100%;display:block;}
+  .ta-grow-grip{
+    position:absolute;right:2px;bottom:2px;width:20px;height:20px;cursor:ns-resize;
+    display:flex;align-items:flex-end;justify-content:flex-end;padding:0 3px 2px 0;
+    font-size:11px;line-height:1;color:var(--text-mute);opacity:0.7;user-select:none;
+    touch-action:none;-webkit-tap-highlight-color:transparent;z-index:2;
+  }
+  .ta-grow-grip:hover, .ta-grow-grip.dragging{color:var(--cyan);opacity:1;}
+  @media (max-width: 760px){
+    #action-text, #gm-text, #private-text-master, #subgroup-text{max-height:40vh;}
+    .ta-grow-grip{width:28px;height:28px;font-size:13px;}
+  }
 </style>
 </head>
 <body>
@@ -8901,5 +8930,78 @@ let editingScene = false;
 })();
 </script>
 <!-- ===== fine Widget Audio Persistente ===== -->
+<script>
+/* ===== Composer chat estendibile (vedi nota CSS "Composer chat estendibile") =====
+   Script autonomo: non tocca la logica di invio. Le caselle di Chat Privata/Sottogruppi del Master
+   vengono ricreate a ogni render (innerHTML), quindi un MutationObserver aggancia le nuove. Il
+   valore viene svuotato/riempito anche via codice (invio, ↩ Rispondi, ⭐ Talenti, 🔖 Menziona,
+   Correggi Italiano, tastiera Hiragana) senza evento "input": un controllo leggero ogni 300ms
+   riadatta l'altezza quando il testo cambia. Dopo l'invio (casella vuota) torna compatta. */
+(function(){
+  const SEL = '#action-text, #gm-text, #private-text-master, #subgroup-text';
+  function fit(ta){
+    const manual = Number(ta.dataset.manualH)||0;
+    const prevScroll = ta.scrollTop;
+    ta.style.height = 'auto';
+    const border = ta.offsetHeight - ta.clientHeight;
+    const content = ta.scrollHeight + border;
+    ta.style.height = Math.max(content, manual) + 'px'; // il tetto lo applica il max-height CSS
+    ta.scrollTop = prevScroll;
+    ta._growLastVal = ta.value;
+  }
+  function enhance(ta){
+    if(ta._growBound) return;
+    ta._growBound = true;
+    // Avvolge la textarea per poter posizionare la maniglia nell'angolo in basso a destra.
+    const wrap = document.createElement('div');
+    wrap.className = 'ta-grow-wrap';
+    if(ta.style.marginTop){ wrap.style.marginTop = ta.style.marginTop; ta.style.marginTop = '0'; }
+    ta.parentNode.insertBefore(wrap, ta);
+    wrap.appendChild(ta);
+    const grip = document.createElement('div');
+    grip.className = 'ta-grow-grip';
+    grip.textContent = '◢';
+    grip.title = 'Trascina per allargare la casella';
+    wrap.appendChild(grip);
+    ta.addEventListener('input', ()=>fit(ta));
+    let startY = 0, startH = 0, dragging = false;
+    grip.addEventListener('pointerdown', (e)=>{
+      e.preventDefault();
+      dragging = true; startY = e.clientY; startH = ta.offsetHeight;
+      grip.classList.add('dragging');
+      try{ grip.setPointerCapture(e.pointerId); }catch(err){}
+    });
+    grip.addEventListener('pointermove', (e)=>{
+      if(!dragging) return;
+      const h = Math.max(38, startH + (e.clientY - startY));
+      ta.dataset.manualH = String(h);
+      ta.style.height = h + 'px';
+    });
+    const end = (e)=>{
+      if(!dragging) return;
+      dragging = false;
+      grip.classList.remove('dragging');
+      try{ grip.releasePointerCapture(e.pointerId); }catch(err){}
+      // Se ha rimpicciolito sotto l'altezza del testo, il testo vince (resta tutto leggibile).
+      ta.dataset.manualH = String(ta.offsetHeight);
+      fit(ta);
+    };
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+    fit(ta);
+  }
+  function scan(){ document.querySelectorAll(SEL).forEach(enhance); }
+  scan();
+  try{ new MutationObserver(scan).observe(document.body, { childList:true, subtree:true }); }catch(e){}
+  setInterval(()=>{
+    document.querySelectorAll(SEL).forEach(ta=>{
+      if(!ta._growBound) enhance(ta);
+      if(ta.value === ta._growLastVal) return;
+      if(ta.value === '') delete ta.dataset.manualH; // messaggio inviato: torna compatta
+      fit(ta);
+    });
+  }, 300);
+})();
+</script>
 </body>
 </html>
